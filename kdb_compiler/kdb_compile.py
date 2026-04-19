@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kdb_compiler import (
+    compiler,
     kdb_scan,
     manifest_update,
     patch_applier,
@@ -58,17 +59,32 @@ def compile(
         return _fail(scan_errors)
 
     cr_path = state_root / "compile_result.json"
-    if not cr_path.exists():
-        return _fail([
-            f"compile_result.json not found at {cr_path} — "
-            "M2 compile step is not implemented yet; supply a pre-made compile_result.json "
-            "fixture or run planner/compiler once available"
-        ])
-
-    try:
-        cr = json.loads(cr_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        return _fail([f"compile_result.json unreadable: {exc}"])
+    if cr_path.exists():
+        # Branch 1 — fixture-backed. Operator pre-staged compile_result.json;
+        # we trust it and validate the shape. This is the M1.7 path and
+        # still used by reproducible fixture tests.
+        try:
+            cr = json.loads(cr_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            return _fail([f"compile_result.json unreadable: {exc}"])
+    else:
+        # Branch 2 — live compile. No fixture present. Handles both the
+        # "sources to compile" case and the clean-scan no-op case
+        # (compiler.run_compile returns a successful empty CompileResult
+        # with a single info log entry when the job list is empty).
+        try:
+            cr_obj = compiler.run_compile(
+                vault_root,
+                state_root=state_root,
+                scan=scan_dict,
+                ctx=ctx,
+                write=not dry_run,
+            )
+        except Exception as exc:
+            return _fail(
+                [f"compiler.run_compile failed: {type(exc).__name__}: {exc}"]
+            )
+        cr = cr_obj.to_dict()
 
     cr_errors = validate_compile_result.validate(cr)
     if cr_errors:

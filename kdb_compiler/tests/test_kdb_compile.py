@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.kdb_compile import CompileRunResult, compile
 from kdb_compiler.run_context import SCHEMA_VERSION, RunContext
 
@@ -95,6 +96,43 @@ def _write_cr(state: Path, cr: dict) -> None:
     (state / "compile_result.json").write_text(json.dumps(cr), encoding="utf-8")
 
 
+def _write_vault_claude_md(vault: Path) -> None:
+    """prompt_builder needs <vault>/KDB/CLAUDE.md — any content works."""
+    claude = vault / "KDB" / "CLAUDE.md"
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    claude.write_text("# KDB invariants (test)\n", encoding="utf-8")
+
+
+def _good_model_response(source_id: str, run_id: str) -> ModelResponse:
+    payload = {
+        "source_id": source_id,
+        "summary_slug": "paper",
+        "concept_slugs": [],
+        "article_slugs": [],
+        "pages": [{
+            "slug": "paper",
+            "page_type": "summary",
+            "title": "Paper",
+            "body": "Live-compiled body.",
+            "status": "active",
+            "supports_page_existence": [source_id],
+            "outgoing_links": [],
+            "confidence": "medium",
+        }],
+        "log_entries": [],
+        "warnings": [],
+    }
+    return ModelResponse(
+        text=json.dumps(payload),
+        input_tokens=10,
+        output_tokens=5,
+        latency_ms=10,
+        model="claude-opus-4-7",
+        provider="anthropic",
+        attempts=1,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Test 1 — Happy path dry-run
 # ---------------------------------------------------------------------------
@@ -141,22 +179,35 @@ def test_happy_path_wet_run(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — Missing compile_result.json → clear failure, no traceback
+# Test 3 — Missing compile_result.json triggers live compile (mocked)
 # ---------------------------------------------------------------------------
 
-def test_missing_compile_result(tmp_path: Path) -> None:
+def test_missing_compile_result_triggers_live_compile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under the M2 hybrid, no fixture → compiler.run_compile is invoked.
+    Mock the model seam so no real API call is made. Success is threaded
+    through to the orchestrator and downstream writes run."""
     vault, raw, state = _make_vault(tmp_path)
-    (raw / "paper.md").write_text("# Paper", encoding="utf-8")
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+    _write_vault_claude_md(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    # Do NOT write compile_result.json
+
+    def fake_call(req):
+        # Extract source_id from prompt to echo it back correctly.
+        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        return _good_model_response(source_id, ctx.run_id)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", fake_call
+    )
 
     result = compile(vault, run_ctx=ctx)
 
-    assert result.success is False
-    assert len(result.errors) == 1
-    assert "compile_result.json not found" in result.errors[0]
-    assert "M2 compile step" in result.errors[0]
-    assert not (state / "manifest.json").exists()
+    assert result.success is True
+    assert (state / "compile_result.json").exists()
+    assert (state / "manifest.json").exists()
+    # Eval record written by the inner compile_one call.
+    assert any((state / "llm_eval" / ctx.run_id).glob("*.json"))
 
 
 # ---------------------------------------------------------------------------
@@ -297,13 +348,19 @@ def test_dry_run_leaves_no_artifacts(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 10 — CLI exits 1 with clear message when compile_result.json is missing
+# Test 10 — CLI exits 1 on malformed compile_result.json (deterministic fail)
 # ---------------------------------------------------------------------------
 
-def test_cli_exits_1_missing_compile_result(tmp_path: Path) -> None:
+def test_cli_exits_1_on_malformed_compile_result(tmp_path: Path) -> None:
+    """Under the M2 hybrid a missing compile_result.json triggers live
+    compile; to exercise the CLI's non-zero exit path without invoking the
+    LLM, plant a malformed compile_result.json which fails JSON parse
+    before any compile branch runs."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper", encoding="utf-8")
-    # No compile_result.json planted
+    (state / "compile_result.json").write_text(
+        "{ not valid json !!!", encoding="utf-8"
+    )
 
     result = subprocess.run(
         [sys.executable, "-m", "kdb_compiler.kdb_compile",
@@ -311,18 +368,20 @@ def test_cli_exits_1_missing_compile_result(tmp_path: Path) -> None:
         capture_output=True, text=True,
     )
     assert result.returncode == 1
-    assert "compile_result.json not found" in result.stderr
+    assert "unreadable" in result.stderr
 
 
 # ---------------------------------------------------------------------------
-# Test 11 — CLI summary line format on successful empty-vault dry-run
+# Test 11 — CLI summary line format on a deterministic failure
 # ---------------------------------------------------------------------------
 
 def test_cli_summary_line_format(tmp_path: Path) -> None:
     """CLI always prints a kdb_compile: summary line — whether success or failure."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper", encoding="utf-8")
-    # No compile_result.json → deterministic failure with known error message
+    (state / "compile_result.json").write_text(
+        "{ not valid json !!!", encoding="utf-8"
+    )
 
     result = subprocess.run(
         [sys.executable, "-m", "kdb_compiler.kdb_compile",
@@ -331,7 +390,7 @@ def test_cli_summary_line_format(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "kdb_compile:" in result.stdout
-    assert "compile_result.json not found" in result.stderr
+    assert "unreadable" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -381,3 +440,60 @@ def test_invalid_compile_result_schema(tmp_path: Path) -> None:
     assert result.success is False
     assert len(result.errors) > 0
     assert not (state / "manifest.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Test 15 — Empty raw/ + no compile_result fixture: live-compile no-op
+# ---------------------------------------------------------------------------
+
+def test_empty_plan_live_compile_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No sources, no fixture. The hybrid invokes compiler.run_compile,
+    which synthesises a successful empty CompileResult. Orchestrator then
+    proceeds through apply/write as a no-op — manifest and journal are
+    still written."""
+    vault, raw, state = _make_vault(tmp_path)
+    _write_vault_claude_md(vault)
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+
+    def should_not_call(_req):
+        raise AssertionError("no sources — call_model must never run")
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", should_not_call
+    )
+
+    result = compile(vault, run_ctx=ctx)
+
+    assert result.success is True
+    assert result.pages_written == []
+    assert result.manifest_written is True
+    assert result.journal_written is True
+    assert (state / "manifest.json").exists()
+    assert (state / "compile_result.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — Fixture branch still works; compiler NOT invoked when present
+# ---------------------------------------------------------------------------
+
+def test_fixture_branch_does_not_invoke_compiler(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When compile_result.json is pre-staged, the live-compile branch is
+    skipped entirely — even call_model won't trip. Guards against the
+    hybrid accidentally running both branches."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+
+    calls: list[object] = []
+    def track(req):
+        calls.append(req)
+        raise AssertionError("compiler.run_compile must not run in fixture branch")
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", track)
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+    assert calls == []
