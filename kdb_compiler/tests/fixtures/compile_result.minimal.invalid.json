@@ -1,0 +1,32 @@
+{
+  "run_id": "2026-04-18T22-00-00Z",
+  "success": true,
+  "compiled_sources": [
+    {
+      "source_id": "KDB/raw/attention-paper.md",
+      "summary_slug": "Attention_Paper",
+      "pages": [
+        {
+          "slug": "attention-paper",
+          "page_type": "summary",
+          "title": "Attention Paper",
+          "status": "active",
+          "body": "Body here.",
+          "supports_page_existence": ["KDB/raw/attention-paper.md"],
+          "outgoing_links": ["attention-mechanism"],
+          "confidence": "high",
+          "compiled_at": "2026-04-18T22:00:00Z",
+          "page_id": "KDB/wiki/summaries/attention-paper.md"
+        },
+        {
+          "slug": "Bad Slug With Spaces",
+          "page_type": "index",
+          "title": "",
+          "body": "LLM must not emit index pages.",
+          "supports_page_existence": [],
+          "outgoing_links": []
+        }
+      ]
+    }
+  ]
+}

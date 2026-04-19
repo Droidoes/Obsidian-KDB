@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb.local/schemas/compile_result.schema.json",
+  "title": "KDB Compile Result (page-intents model)",
+  "description": "Aggregate LLM output across all sources in a compile run. The LLM emits semantic intent only: slugs, titles, bodies, logical links. Python owns paths, frontmatter, timestamps, versions, incoming-link reconciliation. See docs/CODEBASE_OVERVIEW.md D8 and KDB/CLAUDE.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "success", "compiled_sources"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stamped by Python (run_context.py). LLM does not emit run_ids."
+    },
+    "success": { "type": "boolean" },
+    "compiled_sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/compiledSource" }
+    },
+    "log_entries": {
+      "type": "array",
+      "description": "LLM-emitted log items (contradictions, ambiguities, low-confidence decisions). Python appends to wiki/log.md.",
+      "items": { "$ref": "#/$defs/logEntry" }
+    },
+    "errors": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators.",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "sourceId": {
+      "type": "string",
+      "description": "Canonical relative path of a raw source (set by Python; the LLM echoes back the one it was given).",
+      "pattern": "^KDB/raw/.+",
+      "minLength": 1
+    },
+    "pageType": {
+      "type": "string",
+      "enum": ["summary", "concept", "article"],
+      "description": "Only LLM-authored page types. Index and log are Python-authored and not emittable by the LLM."
+    },
+    "pageStatus": {
+      "type": "string",
+      "enum": ["active", "stale", "archived"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "pageIntent": {
+      "type": "object",
+      "description": "One page the LLM wants to create or replace. Full-body replacement model (D18).",
+      "additionalProperties": false,
+      "required": ["slug", "page_type", "title", "body"],
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "page_type": { "$ref": "#/$defs/pageType" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "status": { "$ref": "#/$defs/pageStatus" },
+        "body": {
+          "type": "string",
+          "description": "Full markdown body, no frontmatter. Python prepends frontmatter during apply."
+        },
+        "supports_page_existence": {
+          "type": "array",
+          "description": "source_ids that justify this page existing. Must reference real sources (current or manifest-known).",
+          "items": { "$ref": "#/$defs/sourceId" }
+        },
+        "outgoing_links": {
+          "type": "array",
+          "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "logEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "message"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["info", "notice", "contradiction", "warning"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "related_slugs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "related_source_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceId" }
+        }
+      }
+    },
+    "compiledSource": {
+      "type": "object",
+      "description": "Output for one source file.",
+      "additionalProperties": false,
+      "required": ["source_id", "summary_slug", "pages"],
+      "properties": {
+        "source_id": { "$ref": "#/$defs/sourceId" },
+        "summary_slug": { "$ref": "#/$defs/slug" },
+        "concept_slugs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "article_slugs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "pages": {
+          "type": "array",
+          "description": "Every page the LLM wants to create or replace on behalf of this source (summary + concepts + articles).",
+          "items": { "$ref": "#/$defs/pageIntent" },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

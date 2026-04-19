@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "kb_id": "test-kdb",
+  "created_at": "2026-04-18T00:00:00Z",
+  "updated_at": "2026-04-18T00:00:00Z",
+  "settings": {
+    "raw_root": "KDB/raw",
+    "wiki_root": "KDB/wiki",
+    "summaries_root": "KDB/wiki/summaries",
+    "concepts_root": "KDB/wiki/concepts",
+    "articles_root": "KDB/wiki/articles",
+    "log_file": "KDB/wiki/log.md",
+    "index_file": "KDB/wiki/index.md",
+    "hash_algorithm": "sha256",
+    "rename_detection": true,
+    "delete_policy": "mark_orphan_candidate",
+    "removed_link_policy": "soft_remove",
+    "full_rebuild_supported": true
+  },
+  "stats": {
+    "total_raw_files": 0,
+    "total_pages": 0,
+    "total_summary_pages": 0,
+    "total_concept_pages": 0,
+    "total_article_pages": 0,
+    "total_runs": 0
+  },
+  "runs": {
+    "last_run_id": null,
+    "last_successful_run_id": null
+  },
+  "sources": {},
+  "pages": {},
+  "orphans": {},
+  "tombstones": {}
+}

@@ -1,0 +1,35 @@
+{
+  "run_id": "2026-04-18T22-00-00Z",
+  "success": true,
+  "compiled_sources": [
+    {
+      "source_id": "KDB/raw/attention-paper.md",
+      "summary_slug": "attention-paper",
+      "concept_slugs": ["attention-mechanism"],
+      "article_slugs": [],
+      "pages": [
+        {
+          "slug": "attention-paper",
+          "page_type": "summary",
+          "title": "Attention Paper",
+          "status": "active",
+          "body": "This paper introduces the [[attention-mechanism]] in sequence modeling.\n\n## Key points\n- Scaled dot-product attention replaces recurrence.\n- Multi-head attention lets the model attend to multiple subspaces simultaneously.\n",
+          "supports_page_existence": ["KDB/raw/attention-paper.md"],
+          "outgoing_links": ["attention-mechanism"],
+          "confidence": "high"
+        },
+        {
+          "slug": "attention-mechanism",
+          "page_type": "concept",
+          "title": "Attention Mechanism",
+          "status": "active",
+          "body": "Attention lets a sequence model weight its inputs by learned relevance, replacing the fixed recurrent state of RNNs.\n\nIntroduced in context by [[attention-paper]].\n",
+          "supports_page_existence": ["KDB/raw/attention-paper.md"],
+          "outgoing_links": ["attention-paper"],
+          "confidence": "high"
+        }
+      ]
+    }
+  ],
+  "log_entries": []
+}
