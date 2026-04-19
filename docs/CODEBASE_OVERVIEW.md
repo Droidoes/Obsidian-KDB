@@ -95,8 +95,9 @@ LLM never emits `index.md` or `log.md`. Those are derived state.
 2. **Plan** (`planner.py`) — reads `last_scan.json`, chunks `to_compile` into 10–20-source batches, builds per-source context snapshot from manifest.
 3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `CLAUDE.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
 4. **Validate** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
-5. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter (`run_context.py`), writes markdown files atomically (`atomic_io.py`), regenerates `index.md` deterministically, appends `log.md` from log entries.
-6. **Update manifest** (`manifest_update.py`) — writes `runs/<run_id>.json` journal first, then updates `manifest.json` atomically. Reconciles `incoming_links_known` across pages from everyone's `outgoing_links`. Flags orphans, records tombstones.
+5. **Compute next manifest (pure)** (`manifest_update.build_manifest_update`) — in-memory only; no writes. Produces `next_manifest` + `journal`.
+6. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`), regenerates `index.md` deterministically, prepends `log.md` with a run block. Never writes state files.
+7. **Persist manifest** (`manifest_update.write_outputs`) — writes `runs/<run_id>.json` journal first, then `manifest.json` atomically (D15, journal-then-pointer). Runs **after** page writes so a failed vault write leaves state unchanged and the user re-runs cleanly.
 
 ---
 
