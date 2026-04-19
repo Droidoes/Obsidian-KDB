@@ -1,0 +1,162 @@
+"""Tests for validate_compile_result — JSON-Schema + semantic gate."""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from kdb_compiler import validate_compile_result as vcr
+
+FIXTURES = Path(__file__).parent / "fixtures"
+REPO_ROOT = Path(__file__).parent.parent.parent
+
+
+def _load(name: str) -> dict:
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+# ---------- fixture-based cases ----------
+
+def test_valid_fixture_produces_no_errors() -> None:
+    assert vcr.validate(_load("compile_result.minimal.valid.json")) == []
+
+
+def test_invalid_fixture_surfaces_multiple_violations() -> None:
+    errors = vcr.validate(_load("compile_result.minimal.invalid.json"))
+    assert len(errors) >= 5, f"expected >=5 errors, got {len(errors)}: {errors}"
+
+
+# ---------- helpers for constructed payloads ----------
+
+def _src(**overrides) -> dict:
+    base = {
+        "source_id": "KDB/raw/foo.md",
+        "summary_slug": "foo",
+        "pages": [
+            {"slug": "foo", "page_type": "summary", "title": "Foo", "body": "x"}
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def _payload(*sources: dict) -> dict:
+    return {
+        "run_id": "2026-04-19T00-00-00Z",
+        "success": True,
+        "compiled_sources": list(sources),
+    }
+
+
+# ---------- semantic checks ----------
+
+def test_duplicate_slug_in_pages() -> None:
+    src = _src(pages=[
+        {"slug": "foo", "page_type": "summary", "title": "A", "body": "x"},
+        {"slug": "foo", "page_type": "concept", "title": "B", "body": "y"},
+    ])
+    errors = vcr.validate(_payload(src))
+    assert any("duplicate slug 'foo'" in e for e in errors), errors
+
+
+def test_summary_slug_not_in_pages() -> None:
+    errors = vcr.validate(_payload(_src(summary_slug="missing")))
+    assert any("'missing' not found in pages[]" in e for e in errors), errors
+
+
+def test_summary_slug_wrong_page_type() -> None:
+    src = _src(
+        summary_slug="foo",
+        pages=[{"slug": "foo", "page_type": "concept", "title": "x", "body": "y"}],
+    )
+    errors = vcr.validate(_payload(src))
+    assert any("summary_slug" in e and "expected 'summary'" in e for e in errors), errors
+
+
+def test_concept_slug_missing_from_pages() -> None:
+    errors = vcr.validate(_payload(_src(concept_slugs=["ghost"])))
+    assert any("concept_slugs[0]" in e and "'ghost' not found in pages[]" in e for e in errors), errors
+
+
+def test_concept_slug_points_to_wrong_type() -> None:
+    errors = vcr.validate(_payload(_src(concept_slugs=["foo"])))
+    assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
+
+
+def test_article_slug_missing_from_pages() -> None:
+    errors = vcr.validate(_payload(_src(article_slugs=["ghost-article"])))
+    assert any("article_slugs[0]" in e and "'ghost-article' not found in pages[]" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("reserved", ["index", "log"])
+def test_reserved_slug_in_pages(reserved: str) -> None:
+    src = _src(
+        summary_slug=reserved,
+        pages=[{"slug": reserved, "page_type": "summary", "title": "x", "body": "y"}],
+    )
+    errors = vcr.validate(_payload(src))
+    assert any("pages[0].slug" in e and "Reserved" in e for e in errors), errors
+
+
+def test_reserved_slug_in_summary_slug() -> None:
+    src = _src(
+        summary_slug="index",
+        pages=[{"slug": "index", "page_type": "summary", "title": "x", "body": "y"}],
+    )
+    errors = vcr.validate(_payload(src))
+    assert any("summary_slug" in e and "Reserved" in e for e in errors), errors
+
+
+def test_reserved_slug_in_concept_slugs() -> None:
+    src = _src(
+        concept_slugs=["log"],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "log", "page_type": "concept", "title": "x", "body": "y"},
+        ],
+    )
+    errors = vcr.validate(_payload(src))
+    assert any("concept_slugs[0]" in e and "Reserved" in e for e in errors), errors
+
+
+# ---------- non-dict / malformed payloads ----------
+
+def test_non_dict_payload_caught_by_schema() -> None:
+    assert vcr.validate("not a dict")
+
+
+def test_missing_compiled_sources_caught_by_schema() -> None:
+    errors = vcr.validate({"run_id": "x", "success": True})
+    assert any("compiled_sources" in e for e in errors)
+
+
+# ---------- CLI smoke ----------
+
+def _run_cli(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "kdb_compiler.validate_compile_result", *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_cli_valid_exits_zero() -> None:
+    result = _run_cli(str(FIXTURES / "compile_result.minimal.valid.json"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "OK" in result.stdout
+
+
+def test_cli_invalid_exits_one() -> None:
+    result = _run_cli(str(FIXTURES / "compile_result.minimal.invalid.json"))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.strip()
+
+
+def test_cli_missing_file_exits_two(tmp_path: Path) -> None:
+    result = _run_cli(str(tmp_path / "does-not-exist.json"))
+    assert result.returncode == 2
