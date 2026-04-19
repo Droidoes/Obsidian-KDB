@@ -22,6 +22,7 @@ kdb-validate-scan     = "kdb_compiler.validate_last_scan:main"
 kdb-validate          = "kdb_compiler.validate_compile_result:main"
 kdb-validate-response = "kdb_compiler.validate_compiled_source_response:main"
 kdb-manifest          = "kdb_compiler.manifest_update:main"
+kdb-plan              = "kdb_compiler.planner:main"
 kdb-compile           = "kdb_compiler.kdb_compile:main"
 
 [build-system]
