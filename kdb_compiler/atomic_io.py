@@ -1,38 +1,71 @@
-"""atomic_io — minimal atomic file writes. Shared by scan / patch_applier / manifest_update.
-
-M0.1 stub. Implementation in M1.
+"""atomic_io — minimal atomic file writes.
 
 Design philosophy (D22): no complexity for imaginary risk.
-This is a SINGLE-USER, SINGLE-PROCESS system. We are not defending against
-concurrent writers, high-contention I/O, or multi-tenant scenarios. Any
-individual file's corruption is recoverable by re-compile. Keep cheap
-insurance only.
+Single-user, single-process workload. We do not defend against concurrent
+writers, high-contention I/O, or multi-tenant scenarios. Cheap insurance only.
 
-What this module does:
-    * atomic_write_bytes(path, data) — temp file in same dir, fsync, os.replace.
-    * atomic_write_json(path, obj)    — serialize then atomic_write_bytes.
-    * atomic_write_text(path, text)   — encode then atomic_write_bytes.
-    * Transient I/O retry: up to 2 attempts, 100ms backoff. No exponential
-      ladder, no Retry-After headers, no provider-specific classification.
-    * Fails loudly after 2 tries. A failed write is OK — the run aborts,
-      nothing downstream touches state, user re-runs the compile.
+Contract:
+    atomic_write_bytes(path, data)          — temp + fsync + os.replace
+    atomic_write_text(path, text, encoding) — encode then atomic_write_bytes
+    atomic_write_json(path, obj, indent)    — serialize then atomic_write_text
 
-What this module DOES NOT do:
-    * Lock files. Not needed (one user, one process). Dropped from Codex
-      hardening proposal per D14.
-    * Journal/rollback for cross-file transactions. Not needed — manifest_update
-      uses journal-then-pointer at a higher level (D15), which is sufficient.
-    * Parent-directory fsync. Overkill for a desktop workload backed by OneDrive.
-
-Public surface:
-    atomic_write_bytes(path: Path, data: bytes) -> None
-    atomic_write_text(path: Path, text: str) -> None
-    atomic_write_json(path: Path, obj: dict | list, indent: int = 2) -> None
+A failed write raises. Nothing downstream should touch state on failure; the
+user re-runs the compile. No lock files, no exponential backoff ladders,
+no multi-phase commits. One retry on transient I/O, then give up.
 """
+from __future__ import annotations
+
+import json
+import os
+import time
+from pathlib import Path
+from typing import Any
+
+_TRANSIENT_RETRY = 1      # one retry then raise — per D14/D22
+_RETRY_DELAY_SEC = 0.1
 
 
-def main() -> None:
-    raise NotImplementedError("atomic_io — scheduled for M1")
+def atomic_write_bytes(path: Path | str, data: bytes) -> None:
+    """Atomic write: temp in same dir -> fsync -> os.replace. One retry."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f".{target.name}.tmp-{os.getpid()}"
+
+    last_exc: Exception | None = None
+    for attempt in range(1 + _TRANSIENT_RETRY):
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+            try:
+                os.write(fd, data)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(tmp, target)
+            return
+        except OSError as exc:
+            last_exc = exc
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if attempt < _TRANSIENT_RETRY:
+                time.sleep(_RETRY_DELAY_SEC)
+    assert last_exc is not None
+    raise last_exc
+
+
+def atomic_write_text(path: Path | str, text: str, *, encoding: str = "utf-8") -> None:
+    atomic_write_bytes(path, text.encode(encoding))
+
+
+def atomic_write_json(path: Path | str, obj: Any, *, indent: int = 2, sort_keys: bool = False) -> None:
+    """Serialize to JSON and write atomically. Trailing newline appended."""
+    text = json.dumps(obj, indent=indent, ensure_ascii=False, sort_keys=sort_keys) + "\n"
+    atomic_write_text(path, text)
+
+
+def main() -> None:  # pragma: no cover
+    raise SystemExit("atomic_io is a library module; not meant to be run directly.")
 
 
 if __name__ == "__main__":

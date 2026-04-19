@@ -1,0 +1,39 @@
+[project]
+name = "obsidian-kdb"
+version = "0.1.0"
+description = "Karpathy-style LLM-compiled knowledge base for Obsidian vaults."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Joseph" }]
+dependencies = [
+    "jsonschema>=4.17",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+openai    = ["openai>=1.40"]
+gemini    = ["google-generativeai>=0.8"]
+dev       = ["pytest>=7", "pytest-cov>=4"]
+all       = ["anthropic>=0.40", "openai>=1.40", "google-generativeai>=0.8", "pytest>=7"]
+
+[project.scripts]
+kdb-scan     = "kdb_compiler.kdb_scan:main"
+kdb-validate = "kdb_compiler.validate_compile_result:main"
+kdb-manifest = "kdb_compiler.manifest_update:main"
+
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["kdb_compiler*"]
+exclude = ["knowledge_graph*", "docs*", "tests*"]
+
+[tool.setuptools.package-data]
+kdb_compiler = ["schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths   = ["kdb_compiler/tests"]
+python_files = ["test_*.py"]
+addopts     = "-ra -q"
