@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb/schemas/last_scan.schema.json",
+  "title": "KDB Last Scan Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "scanned_at",
+    "vault_root",
+    "raw_root",
+    "settings_snapshot",
+    "summary",
+    "files",
+    "to_compile",
+    "to_reconcile",
+    "to_skip",
+    "errors",
+    "skipped_symlinks"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "minLength": 1 },
+    "scanned_at": { "type": "string", "format": "date-time" },
+    "vault_root": { "type": "string", "minLength": 1 },
+    "raw_root": { "type": "string", "minLength": 1 },
+    "settings_snapshot": { "$ref": "#/$defs/settingsSnapshot" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "files": { "type": "array", "items": { "$ref": "#/$defs/scanEntry" } },
+    "to_compile": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pathString" },
+      "uniqueItems": true
+    },
+    "to_reconcile": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reconcileOp" }
+    },
+    "to_skip": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/pathString" },
+      "uniqueItems": true
+    },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/errorEntry" } },
+    "skipped_symlinks": { "type": "array", "items": { "$ref": "#/$defs/skippedSymlinkEntry" } }
+  },
+  "$defs": {
+    "pathString": { "type": "string", "minLength": 1 },
+    "hashString": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{64}$" },
+    "fileType": { "type": "string", "enum": ["markdown", "binary", "unknown"] },
+    "scanAction": { "type": "string", "enum": ["NEW", "CHANGED", "UNCHANGED", "MOVED"] },
+    "reconcileType": { "type": "string", "enum": ["MOVED", "DELETED"] },
+
+    "settingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rename_detection", "symlink_policy", "scan_binary_files", "binary_compile_mode"],
+      "properties": {
+        "rename_detection": { "type": "boolean" },
+        "symlink_policy": { "type": "string", "enum": ["skip", "follow"] },
+        "scan_binary_files": { "type": "boolean" },
+        "binary_compile_mode": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["new", "changed", "unchanged", "moved", "deleted", "error", "skipped_symlink"],
+      "properties": {
+        "new":             { "type": "integer", "minimum": 0 },
+        "changed":         { "type": "integer", "minimum": 0 },
+        "unchanged":       { "type": "integer", "minimum": 0 },
+        "moved":           { "type": "integer", "minimum": 0 },
+        "deleted":         { "type": "integer", "minimum": 0 },
+        "error":           { "type": "integer", "minimum": 0 },
+        "skipped_symlink": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "scanEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action", "current_hash", "current_mtime", "size_bytes", "file_type", "is_binary"],
+      "properties": {
+        "path":           { "$ref": "#/$defs/pathString" },
+        "action":         { "$ref": "#/$defs/scanAction" },
+        "current_hash":   { "$ref": "#/$defs/hashString" },
+        "current_mtime":  { "type": "number" },
+        "size_bytes":     { "type": "integer", "minimum": 0 },
+        "file_type":      { "$ref": "#/$defs/fileType" },
+        "is_binary":      { "type": "boolean" },
+        "previous_hash":  { "$ref": "#/$defs/hashString" },
+        "previous_mtime": { "type": "number" },
+        "previous_path":  { "$ref": "#/$defs/pathString" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "action": { "const": "CHANGED" } } },
+          "then": { "required": ["previous_hash", "previous_mtime"] }
+        },
+        {
+          "if": { "properties": { "action": { "const": "UNCHANGED" } } },
+          "then": { "required": ["previous_hash", "previous_mtime"] }
+        },
+        {
+          "if": { "properties": { "action": { "const": "MOVED" } } },
+          "then": { "required": ["previous_hash", "previous_mtime", "previous_path"] }
+        }
+      ]
+    },
+
+    "movedReconcileOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "from", "to"],
+      "properties": {
+        "type": { "const": "MOVED" },
+        "from": { "$ref": "#/$defs/pathString" },
+        "to":   { "$ref": "#/$defs/pathString" },
+        "hash": { "$ref": "#/$defs/hashString" }
+      }
+    },
+
+    "deletedReconcileOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "DELETED" },
+        "path": { "$ref": "#/$defs/pathString" },
+        "hash": { "$ref": "#/$defs/hashString" }
+      }
+    },
+
+    "reconcileOp": {
+      "oneOf": [
+        { "$ref": "#/$defs/movedReconcileOp" },
+        { "$ref": "#/$defs/deletedReconcileOp" }
+      ]
+    },
+
+    "errorEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "error"],
+      "properties": {
+        "path":  { "$ref": "#/$defs/pathString" },
+        "error": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "skippedSymlinkEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path":        { "$ref": "#/$defs/pathString" },
+        "link_target": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

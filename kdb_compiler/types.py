@@ -3,39 +3,61 @@
 Single source of truth for cross-module shapes. Mirrors the JSON schemas
 in kdb_compiler/schemas/ and docs/manifest.schema.md.
 
-M1a: minimal set needed by scanner + validator + manifest updater.
-     (More shapes land with later M1 modules as needed.)
-
 Serialization convention: every dataclass with a to_dict() produces a dict
-shaped for direct JSON serialization. from_dict() does the inverse.
+shaped for direct JSON serialization. Plain asdict() is used where the
+dataclass field names already match the JSON shape.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Optional
 
 FileType = Literal["markdown", "binary", "unknown"]
-ScanAction = Literal["NEW", "RECOMPILE", "UNCHANGED", "MOVED", "DELETED"]
+ScanAction = Literal["NEW", "CHANGED", "UNCHANGED", "MOVED"]  # DELETED lives in ReconcileOp only
 ReconcileType = Literal["MOVED", "DELETED"]
+SymlinkPolicy = Literal["skip", "follow"]
 PageType = Literal["summary", "concept", "article"]
 PageStatus = Literal["active", "stale", "orphan_candidate", "archived"]
 Confidence = Literal["low", "medium", "high"]
 SourceRefRole = Literal["primary", "supporting", "historical"]
 
 
+# ---------- scan artifact shapes ----------
+
 @dataclass
 class ScanEntry:
-    """One file observed by kdb_scan in KDB/raw/."""
-    path: str                # POSIX relative to vault: "KDB/raw/foo.md"
-    current_hash: str        # "sha256:<64-hex>"
-    current_mtime: float     # unix seconds; advisory
+    """One file currently present in KDB/raw/.
+
+    DELETED files are NOT represented here — they live only in ReconcileOp.
+    """
+    path: str                              # POSIX relative to vault: "KDB/raw/foo.md"
+    action: ScanAction
+    current_hash: str                      # "sha256:<64-hex>"
+    current_mtime: float                   # unix seconds; advisory
     size_bytes: int
     file_type: FileType
     is_binary: bool
-    action: ScanAction       # classification vs prior manifest state
+    previous_hash: Optional[str] = None    # CHANGED/UNCHANGED/MOVED
+    previous_mtime: Optional[float] = None # CHANGED/UNCHANGED/MOVED
+    previous_path: Optional[str] = None    # MOVED only
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d: dict[str, Any] = {
+            "path": self.path,
+            "action": self.action,
+            "current_hash": self.current_hash,
+            "current_mtime": self.current_mtime,
+            "size_bytes": self.size_bytes,
+            "file_type": self.file_type,
+            "is_binary": self.is_binary,
+        }
+        if self.previous_hash is not None:
+            d["previous_hash"] = self.previous_hash
+        if self.previous_mtime is not None:
+            d["previous_mtime"] = self.previous_mtime
+        if self.previous_path is not None:
+            d["previous_path"] = self.previous_path
+        return d
 
 
 @dataclass
@@ -62,10 +84,46 @@ class ReconcileOp:
 
 
 @dataclass
-class SkippedEntry:
-    """Something kdb_scan found but did not scan (symlink, permission error, etc.)."""
+class ErrorEntry:
+    """Read/stat failure observed during scan."""
     path: str
-    reason: str
+    error: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class SkippedSymlinkEntry:
+    """Symlink encountered in raw/, skipped by policy."""
+    path: str
+    link_target: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class ScanSummary:
+    new: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    moved: int = 0
+    deleted: int = 0            # reconcile-only count
+    error: int = 0
+    skipped_symlink: int = 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class SettingsSnapshot:
+    """Scanner config captured into the output for reproducibility."""
+    rename_detection: bool
+    symlink_policy: SymlinkPolicy
+    scan_binary_files: bool
+    binary_compile_mode: str
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -76,13 +134,17 @@ class ScanResult:
     """Full last_scan.json payload."""
     schema_version: str
     run_id: str
-    scanned_at: str
-    vault_root: str
+    scanned_at: str                       # ISO UTC
+    vault_root: str                       # absolute path (debugging)
+    raw_root: str                         # POSIX relative: "KDB/raw"
+    settings_snapshot: SettingsSnapshot
+    summary: ScanSummary
     files: list[ScanEntry] = field(default_factory=list)
-    to_compile: list[str] = field(default_factory=list)         # source_ids NEW or RECOMPILE
+    to_compile: list[str] = field(default_factory=list)
     to_reconcile: list[ReconcileOp] = field(default_factory=list)
-    skipped: list[SkippedEntry] = field(default_factory=list)
-    stats: dict = field(default_factory=dict)
+    to_skip: list[str] = field(default_factory=list)
+    errors: list[ErrorEntry] = field(default_factory=list)
+    skipped_symlinks: list[SkippedSymlinkEntry] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -90,13 +152,19 @@ class ScanResult:
             "run_id": self.run_id,
             "scanned_at": self.scanned_at,
             "vault_root": self.vault_root,
+            "raw_root": self.raw_root,
+            "settings_snapshot": self.settings_snapshot.to_dict(),
+            "summary": self.summary.to_dict(),
             "files": [e.to_dict() for e in self.files],
             "to_compile": list(self.to_compile),
             "to_reconcile": [op.to_dict() for op in self.to_reconcile],
-            "skipped": [s.to_dict() for s in self.skipped],
-            "stats": dict(self.stats),
+            "to_skip": list(self.to_skip),
+            "errors": [e.to_dict() for e in self.errors],
+            "skipped_symlinks": [s.to_dict() for s in self.skipped_symlinks],
         }
 
+
+# ---------- compile artifact shapes (unchanged) ----------
 
 @dataclass
 class PageIntent:

@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "run_id": "2026-04-19T12-00-00Z",
+  "scanned_at": "2026-04-19T12:00:00Z",
+  "vault_root": "/tmp/vault",
+  "raw_root": "KDB/raw",
+  "settings_snapshot": {
+    "rename_detection": true,
+    "symlink_policy": "skip",
+    "scan_binary_files": true,
+    "binary_compile_mode": "metadata_only"
+  },
+  "summary": {
+    "new": 1,
+    "changed": 1,
+    "unchanged": 1,
+    "moved": 1,
+    "deleted": 1,
+    "error": 0,
+    "skipped_symlink": 0
+  },
+  "files": [
+    {
+      "path": "KDB/raw/changed.md",
+      "action": "CHANGED",
+      "current_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "current_mtime": 1700000200.0,
+      "size_bytes": 200,
+      "file_type": "markdown",
+      "is_binary": false,
+      "previous_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "previous_mtime": 1699000000.0
+    },
+    {
+      "path": "KDB/raw/moved-new.md",
+      "action": "MOVED",
+      "current_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "current_mtime": 1700000300.0,
+      "size_bytes": 300,
+      "file_type": "markdown",
+      "is_binary": false,
+      "previous_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "previous_mtime": 1699000300.0,
+      "previous_path": "KDB/raw/moved-old.md"
+    },
+    {
+      "path": "KDB/raw/new.md",
+      "action": "NEW",
+      "current_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "current_mtime": 1700000400.0,
+      "size_bytes": 400,
+      "file_type": "markdown",
+      "is_binary": false
+    },
+    {
+      "path": "KDB/raw/unchanged.md",
+      "action": "UNCHANGED",
+      "current_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "current_mtime": 1700000500.0,
+      "size_bytes": 500,
+      "file_type": "markdown",
+      "is_binary": false,
+      "previous_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "previous_mtime": 1700000500.0
+    }
+  ],
+  "to_compile": [
+    "KDB/raw/changed.md",
+    "KDB/raw/new.md"
+  ],
+  "to_reconcile": [
+    {
+      "type": "DELETED",
+      "path": "KDB/raw/deleted.md",
+      "hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "type": "MOVED",
+      "from": "KDB/raw/moved-old.md",
+      "to": "KDB/raw/moved-new.md",
+      "hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ],
+  "to_skip": [
+    "KDB/raw/unchanged.md"
+  ],
+  "errors": [],
+  "skipped_symlinks": []
+}

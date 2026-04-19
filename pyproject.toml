@@ -17,9 +17,10 @@ dependencies = [
 dev = ["pytest>=7", "pytest-cov>=4"]
 
 [project.scripts]
-kdb-scan     = "kdb_compiler.kdb_scan:main"
-kdb-validate = "kdb_compiler.validate_compile_result:main"
-kdb-manifest = "kdb_compiler.manifest_update:main"
+kdb-scan          = "kdb_compiler.kdb_scan:main"
+kdb-validate-scan = "kdb_compiler.validate_last_scan:main"
+kdb-validate      = "kdb_compiler.validate_compile_result:main"
+kdb-manifest      = "kdb_compiler.manifest_update:main"
 
 [build-system]
 requires      = ["setuptools>=68", "wheel"]
