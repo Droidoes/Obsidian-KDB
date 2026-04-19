@@ -1,0 +1,8 @@
+{
+  "source_id": "KDB/raw/transformer.md",
+  "expected_extract_ok": true,
+  "expected_parse_ok": true,
+  "expected_schema_ok": true,
+  "expected_semantic_ok": true,
+  "notes": "Happy path: bare-object response, one summary + one concept, all four semantic rules satisfied."
+}

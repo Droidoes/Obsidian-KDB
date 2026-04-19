@@ -1,0 +1,8 @@
+{
+  "source_id": "KDB/raw/markov.md",
+  "expected_extract_ok": true,
+  "expected_parse_ok": true,
+  "expected_schema_ok": true,
+  "expected_semantic_ok": false,
+  "notes": "Schema-valid: all slugs match the pattern. But summary_slug='markov-summary' is not in pages[].slug (only 'markov-chain' exists), violating semantic rule 2."
+}

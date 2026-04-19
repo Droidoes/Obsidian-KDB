@@ -25,6 +25,7 @@ kdb-manifest          = "kdb_compiler.manifest_update:main"
 kdb-plan              = "kdb_compiler.planner:main"
 kdb-compile-sources   = "kdb_compiler.compiler:main"
 kdb-compile           = "kdb_compiler.kdb_compile:main"
+kdb-eval              = "kdb_compiler.eval_replay:main"
 
 [build-system]
 requires      = ["setuptools>=68", "wheel"]

@@ -1,0 +1,8 @@
+{
+  "source_id": "KDB/raw/bayes.md",
+  "expected_extract_ok": true,
+  "expected_parse_ok": true,
+  "expected_schema_ok": false,
+  "expected_semantic_ok": false,
+  "notes": "Fenced block extracts and parses fine, but 'Bayes Theorem' violates the slug pattern (space + uppercase). Schema fail cascades to semantic fail."
+}

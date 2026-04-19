@@ -1,0 +1,20 @@
+{
+  "source_id": "KDB/raw/markov.md",
+  "summary_slug": "markov-summary",
+  "concept_slugs": [],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "markov-chain",
+      "page_type": "summary",
+      "title": "Markov Chain",
+      "body": "A stochastic process with the memoryless property.",
+      "status": "active",
+      "supports_page_existence": ["KDB/raw/markov.md"],
+      "outgoing_links": [],
+      "confidence": "medium"
+    }
+  ],
+  "log_entries": [],
+  "warnings": []
+}
