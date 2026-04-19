@@ -126,6 +126,22 @@
           "description": "Every page the LLM wants to create or replace on behalf of this source (summary + concepts + articles).",
           "items": { "$ref": "#/$defs/pageIntent" },
           "minItems": 1
+        },
+        "compile_meta": {
+          "type": "object",
+          "description": "Per-source model-call metadata stamped by Python. Present only when this entry came from a live compile; omitted for fixture-backed compile_result.json. Optional at this level so M1.7 fixture tests remain valid.",
+          "additionalProperties": false,
+          "required": ["provider", "model", "input_tokens", "output_tokens", "latency_ms", "attempts", "ok"],
+          "properties": {
+            "provider": { "type": "string" },
+            "model": { "type": "string" },
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "latency_ms": { "type": "integer", "minimum": 0 },
+            "attempts": { "type": "integer", "minimum": 1 },
+            "ok": { "type": "boolean" },
+            "error": { "type": ["string", "null"] }
+          }
         }
       }
     }

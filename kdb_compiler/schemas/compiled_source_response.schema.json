@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
+  "title": "KDB Compiled Source Response (per-call model output)",
+  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. Run-level fields (run_id, success, aggregate errors) are Python-owned and NOT present here; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 8 page fields required) so the model must commit to status, support, links, and confidence on every page rather than relying on Python backfill.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "summary_slug", "pages", "log_entries", "warnings"],
+  "properties": {
+    "source_id": { "$ref": "#/$defs/sourceId" },
+    "summary_slug": { "$ref": "#/$defs/slug" },
+    "concept_slugs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slug" }
+    },
+    "article_slugs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slug" }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pageIntent" }
+    },
+    "log_entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/logEntry" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators.",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "sourceId": {
+      "type": "string",
+      "description": "Canonical relative path of a raw source. The LLM echoes the id it was given verbatim.",
+      "pattern": "^KDB/raw/.+",
+      "minLength": 1
+    },
+    "pageType": {
+      "type": "string",
+      "enum": ["summary", "concept", "article"]
+    },
+    "pageStatus": {
+      "type": "string",
+      "enum": ["active", "stale", "archived"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "pageIntent": {
+      "type": "object",
+      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 8 fields required, no Python backfill.",
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "page_type",
+        "title",
+        "body",
+        "status",
+        "supports_page_existence",
+        "outgoing_links",
+        "confidence"
+      ],
+      "properties": {
+        "slug": { "$ref": "#/$defs/slug" },
+        "page_type": { "$ref": "#/$defs/pageType" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full markdown body, no frontmatter. Python prepends frontmatter during apply."
+        },
+        "status": { "$ref": "#/$defs/pageStatus" },
+        "supports_page_existence": {
+          "type": "array",
+          "minItems": 1,
+          "description": "source_ids that justify this page existing. Every page MUST include the compile call's source_id.",
+          "items": { "$ref": "#/$defs/sourceId" }
+        },
+        "outgoing_links": {
+          "type": "array",
+          "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "logEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "message", "related_slugs", "related_source_ids"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["info", "notice", "contradiction", "warning"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "related_slugs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/slug" }
+        },
+        "related_source_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sourceId" }
+        }
+      }
+    }
+  }
+}

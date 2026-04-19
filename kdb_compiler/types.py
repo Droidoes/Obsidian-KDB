@@ -183,6 +183,23 @@ class PageIntent:
 
 
 @dataclass
+class CompileMeta:
+    """Per-source model-call metadata. Stamped by Python after a live compile;
+    absent on fixture-backed compiled sources."""
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    attempts: int
+    ok: bool
+    error: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class CompiledSource:
     """LLM output for one source."""
     source_id: str
@@ -190,15 +207,19 @@ class CompiledSource:
     pages: list[PageIntent]
     concept_slugs: list[str] = field(default_factory=list)
     article_slugs: list[str] = field(default_factory=list)
+    compile_meta: Optional[CompileMeta] = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "source_id": self.source_id,
             "summary_slug": self.summary_slug,
             "concept_slugs": list(self.concept_slugs),
             "article_slugs": list(self.article_slugs),
             "pages": [p.to_dict() for p in self.pages],
         }
+        if self.compile_meta is not None:
+            d["compile_meta"] = self.compile_meta.to_dict()
+        return d
 
 
 @dataclass
@@ -230,3 +251,97 @@ class CompileResult:
             "errors": list(self.errors),
             "warnings": list(self.warnings),
         }
+
+
+# ---------- M2 planner / context / eval shapes ----------
+
+@dataclass
+class ContextPage:
+    """Compact view of one existing page, shown to the LLM in the context
+    snapshot. Intentionally drops body, paths, timestamps (D8)."""
+    slug: str
+    title: str
+    page_type: PageType
+    outgoing_links: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class ContextSnapshot:
+    """Per-source manifest snapshot passed into the prompt."""
+    source_id: str
+    pages: list[ContextPage] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "source_id": self.source_id,
+            "pages": [p.to_dict() for p in self.pages],
+        }
+
+
+@dataclass
+class CompileJob:
+    """One unit of compile work: a source_id + resolved path + its
+    pre-built context snapshot."""
+    source_id: str                 # "KDB/raw/..."
+    abs_path: str                  # absolute filesystem path
+    context_snapshot: ContextSnapshot
+
+
+@dataclass
+class ParsedSummary:
+    """Lossy reduction of a parsed per-source response. Stored in every
+    eval record (when parse succeeded) as a body-free shape digest."""
+    summary_slug: Optional[str]
+    page_count: int
+    page_types: dict[str, int]
+    slugs: list[str]
+    outgoing_link_count: int
+    log_entry_count: int
+    warning_count: int
+    source_id_echoed: Optional[str]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class EvalRecord:
+    """One eval record written per compile_one call. Metadata + hashes +
+    four classification flags + parsed_summary are always on. parsed_json
+    and full prompt/response bodies are gated by KDB_EVAL_CAPTURE_FULL=1.
+
+    response_hash == 'sha256:none' indicates no response was captured
+    (pre-response failure). prompt_hash == 'sha256:none' indicates the
+    prompt itself could not be built. These sentinels distinguish missing
+    data from empty-string data.
+    """
+    run_id: str
+    source_id: str
+    provider: str
+    model: str
+    attempts: int
+    latency_ms: int
+    input_tokens: int
+    output_tokens: int
+    prompt_hash: str
+    response_hash: str
+    extract_ok: bool
+    parse_ok: bool
+    schema_ok: bool
+    semantic_ok: bool
+    schema_errors: list[str] = field(default_factory=list)
+    semantic_errors: list[str] = field(default_factory=list)
+    parsed_summary: Optional[ParsedSummary] = None
+    parsed_json: Optional[dict] = None
+    system_prompt: Optional[str] = None
+    user_prompt: Optional[str] = None
+    raw_response_text: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        if self.parsed_summary is not None:
+            d["parsed_summary"] = self.parsed_summary.to_dict()
+        return d
