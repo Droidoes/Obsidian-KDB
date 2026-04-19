@@ -51,6 +51,35 @@ def test_first_call_succeeds_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resp.text == "ok"
 
 
+# ---------- attempts threading (M2 Step A2) ----------
+
+def test_attempts_field_reflects_retry_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The returned ModelResponse.attempts must equal the 1-indexed attempt
+    number that finally succeeded — needed by the M2 eval writer."""
+    sequence: list[Exception | ModelResponse] = [
+        _make_sdk_error(anthropic.RateLimitError),
+        _make_sdk_error(anthropic.InternalServerError, status_code=503),
+        _ok(),
+    ]
+
+    def fake_call(_):
+        v = sequence.pop(0)
+        if isinstance(v, Exception):
+            raise v
+        return v
+
+    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
+    resp = call_model_with_retry(_req(), max_attempts=3)
+    assert resp.attempts == 3, f"expected attempts=3 after 2 retries, got {resp.attempts}"
+
+
+def test_attempts_field_is_1_on_first_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """First-try success → attempts == 1."""
+    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", MagicMock(return_value=_ok()))
+    resp = call_model_with_retry(_req())
+    assert resp.attempts == 1
+
+
 # ---------- retryable flow ----------
 
 def test_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:

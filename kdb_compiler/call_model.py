@@ -48,6 +48,7 @@ class ModelResponse:
     latency_ms: int
     model: str
     provider: str
+    attempts: int = 1
     raw: Any = None
 
 

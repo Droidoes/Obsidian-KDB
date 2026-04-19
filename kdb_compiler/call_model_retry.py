@@ -53,10 +53,14 @@ def call_model_with_retry(
     initial_backoff: float = 1.0,
     max_backoff: float = 30.0,
 ) -> ModelResponse:
-    """Call call_model with simple exponential backoff on retryable SDK errors."""
+    """Call call_model with simple exponential backoff on retryable SDK errors.
+    The returned ModelResponse has `attempts` set to the 1-indexed attempt
+    number that succeeded (1 on first try, 2 on second, etc.)."""
     for attempt in range(1, max_attempts + 1):
         try:
-            return call_model(req)
+            response = call_model(req)
+            response.attempts = attempt
+            return response
         except _RETRYABLE as e:
             if attempt >= max_attempts:
                 raise
