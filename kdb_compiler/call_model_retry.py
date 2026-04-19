@@ -1,22 +1,70 @@
-"""call_model_retry — retry wrapper around call_model with provider-aware backoff.
+"""call_model_retry — minimal retry wrapper over call_model.
 
-M0 stub. Implementation in M1 ports Codex 5.3's reference implementation verbatim.
+Uses the provider SDKs' native typed exceptions — no string matching,
+no custom retryable-status taxonomies. 3 attempts, exponential backoff
+with ±20% jitter, honors Retry-After headers when present.
 
-Responsibilities:
-    * Classify exceptions as retryable / non-retryable per provider.
-    * Respect Retry-After header when present.
-    * Exponential backoff with jitter (default: 6 attempts, 0.5s -> 20s).
-    * Pass timeout into req.extra so call_model implementations honor it.
-    * Raise NonRetryableModelError for auth/bad-request/context-length.
-    * Raise RetryableModelError after exhausting attempts.
-
-Used by: compiler.py (one call per source per batch).
+Non-retryable errors (auth, 400, context length, etc.) bubble up
+immediately; retrying them would never help.
 """
+from __future__ import annotations
+
+import random
+import time
+
+import anthropic
+import openai
+
+from kdb_compiler.call_model import ModelRequest, ModelResponse, call_model
+
+_RETRYABLE: tuple[type[BaseException], ...] = (
+    anthropic.RateLimitError,
+    anthropic.APIConnectionError,
+    anthropic.APITimeoutError,
+    anthropic.InternalServerError,
+    openai.RateLimitError,
+    openai.APIConnectionError,
+    openai.APITimeoutError,
+    openai.InternalServerError,
+)
 
 
-def main() -> None:
-    raise NotImplementedError("call_model_retry — scheduled for M1")
+def _parse_retry_after(exc: BaseException) -> float | None:
+    """Return the Retry-After header (seconds) if present on the SDK exception."""
+    resp = getattr(exc, "response", None)
+    if resp is None:
+        return None
+    headers = getattr(resp, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
-if __name__ == "__main__":
-    main()
+def call_model_with_retry(
+    req: ModelRequest,
+    *,
+    max_attempts: int = 3,
+    initial_backoff: float = 1.0,
+    max_backoff: float = 30.0,
+) -> ModelResponse:
+    """Call call_model with simple exponential backoff on retryable SDK errors."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return call_model(req)
+        except _RETRYABLE as e:
+            if attempt >= max_attempts:
+                raise
+            retry_after = _parse_retry_after(e)
+            if retry_after is not None:
+                sleep_s = min(max_backoff, retry_after)
+            else:
+                sleep_s = min(max_backoff, initial_backoff * (2 ** (attempt - 1)))
+            sleep_s += random.uniform(0, 0.2 * sleep_s)
+            time.sleep(sleep_s)
+    raise RuntimeError("call_model_with_retry: unreachable")
