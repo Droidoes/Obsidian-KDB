@@ -14,7 +14,9 @@ A Karpathy-style LLM-compiled knowledge base (KDB) that lives inside Joseph's Ob
 
 **Core insight (Karpathy):** The LLM is the compiler. Raw sources (`raw/`) → compiled wiki (`wiki/`) via incremental LLM passes. Obsidian is the IDE/frontend; plain Markdown + wikilinks are the only storage format the end-user sees.
 
-**What's novel in our build:** Most community implementations let the LLM directly write markdown files via agent tools (Claude Code / Cursor Write/Edit). That gives the LLM free authorial control and produces hallucinated paths, corrupt frontmatter, and inconsistent state. **Our architecture makes the LLM output structured JSON patch-ops; deterministic Python owns every file write.** This matches the discipline of a real compiler (LLM = parser/planner; Python = codegen/linker).
+**What's novel in our build:** Most community implementations let the LLM directly write markdown files via agent tools (Claude Code / Cursor Write/Edit). That gives the LLM free authorial control and produces hallucinated paths, corrupt frontmatter, and inconsistent state. **Our architecture makes the LLM output structured JSON "page intents"; deterministic Python owns every file path, every byte of frontmatter, and every filesystem write.** This matches the discipline of a real compiler (LLM = parser/semantic analyzer; Python = codegen/linker).
+
+**Design philosophy — no complexity for imaginary risk.** This system has one user, one process, and infrequent operation (minutes to hours between compiles, not milliseconds). We do not add locking/retry/transaction ceremony designed for multi-tenant or high-contention systems. Any individual file's corruption is recoverable by re-compiling — the value is in the collective body of `raw/` + `wiki/` + connections, not any single file. Cheap insurance only (atomic temp+fsync+replace, journal file, 2-retry max on transient I/O). No lock files, no two-phase commits, no cross-file transactions.
 
 ---
 
@@ -71,18 +73,30 @@ In-place enhancer for the Human Side. Scans user-authored notes and injects `[[w
 ```
 
 **Strict separation of concerns:**
-- **LLM is stateless compute.** It receives prompt + source content; returns JSON. Never writes files. Never reads filesystem state.
-- **Python is deterministic state + I/O.** Scans, hashes, chunks, applies patches, updates ledger.
+- **LLM is stateless compute.** It receives prompt + source content + manifest snapshot; returns JSON with `slug`-keyed page intents (no paths, no timestamps, no frontmatter). Never writes files. Never reads filesystem state.
+- **Python is deterministic state + I/O.** Scans, hashes, chunks, resolves paths, applies page intents (writes markdown), stamps frontmatter, updates ledger.
 - **Markdown vault is persistent state.** Everything the system knows is reconstructible from `raw/` + `wiki/` + `state/`.
+
+### Page ownership split
+
+| Page | Authored by | Strategy |
+|---|---|---|
+| `wiki/summaries/*.md` | LLM | Full-body replacement; Python adds frontmatter |
+| `wiki/concepts/*.md` | LLM | Full-body replacement; Python adds frontmatter |
+| `wiki/articles/*.md` | LLM | Full-body replacement; Python adds frontmatter |
+| `wiki/index.md` | **Python** | Deterministic regeneration from `manifest.pages[]` |
+| `wiki/log.md` | **Python** | Append from each `runs/<run_id>.json` journal |
+
+LLM never emits `index.md` or `log.md`. Those are derived state.
 
 ### Pipeline stages
 
-1. **Scan** (`kdb_scan.py`) — walks `raw/`, computes SHA-256, compares to `manifest.json`, emits `last_scan.json` with `to_compile` + `to_reconcile` lists. Hardened for symlinks, binaries, rename-detection (two-pass hash match). Atomic write.
-2. **Plan** (`planner.py`) — reads `last_scan.json`, chunks `to_compile` into 10–20-source batches, emits job queue.
-3. **Compile** (`compiler.py`) — for each source in each batch: loads source content + related wiki pages (outgoing/incoming links from manifest), calls `call_model_with_retry`, receives JSON conforming to `compile_result.schema.json`, accumulates into `compile_result.json`.
-4. **Validate** (`validate_compile_result.py`) — fails fast if LLM output malformed; nothing downstream runs.
-5. **Apply patches** (`patch_applier.py`) — reads validated `compile_result.json`, writes markdown files (summaries/concepts/articles, updates index.md, appends log.md) deterministically.
-6. **Update manifest** (`manifest_update.py`) — atomic write with retry/backoff; journal-then-pointer pattern (writes `runs/<run_id>.json` first, then updates `manifest.json`).
+1. **Scan** (`kdb_scan.py`) — walks `raw/`, computes SHA-256, compares to `manifest.json`, emits `last_scan.json` with `to_compile` + `to_reconcile` lists. Handles symlinks (skip), binaries (flag metadata-only), two-pass rename detection. Atomic write.
+2. **Plan** (`planner.py`) — reads `last_scan.json`, chunks `to_compile` into 10–20-source batches, builds per-source context snapshot from manifest.
+3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `CLAUDE.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
+4. **Validate** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
+5. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter (`run_context.py`), writes markdown files atomically (`atomic_io.py`), regenerates `index.md` deterministically, appends `log.md` from log entries.
+6. **Update manifest** (`manifest_update.py`) — writes `runs/<run_id>.json` journal first, then updates `manifest.json` atomically. Reconciles `incoming_links_known` across pages from everyone's `outgoing_links`. Flags orphans, records tombstones.
 
 ---
 
@@ -113,16 +127,21 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 | D5 | 2026-04-18 | OneNote stays on Human Side | User decision |
 | D6 | 2026-04-18 | No git inside vault; OneDrive version history is sufficient backup | Avoids `.git/index.lock` races with OneDrive sync |
 | D7 | 2026-04-18 | Adopt GPT 5.4 state model (manifest.json + frontmatter + log.md + runs/) | Middle ground: richer than Grok's pure-markdown, lighter than Gemini's DAG+Git+Intent Architecture, matches working community patterns |
-| D8 | 2026-04-18 | **LLM outputs structured JSON patch-ops; Python writes all markdown files** | Predictability, auditability, dry-run capability, no hallucinated paths / corrupt frontmatter |
+| D8 | 2026-04-18 | **LLM outputs "page intents" (slug + title + body + logical links); Python owns paths, frontmatter, timestamps, versions, backlink reconciliation.** Revised from original "patch-ops" wording after Codex M0 review. | Predictability, auditability, dry-run capability, no hallucinated paths / corrupt frontmatter. Boundary purity: LLM = semantic analyzer, Python = codegen/linker. |
 | D9 | 2026-04-18 | Controller pipeline over mega-prompt (chunk 10–20 sources/batch) | Prevents prompt drift at 100+ files (Codex guidance) |
 | D10 | 2026-04-18 | Reject SQLite for v1 (possibly v2 if scale demands) | JSON is LLM-inspectable, diff-friendly, OneDrive-compatible |
 | D11 | 2026-04-18 | Content-hash (SHA-256) as source-of-truth; mtime is advisory only | Survives renames, OneDrive timestamp rewrites, cross-machine sync |
 | D12 | 2026-04-18 | Flag-don't-nuke on delete: `orphan_candidate` + `tombstones`, never auto-delete wiki pages | User reviews orphans manually; no data loss |
 | D13 | 2026-04-18 | Two-pass rename detection (hash-match before NEW/DELETED classification) | Prevents double-counting moved files (Codex fix) |
-| D14 | 2026-04-18 | Atomic writes via temp + fsync + os.replace + 6-retry exponential backoff + single-writer lock | OneDrive race-safety (Codex guidance) |
-| D15 | 2026-04-18 | Journal-then-pointer manifest writes (`runs/<run_id>.json` first, manifest.json last) | Crash-safe: failed runs don't corrupt ledger |
+| D14 | 2026-04-18 | Minimal atomic write: temp + fsync + os.replace + ≤2-retry on transient I/O. **No lock files, no 6-retry ladder, no multi-phase commit.** | Single-user single-process workload; heavier machinery is imaginary-risk complexity. Revised from original Codex proposal after user philosophy note. |
+| D15 | 2026-04-18 | Journal-then-pointer manifest writes (`runs/<run_id>.json` first, manifest.json last) | Crash-safe: failed runs don't corrupt ledger. Cheap; keep it. |
 | D16 | 2026-04-18 | Provider abstraction ported from `~/Droidoes/Code-projects/youtube-comment-chat/src/llm.py` | Reuse: Anthropic / Gemini / OpenAI / Ollama already supported |
 | D17 | 2026-04-18 | V1a: build full pipeline upfront (not evolve from mega-prompt) | Cleaner foundation, no rework later |
+| D18 | 2026-04-18 | **Full-body replacement** over patch-ops for LLM-authored pages | Wiki pages are 100% LLM-owned; no human edits to preserve; no concurrent writers. Patch-op language, merge semantics, and per-op test surface = complexity for zero gain. Forward-compatible: the applier can accept `body` today and `ops[]` later without schema break. |
+| D19 | 2026-04-18 | Page-ownership split: LLM authors `summaries/`, `concepts/`, `articles/`; **Python authors `index.md` and `log.md`** (derived from manifest + run journals) | `index.md` and `log.md` are pure functions of state; having the LLM emit them would waste tokens and risk drift. |
+| D20 | 2026-04-18 | Shared seam modules: `paths.py`, `atomic_io.py`, `types.py`, `run_context.py` | Codex M0 review: three modules independently claim atomic-write discipline; centralize to prevent subtle divergence. |
+| D21 | 2026-04-18 | Reserve `prompt_builder.py`, `context_loader.py`, `response_normalizer.py` as named stubs | Codex M0 review: `compiler.py` is trending toward god-module; reserve split points before M2 to avoid accretion. |
+| D22 | 2026-04-18 | Design philosophy: **no complexity for imaginary risk** | Single-user, single-process, infrequent workload. Individual file corruption is recoverable by re-compile; the value is the collective body, not any single file. Drop machinery designed for multi-tenant/concurrent scenarios. See `~/.claude/projects/.../memory/feedback_no_imaginary_risk.md`. |
 
 ---
 
@@ -135,22 +154,33 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 | Open-3 | Safety model for Human Side edits | 🔴 Deferred | Only relevant to Track 2 (`llm-linker`), not v1 |
 | Open-4 | Link direction between Sides | 🔴 Deferred | Track 2 concern; recommended **Option C (asymmetric + opt-in bidirectional)** but not confirmed |
 | Open-5 | Binary file handling (PDF, images) in `raw/` | 🟡 Partial | v1 marks as `compile_mode: metadata_only`; actual PDF/image parsers = v2 |
-| Open-6 | Patch-ops JSON schema design | 🔴 Open — push to Codex | Will define in M2 before `compiler.py` / `patch_applier.py` |
+| Open-6 | Page-intents JSON schema design (shape, not mechanism) | 🟡 Skeleton in M0.1; full design in M2 | Skeleton committed at `kdb_compiler/schemas/compile_result.schema.json` |
 | Open-7 | Chunk size tuning (10–20 default) | 🟡 Heuristic | Validate empirically during M2 first compile |
+| Open-8 | Slug → path policy (how `[[slug]]` resolves to a file) | 🟡 Partial | `paths.py` stub declared; rules locked in M1 (see module docstring) |
 
 ---
 
 ## 9. Roadmap
 
-### M0 — Scaffolding (current)
+### M0 — Scaffolding (commit `796848b`) ✅
 - [x] Vault scaffold: `~/Obsidian/KDB/{raw, wiki/{summaries, concepts, articles}, state/runs, CLAUDE.md}`
 - [x] Repo scaffold: `~/Droidoes/Obsidian-KDB/{docs, kdb_compiler/tests/fixtures}`
-- [ ] `docs/CODEBASE_OVERVIEW.md` (this file)
-- [ ] `KDB/CLAUDE.md` — compiler invariants for LLM
-- [ ] `KDB/wiki/index.md`, `KDB/wiki/log.md` (empty)
-- [ ] `KDB/state/manifest.json` (initial empty shape)
-- [ ] `kdb_compiler/__init__.py` + module stubs (scan, manifest_update, validate, call_model, call_model_retry, planner, compiler, patch_applier)
-- [ ] Initial commit
+- [x] `docs/CODEBASE_OVERVIEW.md` (this file)
+- [x] `KDB/CLAUDE.md` — compiler invariants for LLM
+- [x] `KDB/wiki/index.md`, `KDB/wiki/log.md` (empty)
+- [x] `KDB/state/manifest.json` (initial empty shape)
+- [x] `kdb_compiler/__init__.py` + 8 module stubs
+- [x] Initial commit
+
+### M0.1 — Codex review remediation (current)
+Responds to `docs/code-review-M0-codex.md`:
+- [ ] Rewrite `KDB/CLAUDE.md` — logical intent output only, no paths / metadata / forced prose
+- [ ] Update overview: rename patch-ops → page intents; add D18–D22
+- [ ] Stub shared seams: `paths.py`, `atomic_io.py`, `types.py`, `run_context.py`
+- [ ] Reserve split-point stubs: `prompt_builder.py`, `context_loader.py`, `response_normalizer.py`
+- [ ] Add `kdb_compiler/schemas/compile_result.schema.json` skeleton
+- [ ] Add `docs/manifest.schema.md`
+- [ ] Add 3 test fixtures (manifest.empty, compile_result.valid, compile_result.invalid)
 
 ### M1 — Deterministic layer (no LLM yet)
 - [ ] `kdb_scan.py` (hardened v2: symlinks, binaries, two-pass rename, atomic writes)
@@ -186,6 +216,7 @@ Consulted AI artifacts (stored in `~/Obsidian/Projects/Obsidian-KDB/`):
 - `Karpathy's Obsidian LLM Knowledge Base -Gemini Pro.md` — academic treatise (not adopted)
 - `Karpathy Obsidian LLM Complier Implementation - GPT 5.4.md` — state model baseline (adopted)
 - `Codex 5.3 Reviews of GPT 5.4 Implementation of Kaparthy Obsidian LLM KDB.md` — hardening + working code (adopted)
+- `docs/code-review-M0-codex.md` — Codex 5.3 review of M0 scaffold (drove M0.1 remediation; 5 findings all actioned)
 
 Reference implementations surveyed:
 - Reddit #1 (fabswill) — mtime-based scan, manual orphan handling
