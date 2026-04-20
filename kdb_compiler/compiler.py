@@ -30,7 +30,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
+from typing import Any, Callable
 
 from kdb_compiler import (
     planner,
@@ -137,6 +139,18 @@ def compile_one(
             )
             return (None, [], [], state["error"])
 
+        # --- truncation guard ---
+        # Anthropic: stop_reason == "max_tokens"; OpenAI-compat: "length".
+        # If the model hit the output ceiling, extract will fail on an
+        # unclosed JSON fence — surface the real cause instead.
+        sr = state["model_response"].stop_reason
+        if sr in ("max_tokens", "length"):
+            state["error"] = (
+                f"{source_id}: truncated at max_tokens={max_tokens} "
+                f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
+            )
+            return (None, [], [], state["error"])
+
         # --- extract ---
         try:
             json_text = response_normalizer.extract_json_text(
@@ -235,9 +249,10 @@ def run_compile(
     scan: dict,
     ctx: RunContext,
     provider: str = "anthropic",
-    model: str = "claude-opus-4-7",
-    max_tokens: int = 4096,
+    model: str = "claude-haiku-4-5-20251001",
+    max_tokens: int = 32768,
     write: bool = True,
+    progress: Callable[..., None] | None = None,
 ) -> CompileResult:
     """Plan -> per-source compile -> aggregate -> optionally write
     compile_result.json. Eval records are written regardless of `write` —
@@ -268,7 +283,20 @@ def run_compile(
             }
         )
 
-    for job in jobs:
+    def _emit(event: str, **fields: Any) -> None:
+        if progress is None:
+            return
+        try:
+            progress(event, **fields)
+        except Exception:
+            # Progress callback is observational; a broken reporter must
+            # not take down the compile.
+            pass
+
+    n_jobs = len(jobs)
+    for i, job in enumerate(jobs, start=1):
+        _emit("job_start", i=i, n=n_jobs, source_id=job.source_id)
+        t0 = time.monotonic()
         cs, logs, warns, err = compile_one(
             job,
             vault_root=vault_root,
@@ -278,12 +306,18 @@ def run_compile(
             model=model,
             max_tokens=max_tokens,
         )
+        latency_ms = int((time.monotonic() - t0) * 1000)
         if cs is not None:
             compiled_sources.append(cs)
             log_dicts.extend(logs)
             all_warnings.extend(warns)
         if err is not None:
             errors.append(err)
+        _emit(
+            "job_done",
+            i=i, n=n_jobs, source_id=job.source_id,
+            ok=(err is None), latency_ms=latency_ms, error=err,
+        )
 
     result = CompileResult(
         run_id=ctx.run_id,
@@ -317,8 +351,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--vault-root", required=True, help="Absolute path to Obsidian vault root")
     p.add_argument("--provider", default="anthropic")
-    p.add_argument("--model", default="claude-opus-4-7")
-    p.add_argument("--max-tokens", type=int, default=4096)
+    p.add_argument("--model", default="claude-haiku-4-5-20251001")
+    p.add_argument("--max-tokens", type=int, default=32768)
     p.add_argument(
         "--dry-run",
         action="store_true",

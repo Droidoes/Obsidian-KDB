@@ -62,6 +62,24 @@ def test_multiple_fenced_blocks_rejected() -> None:
         extract_json_text(raw)
 
 
+def test_fenced_json_with_backticks_in_string_values_accepted() -> None:
+    """Source docs often embed code fences; when the model quotes them
+    into a string value, the body contains ``` but is still a valid
+    single-block JSON object. Parse-based disambiguation must accept it."""
+    raw = (
+        '```json\n'
+        '{"summary": "use ```python\\nprint(1)\\n``` for demos", "x": 1}\n'
+        '```'
+    )
+    result = extract_json_text(raw)
+    # The returned text must round-trip as JSON with the ``` preserved
+    # inside the string value.
+    import json as _json
+    parsed = _json.loads(result)
+    assert parsed["x"] == 1
+    assert "```python" in parsed["summary"]
+
+
 def test_unsupported_fence_language_rejected() -> None:
     raw = '```python\n{"x": 1}\n```'
     with pytest.raises(ValueError, match="unsupported fence language"):

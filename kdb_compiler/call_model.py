@@ -49,6 +49,7 @@ class ModelResponse:
     model: str
     provider: str
     attempts: int = 1
+    stop_reason: str | None = None
     raw: Any = None
 
 
@@ -61,19 +62,19 @@ def call_model(req: ModelRequest) -> ModelResponse:
     t0 = time.monotonic()
 
     if req.provider == "anthropic":
-        text, input_tokens, output_tokens, raw = _call_anthropic(req)
+        text, input_tokens, output_tokens, stop_reason, raw = _call_anthropic(req)
     elif req.provider == "openai":
-        text, input_tokens, output_tokens, raw = _call_openai_compat(
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req, base_url=None, api_key=settings.openai_api_key
         )
     elif req.provider == "gemini":
-        text, input_tokens, output_tokens, raw = _call_openai_compat(
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             api_key=settings.gemini_api_key,
         )
     elif req.provider == "ollama":
-        text, input_tokens, output_tokens, raw = _call_openai_compat(
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req, base_url=settings.ollama_base_url, api_key="ollama"
         )
     else:
@@ -86,11 +87,12 @@ def call_model(req: ModelRequest) -> ModelResponse:
         latency_ms=int((time.monotonic() - t0) * 1000),
         model=req.model,
         provider=req.provider,
+        stop_reason=stop_reason,
         raw=raw,
     )
 
 
-def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, Any]:
+def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
     if not settings.anthropic_api_key:
         raise ModelConfigError("ANTHROPIC_API_KEY not set")
     client = anthropic.Anthropic(
@@ -109,12 +111,13 @@ def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, Any]:
 
     resp = client.messages.create(**kwargs)
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-    return text, resp.usage.input_tokens, resp.usage.output_tokens, resp
+    stop_reason = getattr(resp, "stop_reason", None)
+    return text, resp.usage.input_tokens, resp.usage.output_tokens, stop_reason, resp
 
 
 def _call_openai_compat(
     req: ModelRequest, *, base_url: str | None, api_key: str
-) -> tuple[str, int, int, Any]:
+) -> tuple[str, int, int, str | None, Any]:
     if not api_key:
         raise ModelConfigError(f"No API key configured for provider={req.provider!r}")
     client = OpenAI(
@@ -146,4 +149,5 @@ def _call_openai_compat(
 
     resp = client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
-    return text, resp.usage.prompt_tokens, resp.usage.completion_tokens, resp
+    finish_reason = getattr(resp.choices[0], "finish_reason", None)
+    return text, resp.usage.prompt_tokens, resp.usage.completion_tokens, finish_reason, resp

@@ -200,6 +200,7 @@ def load_manifest_sources(manifest_abs: Path) -> dict[str, dict]:
             "size_bytes": rec.get("size_bytes"),
             "file_type": rec.get("file_type"),
             "is_binary": rec.get("is_binary"),
+            "compile_state": rec.get("compile_state"),
         }
     return out
 
@@ -321,9 +322,25 @@ def build_scan_result(
     errors: list[ErrorEntry],
     skipped_symlinks: list[SkippedSymlinkEntry],
     settings: SettingsSnapshot,
+    prior_sources: dict[str, dict] | None = None,
 ) -> ScanResult:
-    to_compile = sorted(e.path for e in files if e.action in ("NEW", "CHANGED"))
-    to_skip = sorted(e.path for e in files if e.action == "UNCHANGED")
+    # NEW/CHANGED are always eligible; UNCHANGED files whose manifest
+    # entry recorded compile_state=="error" are retried on this run
+    # (otherwise they'd be stuck in error state forever, since their hash
+    # is unchanged).
+    prior_sources = prior_sources or {}
+    error_retry = {
+        e.path for e in files
+        if e.action == "UNCHANGED"
+        and prior_sources.get(e.path, {}).get("compile_state") == "error"
+    }
+    to_compile = sorted(
+        {e.path for e in files if e.action in ("NEW", "CHANGED")} | error_retry
+    )
+    to_skip = sorted(
+        e.path for e in files
+        if e.action == "UNCHANGED" and e.path not in error_retry
+    )
 
     counts = {"NEW": 0, "CHANGED": 0, "UNCHANGED": 0, "MOVED": 0}
     for e in files:
@@ -392,6 +409,7 @@ def scan(
         errors=errors,
         skipped_symlinks=skipped_symlinks,
         settings=settings,
+        prior_sources=prior,
     )
     if write:
         write_scan_result(result, out_path)

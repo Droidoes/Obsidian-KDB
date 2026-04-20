@@ -214,18 +214,36 @@ def test_missing_compile_result_triggers_live_compile(
 # Test 4 — run_id mismatch between scan and compile_result
 # ---------------------------------------------------------------------------
 
-def test_run_id_mismatch(tmp_path: Path) -> None:
+def test_stale_compile_result_falls_through_to_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A compile_result.json from a prior run (mismatched run_id) is stale
+    and must be ignored — the orchestrator falls through to a live compile
+    and overwrites it. Guards against the trap where a leftover artifact
+    from the previous run permanently short-circuits new runs."""
     vault, raw, state = _make_vault(tmp_path)
-    (raw / "paper.md").write_text("# Paper", encoding="utf-8")
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+    _write_vault_claude_md(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    # Compile result has a different run_id
-    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "paper"))
+    # Stale CR from a "previous run" — wrong run_id, different slug.
+    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "stale-slug"))
+
+    def fake_call(req):
+        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        return _good_model_response(source_id, ctx.run_id)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", fake_call
+    )
 
     result = compile(vault, run_ctx=ctx)
 
-    assert result.success is False
-    assert any("run_id mismatch" in e for e in result.errors)
-    assert not (state / "manifest.json").exists()
+    assert result.success is True
+    # Live compile overwrote the stale file with current run_id.
+    cr = json.loads((state / "compile_result.json").read_text())
+    assert cr["run_id"] == _RUN1_ID
+    # Stale slug never materialised; live slug did.
+    assert not (vault / "KDB/wiki/summaries/stale-slug.md").exists()
+    assert (vault / "KDB/wiki/summaries/paper.md").exists()
 
 
 # ---------------------------------------------------------------------------

@@ -321,6 +321,82 @@ def test_compile_one_model_call_failure_writes_eval_record(
     assert record["response_hash"] == "sha256:none"
 
 
+def test_compile_one_truncation_guard_short_circuits_extract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """stop_reason='max_tokens' must fail with a clear truncation error
+    before extract — otherwise we'd get a misleading 'unclosed fence'."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Valid-looking JSON, but the call was truncated.
+    truncated = ModelResponse(
+        text=json.dumps(_good_response(SOURCE_A)),
+        input_tokens=100, output_tokens=4096, latency_ms=10,
+        model="claude-haiku-4-5-20251001", provider="anthropic", attempts=1,
+        stop_reason="max_tokens",
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: truncated}),
+    )
+
+    cs, _, _, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        max_tokens=4096,
+    )
+    assert cs is None
+    assert err is not None
+    assert "truncated at max_tokens=4096" in err
+    assert "stop_reason='max_tokens'" in err
+
+    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    # Guard fires before extract — extract_ok stays False.
+    assert record["extract_ok"] is False
+    assert record["parse_ok"] is False
+
+
+def test_compile_one_openai_length_stop_reason_also_guarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OpenAI-compat providers emit 'length' instead of 'max_tokens'."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    truncated = ModelResponse(
+        text=json.dumps(_good_response(SOURCE_A)),
+        input_tokens=100, output_tokens=4096, latency_ms=10,
+        model="gpt-something", provider="openai", attempts=1,
+        stop_reason="length",
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: truncated}),
+    )
+
+    _, _, _, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="openai",
+        model="gpt-something",
+        max_tokens=4096,
+    )
+    assert err is not None
+    assert "truncated" in err
+    assert "stop_reason='length'" in err
+
+
 def test_compile_one_extract_failure_writes_eval_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

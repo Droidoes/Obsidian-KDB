@@ -6,8 +6,14 @@ both accumulating (no short-circuit):
     1. JSON-Schema (jsonschema.Draft202012Validator) against
        schemas/last_scan.schema.json — shape, types, per-action required fields.
     2. Semantic — cross-field invariants JSON-Schema can't express cleanly:
-         * to_compile exactly = files[].path where action in {NEW, CHANGED}
-         * to_skip   exactly = files[].path where action == UNCHANGED
+         * to_compile paths have action ∈ {NEW, CHANGED, UNCHANGED}
+           (UNCHANGED is permitted so the scanner can retry sources whose
+           previous compile errored; only the scanner sees the manifest's
+           compile_state, so the validator can't distinguish a legit retry
+           from a spurious inclusion — it trusts the scanner here.)
+         * to_skip paths have action == UNCHANGED
+         * Every NEW/CHANGED path appears in to_compile
+         * Every UNCHANGED path appears in exactly one of to_compile or to_skip
          * Every MOVED in files[] has a matching MOVED reconcile op (and inverse)
          * DELETED paths in to_reconcile must NOT appear in files[]
          * summary counts equal actual array counts
@@ -99,9 +105,10 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
             s = status_by_path.get(p)
             if s is None:
                 errors.append(f"[$.to_compile] path not found in files[]: {p!r}")
-            elif s not in ("NEW", "CHANGED"):
+            elif s not in ("NEW", "CHANGED", "UNCHANGED"):
                 errors.append(
-                    f"[$.to_compile] {p!r} has action={s!r} (expected NEW or CHANGED)"
+                    f"[$.to_compile] {p!r} has action={s!r} "
+                    "(expected NEW, CHANGED, or UNCHANGED)"
                 )
 
     if isinstance(to_skip, list):
@@ -124,17 +131,25 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
         if overlap:
             errors.append(f"[$] paths appear in both to_compile and to_skip: {overlap}")
 
-    # --- to_compile / to_skip completeness (must exactly match NEW+CHANGED / UNCHANGED) ---
-    expected_to_compile = sorted(p for p, s in status_by_path.items() if s in ("NEW", "CHANGED"))
-    if isinstance(to_compile, list) and sorted(to_compile) != expected_to_compile:
-        errors.append(
-            "[$.to_compile] does not exactly match NEW+CHANGED files[] entries"
-        )
-    expected_to_skip = sorted(p for p, s in status_by_path.items() if s == "UNCHANGED")
-    if isinstance(to_skip, list) and sorted(to_skip) != expected_to_skip:
-        errors.append(
-            "[$.to_skip] does not exactly match UNCHANGED files[] entries"
-        )
+    # --- completeness: every NEW/CHANGED in to_compile; every UNCHANGED
+    # in exactly one of to_compile (retry) or to_skip. ---
+    if isinstance(to_compile, list) and isinstance(to_skip, list):
+        to_compile_set = {p for p in to_compile if isinstance(p, str)}
+        to_skip_set = {p for p in to_skip if isinstance(p, str)}
+        for p, s in sorted(status_by_path.items()):
+            if s in ("NEW", "CHANGED"):
+                if p not in to_compile_set:
+                    errors.append(
+                        f"[$.to_compile] missing {s} file {p!r}"
+                    )
+            elif s == "UNCHANGED":
+                in_compile = p in to_compile_set
+                in_skip = p in to_skip_set
+                if not (in_compile or in_skip):
+                    errors.append(
+                        f"[$] UNCHANGED file {p!r} missing from both "
+                        "to_compile and to_skip"
+                    )
 
     # --- reconcile ops ---
     moved_from_ops: set[str] = set()

@@ -53,7 +53,18 @@ def extract_json_text(raw_text: str) -> str:
         body = body_and_rest[:-3].rstrip()
 
         if "```" in body:
-            raise ValueError("response contains multiple fenced blocks; expected exactly one")
+            # Could be either (a) a genuine second fenced block or (b) a
+            # single JSON object whose string values contain ``` (happens
+            # when the source doc embeds code fences and the model quotes
+            # them). Disambiguate by parse: if the stripped body is valid
+            # JSON, the backticks were inside string values — accept.
+            candidate = body.strip()
+            try:
+                json.loads(candidate)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    "response contains multiple fenced blocks; expected exactly one"
+                ) from e
         text = body.strip()
 
     if not (text.startswith("{") and text.endswith("}")):

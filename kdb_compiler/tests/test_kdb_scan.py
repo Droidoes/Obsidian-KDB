@@ -282,6 +282,43 @@ def test_scan_end_to_end_mix(tmp_path: Path) -> None:
     assert (s.new, s.changed, s.unchanged, s.moved, s.deleted) == (1, 1, 1, 1, 1)
 
 
+def test_scan_retries_errored_sources_unchanged_hash(tmp_path: Path) -> None:
+    """A source whose hash is unchanged but whose manifest entry records
+    compile_state='error' must be re-included in to_compile so it gets
+    another chance — otherwise it's stuck forever."""
+    vault, raw, state = _make_vault(tmp_path)
+
+    import hashlib
+    def h(s: str) -> str:
+        return "sha256:" + hashlib.sha256(s.encode()).hexdigest()
+
+    _write(raw / "ok.md", "happy body")
+    _write(raw / "errored.md", "truncated body")
+
+    _write_manifest(state, {
+        "KDB/raw/ok.md": {
+            "hash": h("happy body"), "mtime": 1.0, "size_bytes": 1,
+            "file_type": "markdown", "is_binary": False,
+            "compile_state": "compiled",
+        },
+        "KDB/raw/errored.md": {
+            "hash": h("truncated body"), "mtime": 1.0, "size_bytes": 1,
+            "file_type": "markdown", "is_binary": False,
+            "compile_state": "error",
+        },
+    })
+
+    result = scan(vault, write=False)
+    by_path = {f.path: f for f in result.files}
+
+    # Both files are UNCHANGED on disk (hashes match).
+    assert by_path["KDB/raw/ok.md"].action == "UNCHANGED"
+    assert by_path["KDB/raw/errored.md"].action == "UNCHANGED"
+    # But only the errored one is rescheduled for compile.
+    assert result.to_compile == ["KDB/raw/errored.md"]
+    assert result.to_skip == ["KDB/raw/ok.md"]
+
+
 # ---------- CLI ----------
 
 def test_cli_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

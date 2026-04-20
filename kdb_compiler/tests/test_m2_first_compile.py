@@ -80,7 +80,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
         state_root=state_root,
         ctx=ctx,
         provider="anthropic",
-        model="claude-opus-4-7",
+        model="claude-haiku-4-5-20251001",
         max_tokens=4096,
     )
 

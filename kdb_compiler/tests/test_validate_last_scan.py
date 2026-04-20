@@ -204,15 +204,28 @@ def test_to_compile_path_missing_from_files() -> None:
 
 
 def test_to_compile_action_mismatch() -> None:
+    # MOVED in to_compile is illegal — to_compile allows only
+    # NEW/CHANGED/UNCHANGED (UNCHANGED permitted for error-retry).
+    p = _payload(
+        files=[_entry("KDB/raw/m.md", "MOVED", previous_path="KDB/raw/old.md")],
+        to_compile=["KDB/raw/m.md"],
+        to_skip=[],
+        to_reconcile=[{"type": "MOVED", "from": "KDB/raw/old.md", "to": "KDB/raw/m.md"}],
+    )
+    errors = vls.validate(p)
+    assert any("to_compile" in e and "MOVED" in e for e in errors)
+
+
+def test_to_compile_unchanged_permitted_for_error_retry() -> None:
+    # UNCHANGED is legal in to_compile — it's how the scanner retries
+    # sources whose previous compile errored. Validator can't see the
+    # manifest, so it trusts the scanner's decision.
     p = _payload(
         files=[_entry("KDB/raw/u.md", "UNCHANGED")],
         to_compile=["KDB/raw/u.md"],
         to_skip=[],
     )
-    errors = vls.validate(p)
-    # u.md in to_compile with action=UNCHANGED violates two rules:
-    # action mismatch + completeness mismatch; both should fire.
-    assert any("to_compile" in e and "UNCHANGED" in e for e in errors)
+    assert vls.validate(p) == []
 
 
 def test_to_skip_action_mismatch() -> None:
@@ -242,17 +255,26 @@ def test_to_compile_missing_expected_entry() -> None:
         to_skip=[],
     )
     errors = vls.validate(p)
-    assert any("to_compile" in e and "does not exactly match" in e for e in errors)
+    assert any(
+        "to_compile" in e and "missing NEW" in e and "KDB/raw/n.md" in e
+        for e in errors
+    )
 
 
 def test_to_skip_missing_expected_entry() -> None:
+    # UNCHANGED file missing from BOTH to_compile and to_skip is illegal —
+    # the scanner must classify every UNCHANGED file as either retry
+    # (to_compile) or skip (to_skip).
     p = _payload(
         files=[_entry("KDB/raw/u.md", "UNCHANGED")],
         to_compile=[],
         to_skip=[],  # should contain u.md
     )
     errors = vls.validate(p)
-    assert any("to_skip" in e and "does not exactly match" in e for e in errors)
+    assert any(
+        "UNCHANGED" in e and "KDB/raw/u.md" in e and "missing" in e
+        for e in errors
+    )
 
 
 def test_moved_reconcile_to_not_in_files() -> None:
