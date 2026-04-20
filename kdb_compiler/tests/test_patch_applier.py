@@ -16,7 +16,6 @@ from kdb_compiler.patch_applier import (
     apply,
     build_page_patches,
     emit_frontmatter,
-    render_index,
     render_log_prepend,
     render_page,
 )
@@ -337,50 +336,6 @@ def test_build_page_patches_empty_source_refs_raises() -> None:
 
 
 # ===========================================================================
-# render_index (tests 14–16)
-# ===========================================================================
-
-def test_render_index_empty_shows_status_empty() -> None:
-    out = render_index(_manifest({}, {}), _ctx())
-    assert "**Status:** empty" in out
-    # All three sections present with (none) placeholder.
-    for sec in ("## Concepts", "## Articles", "## Summaries"):
-        assert sec in out
-    assert out.count("_(none)_") == 3
-
-
-def test_render_index_three_types_sorted_by_slug() -> None:
-    pages = {
-        "KDB/wiki/summaries/zeta.md": _page_record("zeta", "summary", title="Zeta"),
-        "KDB/wiki/summaries/alpha.md": _page_record("alpha", "summary", title="Alpha"),
-        "KDB/wiki/concepts/gamma.md": _page_record("gamma", "concept", title="Gamma"),
-        "KDB/wiki/concepts/beta.md": _page_record("beta", "concept", title="Beta"),
-        "KDB/wiki/articles/delta.md": _page_record("delta", "article", title="Delta"),
-    }
-    m = _manifest(pages, {})
-    out = render_index(m, _ctx())
-    # Concepts section has beta before gamma.
-    c_idx = out.index("## Concepts")
-    a_idx = out.index("## Articles")
-    s_idx = out.index("## Summaries")
-    concepts_block = out[c_idx:a_idx]
-    assert concepts_block.index("[[beta|") < concepts_block.index("[[gamma|")
-    summaries_block = out[s_idx:]
-    assert summaries_block.index("[[alpha|") < summaries_block.index("[[zeta|")
-    assert "**Status:** 5 pages (2 summaries, 2 concepts, 1 articles)" in out
-
-
-def test_render_index_orphan_page_still_listed() -> None:
-    pages = {
-        "KDB/wiki/summaries/o.md": _page_record(
-            "o", "summary", title="O", status="orphan_candidate"
-        ),
-    }
-    out = render_index(_manifest(pages, {}), _ctx())
-    assert "[[o|O]]" in out
-
-
-# ===========================================================================
 # render_log_prepend (tests 17–20)
 # ===========================================================================
 
@@ -463,14 +418,14 @@ def test_apply_writes_page_index_and_log(tmp_path: Path) -> None:
     ctx = _ctx(vault_root=vault)
     r = apply(state, vault, next_manifest=_basic_manifest(), run_ctx=ctx)
     assert r.pages_written == ["KDB/wiki/summaries/paper.md"]
-    assert r.index_written and r.log_appended and not r.dry_run
+    assert r.log_appended and not r.dry_run
     page_path = vault / "KDB/wiki/summaries/paper.md"
     assert page_path.exists()
     text = page_path.read_text()
     assert text.startswith("---\n")
     assert "slug: paper" in text
     assert "Body text." in text
-    assert (vault / "KDB/wiki/index.md").exists()
+    assert not (vault / "KDB/wiki/index.md").exists()
     assert (vault / "KDB/wiki/log.md").exists()
 
 
@@ -547,7 +502,7 @@ def test_cli_happy_path_writes_wiki_but_not_manifest(tmp_path: Path) -> None:
     r = _run_cli(["--state-root", str(state), "--vault-root", str(vault)])
     assert r.returncode == 0, r.stderr
     assert (vault / "KDB/wiki/summaries/paper.md").exists()
-    assert (vault / "KDB/wiki/index.md").exists()
+    assert not (vault / "KDB/wiki/index.md").exists()
     assert (vault / "KDB/wiki/log.md").exists()
     assert not (state / "manifest.json").exists()  # patch_applier does NOT write manifest
 

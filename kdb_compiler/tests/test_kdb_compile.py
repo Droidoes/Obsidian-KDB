@@ -170,7 +170,7 @@ def test_happy_path_wet_run(tmp_path: Path) -> None:
     assert result.journal_written is True
     assert "KDB/wiki/summaries/paper.md" in result.pages_written
     assert (vault / "KDB/wiki/summaries/paper.md").exists()
-    assert (vault / "KDB/wiki/index.md").exists()
+    assert not (vault / "KDB/wiki/index.md").exists()
     assert (vault / "KDB/wiki/log.md").exists()
     assert (state / "manifest.json").exists()
     runs_dir = state / "runs"

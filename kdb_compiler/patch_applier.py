@@ -1,7 +1,7 @@
-"""patch_applier — writes wiki pages + index.md + log.md from compile_result + next_manifest.
+"""patch_applier — writes wiki pages + log.md from compile_result + next_manifest.
 
 Architecture (Selection A + iii + a, M1.6 blueprint):
-    * Pure core renders PagePatch objects + index.md text + log.md text.
+    * Pure core renders PagePatch objects + log.md text.
     * I/O shell (`apply`) does all filesystem writes via atomic_io.
     * CLI runs pure manifest_update.build_manifest_update() to get next_manifest
       in memory, then applies — but does NOT write manifest.json (that is
@@ -11,8 +11,9 @@ Contracts:
     * D8: LLM emits slug-keyed intents; Python owns frontmatter + paths.
     * D14: atomic temp+fsync+os.replace via atomic_io.
     * D18: full-body replacement.
-    * D19: LLM never authors index.md / log.md — Python writes them from manifest.
+    * D19: LLM never authors log.md — Python writes it from run journals.
     * D22: no imaginary complexity.
+    * D23: no index.md — Obsidian file explorer + manifest.json serve as TOC.
 
 Never writes outside KDB/wiki/. Never mutates KDB/raw/ or KDB/state/.
 """
@@ -52,7 +53,6 @@ class PagePatch:
 class ApplyResult:
     pages_written: list[str] = field(default_factory=list)
     pages_skipped: list[str] = field(default_factory=list)
-    index_written: bool = False
     log_appended: bool = False
     dry_run: bool = False
     counts: dict = field(default_factory=dict)
@@ -213,57 +213,6 @@ def build_page_patches(
     return patches
 
 
-# ----- index.md -----
-
-_INDEX_SECTIONS: tuple[tuple[str, str, str], ...] = (
-    ("concept", "Concepts", "concepts"),
-    ("article", "Articles", "articles"),
-    ("summary", "Summaries", "summaries"),
-)
-
-
-def render_index(next_manifest: dict, run_ctx: RunContext) -> str:
-    pages = next_manifest.get("pages", {})
-    by_type: dict[str, list[dict]] = {"summary": [], "concept": [], "article": []}
-    for page in pages.values():
-        pt = page.get("page_type")
-        if pt in by_type:
-            by_type[pt].append(page)
-    for lst in by_type.values():
-        lst.sort(key=lambda p: p.get("slug", ""))
-
-    total = sum(len(v) for v in by_type.values())
-    s, c, a = len(by_type["summary"]), len(by_type["concept"]), len(by_type["article"])
-
-    lines = ["# KDB Wiki — Index", ""]
-    lines.append(
-        "_This index is maintained by the compiler. Do not edit by hand — "
-        "changes will be overwritten on the next compile._"
-    )
-    lines.append("")
-    if total == 0:
-        lines.append("**Status:** empty — no sources compiled yet.")
-    else:
-        lines.append(
-            f"**Status:** {total} pages "
-            f"({s} summaries, {c} concepts, {a} articles) · "
-            f"last compiled {run_ctx.started_at}"
-        )
-    lines.append("")
-    for pt, heading, _ in _INDEX_SECTIONS:
-        lines.append(f"## {heading}")
-        lines.append("")
-        entries = by_type[pt]
-        if not entries:
-            lines.append("_(none)_")
-        else:
-            for p in entries:
-                title = p.get("title") or p.get("slug", "")
-                lines.append(f"- [[{p['slug']}|{title}]]")
-        lines.append("")
-    return "\n".join(lines).rstrip("\n") + "\n"
-
-
 # ----- log.md -----
 
 _LOG_STUB_HEADER = (
@@ -368,7 +317,6 @@ def apply(
 ) -> ApplyResult:
     compile_result = _load_json(state_root / "compile_result.json")
     patches = build_page_patches(compile_result, next_manifest, run_ctx)
-    index_text = render_index(next_manifest, run_ctx)
 
     per_type = _count_page_types(patches)
     unique_page_keys = sorted({p.page_key for p in patches})
@@ -384,14 +332,12 @@ def apply(
     }
 
     log_path = vault_root / "KDB" / "wiki" / "log.md"
-    index_path = vault_root / "KDB" / "wiki" / "index.md"
     existing_log = _read_log(log_path)
     log_text = render_log_prepend(run_ctx, existing_log, apply_summary)
 
     result = ApplyResult(
         pages_written=[],
         pages_skipped=[],
-        index_written=False,
         log_appended=False,
         dry_run=(not write) or run_ctx.dry_run,
         counts=apply_summary["counts"],
@@ -401,11 +347,9 @@ def apply(
 
     for patch in patches:
         atomic_write_text(patch.abs_path, emit_frontmatter(patch.frontmatter) + patch.body)
-    atomic_write_text(index_path, index_text)
     atomic_write_text(log_path, log_text)
 
     result.pages_written = unique_page_keys
-    result.index_written = True
     result.log_appended = True
     return result
 
@@ -417,7 +361,7 @@ def apply(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m kdb_compiler.patch_applier",
-        description="Render wiki pages + index.md + log.md from compile_result (pages-only; does not write manifest.json).",
+        description="Render wiki pages + log.md from compile_result (pages-only; does not write manifest.json).",
     )
     p.add_argument("--state-root", required=True, type=Path,
                    help="Directory containing last_scan.json + compile_result.json + (optional) manifest.json")
@@ -483,7 +427,6 @@ def main(argv: list[str] | None = None) -> int:
     mode = "dry-run" if result.dry_run else "applied"
     print(
         f"patch_applier ({mode}): {len(result.pages_written)} pages · "
-        f"index {'✓' if result.index_written else '—'} · "
         f"log {'✓' if result.log_appended else '—'}"
     )
     return 0

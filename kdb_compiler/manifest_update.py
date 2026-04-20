@@ -42,7 +42,6 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
     "concepts_root": "KDB/wiki/concepts",
     "articles_root": "KDB/wiki/articles",
     "log_file": "KDB/wiki/log.md",
-    "index_file": "KDB/wiki/index.md",
     "hash_algorithm": "sha256",
     "rename_detection": True,
     "delete_policy": "mark_orphan_candidate",
