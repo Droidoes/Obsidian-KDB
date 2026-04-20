@@ -515,3 +515,96 @@ def test_fixture_branch_does_not_invoke_compiler(
     result = compile(vault, run_ctx=ctx)
     assert result.success is True
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Stage-progress events (Option A — kdb_compile §progress)
+# ---------------------------------------------------------------------------
+
+_EXPECTED_STAGES = (
+    "scan", "validate scan", "compile", "validate compile_result",
+    "build manifest update", "apply pages", "persist state",
+)
+
+
+def _capture_progress() -> tuple[list[tuple[str, dict]], "object"]:
+    """Return (events, callback). Callback appends (event_name, fields) tuples."""
+    events: list[tuple[str, dict]] = []
+    def _cb(event: str, **f: object) -> None:
+        events.append((event, dict(f)))
+    return events, _cb
+
+
+def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
+    """All seven stage_start/stage_done pairs arrive in the correct sequence
+    for a happy-path wet run with monotonic indices and names from _STAGES."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+
+    events, cb = _capture_progress()
+    result = compile(vault, run_ctx=ctx, progress=cb)
+    assert result.success is True
+
+    stage_events = [(e, f) for e, f in events if e in ("stage_start", "stage_done")]
+    # 7 starts + 7 dones = 14 stage events, strictly alternating.
+    assert len(stage_events) == 14
+    for i in range(7):
+        start_evt, start_f = stage_events[2 * i]
+        done_evt, done_f = stage_events[2 * i + 1]
+        assert start_evt == "stage_start"
+        assert done_evt == "stage_done"
+        assert start_f["index"] == done_f["index"] == i + 1
+        assert start_f["total"] == done_f["total"] == 7
+        assert start_f["name"] == done_f["name"] == _EXPECTED_STAGES[i]
+        assert done_f["ok"] is True
+        assert isinstance(done_f["latency_ms"], int)
+        assert done_f["latency_ms"] >= 0
+
+
+def test_stage_events_abort_after_failed_validation(tmp_path: Path) -> None:
+    """Malformed compile_result.json fails stage 4 — stages 1-3 emit done-ok,
+    stage 4 emits done-not-ok with a note, stages 5-7 do NOT emit."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    # Missing required fields → validate_compile_result rejects.
+    bad_cr = {"run_id": _RUN1_ID, "success": True}  # no compiled_sources
+    _write_cr(state, bad_cr)
+
+    events, cb = _capture_progress()
+    result = compile(vault, run_ctx=ctx, progress=cb)
+    assert result.success is False
+
+    stage_done = [f for e, f in events if e == "stage_done"]
+    # Stages 1, 2, 3 complete OK; stage 4 reports failure; 5-7 never emit.
+    assert [s["index"] for s in stage_done] == [1, 2, 3, 4]
+    assert all(s["ok"] for s in stage_done[:3])
+    assert stage_done[3]["ok"] is False
+    assert stage_done[3]["name"] == "validate compile_result"
+    assert stage_done[3]["note"]  # non-empty — carries the first validation error
+
+
+def test_stage_7_skipped_under_dry_run(tmp_path: Path) -> None:
+    """Dry-run still emits stage_done for 'persist state' — with the
+    'skipped (dry-run)' note — and neither manifest nor journal is written."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+
+    events, cb = _capture_progress()
+    result = compile(vault, run_ctx=ctx, progress=cb)
+    assert result.success is True
+    assert result.manifest_written is False
+    assert result.journal_written is False
+
+    persist_done = next(
+        f for e, f in events
+        if e == "stage_done" and f["index"] == 7
+    )
+    assert persist_done["ok"] is True
+    assert persist_done["note"] == "skipped (dry-run)"
+    assert not (state / "manifest.json").exists()
+    assert not (state / "runs").exists() or not any((state / "runs").iterdir())
