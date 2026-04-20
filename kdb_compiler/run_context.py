@@ -35,14 +35,19 @@ def now_iso() -> str:
 
 
 def run_id_from_timestamp(iso_ts: str) -> str:
-    """Filename-safe run_id derived from an ISO timestamp.
+    """Filename-safe run_id: 'YYYY-MM-DDTHH-MM-SS_<TZ>'.
 
-    Colons (time separator, offset separator) and dots (fractional
-    seconds, if any) are replaced with dashes. The offset carries
-    through as e.g. '-04-00' so the run_id still encodes the full
-    instant without relying on a side channel for the timezone.
+    Example: '2026-04-19T22:34:09-04:00' -> '2026-04-19T22-34-09_EDT'.
+
+    The TZ abbreviation comes from the system's current zone, not from
+    the parsed timestamp's tzinfo — fixed-offset tzinfos (what
+    ``datetime.fromisoformat`` produces) report ``tzname()`` as
+    ``'UTC-04:00'``, which isn't what we want. In practice callers
+    always feed a just-produced ``now_iso()`` so the two agree on DST.
     """
-    return iso_ts.replace(":", "-").replace(".", "-")
+    dt = datetime.fromisoformat(iso_ts)
+    tz = datetime.now().astimezone().tzname() or "LOCAL"
+    return dt.strftime("%Y-%m-%dT%H-%M-%S") + f"_{tz}"
 
 
 @dataclass
