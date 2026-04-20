@@ -6,7 +6,7 @@ Coverage per blueprint §10:
     - metadata+parsed_summary record (no full bodies) when env var unset.
     - full record (parsed_json + system/user prompt + raw response)
       when KDB_RESP_STATS_CAPTURE_FULL=1.
-    - write target path = <state_root>/llm_resp_stats/<run_id>/<safe_id>.json.
+    - write target path = <state_root>/llm_resp/<run_id>/<safe_id>.json.
     - hashes deterministic for the same input.
     - model_response=None -> response_hash='sha256:none', zeroed metrics.
     - prompt=None -> prompt_hash='sha256:none'.
@@ -343,12 +343,12 @@ def test_write_resp_stats_target_path(tmp_path: Path) -> None:
     out = resp_stats_writer.write_resp_stats(record, state_root)
 
     expected_name = resp_stats_writer.safe_source_id("KDB/raw/foo.md") + ".json"
-    assert out == state_root / "llm_resp_stats" / ctx.run_id / expected_name
+    assert out == state_root / "llm_resp" / ctx.run_id / expected_name
     assert out.exists()
 
 
 def test_write_resp_stats_creates_parent_dirs(tmp_path: Path) -> None:
-    """atomic_write_json creates parents=True; state_root/llm_resp_stats/<run_id>
+    """atomic_write_json creates parents=True; state_root/llm_resp/<run_id>
     does not need to pre-exist."""
     ctx = _ctx(tmp_path)
     record = resp_stats_writer.build_resp_stats(
@@ -364,7 +364,7 @@ def test_write_resp_stats_creates_parent_dirs(tmp_path: Path) -> None:
     out = resp_stats_writer.write_resp_stats(record, state_root)
     assert out.exists()
     assert out.parent.name == ctx.run_id
-    assert out.parent.parent.name == "llm_resp_stats"
+    assert out.parent.parent.name == "llm_resp"
 
 
 def test_write_resp_stats_content_is_json(tmp_path: Path) -> None:

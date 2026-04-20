@@ -1,6 +1,6 @@
 """resp_stats_writer — build + atomically write one RespStatsRecord per compile call.
 
-Writes to `<state_root>/llm_resp_stats/<run_id>/<safe_source_id>.json`.
+Writes to `<state_root>/llm_resp/<run_id>/<safe_source_id>.json`.
 Directory creation is handled by atomic_io.atomic_write_bytes (mkdir
 parents=True, exist_ok=True on the target's parent).
 
@@ -178,11 +178,11 @@ def build_resp_stats(
 
 
 def write_resp_stats(record: RespStatsRecord, state_root: Path) -> Path:
-    """Atomic write to <state_root>/llm_resp_stats/<run_id>/<safe_source_id>.json.
+    """Atomic write to <state_root>/llm_resp/<run_id>/<safe_source_id>.json.
 
     Returns the written path. atomic_write_json creates the parent dirs
     (parents=True, exist_ok=True) so no explicit mkdir is needed here.
     """
-    target = state_root / "llm_resp_stats" / record.run_id / f"{safe_source_id(record.source_id)}.json"
+    target = state_root / "llm_resp" / record.run_id / f"{safe_source_id(record.source_id)}.json"
     atomic_write_json(target, record.to_dict())
     return target

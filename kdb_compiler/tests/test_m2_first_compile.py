@@ -51,7 +51,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     """One live Anthropic call against case01's source. Verifies that:
       - compile_one returns a non-None CompiledSource
       - the response passes schema + semantic checks
-      - exactly one resp-stats record is written under <state>/llm_resp_stats/<run_id>/
+      - exactly one resp-stats record is written under <state>/llm_resp/<run_id>/
     """
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -102,7 +102,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     )
     assert semantic_errors == [], semantic_errors
 
-    stats_dir = state_root / "llm_resp_stats" / ctx.run_id
+    stats_dir = state_root / "llm_resp" / ctx.run_id
     records = list(stats_dir.glob("*.json"))
     assert len(records) == 1
 

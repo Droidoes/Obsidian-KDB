@@ -20,7 +20,7 @@ Coverage per blueprint §10:
 
 All tests use `monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fake)`
 to stub the LLM. The resp-stats invariant check counts files on disk under
-<state_root>/llm_resp_stats/<run_id>/, which is the authoritative evidence.
+<state_root>/llm_resp/<run_id>/, which is the authoritative evidence.
 
 prompt_builder caches CLAUDE.md by vault path — an autouse fixture clears
 that cache between tests so per-test vaults don't leak.
@@ -123,7 +123,7 @@ def _ctx(vault: Path) -> RunContext:
 
 
 def _resp_stats_files(state_root: Path, run_id: str) -> list[Path]:
-    return sorted((state_root / "llm_resp_stats" / run_id).glob("*.json"))
+    return sorted((state_root / "llm_resp" / run_id).glob("*.json"))
 
 
 def _fake_call(mapping: dict) -> callable:
