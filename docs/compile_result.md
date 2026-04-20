@@ -41,7 +41,7 @@ patch_applier.apply(…, next_manifest, …)                              # writ
 manifest_update.write_outputs(…)                                      # persists manifest + journal
 ```
 
-Every page written to `KDB/wiki/`, every row in `manifest.json`, every line appended to `log.md` — all of it is derived from `compile_result.json`. A malformed compile_result aborts the run with **zero** vault writes.
+Every page written to `KDB/wiki/` and every row in `manifest.json` is derived from `compile_result.json`. A malformed compile_result aborts the run with **zero** vault writes.
 
 ### Role 2 — Replay / staging seam (dual-mode)
 
@@ -66,7 +66,6 @@ After a live compile, the file sits on disk reflecting that run's LLM output. Bu
 | `state/compile_result.json` | Last LLM output — input to apply stage | **Overwritten each run** |
 | `state/runs/<run_id>.json` | Journal — what *changed* this run (deltas, tombstones, log_entries) | Kept per run |
 | `state/llm_resp/<run_id>/*.json` | Per-call telemetry (tokens, latency, validation flags) | Kept per run |
-| `wiki/log.md` | Human-readable append of log_entries | Append-only |
 
 If someone asks "what happened on run X three weeks ago" — read `runs/<run_id>.json`, not `compile_result.json`.
 
@@ -149,7 +148,7 @@ The LLM never needs to think "am I linked from X" — it just emits its own outg
 
 Three-level enum: `low` · `medium` · `high`. Deliberately coarse. Rationale: LLMs are bad at fine-grained probability; honest buckets beat false precision.
 
-**What it is used for today**: signal for the `log.md` stream. Low-confidence decisions get logged for human review. Also input for future quality/prioritization logic (e.g., "show me all low-confidence pages in this run").
+**What it is used for today**: signal captured in the run journal (`state/runs/<run_id>.json`) as log entries. Low-confidence decisions are recorded for human review. Also input for future quality/prioritization logic (e.g., "show me all low-confidence pages in this run").
 
 **What it is not used for today**: gating writes. A `confidence: "low"` page still gets written. The design choice: let the LLM be honest and route uncertainty into observability (log entries, filter queries) rather than blocking the pipeline.
 
@@ -175,4 +174,4 @@ That is the **D8 boundary** in one sentence: LLM emits semantic intent; Python o
 | "What did the pipeline actually change this run?" | `state/runs/<run_id>.json` |
 | "Was the LLM call healthy (tokens, latency, parse_ok)?" | `state/llm_resp/<run_id>/*.json` |
 | "What's in the wiki right now?" | `state/manifest.json` + `wiki/**/*.md` |
-| "Human-readable run history?" | `wiki/log.md` |
+| "Run history (what happened on run X)?" | `state/runs/<run_id>.json` |

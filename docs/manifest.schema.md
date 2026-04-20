@@ -45,7 +45,6 @@ Where:
   "summaries_root":     "KDB/wiki/summaries",
   "concepts_root":      "KDB/wiki/concepts",
   "articles_root":      "KDB/wiki/articles",
-  "log_file":           "KDB/wiki/log.md",
   "hash_algorithm":     "sha256",
   "rename_detection":   true,
   "delete_policy":      "mark_orphan_candidate",
@@ -100,7 +99,7 @@ One per raw file currently active. Deleted files move to `tombstones`.
 
 ## `PageRecord`
 
-One per active wiki page (summary / concept / article). `log.md` is Python-authored and not tracked here. (No `index.md` is generated — see D23.)
+One per active wiki page (summary / concept / article). No `index.md` or `log.md` is generated (see D23, D24) — `state/runs/<run_id>.json` is the per-run journal.
 
 | Field | Type | Notes |
 |---|---|---|

@@ -87,7 +87,7 @@ class RunContext:
         }
 
     def append_log(self, level: str, message: str, **extras) -> None:
-        """Accumulate a log entry; patch_applier flushes these to wiki/log.md."""
+        """Accumulate a log entry; persisted to state/runs/<run_id>.json journal."""
         entry = {"level": level, "message": message, "run_id": self.run_id}
         entry.update(extras)
         self.log_entries.append(entry)

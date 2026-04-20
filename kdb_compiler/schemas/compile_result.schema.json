@@ -19,7 +19,7 @@
     },
     "log_entries": {
       "type": "array",
-      "description": "LLM-emitted log items (contradictions, ambiguities, low-confidence decisions). Python appends to wiki/log.md.",
+      "description": "LLM-emitted log items (contradictions, ambiguities, low-confidence decisions). Persisted in state/runs/<run_id>.json journal.",
       "items": { "$ref": "#/$defs/logEntry" }
     },
     "errors": {

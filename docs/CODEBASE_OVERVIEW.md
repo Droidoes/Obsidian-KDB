@@ -49,7 +49,7 @@ The code reads from and writes to the vault via absolute paths. No nested git re
 ## 4. Two Tracks
 
 ### Track 1 — KDB Compiler (this project, v1 focus)
-`raw/` → LLM → `wiki/{summaries, concepts, articles, log.md}`
+`raw/` → LLM → `wiki/{summaries, concepts, articles}`
 
 Karpathy-pattern incremental compile. Described in detail below.
 
@@ -84,9 +84,8 @@ In-place enhancer for the Human Side. Scans user-authored notes and injects `[[w
 | `wiki/summaries/*.md` | LLM | Full-body replacement; Python adds frontmatter |
 | `wiki/concepts/*.md` | LLM | Full-body replacement; Python adds frontmatter |
 | `wiki/articles/*.md` | LLM | Full-body replacement; Python adds frontmatter |
-| `wiki/log.md` | **Python** | Append from each `runs/<run_id>.json` journal |
 
-LLM never emits `log.md`. It is derived state. No `index.md` is generated — Obsidian's file explorer + `manifest.json` serve as the TOC (see D23).
+No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explorer + `manifest.json` serve as the TOC; `state/runs/<run_id>.json` is the authoritative per-run journal.
 
 ### Pipeline stages
 
@@ -95,7 +94,7 @@ LLM never emits `log.md`. It is derived state. No `index.md` is generated — Ob
 3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `CLAUDE.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
 4. **Validate** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
 5. **Compute next manifest (pure)** (`manifest_update.build_manifest_update`) — in-memory only; no writes. Produces `next_manifest` + `journal`.
-6. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`), prepends `log.md` with a run block. Never writes state files.
+6. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`). Never writes state files.
 7. **Persist manifest** (`manifest_update.write_outputs`) — writes `runs/<run_id>.json` journal first, then `manifest.json` atomically (D15, journal-then-pointer). Runs **after** page writes so a failed vault write leaves state unchanged and the user re-runs cleanly.
 
 ---
@@ -108,7 +107,7 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 |---|---|---|
 | **Per-page provenance** | Frontmatter in each `.md` file (`raw_path`, `raw_hash`, `raw_mtime`, `compiled_at`) | Human-readable, survives manifest loss |
 | **Ledger** | `KDB/state/manifest.json` | Authoritative index of sources, pages, orphans, tombstones, runs |
-| **Audit trail** | `KDB/state/runs/<run_id>.json` + `KDB/wiki/log.md` | Per-compile journal (JSON) + user-readable log (markdown) |
+| **Audit trail** | `KDB/state/runs/<run_id>.json` | Per-compile journal (JSON) — authoritative; no derived `log.md` mirror (D24) |
 
 **Rejected alternatives:** SQLite (too opaque, no diff, breaks OneDrive sync), vector DB (Karpathy explicitly rejects this), pure frontmatter-only (Grok's proposal — too lean at projected scale of thousands of files, no dependency graph).
 
@@ -138,11 +137,12 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 | D16 | 2026-04-18 | Provider abstraction ported from `~/Droidoes/Code-projects/youtube-comment-chat/src/llm.py` | Reuse: Anthropic / Gemini / OpenAI / Ollama already supported |
 | D17 | 2026-04-18 | V1a: build full pipeline upfront (not evolve from mega-prompt) | Cleaner foundation, no rework later |
 | D18 | 2026-04-18 | **Full-body replacement** over patch-ops for LLM-authored pages | Wiki pages are 100% LLM-owned; no human edits to preserve; no concurrent writers. Patch-op language, merge semantics, and per-op test surface = complexity for zero gain. Forward-compatible: the applier can accept `body` today and `ops[]` later without schema break. |
-| D19 | 2026-04-18 (revised 2026-04-20) | Page-ownership split: LLM authors `summaries/`, `concepts/`, `articles/`; **Python authors `log.md`** (derived from run journals). Originally included `index.md`; removed by D23. | Python-authored files are pure functions of state; having the LLM emit them would waste tokens and risk drift. |
+| D19 | 2026-04-18 (revised 2026-04-20) | Page-ownership split: LLM authors `summaries/`, `concepts/`, `articles/`. Originally included Python-authored `index.md` + `log.md`; both removed (D23, D24). | Python-authored files are pure functions of state; having the LLM emit them would waste tokens and risk drift. |
 | D20 | 2026-04-18 | Shared seam modules: `paths.py`, `atomic_io.py`, `types.py`, `run_context.py` | Codex M0 review: three modules independently claim atomic-write discipline; centralize to prevent subtle divergence. |
 | D21 | 2026-04-18 | Reserve `prompt_builder.py`, `context_loader.py`, `response_normalizer.py` as named stubs | Codex M0 review: `compiler.py` is trending toward god-module; reserve split points before M2 to avoid accretion. |
 | D22 | 2026-04-18 | Design philosophy: **no complexity for imaginary risk** | Single-user, single-process, infrequent workload. Individual file corruption is recoverable by re-compile; the value is the collective body, not any single file. Drop machinery designed for multi-tenant/concurrent scenarios. See `~/.claude/projects/.../memory/feedback_no_imaginary_risk.md`. |
 | D23 | 2026-04-20 | Drop `index.md`. Obsidian's file explorer + `manifest.json.pages{}` already serve as the TOC; the generated `index.md` was adding a misleading hub node to the graph view (every page had an inbound edge from it) without unique value. | Graph noise was real; the "single entry-point file" was redundant with Obsidian's native navigation and with `manifest.json` for programmatic consumers. Revises D19. |
+| D24 | 2026-04-20 | Drop `log.md`. Same reasoning as D23: derived state, zero wikilinks = isolate node in graph view, and `state/runs/<run_id>.json` already holds the authoritative per-run journal with full detail. Warnings/info surfaced via stdout banners during the run; anyone needing post-hoc detail opens the JSON journal. | Eliminates a redundant human-facing mirror; no information is lost — just stops maintaining two views of the same data. Revises D19. |
 
 ---
 
@@ -168,7 +168,7 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 - [x] Repo scaffold: `~/Droidoes/Obsidian-KDB/{docs, kdb_compiler/tests/fixtures}`
 - [x] `docs/CODEBASE_OVERVIEW.md` (this file)
 - [x] `KDB/CLAUDE.md` — compiler invariants for LLM
-- [x] `KDB/wiki/index.md`, `KDB/wiki/log.md` (empty)
+- [x] ~~`KDB/wiki/index.md`, `KDB/wiki/log.md` (empty)~~ — dropped by D23/D24
 - [x] `KDB/state/manifest.json` (initial empty shape)
 - [x] `kdb_compiler/__init__.py` + 8 module stubs
 - [x] Initial commit

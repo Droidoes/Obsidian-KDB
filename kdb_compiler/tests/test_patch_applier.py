@@ -16,7 +16,6 @@ from kdb_compiler.patch_applier import (
     apply,
     build_page_patches,
     emit_frontmatter,
-    render_log_prepend,
     render_page,
 )
 from kdb_compiler.run_context import SCHEMA_VERSION, RunContext
@@ -336,49 +335,6 @@ def test_build_page_patches_empty_source_refs_raises() -> None:
 
 
 # ===========================================================================
-# render_log_prepend (tests 17–20)
-# ===========================================================================
-
-def test_render_log_prepend_empty_log_uses_stub_header() -> None:
-    out = render_log_prepend(_ctx(), "", {"success": True, "counts": {}})
-    assert "# KDB Compile Log" in out
-    assert "Most recent at top." in out
-    assert "## Run 2026-04-19T14-00-00Z" in out
-    assert "_(none)_" in out  # log_entries empty
-
-
-def test_render_log_prepend_preserves_existing_content() -> None:
-    existing = (
-        "# KDB Compile Log\n\n"
-        "_Append-only audit trail. Each compile run appends a block below. "
-        "Most recent at top._\n\n---\n\n"
-        "## Run OLDER\n\n- **Result:** success\n\n---\n"
-    )
-    out = render_log_prepend(_ctx(run_id="NEWER"), existing,
-                             {"success": True, "counts": {}})
-    new_pos = out.index("## Run NEWER")
-    old_pos = out.index("## Run OLDER")
-    assert new_pos < old_pos
-    assert "Append-only audit trail" in out
-
-
-def test_render_log_prepend_formats_log_entries_as_bullets() -> None:
-    ctx = _ctx()
-    ctx.log_entries = [
-        {"level": "info", "message": "compiled paper", "run_id": ctx.run_id},
-        {"level": "warning", "message": "ambiguous title", "run_id": ctx.run_id},
-    ]
-    out = render_log_prepend(ctx, "", {"success": True, "counts": {}})
-    assert "- `info` — compiled paper" in out
-    assert "- `warning` — ambiguous title" in out
-
-
-def test_render_log_prepend_no_entries_shows_none() -> None:
-    out = render_log_prepend(_ctx(), "", {"success": True, "counts": {}})
-    assert "### Log entries\n\n_(none)_" in out
-
-
-# ===========================================================================
 # apply (tests 21–24)
 # ===========================================================================
 
@@ -411,14 +367,14 @@ def _basic_manifest() -> dict:
     )
 
 
-def test_apply_writes_page_index_and_log(tmp_path: Path) -> None:
+def test_apply_writes_page_only(tmp_path: Path) -> None:
     state = tmp_path / "state"
     vault = tmp_path / "vault"
     _seed_state(state, _basic_cr())
     ctx = _ctx(vault_root=vault)
     r = apply(state, vault, next_manifest=_basic_manifest(), run_ctx=ctx)
     assert r.pages_written == ["KDB/wiki/summaries/paper.md"]
-    assert r.log_appended and not r.dry_run
+    assert not r.dry_run
     page_path = vault / "KDB/wiki/summaries/paper.md"
     assert page_path.exists()
     text = page_path.read_text()
@@ -426,7 +382,7 @@ def test_apply_writes_page_index_and_log(tmp_path: Path) -> None:
     assert "slug: paper" in text
     assert "Body text." in text
     assert not (vault / "KDB/wiki/index.md").exists()
-    assert (vault / "KDB/wiki/log.md").exists()
+    assert not (vault / "KDB/wiki/log.md").exists()
 
 
 def test_apply_dry_run_writes_nothing(tmp_path: Path) -> None:
@@ -503,7 +459,7 @@ def test_cli_happy_path_writes_wiki_but_not_manifest(tmp_path: Path) -> None:
     assert r.returncode == 0, r.stderr
     assert (vault / "KDB/wiki/summaries/paper.md").exists()
     assert not (vault / "KDB/wiki/index.md").exists()
-    assert (vault / "KDB/wiki/log.md").exists()
+    assert not (vault / "KDB/wiki/log.md").exists()
     assert not (state / "manifest.json").exists()  # patch_applier does NOT write manifest
 
 

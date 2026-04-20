@@ -1,7 +1,7 @@
-"""patch_applier — writes wiki pages + log.md from compile_result + next_manifest.
+"""patch_applier — writes wiki pages from compile_result + next_manifest.
 
 Architecture (Selection A + iii + a, M1.6 blueprint):
-    * Pure core renders PagePatch objects + log.md text.
+    * Pure core renders PagePatch objects.
     * I/O shell (`apply`) does all filesystem writes via atomic_io.
     * CLI runs pure manifest_update.build_manifest_update() to get next_manifest
       in memory, then applies — but does NOT write manifest.json (that is
@@ -11,9 +11,9 @@ Contracts:
     * D8: LLM emits slug-keyed intents; Python owns frontmatter + paths.
     * D14: atomic temp+fsync+os.replace via atomic_io.
     * D18: full-body replacement.
-    * D19: LLM never authors log.md — Python writes it from run journals.
     * D22: no imaginary complexity.
     * D23: no index.md — Obsidian file explorer + manifest.json serve as TOC.
+    * D24: no log.md — state/runs/<run_id>.json is the authoritative journal.
 
 Never writes outside KDB/wiki/. Never mutates KDB/raw/ or KDB/state/.
 """
@@ -53,7 +53,6 @@ class PagePatch:
 class ApplyResult:
     pages_written: list[str] = field(default_factory=list)
     pages_skipped: list[str] = field(default_factory=list)
-    log_appended: bool = False
     dry_run: bool = False
     counts: dict = field(default_factory=dict)
 
@@ -213,69 +212,6 @@ def build_page_patches(
     return patches
 
 
-# ----- log.md -----
-
-_LOG_STUB_HEADER = (
-    "# KDB Compile Log\n\n"
-    "_Append-only audit trail. Each compile run appends a block below. "
-    "Most recent at top._\n\n---\n"
-)
-
-
-def _format_summary(apply_summary: dict) -> str:
-    result = "success" if apply_summary.get("success", True) else "failure"
-    counts = apply_summary.get("counts", {})
-    s = counts.get("summaries", 0)
-    c = counts.get("concepts", 0)
-    a = counts.get("articles", 0)
-    total = counts.get("pages_written", 0)
-    orphans = counts.get("orphan_candidates", 0)
-    return (
-        f"{result} · {total} pages written "
-        f"({s} summaries, {c} concepts, {a} articles) · "
-        f"{orphans} orphans flagged"
-    )
-
-
-def render_log_prepend(
-    run_ctx: RunContext, existing_log: str, apply_summary: dict
-) -> str:
-    block_lines = [
-        f"## Run {run_ctx.run_id}",
-        "",
-        f"- **Started:** {run_ctx.started_at}",
-        f"- **Result:** {_format_summary(apply_summary)}",
-        "",
-        "### Log entries",
-        "",
-    ]
-    if run_ctx.log_entries:
-        for entry in run_ctx.log_entries:
-            level = entry.get("level", "info")
-            msg = entry.get("message", "")
-            block_lines.append(f"- `{level}` — {msg}")
-    else:
-        block_lines.append("_(none)_")
-    block_lines.append("")
-    block_lines.append("---")
-    block = "\n".join(block_lines) + "\n"
-
-    if not existing_log.strip():
-        return _LOG_STUB_HEADER + "\n" + block
-
-    sep = "\n---\n"
-    idx = existing_log.find(sep)
-    if idx == -1:
-        return existing_log.rstrip("\n") + "\n\n---\n\n" + block
-
-    head = existing_log[: idx + len(sep)]
-    tail = existing_log[idx + len(sep):]
-    tail = tail.lstrip("\n")
-    if tail:
-        return head + "\n" + block + "\n" + tail
-    return head + "\n" + block
-
-
 # -------------------------------------------------------------------------
 # I/O shell
 # -------------------------------------------------------------------------
@@ -283,12 +219,6 @@ def render_log_prepend(
 def _load_json(path: Path) -> dict:
     with path.open(encoding="utf-8") as f:
         return json.load(f)
-
-
-def _read_log(path: Path) -> str:
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8")
 
 
 def _count_page_types(patches: list[PagePatch]) -> dict:
@@ -320,37 +250,27 @@ def apply(
 
     per_type = _count_page_types(patches)
     unique_page_keys = sorted({p.page_key for p in patches})
-    apply_summary = {
-        "success": True,
-        "counts": {
-            "pages_written": len(unique_page_keys),
-            "summaries": per_type["summary"],
-            "concepts": per_type["concept"],
-            "articles": per_type["article"],
-            "orphan_candidates": _count_orphans(next_manifest),
-        },
+    counts = {
+        "pages_written": len(unique_page_keys),
+        "summaries": per_type["summary"],
+        "concepts": per_type["concept"],
+        "articles": per_type["article"],
+        "orphan_candidates": _count_orphans(next_manifest),
     }
-
-    log_path = vault_root / "KDB" / "wiki" / "log.md"
-    existing_log = _read_log(log_path)
-    log_text = render_log_prepend(run_ctx, existing_log, apply_summary)
 
     result = ApplyResult(
         pages_written=[],
         pages_skipped=[],
-        log_appended=False,
         dry_run=(not write) or run_ctx.dry_run,
-        counts=apply_summary["counts"],
+        counts=counts,
     )
     if result.dry_run:
         return result
 
     for patch in patches:
         atomic_write_text(patch.abs_path, emit_frontmatter(patch.frontmatter) + patch.body)
-    atomic_write_text(log_path, log_text)
 
     result.pages_written = unique_page_keys
-    result.log_appended = True
     return result
 
 
@@ -361,7 +281,7 @@ def apply(
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m kdb_compiler.patch_applier",
-        description="Render wiki pages + log.md from compile_result (pages-only; does not write manifest.json).",
+        description="Render wiki pages from compile_result (pages-only; does not write manifest.json).",
     )
     p.add_argument("--state-root", required=True, type=Path,
                    help="Directory containing last_scan.json + compile_result.json + (optional) manifest.json")
@@ -425,10 +345,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     mode = "dry-run" if result.dry_run else "applied"
-    print(
-        f"patch_applier ({mode}): {len(result.pages_written)} pages · "
-        f"log {'✓' if result.log_appended else '—'}"
-    )
+    print(f"patch_applier ({mode}): {len(result.pages_written)} pages")
     return 0
 
 
