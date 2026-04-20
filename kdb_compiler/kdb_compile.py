@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -239,9 +240,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # Print the header BEFORE calling compile() so the user sees the run
     # has started even during the (potentially multi-minute) LLM pass.
+    # run_id stays UTC (stable, sortable, DST-safe); the header also
+    # renders it in the system's local timezone for quick human parsing.
     ctx = RunContext.new(dry_run=args.dry_run, vault_root=vault_root)
     suffix = " (dry-run)" if args.dry_run else ""
-    print(f"kdb_compile: run_id={ctx.run_id}{suffix}", flush=True)
+    local = datetime.fromisoformat(
+        ctx.started_at.replace("Z", "+00:00")
+    ).astimezone()
+    local_str = local.strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+    print(
+        f"kdb_compile: run_id={ctx.run_id}{suffix}  ({local_str})",
+        flush=True,
+    )
 
     progress = _make_stdout_progress(dry_run=args.dry_run)
     result = compile(vault_root, dry_run=args.dry_run, run_ctx=ctx, progress=progress)
