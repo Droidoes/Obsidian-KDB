@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import atomic_io, paths
-from .run_context import SCHEMA_VERSION, RunContext, utc_now_iso
+from .run_context import SCHEMA_VERSION, RunContext, now_iso
 from . import __version__
 
 DEFAULT_KB_ID = "joseph-kdb"
@@ -105,7 +105,7 @@ def build_run_ctx(
 ) -> RunContext:
     """Construct a RunContext pinned to compile_result.run_id."""
     run_id = compile_result["run_id"]
-    now = utc_now_iso()
+    now = now_iso()
     root = vault_root if vault_root is not None else paths.vault_root()
     return RunContext(
         run_id=run_id,
@@ -629,7 +629,7 @@ def build_journal(prior: dict, next_manifest: dict, last_scan: dict,
         "schema_version": SCHEMA_VERSION,
         "run_id": ctx.run_id,
         "started_at": ctx.started_at,
-        "finished_at": finished_at or utc_now_iso(),
+        "finished_at": finished_at or now_iso(),
         "success": bool(compile_result.get("success")),
         "compiler_version": ctx.compiler_version,
         "manifest_updated_at": next_manifest.get("updated_at"),

@@ -29,7 +29,7 @@ from typing import Any
 from . import manifest_update
 from . import paths
 from .atomic_io import atomic_write_text
-from .run_context import RunContext, SCHEMA_VERSION, run_id_from_timestamp, utc_now_iso
+from .run_context import RunContext, SCHEMA_VERSION, run_id_from_timestamp, now_iso
 
 
 class PagePatchError(Exception):
@@ -428,8 +428,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _make_ctx(scan: dict, vault_root: Path, dry_run: bool) -> RunContext:
-    run_id = scan.get("run_id") or run_id_from_timestamp(utc_now_iso())
-    started_at = scan.get("scanned_at") or utc_now_iso()
+    run_id = scan.get("run_id") or run_id_from_timestamp(now_iso())
+    started_at = scan.get("scanned_at") or now_iso()
     from . import __version__
     return RunContext(
         run_id=run_id,

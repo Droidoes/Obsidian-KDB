@@ -240,16 +240,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Print the header BEFORE calling compile() so the user sees the run
     # has started even during the (potentially multi-minute) LLM pass.
-    # run_id stays UTC (stable, sortable, DST-safe); the header also
-    # renders it in the system's local timezone for quick human parsing.
+    # started_at is local; the header also names the TZ abbreviation.
     ctx = RunContext.new(dry_run=args.dry_run, vault_root=vault_root)
     suffix = " (dry-run)" if args.dry_run else ""
-    local = datetime.fromisoformat(
-        ctx.started_at.replace("Z", "+00:00")
-    ).astimezone()
-    local_str = local.strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+    tz_name = datetime.fromisoformat(ctx.started_at).strftime("%Z").strip()
     print(
-        f"kdb_compile: run_id={ctx.run_id}{suffix}  ({local_str})",
+        f"kdb_compile: run_id={ctx.run_id}{suffix}  ({tz_name})",
         flush=True,
     )
 

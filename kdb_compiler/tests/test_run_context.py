@@ -8,18 +8,21 @@ from kdb_compiler import run_context
 from kdb_compiler.run_context import RunContext, SCHEMA_VERSION
 
 
-ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+# Local ISO: '2026-04-19T22:34:09-04:00' (offset) or '...+00:00' (UTC-tz machine).
+ISO_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$"
+)
 
 
-def test_utc_now_iso_format() -> None:
-    ts = run_context.utc_now_iso()
+def test_now_iso_format() -> None:
+    ts = run_context.now_iso()
     assert ISO_RE.match(ts), ts
 
 
 def test_run_id_from_timestamp_is_filename_safe() -> None:
-    rid = run_context.run_id_from_timestamp("2026-04-18T12:34:56Z")
+    rid = run_context.run_id_from_timestamp("2026-04-18T12:34:56-04:00")
     assert ":" not in rid
-    assert rid == "2026-04-18T12-34-56Z"
+    assert rid == "2026-04-18T12-34-56-04-00"
 
 
 def test_runcontext_new_populates_fields(tmp_path: Path) -> None:

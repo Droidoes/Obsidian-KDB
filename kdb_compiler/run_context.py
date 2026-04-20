@@ -10,7 +10,7 @@ owns all of them; CLAUDE.md forbids the LLM from emitting these fields.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from . import __version__
@@ -19,18 +19,29 @@ from . import paths
 SCHEMA_VERSION = "1.0"
 
 
-def utc_now_iso() -> str:
-    """ISO-8601 UTC timestamp with 'Z' suffix, second precision."""
+def now_iso() -> str:
+    """ISO-8601 local timestamp with offset, second precision.
+
+    Example: '2026-04-19T22:34:09-04:00'. Local time is used everywhere
+    in the project for human readability — this is a single-user,
+    single-machine system where DST sortability across timezones is a
+    theoretical concern, not a real one.
+    """
     return (
-        datetime.now(timezone.utc)
+        datetime.now().astimezone()
         .replace(microsecond=0)
         .isoformat()
-        .replace("+00:00", "Z")
     )
 
 
 def run_id_from_timestamp(iso_ts: str) -> str:
-    """Filename-safe run_id derived from an ISO timestamp."""
+    """Filename-safe run_id derived from an ISO timestamp.
+
+    Colons (time separator, offset separator) and dots (fractional
+    seconds, if any) are replaced with dashes. The offset carries
+    through as e.g. '-04-00' so the run_id still encodes the full
+    instant without relying on a side channel for the timezone.
+    """
     return iso_ts.replace(":", "-").replace(".", "-")
 
 
@@ -48,7 +59,7 @@ class RunContext:
     @classmethod
     def new(cls, *, dry_run: bool = False, vault_root: Path | None = None) -> "RunContext":
         root = vault_root if vault_root is not None else paths.vault_root()
-        now = utc_now_iso()
+        now = now_iso()
         return cls(
             run_id=run_id_from_timestamp(now),
             started_at=now,
