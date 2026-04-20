@@ -2,25 +2,25 @@
 
 Coverage per blueprint §10:
     - happy path produces one CompiledSource with compile_meta threaded
-    - source-read failure writes an eval record (prompt=None, model_resp=None)
-    - prompt-build failure writes an eval record (prompt=None)
-    - model-call (SDK) failure writes an eval record (model_response=None)
-    - extract failure (prose) writes an eval record with extract_ok=False
-    - parse failure (broken JSON) writes an eval record with parse_ok=False,
+    - source-read failure writes a resp-stats record (prompt=None, model_resp=None)
+    - prompt-build failure writes a resp-stats record (prompt=None)
+    - model-call (SDK) failure writes a resp-stats record (model_response=None)
+    - extract failure (prose) writes a resp-stats record with extract_ok=False
+    - parse failure (broken JSON) writes a resp-stats record with parse_ok=False,
       parsed_summary=None
-    - schema failure writes an eval record with schema_ok=False and
+    - schema failure writes a resp-stats record with schema_ok=False and
       parsed_summary populated
-    - semantic failure writes an eval record with semantic_ok=False
+    - semantic failure writes a resp-stats record with semantic_ok=False
     - mixed run (1 pass + 2 fail) -> success=False, errors=2, compiled=1
     - empty-jobs run -> success=True, compiled=[], log has 1 info entry
     - all-fail run -> success=False
     - dry_run=True skips compile_result.json write
-    - eval record written EXACTLY ONCE per compile_one call, in every branch
+    - resp-stats record written EXACTLY ONCE per compile_one call, in every branch
     - run_compile returns a CompileResult that passes validate_compile_result
 
 All tests use `monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fake)`
-to stub the LLM. The eval-invariant check counts files on disk under
-<state_root>/llm_eval/<run_id>/, which is the authoritative evidence.
+to stub the LLM. The resp-stats invariant check counts files on disk under
+<state_root>/llm_resp_stats/<run_id>/, which is the authoritative evidence.
 
 prompt_builder caches CLAUDE.md by vault path — an autouse fixture clears
 that cache between tests so per-test vaults don't leak.
@@ -122,8 +122,8 @@ def _ctx(vault: Path) -> RunContext:
     return RunContext.new(dry_run=False, vault_root=vault)
 
 
-def _eval_files(state_root: Path, run_id: str) -> list[Path]:
-    return sorted((state_root / "llm_eval" / run_id).glob("*.json"))
+def _resp_stats_files(state_root: Path, run_id: str) -> list[Path]:
+    return sorted((state_root / "llm_resp_stats" / run_id).glob("*.json"))
 
 
 def _fake_call(mapping: dict) -> callable:
@@ -175,7 +175,7 @@ def test_compile_one_happy_path_returns_compiled_source(
     assert cs.summary_slug == "foo-summary"
     assert logs == []
     assert warns == []
-    assert len(_eval_files(state_root, ctx.run_id)) == 1
+    assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
 
 
 def test_compile_one_threads_compile_meta_from_model_response(
@@ -214,9 +214,9 @@ def test_compile_one_threads_compile_meta_from_model_response(
     assert meta.error is None
 
 
-# ---------- compile_one: failure paths (all write exactly one eval record) ----------
+# ---------- compile_one: failure paths (all write exactly one resp-stats record) ----------
 
-def test_compile_one_source_read_failure_writes_eval_record(
+def test_compile_one_source_read_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -240,7 +240,7 @@ def test_compile_one_source_read_failure_writes_eval_record(
     assert cs is None
     assert "source read failed" in (err or "")
 
-    files = _eval_files(state_root, ctx.run_id)
+    files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     record = json.loads(files[0].read_text(encoding="utf-8"))
     assert record["prompt_hash"] == "sha256:none"
@@ -249,7 +249,7 @@ def test_compile_one_source_read_failure_writes_eval_record(
     assert record["input_tokens"] == 0
 
 
-def test_compile_one_prompt_build_failure_writes_eval_record(
+def test_compile_one_prompt_build_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -280,13 +280,13 @@ def test_compile_one_prompt_build_failure_writes_eval_record(
     assert "prompt build failed" in (err or "")
     assert "prompt build exploded" in (err or "")
 
-    files = _eval_files(state_root, ctx.run_id)
+    files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     record = json.loads(files[0].read_text(encoding="utf-8"))
     assert record["prompt_hash"] == "sha256:none"
 
 
-def test_compile_one_model_call_failure_writes_eval_record(
+def test_compile_one_model_call_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -313,7 +313,7 @@ def test_compile_one_model_call_failure_writes_eval_record(
     assert cs is None
     assert "model call failed" in (err or "")
 
-    files = _eval_files(state_root, ctx.run_id)
+    files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     record = json.loads(files[0].read_text(encoding="utf-8"))
     # prompt was built, so prompt_hash is real; response failed pre-body.
@@ -357,7 +357,7 @@ def test_compile_one_truncation_guard_short_circuits_extract(
     assert "truncated at max_tokens=4096" in err
     assert "stop_reason='max_tokens'" in err
 
-    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     # Guard fires before extract — extract_ok stays False.
     assert record["extract_ok"] is False
     assert record["parse_ok"] is False
@@ -397,7 +397,7 @@ def test_compile_one_openai_length_stop_reason_also_guarded(
     assert "stop_reason='length'" in err
 
 
-def test_compile_one_extract_failure_writes_eval_record(
+def test_compile_one_extract_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -428,12 +428,12 @@ def test_compile_one_extract_failure_writes_eval_record(
     assert cs is None
     assert "extract failed" in (err or "")
 
-    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["extract_ok"] is False
     assert record["parse_ok"] is False
 
 
-def test_compile_one_parse_failure_writes_eval_record(
+def test_compile_one_parse_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -464,13 +464,13 @@ def test_compile_one_parse_failure_writes_eval_record(
     assert cs is None
     assert "invalid JSON" in (err or "")
 
-    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["extract_ok"] is True
     assert record["parse_ok"] is False
     assert record["parsed_summary"] is None
 
 
-def test_compile_one_schema_failure_writes_eval_record(
+def test_compile_one_schema_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -503,7 +503,7 @@ def test_compile_one_schema_failure_writes_eval_record(
     assert cs is None
     assert "schema validation failed" in (err or "")
 
-    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["parse_ok"] is True
     assert record["schema_ok"] is False
     assert record["semantic_ok"] is False
@@ -512,7 +512,7 @@ def test_compile_one_schema_failure_writes_eval_record(
     assert record["parsed_summary"]["page_count"] == 1
 
 
-def test_compile_one_semantic_failure_writes_eval_record(
+def test_compile_one_semantic_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -545,7 +545,7 @@ def test_compile_one_semantic_failure_writes_eval_record(
     assert cs is None
     assert "semantic check failed" in (err or "")
 
-    record = json.loads(_eval_files(state_root, ctx.run_id)[0].read_text())
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["schema_ok"] is True
     assert record["semantic_ok"] is False
 
@@ -613,8 +613,8 @@ def test_run_compile_mixed_run_fail_does_not_block_success_partial(
     assert result.compiled_sources[0].source_id == SOURCE_A
     assert len(result.errors) == 2
 
-    # One eval record per compile_one call — three calls.
-    assert len(_eval_files(state_root, ctx.run_id)) == 3
+    # One resp-stats record per compile_one call — three calls.
+    assert len(_resp_stats_files(state_root, ctx.run_id)) == 3
 
 
 def test_run_compile_all_fail_success_false(
@@ -698,7 +698,7 @@ def test_run_compile_write_true_atomically_writes_compile_result(
     assert len(on_disk["compiled_sources"]) == 1
 
 
-def test_run_compile_dry_run_skips_compile_result_write_but_keeps_eval_records(
+def test_run_compile_dry_run_skips_compile_result_write_but_keeps_resp_stats_records(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     vault = _write_vault(tmp_path)
@@ -720,7 +720,7 @@ def test_run_compile_dry_run_skips_compile_result_write_but_keeps_eval_records(
     )
     assert not (state_root / "compile_result.json").exists()
     # Eval record still written — debug artifact, not gated by write.
-    assert len(_eval_files(state_root, ctx.run_id)) == 1
+    assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
 
 
 def test_run_compile_result_passes_aggregate_validator(

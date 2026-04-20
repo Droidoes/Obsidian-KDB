@@ -7,19 +7,19 @@ Contract (per blueprint §5.7 / §9):
 
   * `compile_one` runs the scaffold-and-fill pattern: a mutable `state`
     dict is initialised at entry, each stage updates it, and a single
-    `finally` block writes the EvalRecord. This guarantees the invariant
-    "exactly one eval record per compile_one call" — including the
-    source-read and prompt-build failure paths. Every early return flows
-    through the same finally.
+    `finally` block writes the RespStatsRecord. This guarantees the
+    invariant "exactly one resp-stats record per compile_one call" —
+    including the source-read and prompt-build failure paths. Every
+    early return flows through the same finally.
 
   * `run_compile` plans, runs `compile_one` per job, aggregates, and
     optionally writes `compile_result.json`. An empty job list is a
     successful no-op (single info log entry, `success=True`). Run-level
     success is `len(errors) == 0` — not `len(compiled_sources) > 0`.
 
-  * Eval records are written in every case, including `dry_run` (no
-    `compile_result.json` on disk), because the records are the debug
-    artifacts you run the pipeline *to* collect.
+  * Resp-stats records are written in every case, including `dry_run`
+    (no `compile_result.json` on disk), because the records are the
+    debug artifacts you run the pipeline *to* collect.
 
 `call_model_with_retry` is imported at module level so tests can
 monkeypatch `kdb_compiler.compiler.call_model_with_retry` as a clean
@@ -43,7 +43,7 @@ from kdb_compiler import (
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
-from kdb_compiler.eval_writer import build_eval_record, write_eval_record
+from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import (
     CompiledSource,
@@ -74,7 +74,7 @@ def compile_one(
     """Execute one per-source compile call. See blueprint §9.
 
     Returns (compiled_source | None, log_entries, warnings, error | None).
-    Always writes exactly one EvalRecord in the finally block, regardless
+    Always writes exactly one RespStatsRecord in the finally block, regardless
     of which stage (if any) failed.
     """
     source_id = job.source_id
@@ -225,7 +225,7 @@ def compile_one(
         )
 
     finally:
-        record = build_eval_record(
+        record = build_resp_stats(
             ctx=ctx,
             source_id=source_id,
             prompt=state["prompt"],
@@ -239,7 +239,7 @@ def compile_one(
             semantic_ok=state["semantic_ok"],
             semantic_errors=state["semantic_errors"],
         )
-        write_eval_record(record, state_root)
+        write_resp_stats(record, state_root)
 
 
 def run_compile(
@@ -255,9 +255,9 @@ def run_compile(
     progress: Callable[..., None] | None = None,
 ) -> CompileResult:
     """Plan -> per-source compile -> aggregate -> optionally write
-    compile_result.json. Eval records are written regardless of `write` —
-    they're debug artifacts and suppressing them would hide the very
-    behaviour a dry run exists to inspect."""
+    compile_result.json. Resp-stats records are written regardless of
+    `write` — they're debug artifacts and suppressing them would hide
+    the very behaviour a dry run exists to inspect."""
     vault_root = Path(vault_root)
     state_root = Path(state_root)
 
@@ -346,7 +346,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="kdb-compile-sources",
         description=(
             "Run the per-source LLM compile over last_scan.json's to_compile "
-            "list. Writes compile_result.json and one eval record per job."
+            "list. Writes compile_result.json and one resp-stats record per job."
         ),
     )
     p.add_argument("--vault-root", required=True, help="Absolute path to Obsidian vault root")
@@ -356,7 +356,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Skip writing compile_result.json (eval records still written)",
+        help="Skip writing compile_result.json (resp-stats records still written)",
     )
     return p
 

@@ -308,10 +308,16 @@ class ParsedSummary:
 
 
 @dataclass
-class EvalRecord:
-    """One eval record written per compile_one call. Metadata + hashes +
-    four classification flags + parsed_summary are always on. parsed_json
-    and full prompt/response bodies are gated by KDB_EVAL_CAPTURE_FULL=1.
+class RespStatsRecord:
+    """One response-stats record written per compile_one call. Metadata +
+    hashes + four well-formedness flags + parsed_summary are always on.
+    parsed_json and full prompt/response bodies are gated by
+    KDB_RESP_STATS_CAPTURE_FULL=1.
+
+    These are CALL-TELEMETRY fields (did the call run; is the response
+    well-formed), NOT response-quality scores. A response can pass all
+    four flags and still be a poor answer — quality scoring is a
+    separate feature (see M2 E3 deferred).
 
     response_hash == 'sha256:none' indicates no response was captured
     (pre-response failure). prompt_hash == 'sha256:none' indicates the

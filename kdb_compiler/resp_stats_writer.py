@@ -1,13 +1,19 @@
-"""eval_writer — build + atomically write one EvalRecord per compile call.
+"""resp_stats_writer — build + atomically write one RespStatsRecord per compile call.
 
-Writes to `<state_root>/llm_eval/<run_id>/<safe_source_id>.json`.
+Writes to `<state_root>/llm_resp_stats/<run_id>/<safe_source_id>.json`.
 Directory creation is handled by atomic_io.atomic_write_bytes (mkdir
 parents=True, exist_ok=True on the target's parent).
 
+These are call-telemetry records, NOT quality evaluations. They capture
+mechanical run stats (tokens, latency, attempts) and well-formedness
+gates (extract/parse/schema/semantic). A response can score 4/4 on the
+gates and still be a poor answer — judging response quality is a
+separate feature (see M2 E3 deferred).
+
 Always-on fields: metadata, hashes, four classification flags,
 schema_errors, semantic_errors, parsed_summary (when parse_ok=True).
-Env-gated by KDB_EVAL_CAPTURE_FULL=='1': parsed_json, system_prompt,
-user_prompt, raw_response_text.
+Env-gated by KDB_RESP_STATS_CAPTURE_FULL=='1': parsed_json,
+system_prompt, user_prompt, raw_response_text.
 
 Hash sentinels distinguish missing data from empty data:
   prompt_hash   = 'sha256:none'  -> prompt could not be built
@@ -24,7 +30,7 @@ from typing import TYPE_CHECKING
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import EvalRecord, ParsedSummary
+from kdb_compiler.types import ParsedSummary, RespStatsRecord
 
 if TYPE_CHECKING:
     # BuiltPrompt is defined in prompt_builder (Step F). Runtime uses duck
@@ -32,7 +38,7 @@ if TYPE_CHECKING:
     from kdb_compiler.prompt_builder import BuiltPrompt
 
 _NONE_HASH = "sha256:none"
-_CAPTURE_FULL_ENV = "KDB_EVAL_CAPTURE_FULL"
+_CAPTURE_FULL_ENV = "KDB_RESP_STATS_CAPTURE_FULL"
 
 
 def _sha256(text: str) -> str:
@@ -102,7 +108,7 @@ def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
     )
 
 
-def build_eval_record(
+def build_resp_stats(
     *,
     ctx: RunContext,
     source_id: str,
@@ -116,9 +122,9 @@ def build_eval_record(
     schema_errors: list[str],
     semantic_ok: bool,
     semantic_errors: list[str],
-) -> EvalRecord:
-    """Assemble one EvalRecord. Hashes always computed. See module docstring
-    for the always-on vs env-gated field split."""
+) -> RespStatsRecord:
+    """Assemble one RespStatsRecord. Hashes always computed. See module
+    docstring for the always-on vs env-gated field split."""
     capture_full = _capture_full()
 
     if model_response is not None:
@@ -146,7 +152,7 @@ def build_eval_record(
 
     summary = build_parsed_summary(parsed_json) if (parse_ok and isinstance(parsed_json, dict)) else None
 
-    return EvalRecord(
+    return RespStatsRecord(
         run_id=ctx.run_id,
         source_id=source_id,
         provider=provider,
@@ -171,12 +177,12 @@ def build_eval_record(
     )
 
 
-def write_eval_record(record: EvalRecord, state_root: Path) -> Path:
-    """Atomic write to <state_root>/llm_eval/<run_id>/<safe_source_id>.json.
+def write_resp_stats(record: RespStatsRecord, state_root: Path) -> Path:
+    """Atomic write to <state_root>/llm_resp_stats/<run_id>/<safe_source_id>.json.
 
     Returns the written path. atomic_write_json creates the parent dirs
     (parents=True, exist_ok=True) so no explicit mkdir is needed here.
     """
-    target = state_root / "llm_eval" / record.run_id / f"{safe_source_id(record.source_id)}.json"
+    target = state_root / "llm_resp_stats" / record.run_id / f"{safe_source_id(record.source_id)}.json"
     atomic_write_json(target, record.to_dict())
     return target

@@ -206,8 +206,8 @@ def test_missing_compile_result_triggers_live_compile(
     assert result.success is True
     assert (state / "compile_result.json").exists()
     assert (state / "manifest.json").exists()
-    # Eval record written by the inner compile_one call.
-    assert any((state / "llm_eval" / ctx.run_id).glob("*.json"))
+    # Resp-stats record written by the inner compile_one call.
+    assert any((state / "llm_resp_stats" / ctx.run_id).glob("*.json"))
 
 
 # ---------------------------------------------------------------------------

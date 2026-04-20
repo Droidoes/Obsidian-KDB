@@ -2,8 +2,8 @@
 
 Skipped unless `KDB_RUN_LIVE_API=1`. When enabled, runs ONE real
 Anthropic compile against case01's source.md and verifies the response
-passes schema + semantic validation and that an eval record lands on
-disk. Costs a single API call per run — not suitable for CI.
+passes schema + semantic validation and that a resp-stats record lands
+on disk. Costs a single API call per run — not suitable for CI.
 
 To run:
     ANTHROPIC_API_KEY=... KDB_RUN_LIVE_API=1 \\
@@ -11,7 +11,7 @@ To run:
 
 This is the "green-light" milestone per blueprint §14.6: the first
 evidence that the entire M2 stack (planner → prompt_builder → call_model
-→ response_normalizer → validator → eval_writer) works end-to-end
+→ response_normalizer → validator → resp_stats_writer) works end-to-end
 against a real provider.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     """One live Anthropic call against case01's source. Verifies that:
       - compile_one returns a non-None CompiledSource
       - the response passes schema + semantic checks
-      - exactly one eval record is written under <state>/llm_eval/<run_id>/
+      - exactly one resp-stats record is written under <state>/llm_resp_stats/<run_id>/
     """
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -102,8 +102,8 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     )
     assert semantic_errors == [], semantic_errors
 
-    eval_dir = state_root / "llm_eval" / ctx.run_id
-    records = list(eval_dir.glob("*.json"))
+    stats_dir = state_root / "llm_resp_stats" / ctx.run_id
+    records = list(stats_dir.glob("*.json"))
     assert len(records) == 1
 
     record = json.loads(records[0].read_text(encoding="utf-8"))

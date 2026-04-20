@@ -1,12 +1,12 @@
-"""Tests for eval_writer — per-call EvalRecord assembly and atomic writes.
+"""Tests for resp_stats_writer — per-call RespStatsRecord assembly and atomic writes.
 
 Coverage per blueprint §10:
     - safe_source_id stable; sha256 suffix disambiguates colliding slashed
       forms (e.g. 'a/b.md' vs 'a__b.md').
     - metadata+parsed_summary record (no full bodies) when env var unset.
     - full record (parsed_json + system/user prompt + raw response)
-      when KDB_EVAL_CAPTURE_FULL=1.
-    - write target path = <state_root>/llm_eval/<run_id>/<safe_id>.json.
+      when KDB_RESP_STATS_CAPTURE_FULL=1.
+    - write target path = <state_root>/llm_resp_stats/<run_id>/<safe_id>.json.
     - hashes deterministic for the same input.
     - model_response=None -> response_hash='sha256:none', zeroed metrics.
     - prompt=None -> prompt_hash='sha256:none'.
@@ -22,14 +22,14 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import eval_writer
+from kdb_compiler import resp_stats_writer
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.run_context import RunContext
 
 
 @dataclass
 class _FakePrompt:
-    """Duck-typed BuiltPrompt stand-in for tests. eval_writer only reads
+    """Duck-typed BuiltPrompt stand-in for tests. resp_stats_writer only reads
     .system and .user str attrs."""
     system: str
     user: str
@@ -87,14 +87,14 @@ def _parsed_json() -> dict:
 # ---------- safe_source_id ----------
 
 def test_safe_source_id_stable_for_same_input() -> None:
-    a = eval_writer.safe_source_id("KDB/raw/foo.md")
-    b = eval_writer.safe_source_id("KDB/raw/foo.md")
+    a = resp_stats_writer.safe_source_id("KDB/raw/foo.md")
+    b = resp_stats_writer.safe_source_id("KDB/raw/foo.md")
     assert a == b
 
 
 def test_safe_source_id_shape() -> None:
     sid = "KDB/raw/foo/bar.md"
-    out = eval_writer.safe_source_id(sid)
+    out = resp_stats_writer.safe_source_id(sid)
     # slashes replaced; 8-hex suffix appended
     assert out.startswith("KDB__raw__foo__bar.md.")
     suffix = out.rsplit(".", 1)[-1]
@@ -105,8 +105,8 @@ def test_safe_source_id_shape() -> None:
 def test_safe_source_id_suffix_disambiguates_collision() -> None:
     """'a/b.md' and 'a__b.md' both slash-escape to 'a__b.md' — only the
     sha256 suffix keeps them apart."""
-    a = eval_writer.safe_source_id("a/b.md")
-    b = eval_writer.safe_source_id("a__b.md")
+    a = resp_stats_writer.safe_source_id("a/b.md")
+    b = resp_stats_writer.safe_source_id("a__b.md")
     assert a != b
     assert a.startswith("a__b.md.") and b.startswith("a__b.md.")
 
@@ -114,7 +114,7 @@ def test_safe_source_id_suffix_disambiguates_collision() -> None:
 # ---------- build_parsed_summary ----------
 
 def test_build_parsed_summary_reduces_full_parsed_json() -> None:
-    summary = eval_writer.build_parsed_summary(_parsed_json())
+    summary = resp_stats_writer.build_parsed_summary(_parsed_json())
     assert summary.summary_slug == "foo"
     assert summary.page_count == 2
     assert summary.page_types == {"summary": 1, "concept": 1}
@@ -126,7 +126,7 @@ def test_build_parsed_summary_reduces_full_parsed_json() -> None:
 
 
 def test_build_parsed_summary_tolerates_missing_fields() -> None:
-    summary = eval_writer.build_parsed_summary({})
+    summary = resp_stats_writer.build_parsed_summary({})
     assert summary.summary_slug is None
     assert summary.page_count == 0
     assert summary.page_types == {}
@@ -146,22 +146,22 @@ def test_build_parsed_summary_ignores_malformed_pages() -> None:
             {"slug": "b"},                   # page_type missing
         ]
     }
-    summary = eval_writer.build_parsed_summary(payload)
+    summary = resp_stats_writer.build_parsed_summary(payload)
     assert summary.slugs == ["a", "b"]
     assert summary.page_types == {"summary": 1, "concept": 1}
 
 
-# ---------- build_eval_record: always-on fields + gated fields ----------
+# ---------- build_resp_stats: always-on fields + gated fields ----------
 
 def test_metadata_only_record_when_capture_full_unset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("KDB_EVAL_CAPTURE_FULL", raising=False)
+    monkeypatch.delenv("KDB_RESP_STATS_CAPTURE_FULL", raising=False)
     ctx = _ctx(tmp_path)
     prompt = _FakePrompt(system="SYS", user="USR")
     parsed = _parsed_json()
 
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx,
         source_id="KDB/raw/foo.md",
         prompt=prompt,
@@ -195,13 +195,13 @@ def test_metadata_only_record_when_capture_full_unset(
 def test_full_record_when_capture_full_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("KDB_EVAL_CAPTURE_FULL", "1")
+    monkeypatch.setenv("KDB_RESP_STATS_CAPTURE_FULL", "1")
     ctx = _ctx(tmp_path)
     prompt = _FakePrompt(system="SYS", user="USR")
     parsed = _parsed_json()
     raw = '{"source_id": "KDB/raw/foo.md"}'
 
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx,
         source_id="KDB/raw/foo.md",
         prompt=prompt,
@@ -228,8 +228,8 @@ def test_capture_full_only_exact_literal_1_enables(
     don't get surprised by partial matches."""
     ctx = _ctx(tmp_path)
     for val in ("true", "yes", "2", "on", "TRUE"):
-        monkeypatch.setenv("KDB_EVAL_CAPTURE_FULL", val)
-        record = eval_writer.build_eval_record(
+        monkeypatch.setenv("KDB_RESP_STATS_CAPTURE_FULL", val)
+        record = resp_stats_writer.build_resp_stats(
             ctx=ctx,
             source_id="KDB/raw/foo.md",
             prompt=_FakePrompt(system="S", user="U"),
@@ -250,14 +250,14 @@ def test_hashes_are_deterministic(tmp_path: Path) -> None:
     raw = '{"x": 1}'
     mr = _model_response(text=raw)
 
-    a = eval_writer.build_eval_record(
+    a = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md", prompt=prompt,
         raw_response_text=raw, model_response=mr,
         extract_ok=True, parse_ok=True, parsed_json={"x": 1},
         schema_ok=True, schema_errors=[],
         semantic_ok=True, semantic_errors=[],
     )
-    b = eval_writer.build_eval_record(
+    b = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md", prompt=prompt,
         raw_response_text=raw, model_response=mr,
         extract_ok=True, parse_ok=True, parsed_json={"x": 1},
@@ -279,7 +279,7 @@ def test_none_model_response_zeroes_metrics_and_sentinels_response_hash(
     tmp_path: Path,
 ) -> None:
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=_FakePrompt(system="S", user="U"),
         raw_response_text="",
@@ -299,7 +299,7 @@ def test_none_model_response_zeroes_metrics_and_sentinels_response_hash(
 
 def test_none_prompt_sentinels_prompt_hash(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=None,
         raw_response_text="",
@@ -314,7 +314,7 @@ def test_none_prompt_sentinels_prompt_hash(tmp_path: Path) -> None:
 def test_parsed_summary_only_when_parse_ok(tmp_path: Path) -> None:
     """parsed_summary is None when parse_ok=False, regardless of parsed_json."""
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=_FakePrompt(system="S", user="U"),
         raw_response_text="garbage",
@@ -326,11 +326,11 @@ def test_parsed_summary_only_when_parse_ok(tmp_path: Path) -> None:
     assert record.parsed_summary is None
 
 
-# ---------- write_eval_record: path + atomicity + dir creation ----------
+# ---------- write_resp_stats: path + atomicity + dir creation ----------
 
-def test_write_eval_record_target_path(tmp_path: Path) -> None:
+def test_write_resp_stats_target_path(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=_FakePrompt(system="S", user="U"),
         raw_response_text='{"x": 1}',
@@ -340,18 +340,18 @@ def test_write_eval_record_target_path(tmp_path: Path) -> None:
         semantic_ok=True, semantic_errors=[],
     )
     state_root = tmp_path / "state"
-    out = eval_writer.write_eval_record(record, state_root)
+    out = resp_stats_writer.write_resp_stats(record, state_root)
 
-    expected_name = eval_writer.safe_source_id("KDB/raw/foo.md") + ".json"
-    assert out == state_root / "llm_eval" / ctx.run_id / expected_name
+    expected_name = resp_stats_writer.safe_source_id("KDB/raw/foo.md") + ".json"
+    assert out == state_root / "llm_resp_stats" / ctx.run_id / expected_name
     assert out.exists()
 
 
-def test_write_eval_record_creates_parent_dirs(tmp_path: Path) -> None:
-    """atomic_write_json creates parents=True; state_root/llm_eval/<run_id>
+def test_write_resp_stats_creates_parent_dirs(tmp_path: Path) -> None:
+    """atomic_write_json creates parents=True; state_root/llm_resp_stats/<run_id>
     does not need to pre-exist."""
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=None, raw_response_text="",
         model_response=None,
@@ -361,15 +361,15 @@ def test_write_eval_record_creates_parent_dirs(tmp_path: Path) -> None:
     )
     state_root = tmp_path / "does" / "not" / "exist"
     assert not state_root.exists()
-    out = eval_writer.write_eval_record(record, state_root)
+    out = resp_stats_writer.write_resp_stats(record, state_root)
     assert out.exists()
     assert out.parent.name == ctx.run_id
-    assert out.parent.parent.name == "llm_eval"
+    assert out.parent.parent.name == "llm_resp_stats"
 
 
-def test_write_eval_record_content_is_json(tmp_path: Path) -> None:
+def test_write_resp_stats_content_is_json(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
-    record = eval_writer.build_eval_record(
+    record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=_FakePrompt(system="S", user="U"),
         raw_response_text='{"x": 1}',
@@ -378,7 +378,7 @@ def test_write_eval_record_content_is_json(tmp_path: Path) -> None:
         schema_ok=True, schema_errors=[],
         semantic_ok=True, semantic_errors=[],
     )
-    out = eval_writer.write_eval_record(record, tmp_path / "state")
+    out = resp_stats_writer.write_resp_stats(record, tmp_path / "state")
     data = json.loads(out.read_text(encoding="utf-8"))
 
     assert data["run_id"] == ctx.run_id
