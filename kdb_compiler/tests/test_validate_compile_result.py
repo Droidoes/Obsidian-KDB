@@ -112,6 +112,87 @@ def test_article_slug_missing_from_pages() -> None:
     assert any(f.type == "pairing_commission" and f.slug == "ghost-article" for f in result.gate_errors)
 
 
+# ---------- omission direction (page exists, slug missing) ----------
+
+def test_concept_page_missing_from_concept_slugs() -> None:
+    """A concept page in pages[] without a matching entry in concept_slugs is an omission."""
+    src = _src(
+        concept_slugs=[],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "mencius", "page_type": "concept", "title": "Mencius", "body": "z"},
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert len(omissions) == 1, result.gate_errors
+    assert omissions[0].slug == "mencius"
+    assert omissions[0].page_type == "concept"
+    assert "concept_slugs" in omissions[0].detail
+
+
+def test_article_page_missing_from_article_slugs() -> None:
+    src = _src(
+        article_slugs=[],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "some-essay", "page_type": "article", "title": "Essay", "body": "z"},
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert len(omissions) == 1
+    assert omissions[0].slug == "some-essay"
+    assert omissions[0].page_type == "article"
+
+
+def test_pairing_omission_and_commission_both_caught_in_one_pass() -> None:
+    """Both directions — page without slug AND slug without page — surface together."""
+    src = _src(
+        concept_slugs=["ghost"],  # ghost has no page (commission)
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "real-concept", "page_type": "concept", "title": "RC", "body": "z"},
+            # real-concept is a concept page but not in concept_slugs (omission)
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    commissions = [f for f in result.gate_errors if f.type == "pairing_commission"]
+    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert len(commissions) == 1 and commissions[0].slug == "ghost"
+    assert len(omissions) == 1 and omissions[0].slug == "real-concept"
+
+
+def test_multiple_concept_pages_all_missing_produce_per_page_findings() -> None:
+    src = _src(
+        concept_slugs=[],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
+            {"slug": "c2", "page_type": "concept", "title": "x", "body": "y"},
+            {"slug": "c3", "page_type": "concept", "title": "x", "body": "y"},
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert len(omissions) == 3
+    assert {f.slug for f in omissions} == {"c1", "c2", "c3"}
+
+
+def test_pairing_fully_correct_no_findings() -> None:
+    src = _src(
+        concept_slugs=["c1"],
+        article_slugs=["a1"],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
+            {"slug": "a1", "page_type": "article", "title": "x", "body": "y"},
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    assert result.is_valid, _details(result)
+
+
 @pytest.mark.parametrize("reserved", ["index", "log"])
 def test_reserved_slug_in_pages(reserved: str) -> None:
     src = _src(

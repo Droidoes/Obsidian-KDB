@@ -181,9 +181,11 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
         items = src.get(field_name) or []
         if not isinstance(items, list):
             continue
+        items_set: set[str] = set()
         for j, slug in enumerate(items):
             if not isinstance(slug, str):
                 continue
+            items_set.add(slug)
             pt = page_types.get(slug)
             if pt is None:
                 # Slug in list with no matching page of any type — reconcilable by deletion.
@@ -206,6 +208,22 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
                     source_id=source_id,
                     page_type=pt,
                     slug=slug,
+                ))
+
+        # Omission direction — for every concept/article page in pages[], its
+        # slug must appear in the matching slug list. Reconcilable by addition.
+        # Stays gate in this commit; flipped to "measure" in commit 3.
+        for page_slug, pt in page_types.items():
+            if pt != expected:
+                continue
+            if page_slug not in items_set:
+                result.gate_errors.append(ValidationFinding(
+                    type="pairing_omission",
+                    severity="gate",
+                    detail=f"[{loc}.{field_name}] missing slug {page_slug!r} ({expected} page exists in pages[])",
+                    source_id=source_id,
+                    page_type=expected,
+                    slug=page_slug,
                 ))
 
     def _reserved_check(slug_value: Any, where: str) -> None:
