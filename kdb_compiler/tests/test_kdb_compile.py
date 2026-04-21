@@ -808,3 +808,110 @@ def test_run_journal_builder_replay_mode_nullables(tmp_path: Path) -> None:
     # Top-level success semantics unaffected by replay nullables.
     assert journal["success"] is True
     assert journal["compile_success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 — validator findings + reconciler actions + response_score in journal
+# ---------------------------------------------------------------------------
+
+def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
+    """A compile_result where a concept page exists but its slug is missing
+    from concept_slugs — the exact pathology the reconciler fixes."""
+    return {
+        "run_id": run_id,
+        "success": True,
+        "compiled_sources": [{
+            "source_id": source_id,
+            "summary_slug": "paper",
+            "concept_slugs": [],            # <-- empty
+            "article_slugs": [],
+            "pages": [
+                {
+                    "slug": "paper", "page_type": "summary",
+                    "title": "Paper", "body": "Summary body.",
+                    "status": "active",
+                    "supports_page_existence": [source_id],
+                    "outgoing_links": ["mencius"], "confidence": "high",
+                },
+                {
+                    "slug": "mencius", "page_type": "concept",  # <-- concept page
+                    "title": "Mencius", "body": "Concept body [[paper]].",
+                    "status": "active",
+                    "supports_page_existence": [source_id],
+                    "outgoing_links": ["paper"], "confidence": "medium",
+                },
+            ],
+        }],
+        "log_entries": [],
+    }
+
+
+def test_stage4_journal_records_clean_when_no_findings(tmp_path: Path) -> None:
+    """A consistent compile_result produces empty measure_findings + actions and null score."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+
+    journal = _load_journal(state, ctx.run_id)
+    stage4 = next(s for s in journal["stages"] if s["index"] == 4)
+    assert stage4["measure_findings"] == []
+    assert stage4["reconciler_actions"] == []
+    assert stage4["response_score"] is None
+
+
+def test_stage4_journal_records_findings_and_reconciler_actions(tmp_path: Path) -> None:
+    """Pairing omission: validator records the finding, reconciler records
+    the fix, run still succeeds, downstream sees the repaired cr."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
+    _write_cr(state, _cr_with_pairing_omission(_RUN1_ID, "KDB/raw/paper.md"))
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True, result.errors
+
+    journal = _load_journal(state, ctx.run_id)
+    stage4 = next(s for s in journal["stages"] if s["index"] == 4)
+
+    # Validator finding surfaces in the journal.
+    assert len(stage4["measure_findings"]) == 1
+    f = stage4["measure_findings"][0]
+    assert f["type"] == "pairing_omission"
+    assert f["severity"] == "measure"
+    assert f["slug"] == "mencius"
+    assert f["page_type"] == "concept"
+
+    # Reconciler action recorded alongside.
+    assert len(stage4["reconciler_actions"]) == 1
+    a = stage4["reconciler_actions"][0]
+    assert a["finding_type"] == "pairing_omission"
+    assert "added 'mencius'" in a["detail"]
+
+    # Stub scoring still returns null.
+    assert stage4["response_score"] is None
+
+    # Stage 4 still "ok" — pairing mismatches don't abort.
+    assert stage4["ok"] is True
+
+
+def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
+    """Schema violations still fail stage 4; reconciler isn't invoked; journal
+    captures the gate error but no actions."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
+    # missing compiled_sources -> schema_violation (gate)
+    _write_cr(state, {"run_id": _RUN1_ID, "success": True})
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is False
+
+    journal = _load_journal(state, ctx.run_id)
+    stage4 = next(s for s in journal["stages"] if s["index"] == 4)
+    assert stage4["ok"] is False
+    assert stage4["reconciler_actions"] == []  # didn't run
+    assert stage4["response_score"] is None

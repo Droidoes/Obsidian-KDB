@@ -11,7 +11,7 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +22,7 @@ from kdb_compiler import (
     kdb_scan,
     manifest_update,
     patch_applier,
+    reconcile,
     validate_compile_result,
     validate_last_scan,
 )
@@ -302,14 +303,45 @@ def compile(
     )
 
     # ----- [4] validate compile_result -----
+    # Stage 4 diagnoses (validator) and repairs (reconciler) in one breath.
+    # Commit 6 will split this into two banner stages ([4] validate, [5]
+    # reconcile); for now they share one stage entry in the journal but the
+    # payload already carries the measure_findings + reconciler_actions +
+    # response_score fields that future consumers (eval framework) expect.
     _stage_open(4)
     cr_result = validate_compile_result.validate(cr)
     cr_errors = [f.detail for f in cr_result.gate_errors]
+
+    reconciler_actions: list = []
+    response_score = None
+    if not cr_errors:
+        try:
+            reconciler_actions = reconcile.reconcile(cr, cr_result.measure_findings)
+        except reconcile.ReconcileError as exc:
+            # Validator emitted a measure finding reconciler can't dispatch —
+            # contract bug between the two modules, not a runtime condition.
+            note = f"ReconcileError: {exc}"
+            _stage_close(
+                4, ok=False, note=note,
+                error_count=1, errors=[note],
+                measure_findings=[asdict(f) for f in cr_result.measure_findings],
+                reconciler_actions=[],
+                response_score=None,
+            )
+            return _fail(
+                [note], stage_index=4, stage_name=_STAGES[3],
+                failure_type="ReconcileError",
+            )
+        response_score = validate_compile_result.score_response(cr, cr_result)
+
     _stage_close(
         4, ok=not cr_errors,
         note=(cr_errors[0] if cr_errors else None),
         error_count=len(cr_errors),
         errors=list(cr_errors),
+        measure_findings=[asdict(f) for f in cr_result.measure_findings],
+        reconciler_actions=[asdict(a) for a in reconciler_actions],
+        response_score=asdict(response_score) if response_score is not None else None,
     )
     if cr_errors:
         return _fail(
