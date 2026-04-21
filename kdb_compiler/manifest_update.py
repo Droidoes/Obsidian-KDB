@@ -603,67 +603,61 @@ def assert_manifest_invariants(manifest: dict) -> None:
             )
 
 
-# ---------- journal ----------
+# ---------- manifest-stage payload (journal integration) ----------
 
-def build_journal(prior: dict, next_manifest: dict, last_scan: dict,
-                  compile_result: dict, ctx: RunContext,
-                  *, scan_path: str, compile_path: str,
-                  finished_at: str | None = None) -> dict:
+def build_manifest_stage_payload(prior: dict, next_manifest: dict,
+                                 last_scan: dict) -> dict:
+    """Compute the stage-5 payload the orchestrator folds into the v2
+    run journal. Narrow scope: deltas + counts + prior_manifest_loaded."""
     prior_sources = set(prior.get("sources", {}).keys()) if prior else set()
     next_sources = set(next_manifest.get("sources", {}).keys())
     prior_pages = set(prior.get("pages", {}).keys()) if prior else set()
     next_pages = set(next_manifest.get("pages", {}).keys())
+    prior_orphans = set(prior.get("orphans", {}).keys()) if prior else set()
+    next_orphans = set(next_manifest.get("orphans", {}).keys())
 
     moved_pairs: list[dict] = []
     for op in last_scan.get("to_reconcile", []):
         if op.get("type") == "MOVED":
             moved_pairs.append({"from": op.get("from"), "to": op.get("to")})
 
-    scan_summary = last_scan.get("summary", {})
-    prior_orphans = set(prior.get("orphans", {}).keys()) if prior else set()
-    next_orphans = set(next_manifest.get("orphans", {}).keys())
+    sources_changed = sorted(
+        s for s in (prior_sources & next_sources)
+        if prior["sources"][s].get("hash") != next_manifest["sources"][s].get("hash")
+    ) if prior else []
 
     return {
-        "schema_version": SCHEMA_VERSION,
-        "run_id": ctx.run_id,
-        "started_at": ctx.started_at,
-        "finished_at": finished_at or now_iso(),
-        "success": bool(compile_result.get("success")),
-        "compiler_version": ctx.compiler_version,
-        "manifest_updated_at": next_manifest.get("updated_at"),
-        "last_scan_path": scan_path,
-        "compile_result_path": compile_path,
-        "inputs": {
-            "scan_run_id": last_scan.get("run_id"),
-            "scan_summary": scan_summary,
-            "compile_sources_processed": len(compile_result.get("compiled_sources", [])),
-        },
+        "prior_manifest_loaded": bool(prior),
         "deltas": {
             "sources_added": sorted(next_sources - prior_sources),
             "sources_removed": sorted(prior_sources - next_sources),
             "sources_moved": moved_pairs,
-            "sources_changed": sorted(
-                s for s in (prior_sources & next_sources)
-                if prior["sources"][s].get("hash") != next_manifest["sources"][s].get("hash")
-            ),
+            "sources_changed": sources_changed,
             "pages_created": sorted(next_pages - prior_pages),
             "pages_updated": sorted(prior_pages & next_pages),
             "orphans_flagged": sorted(next_orphans - prior_orphans),
             "orphans_cleared": sorted(prior_orphans - next_orphans),
         },
-        "log_entries": list(ctx.log_entries),
-        "warnings": list(compile_result.get("warnings", [])),
-        "errors": list(compile_result.get("errors", [])),
+        "counts": {
+            "sources_after": len(next_manifest.get("sources", {})),
+            "pages_after": len(next_manifest.get("pages", {})),
+            "orphans_after": len(next_manifest.get("orphans", {})),
+            "tombstones_after": len(next_manifest.get("tombstones", {})),
+        },
     }
 
 
 # ---------- pure orchestrator ----------
 
 def build_manifest_update(prior: dict, last_scan: dict, compile_result: dict,
-                          ctx: RunContext, *, scan_path: str = "state/last_scan.json",
-                          compile_path: str = "state/compile_result.json",
+                          ctx: RunContext, *,
                           kb_id: str = DEFAULT_KB_ID) -> tuple[dict, dict]:
-    """Pure. Returns (next_manifest, journal). Performs no I/O."""
+    """Pure. Returns (next_manifest, manifest_stage_payload). No I/O.
+
+    The returned payload is stage-5-scoped — deltas, counts, and a
+    prior_manifest_loaded flag. The orchestrator folds it into the v2
+    run journal via RunJournalBuilder.set_manifest_stage_payload().
+    """
     next_manifest = copy.deepcopy(prior) if prior else {}
     prior_runs_snapshot = dict(next_manifest.get("runs", {})) if next_manifest else {}
     prior_runs_snapshot["total_runs"] = next_manifest.get("stats", {}).get("total_runs", 0) if next_manifest else 0
@@ -677,11 +671,10 @@ def build_manifest_update(prior: dict, last_scan: dict, compile_result: dict,
     )
     assert_manifest_invariants(next_manifest)
 
-    journal = build_journal(
-        prior, next_manifest, last_scan, compile_result, ctx,
-        scan_path=scan_path, compile_path=compile_path,
+    manifest_stage_payload = build_manifest_stage_payload(
+        prior, next_manifest, last_scan,
     )
-    return next_manifest, journal
+    return next_manifest, manifest_stage_payload
 
 
 # ---------- I/O shell: write ----------
@@ -699,6 +692,53 @@ def write_outputs(next_manifest: dict, journal: dict, state_root: Path,
     atomic_io.atomic_write_json(manifest_path, next_manifest, sort_keys=True)
 
 
+def _build_replay_journal(
+    state_root: Path,
+    ctx: RunContext,
+    *,
+    last_scan: dict,
+    compile_result: dict,
+    manifest_stage_payload: dict,
+    success: bool,
+    manifest_written: bool,
+    journal_written: bool,
+) -> dict:
+    """Build a v2 journal for the `manifest_update` CLI path.
+
+    Only stages 5 (build manifest update) + 6 (apply) are not run here,
+    and stages 1-4 + 7 never executed in this CLI — but the file must
+    still be a valid v2 journal for downstream tooling. We therefore
+    emit a single synthetic entry for the replay action itself under
+    stage index 5, and leave the rest empty. The v2 invariant "only
+    include stages that actually started" is preserved."""
+    from kdb_compiler.run_journal import RunJournalBuilder
+
+    builder = RunJournalBuilder(
+        ctx,
+        provider="",
+        model="",
+        max_tokens=0,
+        state_root=state_root,
+    )
+    # A single synthetic stage-5 entry captures the manifest write.
+    builder.start_stage(5, "build manifest update")
+    builder.finish_stage(5, ok=True)
+    builder.set_manifest_stage_payload(manifest_stage_payload)
+    builder.set_summary_inputs(
+        scan_run_id=last_scan.get("run_id"),
+        last_scan_path=f"{Path(state_root).as_posix()}/last_scan.json",
+        compile_result_path=f"{Path(state_root).as_posix()}/compile_result.json",
+        compile_sources_processed=len(compile_result.get("compiled_sources") or []),
+    )
+    return builder.finalize(
+        success=success,
+        compile_success=bool(compile_result.get("success")),
+        journal_written=journal_written,
+        manifest_written=manifest_written,
+        compile_result=compile_result,
+    )
+
+
 # ---------- public entry ----------
 
 def update(state_root: Path, *, run_ctx: RunContext | None = None,
@@ -708,15 +748,22 @@ def update(state_root: Path, *, run_ctx: RunContext | None = None,
     prior, last_scan, compile_result = load_inputs(state_root)
     ctx = run_ctx or build_run_ctx(state_root, compile_result)
 
-    scan_path = str((state_root / "last_scan.json").as_posix())
-    compile_path = str((state_root / "compile_result.json").as_posix())
-
-    next_manifest, journal = build_manifest_update(
-        prior, last_scan, compile_result, ctx,
-        scan_path=scan_path, compile_path=compile_path, kb_id=kb_id,
+    next_manifest, manifest_stage_payload = build_manifest_update(
+        prior, last_scan, compile_result, ctx, kb_id=kb_id,
     )
 
-    if write and not ctx.dry_run:
+    will_write = write and not ctx.dry_run
+    journal = _build_replay_journal(
+        state_root, ctx,
+        last_scan=last_scan,
+        compile_result=compile_result,
+        manifest_stage_payload=manifest_stage_payload,
+        success=bool(compile_result.get("success")),
+        manifest_written=will_write,
+        journal_written=will_write,
+    )
+
+    if will_write:
         write_outputs(next_manifest, journal, state_root, ctx)
     return next_manifest, journal
 
@@ -745,19 +792,26 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = build_run_ctx(args.state_root, compile_result, dry_run=args.dry_run)
 
-    scan_path = str((args.state_root / "last_scan.json").as_posix())
-    compile_path = str((args.state_root / "compile_result.json").as_posix())
-
     try:
-        next_manifest, journal = build_manifest_update(
-            prior, last_scan, compile_result, ctx,
-            scan_path=scan_path, compile_path=compile_path, kb_id=args.kb_id,
+        next_manifest, manifest_stage_payload = build_manifest_update(
+            prior, last_scan, compile_result, ctx, kb_id=args.kb_id,
         )
     except ManifestInvariantError as exc:
         print(f"manifest_update: invariant violation: {exc}", file=sys.stderr)
         return 1
 
-    if not args.dry_run:
+    will_write = not args.dry_run
+    journal = _build_replay_journal(
+        args.state_root, ctx,
+        last_scan=last_scan,
+        compile_result=compile_result,
+        manifest_stage_payload=manifest_stage_payload,
+        success=bool(compile_result.get("success")),
+        manifest_written=will_write,
+        journal_written=will_write,
+    )
+
+    if will_write:
         write_outputs(next_manifest, journal, args.state_root, ctx)
 
     print(f"manifest_update: run_id={ctx.run_id} "

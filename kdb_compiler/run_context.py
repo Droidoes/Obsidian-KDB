@@ -17,7 +17,13 @@ from pathlib import Path
 from . import __version__
 from . import paths
 
-SCHEMA_VERSION = "1.0"
+# The schema version stamped into manifest.json (ensure_manifest_shape)
+# and into per-page frontmatter (`schema_version_used`). Journal files
+# now declare their own JOURNAL_SCHEMA_VERSION in run_journal.py; keep
+# the names separate so manifest changes don't accidentally force a
+# journal migration (or vice versa).
+MANIFEST_SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = MANIFEST_SCHEMA_VERSION  # legacy alias — prefer MANIFEST_SCHEMA_VERSION
 
 
 def now_iso() -> str:

@@ -44,7 +44,7 @@ from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
-from kdb_compiler.run_context import RunContext
+from kdb_compiler.run_context import RunContext, now_iso
 from kdb_compiler.types import (
     CompiledSource,
     CompileJob,
@@ -52,6 +52,7 @@ from kdb_compiler.types import (
     CompileResult,
     LogEntry,
     PageIntent,
+    RespStatsRecord,
 )
 
 
@@ -59,6 +60,81 @@ def source_text_for(job: CompileJob) -> str:
     """Read job.abs_path as UTF-8. Propagates OSError / UnicodeDecodeError
     so compile_one's scaffold-and-fill can classify the failure."""
     return Path(job.abs_path).read_text(encoding="utf-8")
+
+
+def _build_source_stats_entry(
+    *,
+    i: int,
+    n: int,
+    job: CompileJob,
+    started_at: str,
+    finished_at: str,
+    duration_ms: int,
+    ok: bool,
+    error: str | None,
+    record: "RespStatsRecord | None",
+    record_path: "Path | None",
+    state_root: Path,
+) -> dict:
+    """Normalize one compile job into a source-level journal entry.
+
+    Pulls live-call fields from the resp_stats record when present.
+    Missing / sentinel fields (None, empty strings, 'sha256:none') are
+    preserved so the journal reader can distinguish 'no call made' from
+    'call made with these values'."""
+    entry: dict[str, Any] = {
+        "i": i,
+        "n": n,
+        "source_id": job.source_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_ms": duration_ms,
+        "ok": ok,
+        "error": error,
+    }
+    if record is None:
+        entry.update({
+            "provider": None, "model": None, "attempts": None,
+            "input_tokens": None, "output_tokens": None, "latency_ms": None,
+            "prompt_hash": None, "response_hash": None,
+            "resp_stats_ref": None,
+            "gates": {
+                "extract_ok": None, "parse_ok": None,
+                "schema_ok": None, "semantic_ok": None,
+            },
+            "parsed_summary": None,
+        })
+        return entry
+
+    ref: str | None = None
+    if record_path is not None:
+        try:
+            ref = record_path.relative_to(Path(state_root).parent).as_posix()
+        except ValueError:
+            ref = record_path.as_posix()
+
+    entry.update({
+        "provider": record.provider or None,
+        "model": record.model or None,
+        "attempts": record.attempts or None,
+        "input_tokens": record.input_tokens,
+        "output_tokens": record.output_tokens,
+        "latency_ms": record.latency_ms,
+        "prompt_hash": record.prompt_hash,
+        "response_hash": record.response_hash,
+        "resp_stats_ref": ref,
+        "gates": {
+            "extract_ok": record.extract_ok,
+            "parse_ok": record.parse_ok,
+            "schema_ok": record.schema_ok,
+            "semantic_ok": record.semantic_ok,
+        },
+        "parsed_summary": (
+            record.parsed_summary.to_dict()
+            if record.parsed_summary is not None else None
+        ),
+    })
+    return entry
 
 
 def compile_one(
@@ -70,6 +146,7 @@ def compile_one(
     provider: str,
     model: str,
     max_tokens: int,
+    stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
 
@@ -239,7 +316,13 @@ def compile_one(
             semantic_ok=state["semantic_ok"],
             semantic_errors=state["semantic_errors"],
         )
-        write_resp_stats(record, state_root)
+        resp_stats_path = write_resp_stats(record, state_root)
+        if stats_record_sink is not None:
+            try:
+                stats_record_sink(record, resp_stats_path)
+            except Exception:
+                # Observational hook — must not break the compile.
+                pass
 
 
 def run_compile(
@@ -253,11 +336,18 @@ def run_compile(
     max_tokens: int = 32768,
     write: bool = True,
     progress: Callable[..., None] | None = None,
+    source_stats_sink: Callable[[dict], None] | None = None,
 ) -> CompileResult:
     """Plan -> per-source compile -> aggregate -> optionally write
     compile_result.json. Resp-stats records are written regardless of
     `write` — they're debug artifacts and suppressing them would hide
-    the very behaviour a dry run exists to inspect."""
+    the very behaviour a dry run exists to inspect.
+
+    `source_stats_sink`, if provided, is called once per attempted job
+    with a normalized dict suitable for RunJournalBuilder.record_source().
+    The dict duplicates fields from the resp_stats artifact but with job
+    index/duration/error info fused in. Observational — exceptions are
+    swallowed."""
     vault_root = Path(vault_root)
     state_root = Path(state_root)
 
@@ -296,7 +386,15 @@ def run_compile(
     n_jobs = len(jobs)
     for i, job in enumerate(jobs, start=1):
         _emit("job_start", i=i, n=n_jobs, source_id=job.source_id)
+        t0_wall = now_iso()
         t0 = time.monotonic()
+
+        # Capture the resp_stats record from compile_one's finally block.
+        captured: dict[str, Any] = {"record": None, "path": None}
+        def _capture(record: RespStatsRecord, path: Path) -> None:
+            captured["record"] = record
+            captured["path"] = path
+
         cs, logs, warns, err = compile_one(
             job,
             vault_root=vault_root,
@@ -305,8 +403,10 @@ def run_compile(
             provider=provider,
             model=model,
             max_tokens=max_tokens,
+            stats_record_sink=_capture,
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
+        t1_wall = now_iso()
         if cs is not None:
             compiled_sources.append(cs)
             log_dicts.extend(logs)
@@ -318,6 +418,20 @@ def run_compile(
             i=i, n=n_jobs, source_id=job.source_id,
             ok=(err is None), latency_ms=latency_ms, error=err,
         )
+
+        if source_stats_sink is not None:
+            rec = captured["record"]
+            rec_path = captured["path"]
+            sink_payload = _build_source_stats_entry(
+                i=i, n=n_jobs, job=job,
+                started_at=t0_wall, finished_at=t1_wall,
+                duration_ms=latency_ms, ok=(err is None), error=err,
+                record=rec, record_path=rec_path, state_root=state_root,
+            )
+            try:
+                source_stats_sink(sink_payload)
+            except Exception:
+                pass
 
     result = CompileResult(
         run_id=ctx.run_id,

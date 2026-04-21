@@ -149,8 +149,18 @@ def test_happy_path_dry_run(tmp_path: Path) -> None:
     assert result.dry_run is True
     assert result.pages_written == []
     assert result.manifest_written is False
-    assert result.journal_written is False
+    # v2 spec: journal is always written, even under dry-run
+    assert result.journal_written is True
     assert result.errors == []
+    # Journal file exists on disk and flags dry_run
+    runs_dir = state / "runs"
+    assert runs_dir.is_dir()
+    journal_files = list(runs_dir.iterdir())
+    assert len(journal_files) == 1
+    journal = json.loads(journal_files[0].read_text(encoding="utf-8"))
+    assert journal["dry_run"] is True
+    assert journal["manifest_written"] is False
+    assert journal["journal_written"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +370,9 @@ def test_dry_run_leaves_no_artifacts(tmp_path: Path) -> None:
     # No state files written (compile_result.json was INPUT, not output)
     assert not (state / "last_scan.json").exists()
     assert not (state / "manifest.json").exists()
-    assert not (state / "runs").exists()
+    # v2 spec: dry-run still writes the journal (the only state artifact allowed)
+    assert (state / "runs").is_dir()
+    assert len(list((state / "runs").iterdir())) == 1
     # No wiki pages written
     assert not (vault / "KDB" / "wiki").exists()
 
@@ -586,9 +598,11 @@ def test_stage_events_abort_after_failed_validation(tmp_path: Path) -> None:
     assert stage_done[3]["note"]  # non-empty — carries the first validation error
 
 
-def test_stage_7_skipped_under_dry_run(tmp_path: Path) -> None:
-    """Dry-run still emits stage_done for 'persist state' — with the
-    'skipped (dry-run)' note — and neither manifest nor journal is written."""
+def test_stage_7_under_dry_run_writes_journal_only(tmp_path: Path) -> None:
+    """Dry-run's stage-7 writes the journal but skips the manifest.
+    Under v2 the journal is always written; `dry_run: true` inside flags
+    the run. The stage banner still reads 'skipped (dry-run)' because from
+    the user's POV the headline output (manifest + pages) is skipped."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
@@ -598,7 +612,7 @@ def test_stage_7_skipped_under_dry_run(tmp_path: Path) -> None:
     result = compile(vault, run_ctx=ctx, progress=cb)
     assert result.success is True
     assert result.manifest_written is False
-    assert result.journal_written is False
+    assert result.journal_written is True
 
     persist_done = next(
         f for e, f in events
@@ -607,4 +621,190 @@ def test_stage_7_skipped_under_dry_run(tmp_path: Path) -> None:
     assert persist_done["ok"] is True
     assert persist_done["note"] == "skipped (dry-run)"
     assert not (state / "manifest.json").exists()
-    assert not (state / "runs").exists() or not any((state / "runs").iterdir())
+    # Journal IS written under dry-run, flagged by dry_run: true inside
+    runs_dir = state / "runs"
+    assert runs_dir.is_dir()
+    journal_files = list(runs_dir.iterdir())
+    assert len(journal_files) == 1
+    journal = json.loads(journal_files[0].read_text(encoding="utf-8"))
+    assert journal["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------
+# v2 journal — orchestrator failure-path journaling
+# ---------------------------------------------------------------------------
+
+def _load_journal(state: Path, run_id: str) -> dict:
+    path = state / "runs" / f"{run_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_compile_writes_journal_on_stage_2_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage-2 (validate scan) failure must still persist the journal with
+    failure metadata pointing at stage 2 — v2's 'journal always' rule."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+
+    # Force scan validation to reject, driving stage 2 → fail.
+    monkeypatch.setattr(
+        "kdb_compiler.kdb_compile.validate_last_scan.validate",
+        lambda _payload: ["forced scan validation error"],
+    )
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is False
+    assert result.journal_written is True
+    assert result.manifest_written is False
+
+    journal = _load_journal(state, ctx.run_id)
+    assert journal["schema_version"] == "2.0"
+    assert journal["success"] is False
+    assert journal["compile_success"] is None  # stage 3 never ran
+    assert journal["manifest_written"] is False
+    assert journal["journal_written"] is True
+    assert journal["terminated_at_stage"] == 2
+    assert journal["failure_stage_name"] == "validate scan"
+    assert journal["failure_type"] == "ValidationError"
+    assert "forced scan validation error" in journal["failure_message"]
+    # Stages 3-7 never ran.
+    stage_indices = [s["index"] for s in journal["stages"]]
+    assert stage_indices == [1, 2]
+    assert journal["stages"][1]["ok"] is False
+
+
+def test_compile_writes_journal_on_stage_4_failure(tmp_path: Path) -> None:
+    """Stage-4 (validate compile_result) failure must still persist the
+    journal. Uses schema-invalid compile_result.json to trigger failure."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, {"run_id": _RUN1_ID, "success": True})  # missing compiled_sources
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is False
+    assert result.journal_written is True
+    assert result.manifest_written is False
+
+    journal = _load_journal(state, ctx.run_id)
+    assert journal["terminated_at_stage"] == 4
+    assert journal["failure_stage_name"] == "validate compile_result"
+    assert journal["failure_type"] == "ValidationError"
+    # Stages 1-4 ran; 5-7 did not.
+    stage_indices = [s["index"] for s in journal["stages"]]
+    assert stage_indices == [1, 2, 3, 4]
+    assert journal["stages"][-1]["ok"] is False
+    assert journal["summary"]["counts"]["pages_written"] == 0
+
+
+def test_run_journal_contains_resp_stats_refs_for_live_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live-compile path: every source entry in stage-3 carries a
+    resp_stats_ref pointing at the per-call record under state/llm_resp/."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+    _write_vault_system_prompt(vault)
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+
+    def fake_call(req):
+        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        return _good_model_response(source_id, ctx.run_id)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", fake_call
+    )
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+
+    journal = _load_journal(state, ctx.run_id)
+    stage3 = next(s for s in journal["stages"] if s["index"] == 3)
+    assert stage3["mode"] == "live"
+    sources = stage3["sources"]
+    assert len(sources) == 1
+
+    src = sources[0]
+    # Live-call fields populated.
+    assert src["resp_stats_ref"] is not None
+    assert src["resp_stats_ref"].startswith("state/llm_resp/")
+    assert src["resp_stats_ref"].endswith(".json")
+    assert isinstance(src["input_tokens"], int) and src["input_tokens"] > 0
+    assert isinstance(src["output_tokens"], int) and src["output_tokens"] > 0
+    assert src["provider"] == "anthropic"
+    assert src["model"].startswith("claude-")
+    # Pointer resolves to a file under the state tree.
+    pointed = vault / "KDB" / src["resp_stats_ref"]
+    assert pointed.exists()
+    # All four gates recorded.
+    assert src["gates"] == {
+        "extract_ok": True, "parse_ok": True,
+        "schema_ok": True, "semantic_ok": True,
+    }
+    # Aggregate mirrors the single source's totals.
+    agg = stage3["aggregate"]
+    assert agg["total_input_tokens"] == src["input_tokens"]
+    assert agg["total_output_tokens"] == src["output_tokens"]
+    assert agg["providers"] == ["anthropic"]
+
+
+def test_run_journal_builder_replay_mode_nullables(tmp_path: Path) -> None:
+    """RunJournalBuilder unit test: replay-mode source records (no live call
+    happened — fixture replay) can carry None for provider/model/tokens/
+    resp_stats_ref and finalize() must tolerate it."""
+    from kdb_compiler.run_journal import RunJournalBuilder, STAGE_NAMES
+
+    vault, _raw, state = _make_vault(tmp_path)
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+
+    b = RunJournalBuilder(
+        ctx, provider="anthropic", model="claude-x",
+        max_tokens=32768, state_root=state,
+    )
+    # Stages 1-7 all complete OK.
+    for i, name in enumerate(STAGE_NAMES, start=1):
+        b.start_stage(i, name)
+        b.finish_stage(i, ok=True)
+
+    # Replay mode: live-call fields are None.
+    b.record_source({
+        "i": 1, "n": 1,
+        "source_id": "KDB/raw/paper.md",
+        "started_at": _RUN1_AT, "finished_at": _RUN1_AT,
+        "duration_ms": 0, "ok": True, "error": None,
+        "provider": None, "model": None,
+        "input_tokens": None, "output_tokens": None,
+        "latency_ms": None, "attempts": None,
+        "prompt_hash": None, "response_hash": None,
+        "resp_stats_ref": None,
+        "gates": {
+            "extract_ok": True, "parse_ok": True,
+            "schema_ok": True, "semantic_ok": True,
+        },
+        "parsed_summary": {
+            "page_count": 1, "log_entry_count": 0,
+            "outgoing_link_count": 0, "warning_count": 0,
+            "page_types": {"summary": 1},
+            "summary_slug": "paper", "slugs": ["paper"],
+            "source_id_echoed": "KDB/raw/paper.md",
+        },
+    })
+
+    journal = b.finalize(
+        success=True, compile_success=True,
+        journal_written=True, manifest_written=True,
+    )
+
+    # Finalize tolerates None and aggregate sums them as 0.
+    stage3 = next(s for s in journal["stages"] if s["index"] == 3)
+    assert stage3["sources"][0]["resp_stats_ref"] is None
+    assert stage3["sources"][0]["provider"] is None
+    agg = stage3["aggregate"]
+    assert agg["total_input_tokens"] == 0
+    assert agg["total_output_tokens"] == 0
+    assert agg["providers"] == []
+    assert agg["models"] == []
+    # Top-level success semantics unaffected by replay nullables.
+    assert journal["success"] is True
+    assert journal["compile_success"] is True

@@ -542,19 +542,20 @@ def test_build_manifest_update_bootstrap_happy_path() -> None:
                _page("idea", "concept", "Idea")],
         concept_slugs=["idea"],
     )])
-    m, j = build_manifest_update({}, scan, cr, ctx)
+    m, stage_payload = build_manifest_update({}, scan, cr, ctx)
     assert m["schema_version"] == SCHEMA_VERSION
     assert m["stats"]["total_pages"] == 2
     assert m["stats"]["total_runs"] == 1
     assert m["runs"]["last_run_id"] == "r1"
     assert m["runs"]["last_successful_run_id"] == "r1"
-    # Journal shape.
-    assert j["run_id"] == "r1"
-    assert j["success"] is True
-    assert sorted(j["deltas"]["pages_created"]) == [
+    # Stage-5 payload shape (orchestrator folds this into journal[stages][4]).
+    assert stage_payload["prior_manifest_loaded"] is False
+    assert sorted(stage_payload["deltas"]["pages_created"]) == [
         "KDB/wiki/concepts/idea.md", "KDB/wiki/summaries/paper.md",
     ]
-    assert j["deltas"]["sources_added"] == ["KDB/raw/p.md"]
+    assert stage_payload["deltas"]["sources_added"] == ["KDB/raw/p.md"]
+    assert stage_payload["counts"]["sources_after"] == 1
+    assert stage_payload["counts"]["pages_after"] == 2
 
 
 def test_build_manifest_update_second_run_same_runid_does_not_double_count() -> None:

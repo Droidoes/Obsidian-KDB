@@ -1,16 +1,23 @@
-"""End-to-end orchestrator: scan → validate → apply → write (M1.7)."""
+"""End-to-end orchestrator: scan → validate → apply → write (M1.7).
+
+Owns v2 run journal assembly: the journal is always written to
+`state/runs/<run_id>.json` — success, failure, or dry-run. Under dry-run
+the manifest is not written but the journal still is (`dry_run: true`
+flag inside). See `run_journal.py` for the journal schema.
+"""
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
 from kdb_compiler import (
+    atomic_io,
     compiler,
     kdb_scan,
     manifest_update,
@@ -19,20 +26,21 @@ from kdb_compiler import (
     validate_last_scan,
 )
 from kdb_compiler.run_context import RunContext
+from kdb_compiler.run_journal import (
+    JOURNAL_SCHEMA_VERSION,
+    STAGE_NAMES,
+    RunJournalBuilder,
+)
 
 # Stage names mirror the manifest.md §5 pipeline narrative. Indices are
 # 1-based and rendered as `[i/N]` banners so operators can see which stage
 # is active during a multi-minute live compile.
-_STAGES = (
-    "scan",
-    "validate scan",
-    "compile",
-    "validate compile_result",
-    "build manifest update",
-    "apply pages",
-    "persist state",
-)
+_STAGES = STAGE_NAMES
 _STAGE_TOTAL = len(_STAGES)
+
+_DEFAULT_PROVIDER = "anthropic"
+_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+_DEFAULT_MAX_TOKENS = 32768
 
 
 @dataclass
@@ -51,6 +59,15 @@ class CompileRunResult:
     compile_errors: list[str] = field(default_factory=list)
 
 
+def _write_journal(journal: dict, state_root: Path, run_id: str) -> Path:
+    """Atomic write to <state_root>/runs/<run_id>.json."""
+    runs_dir = Path(state_root) / "runs"
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    path = runs_dir / f"{run_id}.json"
+    atomic_io.atomic_write_json(path, journal, sort_keys=True)
+    return path
+
+
 def compile(
     vault_root: Path,
     *,
@@ -62,9 +79,22 @@ def compile(
     kdb_root = vault_root / "KDB"
     state_root = kdb_root / "state"
 
-    ctx = run_ctx if run_ctx is not None else RunContext.new(dry_run=dry_run, vault_root=vault_root)
+    ctx = run_ctx if run_ctx is not None else RunContext.new(
+        dry_run=dry_run, vault_root=vault_root,
+    )
     dry_run = ctx.dry_run  # ctx is authoritative; reconcile if run_ctx was injected
     run_id = ctx.run_id
+
+    builder = RunJournalBuilder(
+        ctx,
+        provider=_DEFAULT_PROVIDER,
+        model=_DEFAULT_MODEL,
+        max_tokens=_DEFAULT_MAX_TOKENS,
+        state_root=state_root,
+        resp_stats_capture_full=(
+            os.environ.get("KDB_RESP_STATS_CAPTURE_FULL") == "1"
+        ),
+    )
 
     def _emit(event: str, **fields: Any) -> None:
         if progress is None:
@@ -74,64 +104,166 @@ def compile(
         except Exception:
             pass
 
-    def _stage(index: int) -> float:
+    def _stage_open(index: int) -> None:
+        """Begin a stage: emit progress banner AND start builder timer."""
         _emit("stage_start", index=index, total=_STAGE_TOTAL, name=_STAGES[index - 1])
-        return time.perf_counter()
+        builder.start_stage(index, _STAGES[index - 1])
 
-    def _stage_done(index: int, t0: float, *, ok: bool = True, note: str | None = None) -> None:
-        ms = int((time.perf_counter() - t0) * 1000)
+    def _stage_close(index: int, *, ok: bool = True, note: str | None = None,
+                     **payload: Any) -> None:
+        """End a stage: close builder entry then emit stage_done progress.
+        `payload` keys land on the stage's journal entry."""
+        builder.finish_stage(index, ok=ok, note=note, **payload)
         _emit(
             "stage_done", index=index, total=_STAGE_TOTAL,
-            name=_STAGES[index - 1], ok=ok, latency_ms=ms, note=note,
+            name=_STAGES[index - 1], ok=ok,
+            latency_ms=builder.last_stage_duration_ms(), note=note,
         )
 
+    # State for assembly at the end.
     scan_counts: dict = {}
+    cr: dict | None = None
+    next_manifest: dict | None = None
+    apply_result: patch_applier.ApplyResult | None = None
+    compile_success: bool | None = None
 
-    def _fail(errs: list[str]) -> CompileRunResult:
+    def _finalize_and_write(
+        *, success: bool, manifest_written: bool, journal_written: bool,
+    ) -> None:
+        """Build the final journal and persist it to disk (unless told not
+        to). Mutates nothing on the orchestrator state."""
+        apply_payload: dict[str, Any] = {}
+        if apply_result is not None:
+            written = list(apply_result.pages_written)
+            apply_payload = {
+                "pages_written": written,
+                "pages_written_count": len(written),
+                "pages_created_count": len(
+                    (manifest_stage.get("deltas") or {}).get("pages_created") or []
+                ) if manifest_stage else 0,
+                "pages_updated_count": len(
+                    (manifest_stage.get("deltas") or {}).get("pages_updated") or []
+                ) if manifest_stage else 0,
+                "bytes_written": _bytes_written(vault_root, written),
+            }
+        builder.set_apply_stage_payload(apply_payload)
+
+        journal = builder.finalize(
+            success=success,
+            compile_success=compile_success,
+            journal_written=journal_written,
+            manifest_written=manifest_written,
+            compile_result=cr,
+            next_manifest=next_manifest,
+            apply_result=(
+                {"pages_written": list(apply_result.pages_written)}
+                if apply_result is not None else None
+            ),
+        )
+        if journal_written:
+            _write_journal(journal, state_root, run_id)
+
+    manifest_stage: dict[str, Any] | None = None
+
+    def _fail(
+        errs: list[str],
+        *,
+        stage_index: int,
+        stage_name: str,
+        failure_type: str,
+    ) -> CompileRunResult:
+        """Record failure on the builder, write journal, return. v2 always
+        writes the journal — success, failure, and dry-run alike — so
+        workflow optimization has a complete history to query against."""
+        msg = errs[0] if errs else ""
+        builder.mark_failure(stage_index, stage_name, failure_type, msg)
+        _finalize_and_write(
+            success=False,
+            manifest_written=False,
+            journal_written=True,
+        )
         return CompileRunResult(
             run_id=run_id, success=False, scan_counts=scan_counts,
             dry_run=dry_run, errors=errs,
+            manifest_written=False,
+            journal_written=True,
         )
 
-    # [1] scan
-    t0 = _stage(1)
-    scan_result = kdb_scan.scan(vault_root, run_ctx=ctx, write=not dry_run)
+    # ----- [1] scan -----
+    _stage_open(1)
+    try:
+        scan_result = kdb_scan.scan(vault_root, run_ctx=ctx, write=not dry_run)
+    except Exception as exc:
+        _stage_close(1, ok=False, note=f"{type(exc).__name__}: {exc}")
+        return _fail(
+            [f"scan failed: {type(exc).__name__}: {exc}"],
+            stage_index=1, stage_name=_STAGES[0],
+            failure_type=type(exc).__name__,
+        )
     scan_dict = scan_result.to_dict()
     scan_counts = scan_dict.get("summary", {})
-    _stage_done(1, t0)
+    reconcile_counts = _count_reconcile(scan_dict.get("to_reconcile") or [])
+    _stage_close(
+        1, ok=True,
+        scan_run_id=scan_result.run_id,
+        files_total=len(scan_result.files),
+        to_compile_count=len(scan_result.to_compile),
+        to_skip_count=len(scan_result.to_skip),
+        to_reconcile_count=len(scan_dict.get("to_reconcile") or []),
+        scan_summary=scan_counts,
+        reconcile_counts=reconcile_counts,
+        last_scan_path=(state_root / "last_scan.json").as_posix(),
+    )
     _emit(
         "scan_done",
         total=len(scan_result.files),
         to_compile=len(scan_result.to_compile),
         to_skip=len(scan_result.to_skip),
     )
+    builder.set_summary_inputs(
+        scan_run_id=scan_result.run_id,
+        last_scan_path=(state_root / "last_scan.json").as_posix(),
+        compile_result_path=(state_root / "compile_result.json").as_posix(),
+    )
 
-    # [2] validate scan
-    t0 = _stage(2)
+    # ----- [2] validate scan -----
+    _stage_open(2)
     scan_errors = validate_last_scan.validate(scan_dict)
-    _stage_done(
-        2, t0, ok=not scan_errors,
+    _stage_close(
+        2, ok=not scan_errors,
         note=(scan_errors[0] if scan_errors else None),
+        error_count=len(scan_errors),
+        errors=list(scan_errors),
     )
     if scan_errors:
-        return _fail(scan_errors)
+        return _fail(
+            scan_errors, stage_index=2, stage_name=_STAGES[1],
+            failure_type="ValidationError",
+        )
 
-    # [3] compile — Branch 1 (fixture replay when compile_result.json exists
-    # AND its run_id matches the fresh scan) or Branch 2 (live compile).
-    # Any stale compile_result.json is ignored and overwritten by Branch 2.
-    t0 = _stage(3)
-    cr: dict | None = None
+    # ----- [3] compile -----
+    # Branch 1 (fixture replay when compile_result.json exists AND its
+    # run_id matches the fresh scan) or Branch 2 (live compile).
+    _stage_open(3)
     cr_note: str | None = None
+    cr_mode = "live"
     cr_path = state_root / "compile_result.json"
     if cr_path.exists():
         try:
             staged = json.loads(cr_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
-            _stage_done(3, t0, ok=False, note=f"compile_result.json unreadable: {exc}")
-            return _fail([f"compile_result.json unreadable: {exc}"])
+            note = f"compile_result.json unreadable: {exc}"
+            _stage_close(3, ok=False, note=note, mode="fixture",
+                         jobs_planned=0, jobs_attempted=0,
+                         jobs_succeeded=0, jobs_failed=0)
+            return _fail(
+                [note], stage_index=3, stage_name=_STAGES[2],
+                failure_type=type(exc).__name__,
+            )
         if staged.get("run_id") == scan_result.run_id:
             cr = staged
             cr_note = "replay from fixture"
+            cr_mode = "replay"
 
     if cr is None:
         try:
@@ -142,53 +274,107 @@ def compile(
                 ctx=ctx,
                 write=not dry_run,
                 progress=progress,
+                source_stats_sink=builder.record_source,
             )
         except Exception as exc:
-            _stage_done(3, t0, ok=False, note=f"{type(exc).__name__}: {exc}")
+            _stage_close(3, ok=False, note=f"{type(exc).__name__}: {exc}",
+                         mode=cr_mode)
             return _fail(
-                [f"compiler.run_compile failed: {type(exc).__name__}: {exc}"]
+                [f"compiler.run_compile failed: {type(exc).__name__}: {exc}"],
+                stage_index=3, stage_name=_STAGES[2],
+                failure_type=type(exc).__name__,
             )
         cr = cr_obj.to_dict()
-    _stage_done(3, t0, note=cr_note)
 
     compile_errors = list(cr.get("errors") or [])
     sources_compiled = len(cr.get("compiled_sources") or [])
     sources_failed = len(compile_errors)
     sources_attempted = sources_compiled + sources_failed
+    compile_success = bool(cr.get("success", True))
 
-    # [4] validate compile_result
-    t0 = _stage(4)
+    _stage_close(
+        3, ok=True, note=cr_note,
+        mode=cr_mode,
+        jobs_planned=sources_attempted,
+        jobs_attempted=sources_attempted,
+        jobs_succeeded=sources_compiled,
+        jobs_failed=sources_failed,
+    )
+
+    # ----- [4] validate compile_result -----
+    _stage_open(4)
     cr_errors = validate_compile_result.validate(cr)
-    _stage_done(
-        4, t0, ok=not cr_errors,
+    _stage_close(
+        4, ok=not cr_errors,
         note=(cr_errors[0] if cr_errors else None),
+        error_count=len(cr_errors),
+        errors=list(cr_errors),
     )
     if cr_errors:
-        return _fail(cr_errors)
+        return _fail(
+            cr_errors, stage_index=4, stage_name=_STAGES[3],
+            failure_type="ValidationError",
+        )
 
-    # [5] build manifest update (also loads prior manifest for the diff)
-    t0 = _stage(5)
+    # ----- [5] build manifest update -----
+    _stage_open(5)
     manifest_path = state_root / "manifest.json"
     prior: dict = {}
+    prior_manifest_loaded = False
     if manifest_path.exists():
         try:
             prior = json.loads(manifest_path.read_text(encoding="utf-8"))
+            prior_manifest_loaded = True
         except (json.JSONDecodeError, OSError) as exc:
-            _stage_done(5, t0, ok=False, note=f"manifest.json unreadable: {exc}")
-            return _fail([f"manifest.json unreadable: {exc}"])
-    next_manifest, journal = manifest_update.build_manifest_update(prior, scan_dict, cr, ctx)
-    _stage_done(5, t0)
+            note = f"manifest.json unreadable: {exc}"
+            _stage_close(5, ok=False, note=note,
+                         prior_manifest_loaded=False)
+            return _fail(
+                [note], stage_index=5, stage_name=_STAGES[4],
+                failure_type=type(exc).__name__,
+            )
 
-    # [6] apply pages
-    t0 = _stage(6)
-    apply_result = patch_applier.apply(
-        state_root, vault_root,
-        next_manifest=next_manifest,
-        run_ctx=ctx,
-        write=not dry_run,
-    )
-    _stage_done(6, t0)
-    deltas = (journal or {}).get("deltas") or {}
+    try:
+        next_manifest, manifest_stage = manifest_update.build_manifest_update(
+            prior, scan_dict, cr, ctx,
+        )
+    except Exception as exc:
+        note = f"{type(exc).__name__}: {exc}"
+        _stage_close(5, ok=False, note=note,
+                     prior_manifest_loaded=prior_manifest_loaded)
+        return _fail(
+            [f"build_manifest_update failed: {note}"],
+            stage_index=5, stage_name=_STAGES[4],
+            failure_type=type(exc).__name__,
+        )
+
+    # Ensure the stage-5 payload carries prior_manifest_loaded (from a
+    # real load vs an empty prior) — build_manifest_stage_payload uses
+    # `bool(prior)` which agrees for empty-dict prior.
+    manifest_stage["prior_manifest_loaded"] = prior_manifest_loaded
+    builder.set_manifest_stage_payload(manifest_stage)
+    _stage_close(5, ok=True)
+
+    # ----- [6] apply pages -----
+    _stage_open(6)
+    try:
+        apply_result = patch_applier.apply(
+            state_root, vault_root,
+            next_manifest=next_manifest,
+            run_ctx=ctx,
+            write=not dry_run,
+        )
+    except Exception as exc:
+        note = f"{type(exc).__name__}: {exc}"
+        _stage_close(6, ok=False, note=note)
+        return _fail(
+            [f"patch_applier.apply failed: {note}"],
+            stage_index=6, stage_name=_STAGES[5],
+            failure_type=type(exc).__name__,
+        )
+    _stage_close(6, ok=True)
+
+    deltas = manifest_stage.get("deltas") or {}
     _emit(
         "pages_done",
         created=len(deltas.get("pages_created") or []),
@@ -197,21 +383,62 @@ def compile(
         dry_run=dry_run,
     )
 
-    # [7] persist state — manifest + journal (skipped under dry-run)
-    t0 = _stage(7)
+    # ----- [7] persist state -----
+    # Under v2 the journal is written LAST so its stage-7 entry reflects
+    # the real manifest_written outcome. This inverts the old "journal
+    # then pointer" order — still atomic per-file via atomic_io.
+    _stage_open(7)
+    manifest_written = False
+    # v2: journal is ALWAYS written (success, failure, dry-run). The file
+    # itself declares `dry_run: true` when applicable; downstream tooling
+    # filters on that instead of on file presence.
+    journal_written = True
+    skipped_reason = "dry-run" if dry_run else None
+
     if not dry_run:
-        manifest_update.write_outputs(next_manifest, journal, state_root, ctx)
-        _stage_done(7, t0)
-    else:
-        _stage_done(7, t0, note="skipped (dry-run)")
+        try:
+            atomic_io.atomic_write_json(
+                manifest_path, next_manifest, sort_keys=True,
+            )
+            manifest_written = True
+        except Exception as exc:
+            note = f"manifest write failed: {type(exc).__name__}: {exc}"
+            _stage_close(
+                7, ok=False, note=note,
+                journal_written=journal_written,
+                manifest_written=False,
+                journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
+                manifest_path=manifest_path.as_posix(),
+                skipped_manifest_write_reason="failure",
+            )
+            return _fail(
+                [note], stage_index=7, stage_name=_STAGES[6],
+                failure_type=type(exc).__name__,
+            )
+
+    note = "skipped (dry-run)" if dry_run else None
+    _stage_close(
+        7, ok=True, note=note,
+        journal_written=journal_written,
+        manifest_written=manifest_written,
+        journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
+        manifest_path=manifest_path.as_posix(),
+        skipped_manifest_write_reason=skipped_reason,
+    )
+
+    _finalize_and_write(
+        success=True,
+        manifest_written=manifest_written,
+        journal_written=journal_written,
+    )
 
     return CompileRunResult(
         run_id=run_id,
-        success=bool(cr.get("success", True)),
+        success=True,
         scan_counts=scan_counts,
         pages_written=apply_result.pages_written if not dry_run else [],
-        manifest_written=not dry_run,
-        journal_written=not dry_run,
+        manifest_written=manifest_written,
+        journal_written=journal_written,
         dry_run=dry_run,
         errors=compile_errors,
         sources_attempted=sources_attempted,
@@ -219,6 +446,22 @@ def compile(
         sources_failed=sources_failed,
         compile_errors=compile_errors,
     )
+
+
+def _bytes_written(vault_root: Path, pages_written: list[str]) -> int:
+    total = 0
+    for rel in pages_written:
+        try:
+            total += (vault_root / rel).stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _count_reconcile(ops: list[dict]) -> dict[str, int]:
+    moved = sum(1 for op in ops if op.get("type") == "MOVED")
+    deleted = sum(1 for op in ops if op.get("type") == "DELETED")
+    return {"moved": moved, "deleted": deleted}
 
 
 def _build_parser() -> argparse.ArgumentParser:
