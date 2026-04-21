@@ -359,7 +359,8 @@ def compile(
     _stage_open(6)
     try:
         apply_result = patch_applier.apply(
-            state_root, vault_root,
+            vault_root,
+            compile_result=cr,
             next_manifest=next_manifest,
             run_ctx=ctx,
             write=not dry_run,

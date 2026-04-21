@@ -238,14 +238,19 @@ def _count_orphans(next_manifest: dict) -> int:
 
 
 def apply(
-    state_root: Path,
     vault_root: Path,
     *,
+    compile_result: dict,
     next_manifest: dict,
     run_ctx: RunContext,
     write: bool = True,
 ) -> ApplyResult:
-    compile_result = _load_json(state_root / "compile_result.json")
+    """Render pages from `compile_result` against `next_manifest`.
+
+    `compile_result` is passed in explicitly rather than re-read from disk
+    so dry-runs (where compile_result.json is NOT written) don't silently
+    fall back to a stale on-disk file from a previous run.
+    """
     patches = build_page_patches(compile_result, next_manifest, run_ctx)
 
     per_type = _count_page_types(patches)
@@ -334,8 +339,9 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = _make_ctx(scan, vault_root, args.dry_run)
     try:
-        next_manifest, _journal = manifest_update.build_manifest_update(prior, scan, cr, ctx)
-        result = apply(state_root, vault_root, next_manifest=next_manifest,
+        next_manifest, _stage = manifest_update.build_manifest_update(prior, scan, cr, ctx)
+        result = apply(vault_root, compile_result=cr,
+                       next_manifest=next_manifest,
                        run_ctx=ctx, write=not args.dry_run)
     except PagePatchError as e:
         print(f"patch_applier: {e}", file=sys.stderr)

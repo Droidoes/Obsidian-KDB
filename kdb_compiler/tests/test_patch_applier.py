@@ -368,11 +368,14 @@ def _basic_manifest() -> dict:
 
 
 def test_apply_writes_page_only(tmp_path: Path) -> None:
-    state = tmp_path / "state"
     vault = tmp_path / "vault"
-    _seed_state(state, _basic_cr())
     ctx = _ctx(vault_root=vault)
-    r = apply(state, vault, next_manifest=_basic_manifest(), run_ctx=ctx)
+    r = apply(
+        vault,
+        compile_result=_basic_cr(),
+        next_manifest=_basic_manifest(),
+        run_ctx=ctx,
+    )
     assert r.pages_written == ["KDB/wiki/summaries/paper.md"]
     assert not r.dry_run
     page_path = vault / "KDB/wiki/summaries/paper.md"
@@ -386,33 +389,31 @@ def test_apply_writes_page_only(tmp_path: Path) -> None:
 
 
 def test_apply_dry_run_writes_nothing(tmp_path: Path) -> None:
-    state = tmp_path / "state"
     vault = tmp_path / "vault"
-    _seed_state(state, _basic_cr())
     ctx = _ctx(vault_root=vault, dry_run=True)
-    r = apply(state, vault, next_manifest=_basic_manifest(), run_ctx=ctx)
+    r = apply(
+        vault,
+        compile_result=_basic_cr(),
+        next_manifest=_basic_manifest(),
+        run_ctx=ctx,
+    )
     assert r.dry_run is True
     assert r.pages_written == []
     assert not (vault / "KDB/wiki/summaries/paper.md").exists()
     assert not (vault / "KDB/wiki/index.md").exists()
 
 
-def test_apply_missing_compile_result_raises(tmp_path: Path) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
-    with pytest.raises(FileNotFoundError):
-        apply(state, tmp_path / "vault",
-              next_manifest=_basic_manifest(), run_ctx=_ctx())
-
-
 def test_apply_normalizes_trailing_newline(tmp_path: Path) -> None:
-    state = tmp_path / "state"
     vault = tmp_path / "vault"
     cr = _basic_cr()
     cr["compiled_sources"][0]["pages"][0]["body"] = "multi\nline\n\n\n"
-    _seed_state(state, cr)
     ctx = _ctx(vault_root=vault)
-    apply(state, vault, next_manifest=_basic_manifest(), run_ctx=ctx)
+    apply(
+        vault,
+        compile_result=cr,
+        next_manifest=_basic_manifest(),
+        run_ctx=ctx,
+    )
     text = (vault / "KDB/wiki/summaries/paper.md").read_text()
     # Exactly one trailing newline after the normalized body.
     assert text.endswith("multi\nline\n")
