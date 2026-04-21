@@ -1,6 +1,17 @@
 # Bug — `patch_applier.apply` crashes on empty / all-failed compile plans
 
-**Status**: open · **Opened**: 2026-04-20 · **Discovered by**: Task #1 CLI smoke runs
+**Status**: closed (`92aa778`) · **Opened**: 2026-04-20 · **Closed**: 2026-04-21 · **Discovered by**: Task #1 CLI smoke runs
+
+---
+
+## Resolution
+
+Closed by commit `92aa778` — `patch_applier: take compile_result as a param, not from disk`. Both cases collapse to the same root cause (stale on-disk `compile_result.json` leaking into `apply()`), so the single Option 1 change closed both:
+
+- **Case A**: `apply()` no longer calls `_load_json(state_root/"compile_result.json")`. Empty vault → orchestrator passes an in-memory `cr` with empty `compiled_sources` → `build_page_patches` loops over `[]` → returns `[]` → clean no-op `ApplyResult`.
+- **Case B**: the "stale intents flow through" pathology was precisely the on-disk read picking up a prior run's 28 intents while the fresh manifest only had 18. With `cr` now passed in-memory, `apply()` only ever sees the current run's output — empty `compiled_sources` never reaches the `PageRecord is None` branch.
+
+Option 2 (explicit early-return fast-path) was drafted but never needed — empty `compiled_sources` is already a natural no-op.
 
 ---
 
