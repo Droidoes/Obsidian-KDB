@@ -745,8 +745,8 @@ def test_run_compile_result_passes_aggregate_validator(
         ctx=ctx,
         write=False,
     )
-    errors = validate_compile_result(result.to_dict())
-    assert errors == []
+    validation = validate_compile_result(result.to_dict())
+    assert validation.is_valid, validation.detail_strings()
 
 
 # ---------- CLI ----------

@@ -18,14 +18,23 @@ def _load(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def _details(result: vcr.ValidationResult) -> list[str]:
+    """Flatten a ValidationResult to the legacy string list for assertions."""
+    return result.detail_strings()
+
+
 # ---------- fixture-based cases ----------
 
 def test_valid_fixture_produces_no_errors() -> None:
-    assert vcr.validate(_load("compile_result.minimal.valid.json")) == []
+    result = vcr.validate(_load("compile_result.minimal.valid.json"))
+    assert result.is_valid, _details(result)
+    assert result.gate_errors == []
+    assert result.measure_findings == []
 
 
 def test_invalid_fixture_surfaces_multiple_violations() -> None:
-    errors = vcr.validate(_load("compile_result.minimal.invalid.json"))
+    result = vcr.validate(_load("compile_result.minimal.invalid.json"))
+    errors = _details(result)
     assert len(errors) >= 5, f"expected >=5 errors, got {len(errors)}: {errors}"
 
 
@@ -58,13 +67,17 @@ def test_duplicate_slug_in_pages() -> None:
         {"slug": "foo", "page_type": "summary", "title": "A", "body": "x"},
         {"slug": "foo", "page_type": "concept", "title": "B", "body": "y"},
     ])
-    errors = vcr.validate(_payload(src))
+    result = vcr.validate(_payload(src))
+    errors = _details(result)
     assert any("duplicate slug 'foo'" in e for e in errors), errors
+    assert any(f.type == "duplicate_slug" for f in result.gate_errors), result.gate_errors
 
 
 def test_summary_slug_not_in_pages() -> None:
-    errors = vcr.validate(_payload(_src(summary_slug="missing")))
+    result = vcr.validate(_payload(_src(summary_slug="missing")))
+    errors = _details(result)
     assert any("'missing' not found in pages[]" in e for e in errors), errors
+    assert any(f.type == "summary_slug_missing" for f in result.gate_errors)
 
 
 def test_summary_slug_wrong_page_type() -> None:
@@ -72,23 +85,31 @@ def test_summary_slug_wrong_page_type() -> None:
         summary_slug="foo",
         pages=[{"slug": "foo", "page_type": "concept", "title": "x", "body": "y"}],
     )
-    errors = vcr.validate(_payload(src))
+    result = vcr.validate(_payload(src))
+    errors = _details(result)
     assert any("summary_slug" in e and "expected 'summary'" in e for e in errors), errors
+    assert any(f.type == "summary_slug_wrong_type" for f in result.gate_errors)
 
 
 def test_concept_slug_missing_from_pages() -> None:
-    errors = vcr.validate(_payload(_src(concept_slugs=["ghost"])))
+    result = vcr.validate(_payload(_src(concept_slugs=["ghost"])))
+    errors = _details(result)
     assert any("concept_slugs[0]" in e and "'ghost' not found in pages[]" in e for e in errors), errors
+    assert any(f.type == "pairing_commission" and f.slug == "ghost" for f in result.gate_errors)
 
 
 def test_concept_slug_points_to_wrong_type() -> None:
-    errors = vcr.validate(_payload(_src(concept_slugs=["foo"])))
+    result = vcr.validate(_payload(_src(concept_slugs=["foo"])))
+    errors = _details(result)
     assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
+    assert any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
 
 
 def test_article_slug_missing_from_pages() -> None:
-    errors = vcr.validate(_payload(_src(article_slugs=["ghost-article"])))
+    result = vcr.validate(_payload(_src(article_slugs=["ghost-article"])))
+    errors = _details(result)
     assert any("article_slugs[0]" in e and "'ghost-article' not found in pages[]" in e for e in errors), errors
+    assert any(f.type == "pairing_commission" and f.slug == "ghost-article" for f in result.gate_errors)
 
 
 @pytest.mark.parametrize("reserved", ["index", "log"])
@@ -97,8 +118,10 @@ def test_reserved_slug_in_pages(reserved: str) -> None:
         summary_slug=reserved,
         pages=[{"slug": reserved, "page_type": "summary", "title": "x", "body": "y"}],
     )
-    errors = vcr.validate(_payload(src))
+    result = vcr.validate(_payload(src))
+    errors = _details(result)
     assert any("pages[0].slug" in e and "Reserved" in e for e in errors), errors
+    assert any(f.type == "reserved_slug" for f in result.gate_errors)
 
 
 def test_reserved_slug_in_summary_slug() -> None:
@@ -106,7 +129,8 @@ def test_reserved_slug_in_summary_slug() -> None:
         summary_slug="index",
         pages=[{"slug": "index", "page_type": "summary", "title": "x", "body": "y"}],
     )
-    errors = vcr.validate(_payload(src))
+    result = vcr.validate(_payload(src))
+    errors = _details(result)
     assert any("summary_slug" in e and "Reserved" in e for e in errors), errors
 
 
@@ -118,19 +142,40 @@ def test_reserved_slug_in_concept_slugs() -> None:
             {"slug": "log", "page_type": "concept", "title": "x", "body": "y"},
         ],
     )
-    errors = vcr.validate(_payload(src))
+    result = vcr.validate(_payload(src))
+    errors = _details(result)
     assert any("concept_slugs[0]" in e and "Reserved" in e for e in errors), errors
 
 
 # ---------- non-dict / malformed payloads ----------
 
 def test_non_dict_payload_caught_by_schema() -> None:
-    assert vcr.validate("not a dict")
+    result = vcr.validate("not a dict")
+    assert result.gate_errors
+    assert not result.is_valid
 
 
 def test_missing_compiled_sources_caught_by_schema() -> None:
-    errors = vcr.validate({"run_id": "x", "success": True})
-    assert any("compiled_sources" in e for e in errors)
+    result = vcr.validate({"run_id": "x", "success": True})
+    assert any("compiled_sources" in f.detail for f in result.gate_errors)
+
+
+# ---------- gate/measure split ----------
+
+def test_all_current_findings_are_gate_severity() -> None:
+    """Commit 1 preserves behavior — every finding is still severity='gate'."""
+    result = vcr.validate(_load("compile_result.minimal.invalid.json"))
+    assert not result.is_valid
+    assert result.measure_findings == []
+    for f in result.gate_errors:
+        assert f.severity == "gate", f
+
+
+def test_score_response_stub_returns_none() -> None:
+    """Scoring stub is wired but returns None until M2 eval work implements it."""
+    cr = _load("compile_result.minimal.valid.json")
+    result = vcr.validate(cr)
+    assert vcr.score_response(cr, result) is None
 
 
 # ---------- CLI smoke ----------

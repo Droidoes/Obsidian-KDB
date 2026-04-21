@@ -303,7 +303,8 @@ def compile(
 
     # ----- [4] validate compile_result -----
     _stage_open(4)
-    cr_errors = validate_compile_result.validate(cr)
+    cr_result = validate_compile_result.validate(cr)
+    cr_errors = [f.detail for f in cr_result.gate_errors]
     _stage_close(
         4, ok=not cr_errors,
         note=(cr_errors[0] if cr_errors else None),
@@ -577,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
     suffix = " (dry-run)" if args.dry_run else ""
     tz_name = datetime.fromisoformat(ctx.started_at).strftime("%Z").strip()
     print(
-        f"kdb_compile: run_id={ctx.run_id}{suffix}  ({tz_name})",
+        f"kdb_compile: run_id={ctx.run_id}  ({tz_name}){suffix}",
         flush=True,
     )
 
