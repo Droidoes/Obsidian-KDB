@@ -188,19 +188,20 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
             items_set.add(slug)
             pt = page_types.get(slug)
             if pt is None:
-                # Slug in list with no matching page of any type — reconcilable by deletion.
-                # In this commit it remains gate; a later commit flips it to "measure".
-                result.gate_errors.append(ValidationFinding(
+                # Slug in list with no matching page of any type — reconcilable
+                # by deletion. Measure: surfaces for quality scoring, doesn't
+                # block the run. reconcile.py will fix this before downstream.
+                result.measure_findings.append(ValidationFinding(
                     type="pairing_commission",
-                    severity="gate",
+                    severity="measure",
                     detail=f"[{loc}.{field_name}[{j}]] {slug!r} not found in pages[]",
                     source_id=source_id,
                     page_type=expected,
                     slug=slug,
                 ))
             elif pt != expected:
-                # Slug matches a page, but page's page_type is wrong — NOT reconcilable.
-                # Stays gate permanently.
+                # Slug matches a page, but page's page_type is wrong — NOT
+                # reconcilable (no principled way to pick a winner). Stays gate.
                 result.gate_errors.append(ValidationFinding(
                     type="pairing_type_mismatch",
                     severity="gate",
@@ -212,14 +213,13 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
 
         # Omission direction — for every concept/article page in pages[], its
         # slug must appear in the matching slug list. Reconcilable by addition.
-        # Stays gate in this commit; flipped to "measure" in commit 3.
         for page_slug, pt in page_types.items():
             if pt != expected:
                 continue
             if page_slug not in items_set:
-                result.gate_errors.append(ValidationFinding(
+                result.measure_findings.append(ValidationFinding(
                     type="pairing_omission",
-                    severity="gate",
+                    severity="measure",
                     detail=f"[{loc}.{field_name}] missing slug {page_slug!r} ({expected} page exists in pages[])",
                     source_id=source_id,
                     page_type=expected,

@@ -95,13 +95,16 @@ def test_concept_slug_missing_from_pages() -> None:
     result = vcr.validate(_payload(_src(concept_slugs=["ghost"])))
     errors = _details(result)
     assert any("concept_slugs[0]" in e and "'ghost' not found in pages[]" in e for e in errors), errors
-    assert any(f.type == "pairing_commission" and f.slug == "ghost" for f in result.gate_errors)
+    # pairing_commission is MEASURE — reconcilable, doesn't gate the run.
+    assert any(f.type == "pairing_commission" and f.slug == "ghost" for f in result.measure_findings)
+    assert not any(f.type == "pairing_commission" for f in result.gate_errors)
 
 
 def test_concept_slug_points_to_wrong_type() -> None:
     result = vcr.validate(_payload(_src(concept_slugs=["foo"])))
     errors = _details(result)
     assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
+    # pairing_type_mismatch is GATE — unreconcilable.
     assert any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
 
 
@@ -109,7 +112,7 @@ def test_article_slug_missing_from_pages() -> None:
     result = vcr.validate(_payload(_src(article_slugs=["ghost-article"])))
     errors = _details(result)
     assert any("article_slugs[0]" in e and "'ghost-article' not found in pages[]" in e for e in errors), errors
-    assert any(f.type == "pairing_commission" and f.slug == "ghost-article" for f in result.gate_errors)
+    assert any(f.type == "pairing_commission" and f.slug == "ghost-article" for f in result.measure_findings)
 
 
 # ---------- omission direction (page exists, slug missing) ----------
@@ -124,8 +127,9 @@ def test_concept_page_missing_from_concept_slugs() -> None:
         ],
     )
     result = vcr.validate(_payload(src))
-    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
-    assert len(omissions) == 1, result.gate_errors
+    assert result.is_valid, "omission is measure-level — should not gate the run"
+    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
+    assert len(omissions) == 1, result.measure_findings
     assert omissions[0].slug == "mencius"
     assert omissions[0].page_type == "concept"
     assert "concept_slugs" in omissions[0].detail
@@ -140,14 +144,15 @@ def test_article_page_missing_from_article_slugs() -> None:
         ],
     )
     result = vcr.validate(_payload(src))
-    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert result.is_valid
+    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
     assert len(omissions) == 1
     assert omissions[0].slug == "some-essay"
     assert omissions[0].page_type == "article"
 
 
 def test_pairing_omission_and_commission_both_caught_in_one_pass() -> None:
-    """Both directions — page without slug AND slug without page — surface together."""
+    """Both directions — page without slug AND slug without page — surface together as measures."""
     src = _src(
         concept_slugs=["ghost"],  # ghost has no page (commission)
         pages=[
@@ -157,8 +162,9 @@ def test_pairing_omission_and_commission_both_caught_in_one_pass() -> None:
         ],
     )
     result = vcr.validate(_payload(src))
-    commissions = [f for f in result.gate_errors if f.type == "pairing_commission"]
-    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert result.is_valid, "pairing mismatches are measure, not gate"
+    commissions = [f for f in result.measure_findings if f.type == "pairing_commission"]
+    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
     assert len(commissions) == 1 and commissions[0].slug == "ghost"
     assert len(omissions) == 1 and omissions[0].slug == "real-concept"
 
@@ -174,7 +180,8 @@ def test_multiple_concept_pages_all_missing_produce_per_page_findings() -> None:
         ],
     )
     result = vcr.validate(_payload(src))
-    omissions = [f for f in result.gate_errors if f.type == "pairing_omission"]
+    assert result.is_valid
+    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
     assert len(omissions) == 3
     assert {f.slug for f in omissions} == {"c1", "c2", "c3"}
 
@@ -243,13 +250,37 @@ def test_missing_compiled_sources_caught_by_schema() -> None:
 
 # ---------- gate/measure split ----------
 
-def test_all_current_findings_are_gate_severity() -> None:
-    """Commit 1 preserves behavior — every finding is still severity='gate'."""
+def test_gate_severity_contract() -> None:
+    """Every gate_error has severity='gate'; every measure_finding has severity='measure'."""
     result = vcr.validate(_load("compile_result.minimal.invalid.json"))
-    assert not result.is_valid
-    assert result.measure_findings == []
     for f in result.gate_errors:
         assert f.severity == "gate", f
+    for f in result.measure_findings:
+        assert f.severity == "measure", f
+
+
+def test_pairing_mismatches_do_not_gate_the_run() -> None:
+    """pairing_commission + pairing_omission are measure findings — is_valid stays True."""
+    src = _src(
+        concept_slugs=["ghost"],
+        pages=[
+            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "real-concept", "page_type": "concept", "title": "x", "body": "y"},
+        ],
+    )
+    result = vcr.validate(_payload(src))
+    assert result.is_valid
+    assert result.gate_errors == []
+    assert len(result.measure_findings) == 2
+    types = {f.type for f in result.measure_findings}
+    assert types == {"pairing_commission", "pairing_omission"}
+
+
+def test_pairing_type_mismatch_stays_gate() -> None:
+    """pairing_type_mismatch is unreconcilable — must block the run."""
+    result = vcr.validate(_payload(_src(concept_slugs=["foo"])))  # 'foo' is summary, not concept
+    assert not result.is_valid
+    assert any(f.type == "pairing_type_mismatch" and f.severity == "gate" for f in result.gate_errors)
 
 
 def test_score_response_stub_returns_none() -> None:
