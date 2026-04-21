@@ -466,8 +466,8 @@ class BuiltPrompt:
     user: str
 
 @cache
-def load_claude_md(vault_root: Path) -> str:
-    """Load <vault-root>/KDB/CLAUDE.md. Cached per-process by vault_root.
+def load_system_prompt(vault_root: Path) -> str:
+    """Load <vault-root>/KDB/KDB-Compiler-System-Prompt.md. Cached per-process by vault_root.
     Path is hashable — no need to stringify at the call site."""
 
 @cache
@@ -492,7 +492,7 @@ def build_prompt(
 
 **System prompt structure (locked)**:
 ```
-<CLAUDE.md full content>
+<KDB-Compiler-System-Prompt.md full content>
 
 ---
 RESPONSE CONTRACT (non-negotiable):
@@ -757,7 +757,7 @@ kdb_compiler/tests/fixtures/eval/case01_minimal/
 ## 6. Prompt Skeleton (see §5.4)
 
 Token budget sanity check (back-of-envelope):
-- CLAUDE.md: ~1,500 tokens
+- KDB-Compiler-System-Prompt.md: ~1,500 tokens
 - Response contract rules: ~200 tokens
 - Schema JSON pretty-printed: ~1,200 tokens
 - Exemplar JSON: ~400 tokens
@@ -1120,9 +1120,9 @@ with "is the run valid"; the clarified rule separates them.
 - deterministic ordering across runs
 
 ### `test_prompt_builder.py` (~6 cases, snapshot-based)
-- `load_claude_md` returns vault file
+- `load_system_prompt` returns vault file
 - `load_response_schema_text` returns schema with expected keys
-- `build_prompt` system snapshot includes CLAUDE.md + contract rules
+- `build_prompt` system snapshot includes KDB-Compiler-System-Prompt.md + contract rules
 - `build_prompt` user snapshot includes source_id, source_text, context, schema, exemplar
 - exemplar includes the supplied source_id
 - contract lines "EXACTLY ONE JSON object" and "source_id MUST echo" present
@@ -1184,7 +1184,7 @@ Each step: implement → tests green → user approves → commit.
 | C | `response_normalizer` shrink | `response_normalizer.py`, tests | Normalizer tests pass; grep confirms no semantic code |
 | D | `eval_writer` | `eval_writer.py`, tests | Writer tests pass under both env states |
 | E | `context_loader` | `context_loader.py`, tests | Loader tests pass; deterministic ordering verified |
-| F | `prompt_builder` + `KDB/CLAUDE.md` verified present | `prompt_builder.py`, tests | Snapshot tests pass; contract lines present |
+| F | `prompt_builder` + `KDB/KDB-Compiler-System-Prompt.md` verified present | `prompt_builder.py`, tests | Snapshot tests pass; contract lines present |
 | G | `planner` | `planner.py`, tests, `pyproject.toml` (kdb-plan) | Planner tests pass; CLI smoke works |
 | H | `compiler` (mocked seam) | `compiler.py`, tests, `pyproject.toml` | All compiler tests pass; eval record written every case |
 | I | `kdb_compile.py` Step 5 hybrid | `kdb_compile.py`, `test_kdb_compile.py` new cases | M1.7 existing tests unchanged; new cases pass |
@@ -1198,7 +1198,7 @@ Step J is the green-light — all prior steps are preparation.
 
 Before any implementation on a given step, verify these:
 
-- [ ] `~/Obsidian/KDB/CLAUDE.md` is readable. If not, Step F is blocked.
+- [ ] `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md` is readable. If not, Step F is blocked.
 - [ ] `ModelResponse` in `call_model.py` has `attempts` field after Step A's edit.
 - [ ] `pyproject.toml` accepts 4 new `[project.scripts]` entries: `kdb-plan`, `kdb-compile-sources`, `kdb-eval`, `kdb-validate-response`.
 - [ ] `PageType`, `PageStatus`, `Confidence` literals in `types.py` match the per-source schema enums exactly.

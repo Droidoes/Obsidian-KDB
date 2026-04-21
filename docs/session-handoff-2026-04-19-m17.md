@@ -97,7 +97,7 @@ The orchestrator contract does not change. M2 fills the gap between scan and app
 
 2. **Context snapshot shape**: What does the LLM see about existing pages? Options: (a) full list of existing slugs only, (b) full page titles + slugs, (c) truncated body snippets for related pages. Shape determines link quality and token cost.
 
-3. **Prompt structure**: System prompt (invariants) vs user prompt (source content + context). Where does `KDB/CLAUDE.md` live in the prompt? Is it system or user?
+3. **Prompt structure**: System prompt (invariants) vs user prompt (source content + context). Where does `KDB/KDB-Compiler-System-Prompt.md` live in the prompt? Is it system or user?
 
 4. **Re-compile policy**: If a source hasn't changed (UNCHANGED action in scan), should M2 skip it? Probably yes for v1. But what about concept propagation (a concept page touched by an unchanged source)?
 
@@ -123,9 +123,9 @@ result = call_model_with_retry(
 
 Config lives in `kdb_compiler/config.py` — reads `~/.config/kdb/config.toml` or env vars. Three env-blocked test modules (`test_call_model.py`, `test_call_model_retry.py`, `test_config.py`) are excluded from CI; they need a live API key.
 
-## KDB/CLAUDE.md — the LLM's invariants
+## KDB/KDB-Compiler-System-Prompt.md — the LLM's invariants
 
-Read `~/Obsidian/KDB/CLAUDE.md` before writing any prompt. It encodes:
+Read `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md` before writing any prompt. It encodes:
 - D8: LLM never emits paths, timestamps, versions
 - D18: full-body replacement (no patch ops)
 - Slug format policy
@@ -135,7 +135,7 @@ Read `~/Obsidian/KDB/CLAUDE.md` before writing any prompt. It encodes:
 
 - **Test command**: `python3 -m pytest kdb_compiler/tests --ignore=kdb_compiler/tests/test_call_model.py --ignore=kdb_compiler/tests/test_call_model_retry.py --ignore=kdb_compiler/tests/test_config.py`
 - **Python binary**: `python3` (no `python` alias on this WSL env)
-- **Commit gate**: wait for explicit user approval before committing (CLAUDE.md Phase 5)
+- **Commit gate**: wait for explicit user approval before committing (global CLAUDE.md Phase 5 in `~/.claude/CLAUDE.md`)
 - **D14/D22**: atomic writes only; no locks, no retry ladders
 - **D15**: journal written BEFORE manifest in `write_outputs` — never reorder
 - **D22**: single user, single process — no complexity for imaginary risk

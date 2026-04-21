@@ -36,15 +36,15 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _write_vault_claude_md(vault: Path) -> None:
-    claude = vault / "KDB" / "CLAUDE.md"
-    claude.parent.mkdir(parents=True, exist_ok=True)
-    # Use the real vault's CLAUDE.md if available, else a minimal stub.
-    real = Path.home() / "Obsidian" / "KDB" / "CLAUDE.md"
+def _write_vault_system_prompt(vault: Path) -> None:
+    dest = vault / "KDB" / "KDB-Compiler-System-Prompt.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Use the real vault's system prompt if available, else a minimal stub.
+    real = Path.home() / "Obsidian" / "KDB" / "KDB-Compiler-System-Prompt.md"
     if real.exists():
-        shutil.copy(real, claude)
+        shutil.copy(real, dest)
     else:
-        claude.write_text("# KDB invariants (test stub)\n", encoding="utf-8")
+        dest.write_text("# KDB invariants (test stub)\n", encoding="utf-8")
 
 
 def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
@@ -55,7 +55,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     """
     vault = tmp_path / "vault"
     vault.mkdir()
-    _write_vault_claude_md(vault)
+    _write_vault_system_prompt(vault)
     state_root = vault / "KDB" / "state"
     state_root.mkdir(parents=True, exist_ok=True)
 

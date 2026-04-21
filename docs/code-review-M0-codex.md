@@ -5,7 +5,7 @@ Scope reviewed:
 - `README.md`
 - `kdb_compiler/*.py`
 - `kdb_compiler/tests/README.md`
-- `~/Obsidian/KDB/CLAUDE.md`
+- `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md`
 
 Skipped:
 - `knowledge_graph/` as requested
@@ -14,7 +14,7 @@ Skipped:
 
 ### 1. High: the LLM contract has drifted away from the architecture boundary
 
-The overview says the LLM emits structured JSON patch-ops and Python owns deterministic state and file writes. The current `CLAUDE.md` contract is looser and more stateful than that:
+The overview says the LLM emits structured JSON patch-ops and Python owns deterministic state and file writes. The current `KDB-Compiler-System-Prompt.md` contract is looser and more stateful than that:
 
 - it asks the model to emit `content_patches[]` containing full markdown bodies
 - it asks the model to choose `page_id` values that are filesystem paths under `KDB/wiki/`
@@ -33,7 +33,7 @@ Recommendation:
   - schema version
 - have the LLM emit logical identifiers such as `page_type`, `slug`, `title`, `body_sections`, `outgoing_links`, `supports_page_existence`
 
-### 2. High: `CLAUDE.md` currently over-specifies cross-page edits and will cause unnecessary churn
+### 2. High: `KDB-Compiler-System-Prompt.md` currently over-specifies cross-page edits and will cause unnecessary churn
 
 The strongest example is the backlink rule:
 
@@ -74,7 +74,7 @@ These are not optional polish. `kdb_scan.py`, `patch_applier.py`, and `manifest_
 
 ### 4. Medium: contract artifacts needed for review and testing are planned, but not stubbed
 
-`CLAUDE.md` already references `compile_result.schema.json`, and the whole architecture depends on manifest shape, yet neither contract artifact is present in the repo in a reviewable form.
+`KDB-Compiler-System-Prompt.md` already references `compile_result.schema.json`, and the whole architecture depends on manifest shape, yet neither contract artifact is present in the repo in a reviewable form.
 
 Recommendation:
 - add these stubs now, before M1 implementation:
@@ -91,7 +91,7 @@ Without those, the most important boundary in the system is still informal prose
 The current responsibilities listed for `compiler.py` include:
 
 - loading source content
-- loading `KDB/CLAUDE.md`
+- loading `KDB/KDB-Compiler-System-Prompt.md`
 - loading related context from the manifest
 - building prompts
 - calling the model
@@ -164,7 +164,7 @@ Optional but likely worth stubbing:
 
 I would not stub more than that in M0. The goal is to lock interfaces, not pre-implement M2.
 
-### (d) The LLM contract in `~/Obsidian/KDB/CLAUDE.md` — enough discipline, or too much?
+### (d) The LLM contract in `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md` — enough discipline, or too much?
 
 Both.
 
@@ -207,6 +207,6 @@ Python should then:
 
 The M0 scaffold is directionally strong. The top-level pipeline and the safety philosophy are both correct.
 
-The main issue is not module count. It is boundary purity. Right now the prose architecture says "LLM as planner/parser, Python as codegen/linker," but `CLAUDE.md` still gives the LLM too much responsibility for file identity and deterministic metadata.
+The main issue is not module count. It is boundary purity. Right now the prose architecture says "LLM as planner/parser, Python as codegen/linker," but `KDB-Compiler-System-Prompt.md` still gives the LLM too much responsibility for file identity and deterministic metadata.
 
 If you fix that contract now and add the missing shared seam stubs, the M1/M2 implementation path will be much cleaner.

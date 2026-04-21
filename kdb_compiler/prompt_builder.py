@@ -2,19 +2,20 @@
 
 The prompt has two halves:
 
-  system — CLAUDE.md (the LLM's full invariants doc, served from the
-           vault so the operator can edit it without a code change) +
-           a locked response-contract block that enforces the shape the
-           Python side actually parses.
+  system — the KDB compiler system prompt (the LLM's full invariants
+           doc, served from the vault so the operator can edit it
+           without a code change) + a locked response-contract block
+           that enforces the shape the Python side actually parses.
 
   user   — source_id (echoed for semantic check), the verbatim source
            text, a body-free manifest snapshot from context_loader,
            the per-source response schema, and a minimal exemplar.
 
-`load_claude_md` and `load_response_schema_text` are memoised so a
-batch of compiles pays the file-read cost once. CLAUDE.md is vault-owned
-(we load `<vault>/KDB/CLAUDE.md`), so the cache key is the vault Path.
-The schema lives in the package and has no key.
+`load_system_prompt` and `load_response_schema_text` are memoised so a
+batch of compiles pays the file-read cost once. The system prompt is
+vault-owned (we load `<vault>/KDB/KDB-Compiler-System-Prompt.md`), so
+the cache key is the vault Path. The schema lives in the package and
+has no key.
 
 The response-contract block below is intentionally terse and mirrors the
 four semantic rules in validate_compiled_source_response.semantic_check.
@@ -55,10 +56,11 @@ class BuiltPrompt:
 
 
 @cache
-def load_claude_md(vault_root: Path) -> str:
-    """Read <vault_root>/KDB/CLAUDE.md. Cached per vault_root (Path is
-    hashable). Raises FileNotFoundError if the vault has no CLAUDE.md."""
-    path = vault_root / "KDB" / "CLAUDE.md"
+def load_system_prompt(vault_root: Path) -> str:
+    """Read <vault_root>/KDB/KDB-Compiler-System-Prompt.md. Cached per
+    vault_root (Path is hashable). Raises FileNotFoundError if the
+    vault has no system-prompt file."""
+    path = vault_root / "KDB" / "KDB-Compiler-System-Prompt.md"
     return path.read_text(encoding="utf-8")
 
 
@@ -110,10 +112,10 @@ def build_prompt(
 ) -> BuiltPrompt:
     """Assemble (system, user) strings for one compile call. Pure after
     the load_* calls populate their caches."""
-    claude_md = load_claude_md(vault_root)
+    system_prompt = load_system_prompt(vault_root)
     schema_text = load_response_schema_text()
 
-    system = f"{claude_md}\n\n{RESPONSE_CONTRACT}"
+    system = f"{system_prompt}\n\n{RESPONSE_CONTRACT}"
 
     context_json = json.dumps(context_snapshot.to_dict(), indent=2, ensure_ascii=False)
     exemplar_json = json.dumps(exemplar_response(source_id), indent=2, ensure_ascii=False)

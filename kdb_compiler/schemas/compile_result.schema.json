@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://obsidian-kdb.local/schemas/compile_result.schema.json",
   "title": "KDB Compile Result (page-intents model)",
-  "description": "Aggregate LLM output across all sources in a compile run. The LLM emits semantic intent only: slugs, titles, bodies, logical links. Python owns paths, frontmatter, timestamps, versions, incoming-link reconciliation. See docs/CODEBASE_OVERVIEW.md D8 and KDB/CLAUDE.md.",
+  "description": "Aggregate LLM output across all sources in a compile run. The LLM emits semantic intent only: slugs, titles, bodies, logical links. Python owns paths, frontmatter, timestamps, versions, incoming-link reconciliation. See docs/CODEBASE_OVERVIEW.md D8 and KDB/KDB-Compiler-System-Prompt.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["run_id", "success", "compiled_sources"],

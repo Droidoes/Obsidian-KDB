@@ -63,7 +63,7 @@ Four pure/near-pure foundation modules — no pipeline wiring yet.
 ## Non-obvious decisions worth remembering
 
 - **Full-body replacement**, not patch-ops (D18). LLM emits `slug`+`title`+`body`; Python writes the whole file.
-- **LLM contract lives in the vault** at `~/Obsidian/KDB/CLAUDE.md`, not in this repo — it is *input* to the compiler, not source code.
+- **LLM contract lives in the vault** at `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md`, not in this repo — it is *input* to the compiler, not source code.
 - **No complexity for imaginary risk**: single user, infrequent operation. One retry on I/O, no lock files, no exponential backoff ladders (saved as auto-memory).
 - **Shared seams only**: every writer goes through `atomic_io`; every path decision goes through `paths`; every run-metadata stamp comes from `run_context`. Do not duplicate.
 

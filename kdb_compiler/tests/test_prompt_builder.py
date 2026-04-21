@@ -1,9 +1,9 @@
 """Tests for prompt_builder — system/user assembly for one compile call.
 
 Coverage per blueprint §10:
-    - load_claude_md returns the file at <vault>/KDB/CLAUDE.md
+    - load_system_prompt returns the file at <vault>/KDB/KDB-Compiler-System-Prompt.md
     - load_response_schema_text returns schema text with the expected keys
-    - build_prompt system includes CLAUDE.md + contract lines
+    - build_prompt system includes the system prompt + contract lines
     - build_prompt user includes source_id, source_text, context, schema, exemplar
     - exemplar_response echoes the supplied source_id and is schema+semantic valid
     - key contract sentences are present verbatim
@@ -22,29 +22,31 @@ from kdb_compiler.prompt_builder import (
     RESPONSE_CONTRACT,
     build_prompt,
     exemplar_response,
-    load_claude_md,
     load_response_schema_text,
+    load_system_prompt,
 )
 from kdb_compiler.types import ContextPage, ContextSnapshot
 from kdb_compiler.validate_compiled_source_response import semantic_check, validate
 
 SOURCE_ID = "KDB/raw/foo.md"
 
+SYSTEM_PROMPT_FILENAME = "KDB-Compiler-System-Prompt.md"
+
 
 @pytest.fixture(autouse=True)
 def _clear_caches() -> None:
-    """CLAUDE.md is cached per-vault-path; the schema is cached globally.
-    Both are memoised via functools.cache — clear between tests so per-test
-    vaults don't leak."""
-    load_claude_md.cache_clear()
+    """The system prompt is cached per-vault-path; the schema is cached
+    globally. Both are memoised via functools.cache — clear between tests
+    so per-test vaults don't leak."""
+    load_system_prompt.cache_clear()
     load_response_schema_text.cache_clear()
 
 
-def _write_vault_claude_md(tmp_path: Path, contents: str) -> Path:
-    """Create <tmp_path>/KDB/CLAUDE.md and return the vault root."""
+def _write_vault_system_prompt(tmp_path: Path, contents: str) -> Path:
+    """Create <tmp_path>/KDB/KDB-Compiler-System-Prompt.md and return the vault root."""
     kdb = tmp_path / "KDB"
     kdb.mkdir(parents=True, exist_ok=True)
-    (kdb / "CLAUDE.md").write_text(contents, encoding="utf-8")
+    (kdb / SYSTEM_PROMPT_FILENAME).write_text(contents, encoding="utf-8")
     return tmp_path
 
 
@@ -62,26 +64,26 @@ def _snapshot() -> ContextSnapshot:
     )
 
 
-# ---------- load_claude_md ----------
+# ---------- load_system_prompt ----------
 
-def test_load_claude_md_returns_vault_file(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# invariants doc\n")
-    assert load_claude_md(vault) == "# invariants doc\n"
+def test_load_system_prompt_returns_vault_file(tmp_path: Path) -> None:
+    vault = _write_vault_system_prompt(tmp_path, "# invariants doc\n")
+    assert load_system_prompt(vault) == "# invariants doc\n"
 
 
-def test_load_claude_md_missing_raises(tmp_path: Path) -> None:
+def test_load_system_prompt_missing_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        load_claude_md(tmp_path)  # no KDB/CLAUDE.md under tmp_path
+        load_system_prompt(tmp_path)  # no KDB/KDB-Compiler-System-Prompt.md under tmp_path
 
 
-def test_load_claude_md_cached_per_vault_root(tmp_path: Path) -> None:
-    vault_a = _write_vault_claude_md(tmp_path / "a", "aaa")
-    vault_b = _write_vault_claude_md(tmp_path / "b", "bbb")
-    assert load_claude_md(vault_a) == "aaa"
-    assert load_claude_md(vault_b) == "bbb"
+def test_load_system_prompt_cached_per_vault_root(tmp_path: Path) -> None:
+    vault_a = _write_vault_system_prompt(tmp_path / "a", "aaa")
+    vault_b = _write_vault_system_prompt(tmp_path / "b", "bbb")
+    assert load_system_prompt(vault_a) == "aaa"
+    assert load_system_prompt(vault_b) == "bbb"
     # mutate file on disk — cached result should not change
-    (vault_a / "KDB" / "CLAUDE.md").write_text("MUTATED", encoding="utf-8")
-    assert load_claude_md(vault_a) == "aaa"
+    (vault_a / "KDB" / SYSTEM_PROMPT_FILENAME).write_text("MUTATED", encoding="utf-8")
+    assert load_system_prompt(vault_a) == "aaa"
 
 
 # ---------- load_response_schema_text ----------
@@ -123,8 +125,8 @@ def test_exemplar_passes_schema_and_semantic() -> None:
 
 # ---------- build_prompt: system ----------
 
-def test_system_includes_claude_md_and_contract(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# KDB invariants\n\nsome rules\n")
+def test_system_includes_system_prompt_and_contract(tmp_path: Path) -> None:
+    vault = _write_vault_system_prompt(tmp_path, "# KDB invariants\n\nsome rules\n")
     bp = build_prompt(
         vault_root=vault,
         source_id=SOURCE_ID,
@@ -140,7 +142,7 @@ def test_system_includes_claude_md_and_contract(tmp_path: Path) -> None:
 
 
 def test_system_does_not_include_user_sections(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# rules")
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
         source_id=SOURCE_ID,
@@ -154,7 +156,7 @@ def test_system_does_not_include_user_sections(tmp_path: Path) -> None:
 # ---------- build_prompt: user ----------
 
 def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# rules")
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
         source_id=SOURCE_ID,
@@ -171,7 +173,7 @@ def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
 
 
 def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# rules")
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
     text = "# Transformers\n\nSelf-attention is the key idea.\n"
     bp = build_prompt(
         vault_root=vault,
@@ -183,7 +185,7 @@ def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
 
 
 def test_user_includes_context_snapshot_as_json(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# rules")
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
     snap = _snapshot()
     bp = build_prompt(
         vault_root=vault,
@@ -196,7 +198,7 @@ def test_user_includes_context_snapshot_as_json(tmp_path: Path) -> None:
 
 
 def test_user_includes_schema_and_exemplar(tmp_path: Path) -> None:
-    vault = _write_vault_claude_md(tmp_path, "# rules")
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
         source_id=SOURCE_ID,

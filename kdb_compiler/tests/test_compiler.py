@@ -22,8 +22,8 @@ All tests use `monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry"
 to stub the LLM. The resp-stats invariant check counts files on disk under
 <state_root>/llm_resp/<run_id>/, which is the authoritative evidence.
 
-prompt_builder caches CLAUDE.md by vault path — an autouse fixture clears
-that cache between tests so per-test vaults don't leak.
+prompt_builder caches the system prompt by vault path — an autouse fixture
+clears that cache between tests so per-test vaults don't leak.
 """
 from __future__ import annotations
 
@@ -50,16 +50,16 @@ SOURCE_C = "KDB/raw/gamma.md"
 
 @pytest.fixture(autouse=True)
 def _clear_prompt_caches() -> None:
-    prompt_builder.load_claude_md.cache_clear()
+    prompt_builder.load_system_prompt.cache_clear()
     prompt_builder.load_response_schema_text.cache_clear()
 
 
 # ---------- fixtures ----------
 
 def _write_vault(tmp_path: Path) -> Path:
-    """Create a minimal vault: KDB/CLAUDE.md + raw source + state dir."""
+    """Create a minimal vault: KDB/KDB-Compiler-System-Prompt.md + raw source + state dir."""
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "CLAUDE.md").write_text(
+    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
         "# KDB invariants\n\nRule 1: be honest.\n", encoding="utf-8"
     )
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,1268 @@
+
+> [!Question]
+> in terms of planning what's M1 vs M2?
+`M1` is the deterministic foundation. `M2` is the first real LLM compile layer.
+
+`M1` is the deterministic foundation. `M2` is the first real LLM compile layer.
+
+In this repo’s roadmap in [`CODEBASE_OVERVIEW.md`](/home/ftu/Droidoes/Obsidian-KDB/docs/CODEBASE_OVERVIEW.md), `M1` means: build and verify all the Python-owned mechanics before any model is in the loop. That includes scanning `raw/`, validating artifacts, reconciling manifest state, writing wiki files atomically, and running an end-to-end dry run against a fixture `compile_result.json`. The goal is to prove the pipeline and state model are correct with no LLM dependency.
+
+`M2` starts where the fixture stops. It adds `planner.py`, `compiler.py`, prompt construction, model calls, and the real generation of `compile_result.json` from source files. So the distinction is basically:
+- `M1`: deterministic infrastructure, validation, state transitions, dry-run orchestration
+- `M2`: actual LLM-driven compilation and the first real compile of content
+
+A simple way to think about it:
+- `M1` answers: “Can the system safely process a valid compile artifact?”
+- `M2` answers: “Can the system produce that artifact from the LLM and use it end to end?”
+
+
+> [!Question] Request
+> 
+> we are moving to M2, phase 1... strategy discussion from Opus4.7
+>   
+>   M2 Phase 1 — Strategize
+> 
+>   Shared design (all options)
+> 
+>   - 5 modules per the stubs: planner, compiler, prompt_builder, context_loader, response_normalizer
+>   - Slot into kdb_compile.py Step 5 via hybrid: if compile_result.json already exists → read it (preserves M1.7's fixture-based tests). If missing AND scan.to_compile non-empty →
+>   compiler.run_compile(...) writes it, then continue. If missing AND to_compile empty → fail with the existing M1.7 error. Zero test breakage; clean seam.
+>   - run_id threading: ctx.run_id flows orchestrator → compiler → compile_result.json["run_id"]. Never regenerated.
+>   - Error tolerance: per-source try/except in compiler. Failed source → entry in compile_result.errors[]. Others proceed. success: false only if all sources fail.
+>   - Provider default: anthropic + claude-opus-4-7, temperature 0, json_mode=True, max_tokens 4096.
+> 
+>   The architectural axis: scope of v1
+> 
+>   ┌──────────────────────────┬────────────────┬────────────────────────────────────────────────────────────────────────────────────────────┬───────────────────────────────────┐
+>   │                          │  A — Minimal   │                                 B — MVP + measurability ★                                  │      C — B + batched compile      │
+>   │                          │      MVP       │                                                                                            │                                   │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Chunk size               │ 1 source /     │ 1 source / call                                                                            │ 5 sources / call                  │
+>   │                          │ call           │                                                                                            │                                   │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Response metadata        │ discarded      │ threaded into compiled_sources[i].compile_meta (model, provider, tokens, latency_ms,       │ same as B                         │
+>   │ captured                 │                │ attempts, ok, error)                                                                       │                                   │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Schema change            │ none           │ additive: add optional compile_meta to compiledSource def                                  │ same as B                         │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Lines of work            │ ~300           │ ~320                                                                                       │ ~450                              │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Blast radius of LLM      │ 1 source       │ 1 source                                                                                   │ 5 sources                         │
+>   │ failure                  │                │                                                                                            │                                   │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ Eval framework bolt-on   │ painful        │ zero friction                                                                              │ zero friction                     │
+>   │ later                    │ retrofit       │                                                                                            │                                   │
+>   ├──────────────────────────┼────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+>   │ D22 alignment            │ ✓              │ ✓                                                                                          │ ✗ (premature for 3-5 doc first    │
+>   │                          │                │                                                                                            │ compile)                          │
+>   └──────────────────────────┴────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┘
+> 
+>   ★ Recommended: B. Honors feedback_measurability_over_defensive_complexity.md directly. The data already exists in ModelResponse — it's ~15 lines of threading. We'll want this the
+>    instant we run the first compile and ask "how much did that cost?" and "how long?". C is the upgrade path once A/B data tells us batching would actually help.
+> 
+>   Concrete answers to the 6 handoff questions (B scope)
+> 
+>   1. Chunk size: 1 source per API call.
+>   2. Context snapshot shape: {slug, title, page_type, outgoing_links} per included page. No bodies. Selection rule = scoped slice: (a) pages whose source_refs include this
+>   source_id, (b) pages whose slug appears verbatim in the source text, (c) depth-1 transitive from those. Cap 50 pages. For 3-5 docs, all pages fit; rule matters at scale.
+>   3. Prompt structure: system = ~/Obsidian/KDB/KDB-Compiler-System-Prompt.md loaded at prompt-build time (not bundled in Python — authoritative file lives with the vault). User = {source_content,
+>   context_snapshot, exemplar_page_json}. The exemplar replaces the 150-line schema dump; full schema is still enforced on the Python side via validate_compile_result.
+>   4. Re-compile for UNCHANGED: skip entirely. scan.to_compile already excludes them. Concept-propagation handled downstream by manifest_update + patch_applier regenerating
+>   directly-affected pages.
+>   5. run_id threading: single path — ctx.run_id is the one source of truth.
+>   6. Error tolerance: per-source try/except, failed entries in errors[], run continues.
+> 
+>   Test strategy (gap the advisor flagged)
+> 
+>   - Unit tests: mock call_model_with_retry at the seam for compiler.py, planner.py
+>   - Snapshot tests: prompt_builder.py — golden strings, catches prompt drift
+>   - Parser tests: response_normalizer.py — recorded LLM text fixtures (markdown-fenced JSON, leading prose, slug normalization)
+>   - Integration test (env-blocked like test_call_model.py): test_m2_first_compile.py — one real LLM call on one fixture source, proves the whole thing actually works. Excluded from
+>    default CI like the other env-blocked modules.
+> 
+>   What I'm NOT doing in M2 v1
+> 
+>   - No batching (deferred to v1.1 once we have A/B data)
+>   - No reconcile/dedup pass
+>   - No eval framework (still deferred per memory)
+>   - No multi-provider A/B (but metadata is in place so we can add it anytime)
+> 
+>   ---
+>   Gate: Pick A, B, or C (or push back on any of the concrete answers 1–6, the test strategy, or the hybrid fixture-or-LLM slot design). Once selected I'll produce the Phase 3
+>   blueprint (per-module signatures, prompt skeleton, schema diff) and wait for "Proceed" before implementing.
+
+Pick `B`, with one adjustment: keep the Anthropic default, but do **not** rely on `json_mode=True` as part of the contract.
+
+Why `B` is the right scope:
+- It fits the existing artifact shape in [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json) and [`types.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/types.py) with only an additive `compile_meta`.
+- It preserves the current M1.7 hybrid seam in [`kdb_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/kdb_compile.py): fixture if present, real compile if absent.
+- It gives you measurability on day 1 with almost no complexity, which is exactly the kind of addition D22 permits because the data is already available in [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py).
+
+My calls on the concrete answers:
+- `1.` One source per API call: approve.
+- `2.` Context snapshot with `{slug, title, page_type, outgoing_links}` and no bodies: approve.
+- `3.` Load `KDB-Compiler-System-Prompt.md` from the vault at prompt-build time: approve.
+- `4.` Skip `UNCHANGED` entirely: approve.
+- `5.` Single `ctx.run_id` threaded through the whole run: approve strongly.
+- `6.` Per-source try/except with partial progress: approve.
+
+One pushback on `3`: Anthropic in the current implementation does not actually enforce JSON mode. [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py) only maps `json_mode` to `response_format={"type":"json_object"}` for OpenAI-compatible calls; `_call_anthropic()` ignores it. So for M2 v1 the real contract should be:
+- prompt demands strict JSON
+- `response_normalizer.py` handles fenced JSON / leading prose / minor cleanup
+- `validate_compile_result` remains the hard gate
+
+I would also keep the proposed success semantics, effectively `success = len(compiled_sources) > 0`. That matches the current downstream behavior in [`manifest_update.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/manifest_update.py): a partially successful run can still advance the pipeline while failed sources are surfaced in `errors[]` and marked accordingly.
+
+The test strategy is right. The only thing I’d add is a schema-and-types checkpoint as part of the Phase 3 blueprint: if `compile_meta` is added, update both [`types.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/types.py) and [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json) in the same step so the normalizer/compiler work doesn’t outrun validation.
+
+> [!Question]
+> I hear we talk about enforce json smode, I hear json response format... but I didn't hear us talking about json response schema, why is that?
+
+Because those are three different levels of strictness:
+
+- `json_mode`: “return valid JSON”
+- `json response format`: usually “return a JSON object, not free text”
+- `json response schema`: “return JSON matching this exact shape”
+
+What we’ve discussed so far is the first two, mostly because the current M2 design is still provider-agnostic and the hard contract already lives on the Python side in [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json) plus [`validate_compile_result.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/validate_compile_result.py). In other words, the system already assumes “models are messy, Python is the gate.”
+
+Why schema-constrained generation has not been the lead topic:
+- The current wrapper in [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py) does not expose a cross-provider “here is the exact JSON Schema” path.
+- Anthropic is the proposed default, and the current implementation does not enforce schema there the way some APIs can.
+- We already planned a `response_normalizer.py` layer precisely because we expect fenced JSON, leading prose, and other mild drift.
+- A provider-specific schema feature would tighten outputs, but it also couples M2 v1 more strongly to one API surface.
+
+So the short answer is: we did not ignore JSON Schema; we moved the authoritative schema enforcement to post-generation validation instead of generation-time enforcement. That is simpler and more portable for v1.
+
+If you want the strongest possible contract later, the order is:
+1. Keep Python-side schema validation no matter what.
+2. Add provider-side schema-constrained output where supported.
+3. Retain the normalizer as a fallback, because provider guarantees are never perfect across vendors.
+
+> [!Question]
+> I still have trouble to understand the rationale for not having a json schema upfront when calling the models... for all words and sentences you had above, there was zero explanation why we don't plan to have schema up front... I can tell you ten reasons why we should but you have not told me one reason why we should not
+
+The real answer is not “schema upfront is bad.” It’s “for this M2 v1, the costs may outweigh the benefits unless we narrow the design.”
+
+The concrete reasons not to require schema-constrained output up front are:
+
+1. Provider portability.
+The current plan wants one compiler path across Anthropic, OpenAI, Gemini, and Ollama via [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py). Exact JSON Schema enforcement is not exposed uniformly across those providers, and the current wrapper does not implement it. If we require schema upfront, we either add provider-specific branches now or silently lose the “same compiler path” goal.
+
+2. Anthropic is the default.
+Your proposed default is Anthropic Opus 4.7, but the current Anthropic path in [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py) does not enforce a response schema. So “schema upfront” is not just a design preference here; it implies extra implementation work and likely a provider-specific contract.
+
+3. The model should not emit the whole `compile_result` shape anyway.
+Parts of [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json) are Python-owned or run-level aggregate fields:
+`run_id`, `success`, top-level `errors`, top-level `warnings`.
+The model really emits a per-source fragment, not the full artifact. So if we do schema upfront, we should first split out a separate “compiled source response schema” rather than reuse the full artifact schema.
+
+4. It increases the change surface right when prompt/spec iteration is still unstable.
+M2 v1 is the first real compile. We are still learning what prompt shape, context shape, and page-intent shape actually work. Hard provider-side schemas are valuable once the contract is stable; before that, they make every prompt/output tweak more expensive.
+
+5. It can create false confidence.
+Provider-side schema enforcement only proves “the JSON matches a shape.” It does not prove:
+- slugs are sensible
+- `outgoing_links` match the body
+- page content is semantically correct
+- source support is well chosen
+We still need Python validation and semantic checks. So schema upfront helps, but it does not replace the hard parts.
+
+So the honest rationale is:
+- not because schema upfront is a bad idea
+- because in this repo, right now, it pushes us toward provider-specific code, extra wrapper work, and a schema split we have not designed yet
+
+If you want my actual engineering recommendation after your pushback: for a single-provider M2 v1, I would lean toward adding schema-constrained output for the per-source model response. I would not use the full `compile_result` schema directly; I would define a smaller response schema for one compiled source plus log entries, keep Python aggregation, and still keep `response_normalizer` and `validate_compile_result` as the safety net. That is the strongest version of the design.
+
+> [!Question]
+> I don't really understand what you are trying to say.... they seem to me are words without meaning
+> 1.1 "Exact JSON Schema enforcement is not exposed uniformly across those providers, and the current wrapper does not implement it."  - my question- we pass the schema with the prompt through API calls to models and ask them to return the results following the schema, which part is "not exposed uniformly across those providers"?  
+> 1.2 If we require schema upfront, we either add provider-specific branches now or silently lose the “same compiler path” goal. - my question - what is silently lose the “same compiler path” goal?  what goal is that?  
+> 2. "Your proposed default is Anthropic Opus 4.7, but the current Anthropic path in call_model.py does not enforce a response schema"... my question - you keep on saying it "does not enforce a response schema"... why repeated question to you is why why why why?????
+> 3.1 "The model should not emit the whole compile_result shape anyway."  why?  why? why?
+> 3.2  "The model really emits a per-source fragment, not the full artifact."  are you saying all the models do is chunking?  then why we need models for????
+> 3. "It increases the change surface right when prompt/spec iteration is still unstable." are you saying should have done upfront schema had the prompt/spec iteration were still unstable... dont you agree that the upfront schema is exactly what will make prompt/spec iteration stable???? 
+> 4. that's where we should focus our effort is to make our prompt and our schema robust, that's like 90% of your job for this project
+
+The missing distinction is this:
+
+- `schema in the prompt`: we paste or describe the JSON shape and tell the model to follow it
+- `schema enforced by the API`: the provider has a structured-output feature that rejects anything outside the schema before we ever see it
+
+You were asking about the first one.
+I was mostly answering about the second one.
+That was the source of the confusion.
+
+So stated plainly: if you mean “should we give the model an explicit JSON schema up front in the prompt?”, then yes, we should.
+
+Now your points directly.
+
+1.1 “we pass the schema with the prompt... what is not exposed uniformly across providers?”
+
+Nothing is wrong with passing schema text in the prompt. That works everywhere.
+
+What is not uniform is API-level enforcement. Some APIs have stronger native structured-output features than others. That is what I meant. I should have said that explicitly.
+
+So:
+- prompt-level schema: portable across providers
+- API-enforced schema: not equally available/implemented in our wrapper
+
+1.2 “what is silently lose the same compiler path goal?”
+
+That only applies if we depend on provider-native schema enforcement.
+
+“The same compiler path” means:
+- one compiler implementation
+- same request/response contract
+- minimal provider-specific logic in `compiler.py`
+
+If we only put the schema in the prompt, we keep that goal.
+If we rely on each vendor’s native structured-output feature, we start branching behavior by provider.
+
+So for your interpretation of “schema upfront”, there is no conflict.
+
+2. “why do you keep saying Anthropic does not enforce a response schema?”
+
+Because I was answering the wrong question.
+
+I meant:
+- the current code in [`call_model.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/call_model.py) does not use any Anthropic-native schema enforcement feature
+
+That does not mean:
+- we cannot give Anthropic a schema in the prompt
+
+We absolutely can, and probably should.
+
+3.1 “why should the model not emit the whole compile_result shape?”
+
+Because the top-level `compile_result.json` is a Python-owned aggregate artifact, not just one model answer.
+
+Example:
+- source A compiles successfully
+- source B fails
+- source C times out
+
+Then Python must decide:
+- `success`
+- top-level `errors`
+- top-level `warnings`
+- final `compiled_sources[]`
+- `run_id`
+
+Those are run-level facts, not facts known to one model call.
+
+So the model should emit:
+- one source’s page intents
+- maybe one source’s warnings/log entries
+
+Python should assemble:
+- the final `compile_result.json`
+
+3.2 “are you saying all the models do is chunking?”
+
+No.
+
+The model’s job is the main semantic job:
+- read one source document
+- infer summary/concepts/articles
+- write page bodies
+- choose slugs/titles/links/support
+
+That is the core intelligence.
+
+Python’s job is orchestration:
+- choose which source to compile
+- pass context
+- validate output
+- aggregate run results
+- write files safely
+
+So “per-source fragment” does not mean the model is only chunking.
+It means the model is doing semantic compilation one source at a time.
+
+4. “doesn’t upfront schema make prompt/spec iteration stable?”
+
+Yes. On this, you are right.
+
+A good upfront response schema does make iteration more stable because it:
+- narrows the output space
+- reduces prompt drift
+- makes failures easier to diagnose
+- makes tests clearer
+
+The nuance is only this:
+- the schema should be the right schema
+
+For M2, that should be a per-source response schema, not the full top-level `compile_result` schema.
+
+5. “that’s where we should focus our effort”
+
+Agreed.
+
+For this project, prompt + schema design is a primary part of the work. Not an afterthought.
+
+So the practical conclusion I would recommend is:
+
+1. Add an explicit per-source JSON response schema for the model.
+2. Put that schema in the prompt from day 1.
+3. Keep Python-side validation as the hard gate.
+4. Let Python assemble the full `compile_result.json`.
+5. Optionally add provider-native schema enforcement later where available, but do not depend on it for M2 v1.
+
+That is the clean design.
+
+In one sentence:
+- yes, we should have schema up front when calling the model
+- no, the model should not directly own the whole run-level `compile_result.json`
+
+If you want, I can turn that into a concrete M2 design decision with the exact split:
+- `compiled_source_response.schema.json` for the model
+- `compile_result.schema.json` for Python’s aggregated artifact
+
+> [!Warning]
+> .... and cut as much BULLSHIT out of the python post processing as possible... please confirm you read and understand my instruction before continue
+
+Confirmed.
+
+I understand your instruction as:
+
+- put an explicit JSON schema up front in the model call
+- treat that schema as a primary contract, not just loose prompt prose
+- keep Python post-processing minimal
+- avoid building a large “normalizer” layer that tries to repair sloppy model output
+- use Python mainly for strict validation, aggregation, and deterministic file/state writes
+- if the model output misses the contract, fail clearly instead of papering over it
+
+That is a meaningful change in direction, and I will use that assumption going forward unless you override it.
+
+> [!Question] Request
+> ok, let's revise M2
+
+**Revised M2**
+
+Use a schema-first M2.
+
+The model should receive an explicit **per-source response schema** up front and return exactly one compiled-source payload per call. Python should do as little cleanup as possible: parse JSON, validate against the per-source schema, aggregate accepted results into `compile_result.json`, and fail bad outputs clearly.
+
+**Core Decisions**
+
+- Keep `1 source = 1 model call`.
+- Keep the hybrid in [`kdb_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/kdb_compile.py): use existing `compile_result.json` if present; otherwise compile if `scan.to_compile` is non-empty.
+- Add a new schema for the model response, separate from [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json).
+- The model returns a **per-source artifact**, not the full run-level `compile_result`.
+- Python aggregates run-level fields: `run_id`, `success`, `errors`, `warnings`, `compiled_sources`.
+- Minimize post-processing: no prose stripping, no fuzzy repair, no slug “fixups”, no schema-shape massaging.
+- If a response is not valid JSON or fails schema validation, that source fails.
+
+**Why split the schemas**
+
+The model knows one source at a time. Python knows the run.
+
+So define:
+- `compiled_source_response.schema.json`
+- `compile_result.schema.json`
+
+The model should not invent run-level truth like:
+- overall `success`
+- all-source `errors`
+- final aggregated `warnings`
+- run-wide `compiled_sources[]`
+
+That belongs in Python.
+
+**Revised module roles**
+
+- `planner.py`
+  - Select `scan.to_compile`
+  - Build one compile job per source
+- `context_loader.py`
+  - Build the context snapshot for that source
+  - Keep it lean: `{slug, title, page_type, outgoing_links}`
+- `prompt_builder.py`
+  - Load `KDB/KDB-Compiler-System-Prompt.md`
+  - Include source text
+  - Include context snapshot
+  - Include the exact per-source JSON schema
+  - Include one small valid exemplar if needed
+- `compiler.py`
+  - For each source:
+    - build prompt
+    - call model
+    - parse JSON
+    - validate against per-source schema
+    - append accepted result
+    - record source failure if invalid
+  - Write aggregated `compile_result.json`
+- `response_normalizer.py`
+  - Shrink this hard
+  - Only allowed job: extract raw JSON text if the provider wraps it mechanically
+  - No semantic rewriting
+- `call_model.py` / `call_model_retry.py`
+  - unchanged except maybe metadata threading
+
+**Post-processing limits**
+
+Python may:
+- parse JSON
+- validate schema
+- attach compile metadata
+- aggregate per-source results
+- record errors
+
+Python may not:
+- rewrite bad keys
+- coerce wrong enums
+- invent missing fields
+- regenerate slugs
+- patch malformed page objects
+- infer the model’s intent
+
+If output is wrong, fail that source.
+
+**Recommended per-source response shape**
+
+Top-level per call:
+- `source_id`
+- `summary_slug`
+- `concept_slugs`
+- `article_slugs`
+- `pages`
+- `log_entries`
+- optional `warnings`
+
+Each page:
+- `slug`
+- `page_type`
+- `title`
+- `body`
+- `status`
+- `supports_page_existence`
+- `outgoing_links`
+- `confidence`
+
+No `run_id`. No top-level run success. No aggregate errors.
+
+**What changes from the previous M2 discussion**
+
+Drop or reduce:
+- broad “response normalization”
+- tolerant cleanup of fenced JSON / leading prose as a core design assumption
+- reliance on loose prompt instructions without a formal response schema
+
+Keep:
+- per-source try/except
+- partial success across the run
+- compile metadata threading
+- one-source blast radius
+- fixture-or-compile seam in the orchestrator
+
+**Success policy**
+
+- `success = true` if at least one source compiled successfully
+- `success = false` only if zero sources succeeded
+- invalid source outputs go into `errors[]`
+- accepted source outputs go into `compiled_sources[]`
+
+**Test strategy**
+
+- Schema tests for the new per-source response schema
+- Prompt snapshot tests in [`prompt_builder.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/prompt_builder.py)
+- Compiler unit tests with mocked model responses
+- Failure tests proving invalid model JSON is rejected, not repaired
+- One env-blocked real-call integration test
+
+**Practical call**
+
+So the revised M2 is basically:
+
+- keep the old `B` shape
+- replace “normalizer-heavy tolerant parsing” with **schema-first strict parsing**
+- add a **new per-source response schema**
+- keep Python aggregation thin and deterministic
+
+If you want, I can turn this into the concrete revised M2 blueprint next:
+- exact file changes
+- exact per-source schema
+- exact `CompileResult` aggregation rules
+- exact limits on `response_normalizer.py`
+
+> [!Question]
+> do all 4 please
+
+**M2 Blueprint**
+
+This is the revised M2 with schema-first model calls and minimal Python cleanup.
+
+**1. File Changes**
+
+Add:
+- [`kdb_compiler/schemas/compiled_source_response.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compiled_source_response.schema.json)
+- [`kdb_compiler/validate_compiled_source_response.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler)
+
+Change:
+- [`kdb_compiler/planner.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/planner.py)
+- [`kdb_compiler/context_loader.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/context_loader.py)
+- [`kdb_compiler/prompt_builder.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/prompt_builder.py)
+- [`kdb_compiler/compiler.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/compiler.py)
+- [`kdb_compiler/response_normalizer.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/response_normalizer.py)
+- [`kdb_compiler/types.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/types.py)
+- [`kdb_compiler/schemas/compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json)
+- [`kdb_compiler/kdb_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/kdb_compile.py)
+- [`pyproject.toml`](/home/ftu/Droidoes/Obsidian-KDB/pyproject.toml)
+
+Test files to add:
+- [`kdb_compiler/tests/test_validate_compiled_source_response.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests)
+- [`kdb_compiler/tests/test_prompt_builder.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests)
+- [`kdb_compiler/tests/test_compiler.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests)
+- [`kdb_compiler/tests/test_response_normalizer.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests)
+- [`kdb_compiler/tests/test_m2_first_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests)
+
+**Module responsibilities**
+
+- `planner.py`
+  - Input: validated `last_scan`
+  - Output: one compile job per `source_id` in `to_compile`
+- `context_loader.py`
+  - Input: `manifest`, `source_id`, raw source text
+  - Output: capped context snapshot
+- `prompt_builder.py`
+  - Input: source text, context snapshot, schema text, exemplar
+  - Output: system prompt + user prompt
+- `compiler.py`
+  - Input: compile jobs + ctx
+  - Output: aggregated `compile_result.json`
+- `response_normalizer.py`
+  - Only JSON extraction, nothing semantic
+- `validate_compiled_source_response.py`
+  - Hard gate for one model response
+- `kdb_compile.py`
+  - Existing hybrid stays
+  - If `compile_result.json` exists, use it
+  - Else if `scan.to_compile` non-empty, call compiler
+  - Else fail with the current M1.7 message
+
+**2. Per-Source Schema**
+
+File: `compiled_source_response.schema.json`
+
+Purpose:
+- This is the schema given to the model in the prompt.
+- One model call returns one object matching this schema.
+- It does not include run-level fields.
+
+Recommended shape:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "summary_slug", "pages", "log_entries", "warnings"],
+  "properties": {
+    "source_id": {
+      "type": "string",
+      "pattern": "^KDB/raw/.+"
+    },
+    "summary_slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "concept_slugs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    },
+    "article_slugs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "page_type",
+          "title",
+          "body",
+          "status",
+          "supports_page_existence",
+          "outgoing_links",
+          "confidence"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "page_type": {
+            "type": "string",
+            "enum": ["summary", "concept", "article"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "stale", "archived"]
+          },
+          "supports_page_existence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^KDB/raw/.+"
+            }
+          },
+          "outgoing_links": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "minLength": 1,
+              "maxLength": 120
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          }
+        }
+      }
+    },
+    "log_entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["level", "message", "related_slugs", "related_source_ids"],
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": ["info", "notice", "contradiction", "warning"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "related_slugs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            }
+          },
+          "related_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^KDB/raw/.+"
+            }
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
+```
+
+**Prompt rule**
+The prompt should say:
+- return exactly one JSON object
+- no markdown fences
+- no prose before or after
+- object must match the supplied schema exactly
+- `source_id` must echo the provided source id exactly
+
+**3. CompileResult Aggregation Rules**
+
+The model returns one per-source object.
+Python builds the run-level artifact.
+
+Run-level `compile_result.json` rules:
+- `run_id = ctx.run_id`
+- `compiled_sources[] = accepted per-source responses`
+- `log_entries[] = flattened union of all accepted per-source log_entries`
+- `warnings[] = flattened union of all accepted per-source warnings`
+- `errors[] = compiler/runtime/validation failures by source`
+- `success = len(compiled_sources) > 0`
+
+Per-source compile metadata:
+Add optional `compile_meta` under each `compiled_sources[i]`.
+
+Recommended shape:
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-opus-4-7",
+  "input_tokens": 1234,
+  "output_tokens": 567,
+  "latency_ms": 4321,
+  "attempts": 1,
+  "ok": true,
+  "error": null
+}
+```
+
+Rules:
+- present only for actual model-compiled entries
+- omitted for fixture-based `compile_result.json`
+- if a source fails before a valid response exists, record the failure in top-level `errors[]`, not `compiled_sources[]`
+
+Compiler loop policy:
+1. build one job per source
+2. build prompt
+3. call model with retry
+4. minimal extraction by `response_normalizer`
+5. `json.loads`
+6. validate against `compiled_source_response.schema.json`
+7. convert to `CompiledSource`
+8. attach `compile_meta`
+9. append source `log_entries` and `warnings`
+10. on failure, append one top-level error string and continue
+
+Error string format should be deterministic, for example:
+- `KDB/raw/x.md: model call failed: RateLimitError: ...`
+- `KDB/raw/x.md: response was not valid JSON`
+- `KDB/raw/x.md: schema validation failed: $.pages[0].slug does not match pattern`
+
+**4. Limits on `response_normalizer.py`**
+
+This module should be tiny and aggressively constrained.
+
+Allowed:
+- strip leading/trailing whitespace
+- if the entire response is wrapped in one fenced code block, unwrap it
+- if the block language is `json`, accept it
+- if the response starts with `{` and ends with `}`, pass through unchanged
+
+Not allowed:
+- delete leading prose
+- search for “the first JSON-looking substring”
+- rename keys
+- fix enums
+- coerce types
+- patch broken arrays
+- invent missing fields
+- normalize slugs
+- alter page content
+- merge partial objects
+- recover from multiple JSON objects in one response
+
+Recommended API:
+- `extract_json_text(raw_text: str) -> str`
+
+Behavior:
+- return a string suitable for `json.loads`
+- raise `ValueError` if the response is not already a bare object or a single fenced JSON block
+
+That keeps the rule simple:
+- the model must follow the contract
+- Python refuses garbage instead of laundering it into “success”
+
+**Concrete M2 Defaults**
+
+- chunk size: `1 source / call`
+- provider default: `anthropic`
+- model default: `claude-opus-4-7`
+- temperature: `0`
+- max_tokens: `4096`
+- run_id: always `ctx.run_id`
+- unchanged files: skipped
+- context snapshot per source:
+  - `{slug, title, page_type, outgoing_links}`
+  - no bodies
+  - cap `50` pages
+
+**Prompt Skeleton**
+
+System:
+- load `KDB/KDB-Compiler-System-Prompt.md`
+- append:
+  - return exactly one JSON object
+  - no markdown fences
+  - no prose
+  - must match attached schema exactly
+
+User:
+- source metadata
+- source content
+- context snapshot
+- response schema
+- one short valid example
+
+**What this revision removes**
+
+Not part of M2 anymore:
+- tolerant prose-stripping normalizer
+- schema-optional “best effort” cleanup
+- Python repair of malformed model output
+
+That is the correct cut if your goal is to remove as much bullshit as possible from post-processing.
+
+If you want, the next step is a Phase 3 implementation blueprint with exact function signatures for:
+- `planner.build_jobs`
+- `context_loader.build_context_snapshot`
+- `prompt_builder.build_prompt`
+- `compiler.run_compile`
+- `validate_compiled_source_response.validate`
+- `response_normalizer.extract_json_text`
+
+> [!Question] Request
+> sure, let's proceed
+**Phase 3**
+
+This is the implementation blueprint for revised M2.
+
+**1. Types And Schemas**
+
+Add these dataclasses to [`types.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/types.py):
+
+```python
+@dataclass
+class ContextPage:
+    slug: str
+    title: str
+    page_type: PageType
+    outgoing_links: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict: ...
+
+@dataclass
+class ContextSnapshot:
+    source_id: str
+    pages: list[ContextPage] = field(default_factory=list)
+
+    def to_dict(self) -> dict: ...
+
+@dataclass
+class CompileJob:
+    source_id: str
+    abs_path: str
+    context_snapshot: ContextSnapshot
+
+@dataclass
+class CompileMeta:
+    provider: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    attempts: int
+    ok: bool
+    error: str | None = None
+
+    def to_dict(self) -> dict: ...
+```
+
+Extend `CompiledSource` in [`types.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/types.py):
+
+```python
+@dataclass
+class CompiledSource:
+    source_id: str
+    summary_slug: str
+    pages: list[PageIntent]
+    concept_slugs: list[str] = field(default_factory=list)
+    article_slugs: list[str] = field(default_factory=list)
+    compile_meta: CompileMeta | None = None
+
+    def to_dict(self) -> dict: ...
+```
+
+Add schema:
+- [`compiled_source_response.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compiled_source_response.schema.json)
+
+Keep [`compile_result.schema.json`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/schemas/compile_result.schema.json), but add optional `compile_meta` under `$defs.compiledSource`.
+
+**2. Planner**
+
+Implement in [`planner.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/planner.py):
+
+```python
+def build_jobs(
+    scan: dict,
+    manifest: dict,
+    vault_root: Path,
+    *,
+    context_page_cap: int = 50,
+) -> list[CompileJob]:
+    """Pure-ish orchestration. One job per source_id in scan['to_compile']."""
+
+
+def load_manifest(state_root: Path) -> dict:
+    """Return {} if manifest.json is missing."""
+
+
+def plan(
+    vault_root: Path,
+    *,
+    scan: dict,
+    state_root: Path | None = None,
+    context_page_cap: int = 50,
+) -> list[CompileJob]:
+    """I/O shell. Loads manifest and returns compile jobs."""
+```
+
+Rules:
+- one job per `scan["to_compile"]`
+- no batching
+- `abs_path = vault_root / source_id`
+- use `context_loader.build_context_snapshot(...)`
+
+CLI in [`planner.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/planner.py):
+
+```python
+def main(argv: list[str] | None = None) -> int:
+```
+
+Arguments:
+- `--vault-root`
+- `--state-root` optional, default `<vault-root>/KDB/state`
+- `--json` optional, print jobs as JSON
+
+**3. Context Loader**
+
+Implement in [`context_loader.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/context_loader.py):
+
+```python
+def build_context_snapshot(
+    manifest: dict,
+    *,
+    source_id: str,
+    source_text: str,
+    page_cap: int = 50,
+) -> ContextSnapshot:
+    """Pure. Returns compact context for one source."""
+```
+
+Private helpers:
+
+```python
+def _seed_page_keys(manifest: dict, *, source_id: str, source_text: str) -> list[str]:
+def _expand_depth1(manifest: dict, page_keys: list[str]) -> list[str]:
+def _page_record_to_context(page: dict) -> ContextPage:
+```
+
+Selection rule:
+- include pages whose `source_refs[].source_id == source_id`
+- include pages whose `slug` appears verbatim in `source_text`
+- include depth-1 targets from those pages via `outgoing_links`
+- cap total pages at `page_cap`
+- only emit `slug`, `title`, `page_type`, `outgoing_links`
+
+Do not emit:
+- bodies
+- paths
+- timestamps
+- frontmatter
+- source hashes
+
+**4. Prompt Builder**
+
+Implement in [`prompt_builder.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/prompt_builder.py):
+
+```python
+@dataclass
+class BuiltPrompt:
+    system: str
+    user: str
+
+
+def load_system_prompt(vault_root: Path) -> str:
+    """Load <vault-root>/KDB/KDB-Compiler-System-Prompt.md."""
+
+
+def load_response_schema_text() -> str:
+    """Load compiled_source_response.schema.json as pretty JSON text."""
+
+
+def exemplar_response(source_id: str) -> dict:
+    """Return one minimal valid example object for prompt inclusion."""
+
+
+def build_prompt(
+    *,
+    vault_root: Path,
+    source_id: str,
+    source_text: str,
+    context_snapshot: ContextSnapshot,
+) -> BuiltPrompt:
+    """Pure prompt assembly after file loads."""
+```
+
+Prompt structure:
+- `system` = `KDB-Compiler-System-Prompt.md` + strict response rules
+- `user` includes:
+  - source id
+  - source content
+  - context snapshot JSON
+  - full response schema JSON
+  - one short exemplar JSON
+
+Mandatory response rules in prompt:
+- return exactly one JSON object
+- no markdown fences
+- no prose
+- echo `source_id` exactly
+- object must satisfy schema exactly
+
+**5. Response Normalizer**
+
+Shrink [`response_normalizer.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/response_normalizer.py) to this:
+
+```python
+def extract_json_text(raw_text: str) -> str:
+    """Allow only bare object text or one fenced json block."""
+
+def parse_json_object(raw_text: str) -> dict:
+    """extract_json_text + json.loads; raises ValueError on failure."""
+```
+
+Behavior:
+- allow leading/trailing whitespace
+- allow a single fenced block like ```json ... ```
+- allow already-bare JSON object
+- reject prose before or after
+- reject multiple objects
+- reject semantic normalization of any kind
+
+This module must not:
+- rename keys
+- coerce types
+- patch slugs
+- fix enums
+- dedupe arrays
+- invent fields
+
+**6. Validator For One Model Response**
+
+Add [`validate_compiled_source_response.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler):
+
+```python
+@cache
+def _validator() -> Draft202012Validator: ...
+
+def validate(payload: Any) -> list[str]:
+    """Return [] if valid."""
+
+def main() -> None:
+```
+
+Scope:
+- schema validation only
+- no fuzzy repair
+- optional small semantic checks:
+  - `summary_slug` appears in `pages`
+  - exactly one `summary` page with slug == `summary_slug`
+
+**7. Compiler**
+
+Implement in [`compiler.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/compiler.py):
+
+```python
+def source_text_for(job: CompileJob) -> str:
+    """Read raw source file."""
+
+
+def compile_one(
+    job: CompileJob,
+    *,
+    vault_root: Path,
+    provider: str,
+    model: str,
+    max_tokens: int,
+) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
+    """
+    Returns:
+      compiled_source or None,
+      log_entries,
+      warnings,
+      error string or None
+    """
+```
+
+Use this internal flow:
+1. read source text
+2. build prompt
+3. call `call_model_with_retry(...)`
+4. `response_normalizer.parse_json_object(...)`
+5. `validate_compiled_source_response.validate(...)`
+6. convert dict to `CompiledSource`
+7. attach `CompileMeta`
+
+Top-level run function:
+
+```python
+def run_compile(
+    vault_root: Path,
+    *,
+    state_root: Path,
+    scan: dict,
+    ctx: RunContext,
+    provider: str = "anthropic",
+    model: str = "claude-opus-4-7",
+    max_tokens: int = 4096,
+    write: bool = True,
+) -> CompileResult:
+    """Plan -> compile per source -> aggregate -> optionally write compile_result.json."""
+```
+
+Aggregation rules inside `run_compile`:
+- `run_id = ctx.run_id`
+- `compiled_sources` = all successful per-source responses
+- `log_entries` = flattened log entries from successful responses
+- `warnings` = flattened warnings from successful responses
+- `errors` = one deterministic string per failed source
+- `success = len(compiled_sources) > 0`
+
+Output writer:
+
+```python
+def write_compile_result(result: CompileResult, state_root: Path) -> None:
+```
+
+CLI:
+
+```python
+def main(argv: list[str] | None = None) -> int:
+```
+
+Arguments:
+- `--vault-root`
+- `--state-root`
+- `--provider`
+- `--model`
+- `--max-tokens`
+- `--dry-run`
+
+**8. `compile_one` Error Policy**
+
+Failure modes should produce one error string and move on.
+
+Examples:
+- `KDB/raw/x.md: model call failed: RateLimitError: ...`
+- `KDB/raw/x.md: invalid JSON response`
+- `KDB/raw/x.md: schema validation failed: $.pages[0].slug ...`
+
+Do not keep partial source data on failure.
+
+**9. `kdb_compile.py` Change**
+
+Revise Step 5 in [`kdb_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/kdb_compile.py):
+
+```python
+cr_path = state_root / "compile_result.json"
+if cr_path.exists():
+    cr = ...
+elif scan_dict.get("to_compile"):
+    cr_obj = compiler.run_compile(
+        vault_root,
+        state_root=state_root,
+        scan=scan_dict,
+        ctx=ctx,
+        write=not dry_run,
+    )
+    cr = cr_obj.to_dict()
+else:
+    return _fail([...existing missing compile_result message...])
+```
+
+Then keep:
+- validate compile result
+- build manifest
+- apply patches
+- write journal then manifest
+
+This preserves M1.7 fixture tests.
+
+**10. Tests**
+
+Add these exact test targets.
+
+[`test_response_normalizer.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests/test_response_normalizer.py)
+- bare object accepted
+- fenced json accepted
+- prose before object rejected
+- prose after object rejected
+- malformed json rejected
+
+[`test_validate_compiled_source_response.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests/test_validate_compiled_source_response.py)
+- minimal valid object passes
+- missing `summary_slug` fails
+- invalid slug fails
+- summary page mismatch fails
+
+[`test_prompt_builder.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests/test_prompt_builder.py)
+- snapshot `system`
+- snapshot `user`
+- includes source id
+- includes schema text
+- includes context snapshot
+- includes “no prose / no fences” contract
+
+[`test_compiler.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests/test_compiler.py)
+- one successful source
+- one invalid JSON source
+- one schema-invalid source
+- mixed success/failure run
+- `compile_meta` threaded
+- dry-run skips writing
+
+[`test_m2_first_compile.py`](/home/ftu/Droidoes/Obsidian-KDB/kdb_compiler/tests/test_m2_first_compile.py)
+- env-blocked
+- one real source
+- one real provider/model call
+- validates that returned object survives strict path end-to-end
+
+**11. Defaults**
+
+Use these defaults in code:
+- provider: `anthropic`
+- model: `claude-opus-4-7`
+- temperature: `0.0`
+- json_mode: `False` unless provider path truly supports stronger guarantees
+- max_tokens: `4096`
+- one source per call
+- context cap: `50`
+
+**12. Non-Negotiable Boundary**
+
+The revised M2 contract should be:
+
+- model must produce one valid per-source JSON object
+- Python may extract that object if it is fenced
+- Python may validate it
+- Python may aggregate it
+- Python may not repair it
+
+That is the cleanest way to cut the post-processing down.
+
+If you want, the next step is implementation. I can start by adding the new schema, validator, and type changes first, because that locks the contract before touching the compiler path.

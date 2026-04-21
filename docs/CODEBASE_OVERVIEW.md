@@ -91,7 +91,7 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 
 1. **Scan** (`kdb_scan.py`) — walks `raw/`, computes SHA-256, compares to `manifest.json`, emits `last_scan.json` with `to_compile` + `to_reconcile` lists. Handles symlinks (skip), binaries (flag metadata-only), two-pass rename detection. Atomic write.
 2. **Plan** (`planner.py`) — reads `last_scan.json`, chunks `to_compile` into 10–20-source batches, builds per-source context snapshot from manifest.
-3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `CLAUDE.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
+3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `KDB-Compiler-System-Prompt.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
 4. **Validate** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
 5. **Compute next manifest (pure)** (`manifest_update.build_manifest_update`) — in-memory only; no writes. Produces `next_manifest` + `journal`.
 6. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`). Never writes state files.
@@ -164,10 +164,10 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 ## 9. Roadmap
 
 ### M0 — Scaffolding (commit `796848b`) ✅
-- [x] Vault scaffold: `~/Obsidian/KDB/{raw, wiki/{summaries, concepts, articles}, state/runs, CLAUDE.md}`
+- [x] Vault scaffold: `~/Obsidian/KDB/{raw, wiki/{summaries, concepts, articles}, state/runs, KDB-Compiler-System-Prompt.md}`
 - [x] Repo scaffold: `~/Droidoes/Obsidian-KDB/{docs, kdb_compiler/tests/fixtures}`
 - [x] `docs/CODEBASE_OVERVIEW.md` (this file)
-- [x] `KDB/CLAUDE.md` — compiler invariants for LLM
+- [x] `KDB/KDB-Compiler-System-Prompt.md` — compiler invariants for LLM
 - [x] ~~`KDB/wiki/index.md`, `KDB/wiki/log.md` (empty)~~ — dropped by D23/D24
 - [x] `KDB/state/manifest.json` (initial empty shape)
 - [x] `kdb_compiler/__init__.py` + 8 module stubs
@@ -175,7 +175,7 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 
 ### M0.1 — Codex review remediation (current)
 Responds to `docs/code-review-M0-codex.md`:
-- [ ] Rewrite `KDB/CLAUDE.md` — logical intent output only, no paths / metadata / forced prose
+- [ ] Rewrite `KDB/KDB-Compiler-System-Prompt.md` — logical intent output only, no paths / metadata / forced prose
 - [ ] Update overview: rename patch-ops → page intents; add D18–D22
 - [ ] Stub shared seams: `paths.py`, `atomic_io.py`, `types.py`, `run_context.py`
 - [ ] Reserve split-point stubs: `prompt_builder.py`, `context_loader.py`, `response_normalizer.py`

@@ -96,11 +96,11 @@ def _write_cr(state: Path, cr: dict) -> None:
     (state / "compile_result.json").write_text(json.dumps(cr), encoding="utf-8")
 
 
-def _write_vault_claude_md(vault: Path) -> None:
-    """prompt_builder needs <vault>/KDB/CLAUDE.md — any content works."""
-    claude = vault / "KDB" / "CLAUDE.md"
-    claude.parent.mkdir(parents=True, exist_ok=True)
-    claude.write_text("# KDB invariants (test)\n", encoding="utf-8")
+def _write_vault_system_prompt(vault: Path) -> None:
+    """prompt_builder needs <vault>/KDB/KDB-Compiler-System-Prompt.md — any content works."""
+    dest = vault / "KDB" / "KDB-Compiler-System-Prompt.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("# KDB invariants (test)\n", encoding="utf-8")
 
 
 def _good_model_response(source_id: str, run_id: str) -> ModelResponse:
@@ -190,7 +190,7 @@ def test_missing_compile_result_triggers_live_compile(
     through to the orchestrator and downstream writes run."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
-    _write_vault_claude_md(vault)
+    _write_vault_system_prompt(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
 
     def fake_call(req):
@@ -223,7 +223,7 @@ def test_stale_compile_result_falls_through_to_live(
     from the previous run permanently short-circuits new runs."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
-    _write_vault_claude_md(vault)
+    _write_vault_system_prompt(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
     # Stale CR from a "previous run" — wrong run_id, different slug.
     _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "stale-slug"))
@@ -472,7 +472,7 @@ def test_empty_plan_live_compile_noop(
     proceeds through apply/write as a no-op — manifest and journal are
     still written."""
     vault, raw, state = _make_vault(tmp_path)
-    _write_vault_claude_md(vault)
+    _write_vault_system_prompt(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
 
     def should_not_call(_req):

@@ -18,7 +18,7 @@ FileNotFoundError: [Errno 2] No such file or directory: '…/state/compile_resul
 
 When `raw/` is empty the scanner has nothing to compile, `compiler.run_compile` is skipped (or produces an in-memory result that is never written to disk), and `apply()` then blindly reads `state/compile_result.json` from disk and blows up on first access.
 
-### Case B — all sources fail to compile (e.g. missing `CLAUDE.md`)
+### Case B — all sources fail to compile (e.g. missing `KDB-Compiler-System-Prompt.md`)
 
 ```
 PagePatchError: Compiled intent 'paper' has no PageRecord
@@ -45,7 +45,7 @@ When every per-source compile errors out, `compile_result.compiled_sources` is e
 rm -rf /tmp/empty-vault && mkdir -p /tmp/empty-vault/KDB/raw
 python3 -m kdb_compiler.kdb_compile --vault-root /tmp/empty-vault
 
-# Case B — vault with sources but no CLAUDE.md (so compile fails)
+# Case B — vault with sources but no KDB-Compiler-System-Prompt.md (so compile fails)
 # (any vault where every source errors will reproduce)
 ```
 
@@ -71,7 +71,7 @@ Both are small; they address different preconditions. Recommended to land Option
 
 ## Out of scope
 
-- The root cause of "missing `CLAUDE.md` → every compile errors" is a separate user-facing issue (better error messaging at the compile seam). Not tracked here.
+- The root cause of "missing `KDB-Compiler-System-Prompt.md` → every compile errors" is a separate user-facing issue (better error messaging at the compile seam). Not tracked here.
 - Scanner behavior when `raw/` is empty is correct — `to_compile` is empty, so no LLM call. The bug is purely downstream in `apply()`.
 
 ## Links
