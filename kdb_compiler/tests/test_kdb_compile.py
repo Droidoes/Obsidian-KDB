@@ -534,9 +534,11 @@ def test_fixture_branch_does_not_invoke_compiler(
 # ---------------------------------------------------------------------------
 
 _EXPECTED_STAGES = (
-    "scan", "validate scan", "compile", "validate compile_result",
+    "scan", "validate scan", "compile",
+    "validate compile_result", "reconcile compile_result",
     "build manifest update", "apply pages", "persist state",
 )
+_STAGE_COUNT = len(_EXPECTED_STAGES)
 
 
 def _capture_progress() -> tuple[list[tuple[str, dict]], "object"]:
@@ -548,7 +550,7 @@ def _capture_progress() -> tuple[list[tuple[str, dict]], "object"]:
 
 
 def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
-    """All seven stage_start/stage_done pairs arrive in the correct sequence
+    """All eight stage_start/stage_done pairs arrive in the correct sequence
     for a happy-path wet run with monotonic indices and names from _STAGES."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
@@ -560,15 +562,15 @@ def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
     assert result.success is True
 
     stage_events = [(e, f) for e, f in events if e in ("stage_start", "stage_done")]
-    # 7 starts + 7 dones = 14 stage events, strictly alternating.
-    assert len(stage_events) == 14
-    for i in range(7):
+    # N starts + N dones = 2N stage events, strictly alternating.
+    assert len(stage_events) == 2 * _STAGE_COUNT
+    for i in range(_STAGE_COUNT):
         start_evt, start_f = stage_events[2 * i]
         done_evt, done_f = stage_events[2 * i + 1]
         assert start_evt == "stage_start"
         assert done_evt == "stage_done"
         assert start_f["index"] == done_f["index"] == i + 1
-        assert start_f["total"] == done_f["total"] == 7
+        assert start_f["total"] == done_f["total"] == _STAGE_COUNT
         assert start_f["name"] == done_f["name"] == _EXPECTED_STAGES[i]
         assert done_f["ok"] is True
         assert isinstance(done_f["latency_ms"], int)
@@ -577,7 +579,7 @@ def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
 
 def test_stage_events_abort_after_failed_validation(tmp_path: Path) -> None:
     """Malformed compile_result.json fails stage 4 — stages 1-3 emit done-ok,
-    stage 4 emits done-not-ok with a note, stages 5-7 do NOT emit."""
+    stage 4 emits done-not-ok with a note, stages 5-8 do NOT emit."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -590,7 +592,7 @@ def test_stage_events_abort_after_failed_validation(tmp_path: Path) -> None:
     assert result.success is False
 
     stage_done = [f for e, f in events if e == "stage_done"]
-    # Stages 1, 2, 3 complete OK; stage 4 reports failure; 5-7 never emit.
+    # Stages 1, 2, 3 complete OK; stage 4 reports failure; 5-8 never emit.
     assert [s["index"] for s in stage_done] == [1, 2, 3, 4]
     assert all(s["ok"] for s in stage_done[:3])
     assert stage_done[3]["ok"] is False
@@ -598,8 +600,8 @@ def test_stage_events_abort_after_failed_validation(tmp_path: Path) -> None:
     assert stage_done[3]["note"]  # non-empty — carries the first validation error
 
 
-def test_stage_7_under_dry_run_writes_journal_only(tmp_path: Path) -> None:
-    """Dry-run's stage-7 writes the journal but skips the manifest.
+def test_stage_8_under_dry_run_writes_journal_only(tmp_path: Path) -> None:
+    """Dry-run's stage-8 writes the journal but skips the manifest.
     Under v2 the journal is always written; `dry_run: true` inside flags
     the run. The stage banner still reads 'skipped (dry-run)' because from
     the user's POV the headline output (manifest + pages) is skipped."""
@@ -616,7 +618,7 @@ def test_stage_7_under_dry_run_writes_journal_only(tmp_path: Path) -> None:
 
     persist_done = next(
         f for e, f in events
-        if e == "stage_done" and f["index"] == 7
+        if e == "stage_done" and f["index"] == _STAGE_COUNT
     )
     assert persist_done["ok"] is True
     assert persist_done["note"] == "skipped (dry-run)"
@@ -669,7 +671,7 @@ def test_compile_writes_journal_on_stage_2_failure(
     assert journal["failure_stage_name"] == "validate scan"
     assert journal["failure_type"] == "ValidationError"
     assert "forced scan validation error" in journal["failure_message"]
-    # Stages 3-7 never ran.
+    # Stages 3-8 never ran.
     stage_indices = [s["index"] for s in journal["stages"]]
     assert stage_indices == [1, 2]
     assert journal["stages"][1]["ok"] is False
@@ -692,7 +694,8 @@ def test_compile_writes_journal_on_stage_4_failure(tmp_path: Path) -> None:
     assert journal["terminated_at_stage"] == 4
     assert journal["failure_stage_name"] == "validate compile_result"
     assert journal["failure_type"] == "ValidationError"
-    # Stages 1-4 ran; 5-7 did not.
+    # Stages 1-4 ran; 5-8 did not (stage 5 = reconcile, never opens when
+    # stage 4 gate-fails).
     stage_indices = [s["index"] for s in journal["stages"]]
     assert stage_indices == [1, 2, 3, 4]
     assert journal["stages"][-1]["ok"] is False
@@ -811,7 +814,7 @@ def test_run_journal_builder_replay_mode_nullables(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 4 — validator findings + reconciler actions + response_score in journal
+# Stage 4/5 — validator findings + reconciler actions + response_score in journal
 # ---------------------------------------------------------------------------
 
 def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
@@ -847,7 +850,8 @@ def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
 
 
 def test_stage4_journal_records_clean_when_no_findings(tmp_path: Path) -> None:
-    """A consistent compile_result produces empty measure_findings + actions and null score."""
+    """Consistent compile_result: stage 4 carries empty measure_findings and a
+    null score; stage 5 reports zero reconciler actions."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
@@ -858,60 +862,78 @@ def test_stage4_journal_records_clean_when_no_findings(tmp_path: Path) -> None:
 
     journal = _load_journal(state, ctx.run_id)
     stage4 = next(s for s in journal["stages"] if s["index"] == 4)
+    stage5 = next(s for s in journal["stages"] if s["index"] == 5)
     assert stage4["measure_findings"] == []
-    assert stage4["reconciler_actions"] == []
     assert stage4["response_score"] is None
+    assert stage5["reconciler_actions"] == []
+    assert stage5["actions_count"] == 0
+    assert stage5["ok"] is True
 
 
 def test_stage4_journal_records_findings_and_reconciler_actions(tmp_path: Path) -> None:
-    """Pairing omission: validator records the finding, reconciler records
-    the fix, run still succeeds, downstream sees the repaired cr."""
+    """Pairing omission: validator (stage 4) records the finding, reconciler
+    (stage 5) records the fix, run still succeeds, downstream sees repaired cr."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
     _write_cr(state, _cr_with_pairing_omission(_RUN1_ID, "KDB/raw/paper.md"))
 
-    result = compile(vault, run_ctx=ctx)
+    events, cb = _capture_progress()
+    result = compile(vault, run_ctx=ctx, progress=cb)
     assert result.success is True, result.errors
 
     journal = _load_journal(state, ctx.run_id)
     stage4 = next(s for s in journal["stages"] if s["index"] == 4)
+    stage5 = next(s for s in journal["stages"] if s["index"] == 5)
 
-    # Validator finding surfaces in the journal.
+    # Validator finding surfaces on stage 4.
     assert len(stage4["measure_findings"]) == 1
     f = stage4["measure_findings"][0]
     assert f["type"] == "pairing_omission"
     assert f["severity"] == "measure"
     assert f["slug"] == "mencius"
     assert f["page_type"] == "concept"
-
-    # Reconciler action recorded alongside.
-    assert len(stage4["reconciler_actions"]) == 1
-    a = stage4["reconciler_actions"][0]
-    assert a["finding_type"] == "pairing_omission"
-    assert "added 'mencius'" in a["detail"]
-
     # Stub scoring still returns null.
     assert stage4["response_score"] is None
-
     # Stage 4 still "ok" — pairing mismatches don't abort.
     assert stage4["ok"] is True
 
+    # Reconciler action recorded on stage 5.
+    assert stage5["ok"] is True
+    assert stage5["actions_count"] == 1
+    assert len(stage5["reconciler_actions"]) == 1
+    a = stage5["reconciler_actions"][0]
+    assert a["finding_type"] == "pairing_omission"
+    assert "added 'mencius'" in a["detail"]
+
+    # Sub-line progress events carry the operator-facing counts.
+    vd = next(f for e, f in events if e == "validate_done")
+    assert vd == {"gate_errors": 0, "measure_findings": 1}
+    rd = next(f for e, f in events if e == "reconcile_done")
+    assert rd == {"actions": 1}
+
 
 def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
-    """Schema violations still fail stage 4; reconciler isn't invoked; journal
-    captures the gate error but no actions."""
+    """Schema violations fail stage 4; stage 5 never opens, so no entry in
+    the journal stages list. validate_done still emits (with gate_errors>0)."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
     # missing compiled_sources -> schema_violation (gate)
     _write_cr(state, {"run_id": _RUN1_ID, "success": True})
 
-    result = compile(vault, run_ctx=ctx)
+    events, cb = _capture_progress()
+    result = compile(vault, run_ctx=ctx, progress=cb)
     assert result.success is False
 
     journal = _load_journal(state, ctx.run_id)
     stage4 = next(s for s in journal["stages"] if s["index"] == 4)
     assert stage4["ok"] is False
-    assert stage4["reconciler_actions"] == []  # didn't run
     assert stage4["response_score"] is None
+    # Stage 5 never ran — no entry.
+    assert not any(s["index"] == 5 for s in journal["stages"])
+    # reconcile_done sub-line never emitted either.
+    assert not any(e == "reconcile_done" for e, _ in events)
+    # validate_done DID emit, with nonzero gate_errors.
+    vd = next(f for e, f in events if e == "validate_done")
+    assert vd["gate_errors"] > 0

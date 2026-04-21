@@ -303,45 +303,30 @@ def compile(
     )
 
     # ----- [4] validate compile_result -----
-    # Stage 4 diagnoses (validator) and repairs (reconciler) in one breath.
-    # Commit 6 will split this into two banner stages ([4] validate, [5]
-    # reconcile); for now they share one stage entry in the journal but the
-    # payload already carries the measure_findings + reconciler_actions +
-    # response_score fields that future consumers (eval framework) expect.
+    # Diagnose only. Pairing mismatches fall into measure_findings (not gate);
+    # the reconciler stage picks them up next. response_score is a stub today
+    # but lives on the validator stage so the eval framework has a stable home
+    # for it.
     _stage_open(4)
     cr_result = validate_compile_result.validate(cr)
     cr_errors = [f.detail for f in cr_result.gate_errors]
-
-    reconciler_actions: list = []
-    response_score = None
-    if not cr_errors:
-        try:
-            reconciler_actions = reconcile.reconcile(cr, cr_result.measure_findings)
-        except reconcile.ReconcileError as exc:
-            # Validator emitted a measure finding reconciler can't dispatch —
-            # contract bug between the two modules, not a runtime condition.
-            note = f"ReconcileError: {exc}"
-            _stage_close(
-                4, ok=False, note=note,
-                error_count=1, errors=[note],
-                measure_findings=[asdict(f) for f in cr_result.measure_findings],
-                reconciler_actions=[],
-                response_score=None,
-            )
-            return _fail(
-                [note], stage_index=4, stage_name=_STAGES[3],
-                failure_type="ReconcileError",
-            )
-        response_score = validate_compile_result.score_response(cr, cr_result)
-
+    response_score = (
+        validate_compile_result.score_response(cr, cr_result)
+        if not cr_errors else None
+    )
+    measure_findings_payload = [asdict(f) for f in cr_result.measure_findings]
     _stage_close(
         4, ok=not cr_errors,
         note=(cr_errors[0] if cr_errors else None),
         error_count=len(cr_errors),
         errors=list(cr_errors),
-        measure_findings=[asdict(f) for f in cr_result.measure_findings],
-        reconciler_actions=[asdict(a) for a in reconciler_actions],
+        measure_findings=measure_findings_payload,
         response_score=asdict(response_score) if response_score is not None else None,
+    )
+    _emit(
+        "validate_done",
+        gate_errors=len(cr_errors),
+        measure_findings=len(measure_findings_payload),
     )
     if cr_errors:
         return _fail(
@@ -349,8 +334,33 @@ def compile(
             failure_type="ValidationError",
         )
 
-    # ----- [5] build manifest update -----
+    # ----- [5] reconcile compile_result -----
+    # Mutate cr in place to erase reconcilable measure findings so downstream
+    # stages see a clean payload. A ReconcileError here is a contract bug
+    # between validator and reconciler, not a runtime condition — fail loud.
     _stage_open(5)
+    try:
+        reconciler_actions = reconcile.reconcile(cr, cr_result.measure_findings)
+    except reconcile.ReconcileError as exc:
+        note = f"ReconcileError: {exc}"
+        _stage_close(
+            5, ok=False, note=note,
+            error_count=1, errors=[note],
+            reconciler_actions=[],
+        )
+        return _fail(
+            [note], stage_index=5, stage_name=_STAGES[4],
+            failure_type="ReconcileError",
+        )
+    _stage_close(
+        5, ok=True,
+        reconciler_actions=[asdict(a) for a in reconciler_actions],
+        actions_count=len(reconciler_actions),
+    )
+    _emit("reconcile_done", actions=len(reconciler_actions))
+
+    # ----- [6] build manifest update -----
+    _stage_open(6)
     manifest_path = state_root / "manifest.json"
     prior: dict = {}
     prior_manifest_loaded = False
@@ -360,10 +370,10 @@ def compile(
             prior_manifest_loaded = True
         except (json.JSONDecodeError, OSError) as exc:
             note = f"manifest.json unreadable: {exc}"
-            _stage_close(5, ok=False, note=note,
+            _stage_close(6, ok=False, note=note,
                          prior_manifest_loaded=False)
             return _fail(
-                [note], stage_index=5, stage_name=_STAGES[4],
+                [note], stage_index=6, stage_name=_STAGES[5],
                 failure_type=type(exc).__name__,
             )
 
@@ -373,23 +383,23 @@ def compile(
         )
     except Exception as exc:
         note = f"{type(exc).__name__}: {exc}"
-        _stage_close(5, ok=False, note=note,
+        _stage_close(6, ok=False, note=note,
                      prior_manifest_loaded=prior_manifest_loaded)
         return _fail(
             [f"build_manifest_update failed: {note}"],
-            stage_index=5, stage_name=_STAGES[4],
+            stage_index=6, stage_name=_STAGES[5],
             failure_type=type(exc).__name__,
         )
 
-    # Ensure the stage-5 payload carries prior_manifest_loaded (from a
+    # Ensure the stage-6 payload carries prior_manifest_loaded (from a
     # real load vs an empty prior) — build_manifest_stage_payload uses
     # `bool(prior)` which agrees for empty-dict prior.
     manifest_stage["prior_manifest_loaded"] = prior_manifest_loaded
     builder.set_manifest_stage_payload(manifest_stage)
-    _stage_close(5, ok=True)
+    _stage_close(6, ok=True)
 
-    # ----- [6] apply pages -----
-    _stage_open(6)
+    # ----- [7] apply pages -----
+    _stage_open(7)
     try:
         apply_result = patch_applier.apply(
             vault_root,
@@ -400,13 +410,13 @@ def compile(
         )
     except Exception as exc:
         note = f"{type(exc).__name__}: {exc}"
-        _stage_close(6, ok=False, note=note)
+        _stage_close(7, ok=False, note=note)
         return _fail(
             [f"patch_applier.apply failed: {note}"],
-            stage_index=6, stage_name=_STAGES[5],
+            stage_index=7, stage_name=_STAGES[6],
             failure_type=type(exc).__name__,
         )
-    _stage_close(6, ok=True)
+    _stage_close(7, ok=True)
 
     deltas = manifest_stage.get("deltas") or {}
     _emit(
@@ -417,11 +427,11 @@ def compile(
         dry_run=dry_run,
     )
 
-    # ----- [7] persist state -----
-    # Under v2 the journal is written LAST so its stage-7 entry reflects
+    # ----- [8] persist state -----
+    # Under v2 the journal is written LAST so its stage-8 entry reflects
     # the real manifest_written outcome. This inverts the old "journal
     # then pointer" order — still atomic per-file via atomic_io.
-    _stage_open(7)
+    _stage_open(8)
     manifest_written = False
     # v2: journal is ALWAYS written (success, failure, dry-run). The file
     # itself declares `dry_run: true` when applicable; downstream tooling
@@ -438,7 +448,7 @@ def compile(
         except Exception as exc:
             note = f"manifest write failed: {type(exc).__name__}: {exc}"
             _stage_close(
-                7, ok=False, note=note,
+                8, ok=False, note=note,
                 journal_written=journal_written,
                 manifest_written=False,
                 journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
@@ -446,13 +456,13 @@ def compile(
                 skipped_manifest_write_reason="failure",
             )
             return _fail(
-                [note], stage_index=7, stage_name=_STAGES[6],
+                [note], stage_index=8, stage_name=_STAGES[7],
                 failure_type=type(exc).__name__,
             )
 
     note = "skipped (dry-run)" if dry_run else None
     _stage_close(
-        7, ok=True, note=note,
+        8, ok=True, note=note,
         journal_written=journal_written,
         manifest_written=manifest_written,
         journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
@@ -563,6 +573,18 @@ def _make_stdout_progress() -> Callable[..., None]:
             print(
                 f"  └─ {f['total']} raw files "
                 f"({f['to_compile']} to compile, {f['to_skip']} to skip)",
+                flush=True,
+            )
+        elif event == "validate_done":
+            print(
+                f"  └─ {f['gate_errors']} gate errors · "
+                f"{f['measure_findings']} measure findings",
+                flush=True,
+            )
+        elif event == "reconcile_done":
+            n = f["actions"]
+            print(
+                f"  └─ {n} " + ("fix applied" if n == 1 else "fixes applied"),
                 flush=True,
             )
         elif event == "pages_done":

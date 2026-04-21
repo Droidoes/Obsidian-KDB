@@ -19,7 +19,7 @@ Top-level shape:
 future entries after a failure.
 
 The builder is single-run, single-thread, call-order-sensitive. The
-orchestrator's seven stages each bracket with `start_stage()` and
+orchestrator's eight stages each bracket with `start_stage()` and
 `finish_stage()`. `finalize()` collapses accumulated state into the final
 dict written to `state/runs/<run_id>.json`.
 """
@@ -43,6 +43,7 @@ STAGE_NAMES: tuple[str, ...] = (
     "validate scan",
     "compile",
     "validate compile_result",
+    "reconcile compile_result",
     "build manifest update",
     "apply pages",
     "persist state",
@@ -227,17 +228,17 @@ class RunJournalBuilder:
         finished_at = now_iso()
         duration_ms = self._duration_ms(finished_at)
 
-        # Fold manifest-stage payload into stage 5 entry if present.
+        # Fold manifest-stage payload into stage 6 entry if present.
         if self._manifest_stage_payload is not None:
             for entry in self._stages:
-                if entry["index"] == 5:
+                if entry["index"] == 6:
                     entry.update(self._manifest_stage_payload)
                     break
 
-        # Fold apply-stage payload into stage 6 entry if present.
+        # Fold apply-stage payload into stage 7 entry if present.
         if self._apply_stage_payload is not None:
             for entry in self._stages:
-                if entry["index"] == 6:
+                if entry["index"] == 7:
                     entry.update(self._apply_stage_payload)
                     break
 
