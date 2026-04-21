@@ -937,3 +937,96 @@ def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
     # validate_done DID emit, with nonzero gate_errors.
     vd = next(f for e, f in events if e == "validate_done")
     assert vd["gate_errors"] > 0
+
+
+# ---------------------------------------------------------------------------
+# 8-stage layout end-to-end — payload folding, wet-run reconciliation round-trip
+# ---------------------------------------------------------------------------
+
+def test_stage_names_public_contract() -> None:
+    """STAGE_NAMES is the source of truth for stage ordering — downstream
+    tools depend on it. Pin the exact 8 entries."""
+    from kdb_compiler.run_journal import STAGE_NAMES
+    assert STAGE_NAMES == (
+        "scan",
+        "validate scan",
+        "compile",
+        "validate compile_result",
+        "reconcile compile_result",
+        "build manifest update",
+        "apply pages",
+        "persist state",
+    )
+
+
+def test_full_journal_contains_all_eight_stages_with_folded_payloads(
+    tmp_path: Path,
+) -> None:
+    """Happy-path wet run: the journal has stage entries 1..8, and
+    finalize()'s index-based payload folding lands the manifest deltas on
+    stage 6 (not stage 5) and the apply pages_written on stage 7 (not 6)."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+
+    journal = _load_journal(state, ctx.run_id)
+    indices = [s["index"] for s in journal["stages"]]
+    assert indices == [1, 2, 3, 4, 5, 6, 7, 8]
+
+    by_idx = {s["index"]: s for s in journal["stages"]}
+
+    # Stage 6 carries the manifest-update payload (fold target moved from 5→6).
+    stage6 = by_idx[6]
+    assert "deltas" in stage6
+    assert "prior_manifest_loaded" in stage6
+
+    # Stage 7 carries the apply-pages payload (fold target moved from 6→7).
+    stage7 = by_idx[7]
+    assert "pages_written" in stage7
+    assert "KDB/wiki/summaries/paper.md" in stage7["pages_written"]
+    assert stage7["pages_written_count"] == 1
+
+    # Stage 4/5 split is preserved in the journal even on a clean run.
+    assert by_idx[4]["measure_findings"] == []
+    assert by_idx[5]["reconciler_actions"] == []
+    assert by_idx[5]["actions_count"] == 0
+
+
+def test_pairing_omission_repair_flows_through_to_disk_wet_run(
+    tmp_path: Path,
+) -> None:
+    """End-to-end proof that the reconciler's in-place cr mutation reaches
+    patch_applier: a pairing omission (concept page with no matching slug)
+    gets repaired at stage 5, then the concept page is actually written to
+    disk at stage 7. Stage 6's manifest deltas reflect both pages created."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr_with_pairing_omission(_RUN1_ID, "KDB/raw/paper.md"))
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True, result.errors
+
+    # The reconciler-repaired concept page materialized on disk.
+    assert (vault / "KDB/wiki/summaries/paper.md").exists()
+    assert (vault / "KDB/wiki/concepts/mencius.md").exists()
+
+    journal = _load_journal(state, ctx.run_id)
+    by_idx = {s["index"]: s for s in journal["stages"]}
+
+    # Stage 5 recorded the fix.
+    assert by_idx[5]["actions_count"] == 1
+    assert by_idx[5]["reconciler_actions"][0]["finding_type"] == "pairing_omission"
+
+    # Stage 6 deltas include both pages as created.
+    created = by_idx[6]["deltas"]["pages_created"]
+    assert "KDB/wiki/summaries/paper.md" in created
+    assert "KDB/wiki/concepts/mencius.md" in created
+
+    # Stage 7 pages_written matches.
+    written = by_idx[7]["pages_written"]
+    assert "KDB/wiki/concepts/mencius.md" in written
