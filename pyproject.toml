@@ -32,13 +32,14 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_compiler*"]
-exclude = ["knowledge_graph*", "docs*", "tests*"]
+include = ["kdb_compiler*", "kdb_benchmark*"]
+exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
 
 [tool.setuptools.package-data]
-kdb_compiler = ["schemas/*.json"]
+kdb_compiler  = ["schemas/*.json"]
+kdb_benchmark = ["models.json"]
 
 [tool.pytest.ini_options]
-testpaths   = ["kdb_compiler/tests"]
+testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests"]
 python_files = ["test_*.py"]
-addopts     = "-ra -q"
+addopts      = "-ra -q"
