@@ -23,7 +23,6 @@ must not be used as the authoritative list.
 | 2  | open          | Scalability discussion                                        | Thinking-work; defer until benchmark baseline establishes real cost/latency numbers           |
 | 5  | in-progress   | LLM benchmarking                                              | Parent task; decomposed into #16–#23. Hook already scaffolded at stage-4 `response_score` slot |
 | 16 | open          | Stand up durable task ledger (`docs/TASKS.md`)                | **This doc.** Root-cause fix for losing track of numbered tasks between sessions              |
-| 17 | open          | Terminology sweep: "eval" → "benchmark"                       | Rename in memory notes, daily notes, and any code references (`response_score`, etc.)         |
 | 18 | open          | Decide benchmark directory structure                          | D1/D2/D3 options on the table; recommendation is D2 (new top-level `kdb_benchmark/` module)   |
 | 19 | open          | Define KPIs + gate thresholds for KDB benchmark               | Parallel to yt-comment-chat `signal ≥75 \| parse ≥95 \| merge_err <2`                          |
 | 20 | open          | Decide ground-truth source                                    | GT-A/B/C/D/E; recommendation is GT-D as v1 + GT-E as v2                                       |
@@ -52,6 +51,7 @@ must not be used as the authoritative list.
 | 13 | Grok draft of compiler system prompt                        | Part of the parallel drafting pool → synthesis                                                                                      |
 | 14 | Gemini draft of compiler system prompt                      | Part of the parallel drafting pool → synthesis                                                                                      |
 | 15 | QWEN + GPT5.4 drafts + synthesis + install + rename         | Synthesized prompt installed to `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md` (renamed from `CLAUDE.md`, commit `1312757`). See memory `project_task11_completed.md` |
+| 17 | Terminology sweep: aspirational "eval" → mechanical names   | `b7ea53a`. Code/tests/fixtures/CLI/blueprint/memory all renamed: `eval_replay → response_replay`, `kdb-eval → kdb-replay`, `KDB_EVAL_CAPTURE_FULL → KDB_RESP_CAPTURE_FULL`, `llm_eval/ → llm_resp/`, `EvalRecord → RespStatsRecord`. Reserves "benchmark" for Task #5 cross-model work |
 
 ---
 
