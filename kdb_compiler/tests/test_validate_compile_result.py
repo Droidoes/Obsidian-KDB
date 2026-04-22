@@ -284,7 +284,7 @@ def test_pairing_type_mismatch_stays_gate() -> None:
 
 
 def test_score_response_stub_returns_none() -> None:
-    """Scoring stub is wired but returns None until M2 eval work implements it."""
+    """Scoring stub is wired but returns None until M2 benchmark work implements it."""
     cr = _load("compile_result.minimal.valid.json")
     result = vcr.validate(cr)
     assert vcr.score_response(cr, result) is None

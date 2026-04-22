@@ -18,8 +18,8 @@ One CompileJob per eligible source. The planner owns:
      context_loader can run its slug-in-text match. A read failure is
      *not* fatal at plan time — we emit an empty source_text, let the job
      reach compile_one, and the compiler captures the read failure in its
-     eval record (blueprint §9). Keeps the "one eval record per eligible
-     source" invariant even for unreadable files.
+     resp-stats record (blueprint §9). Keeps the "one resp-stats record per
+     eligible source" invariant even for unreadable files.
 
 CLI `kdb-plan` prints the job list for inspection. Not part of the
 normal run path (compile drives planner internally via `plan()`).

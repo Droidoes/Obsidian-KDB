@@ -55,7 +55,7 @@ def test_first_call_succeeds_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_attempts_field_reflects_retry_count(monkeypatch: pytest.MonkeyPatch) -> None:
     """The returned ModelResponse.attempts must equal the 1-indexed attempt
-    number that finally succeeded — needed by the M2 eval writer."""
+    number that finally succeeded — needed by the M2 resp-stats writer."""
     sequence: list[Exception | ModelResponse] = [
         _make_sdk_error(anthropic.RateLimitError),
         _make_sdk_error(anthropic.InternalServerError, status_code=503),

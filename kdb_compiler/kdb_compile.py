@@ -305,8 +305,8 @@ def compile(
     # ----- [4] validate compile_result -----
     # Diagnose only. Pairing mismatches fall into measure_findings (not gate);
     # the reconciler stage picks them up next. response_score is a stub today
-    # but lives on the validator stage so the eval framework has a stable home
-    # for it.
+    # but lives on the validator stage so the benchmark framework has a stable
+    # home for it.
     _stage_open(4)
     cr_result = validate_compile_result.validate(cr)
     cr_errors = [f.detail for f in cr_result.gate_errors]

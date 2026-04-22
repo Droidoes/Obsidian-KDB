@@ -719,7 +719,7 @@ def test_run_compile_dry_run_skips_compile_result_write_but_keeps_resp_stats_rec
         write=False,
     )
     assert not (state_root / "compile_result.json").exists()
-    # Eval record still written — debug artifact, not gated by write.
+    # Resp-stats record still written — debug artifact, not gated by write.
     assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
 
 

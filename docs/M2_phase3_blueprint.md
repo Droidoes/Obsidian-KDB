@@ -1,7 +1,7 @@
-# M2 Phase 3 Blueprint — Schema-First Compile + Eval at Get-Go
+# M2 Phase 3 Blueprint — Schema-First Compile + Resp-Stats at Get-Go
 
 **Authored**: 2026-04-19 (Opus 4.7)
-**Consensus input**: GPT-5.4 (schema-first revision) + Opus 4.7 (eval hooks, semantic checks)
+**Consensus input**: GPT-5.4 (schema-first revision) + Opus 4.7 (resp-stats hooks, semantic checks)
 **Scope**: M2 v1 — first real LLM compile. Schema-first contract. Minimal Python cleanup. Always-on per-call audit trail. Slim replay harness.
 
 This blueprint is the locked design for M2. Once approved, implementation proceeds step-by-step per §11. Each step is commit-gated.
@@ -20,18 +20,18 @@ This blueprint is the locked design for M2. Once approved, implementation procee
 | Temperature | `0.0` |
 | `max_tokens` | `4096` |
 | `json_mode` | Dropped from the contract (Anthropic SDK path in `call_model.py` ignores it) |
-| `run_id` source | `ctx.run_id` threaded through orchestrator → compiler → eval → compile_result |
+| `run_id` source | `ctx.run_id` threaded through orchestrator → compiler → resp-stats → compile_result |
 | UNCHANGED sources | Skipped entirely (already excluded by `scan.to_compile`) |
 | Binary sources | Filtered out of compile jobs by the planner — v1.1 will add a metadata-only page path; M2 v1 just leaves them in manifest |
 | Error tolerance | Per-source try/except; partial success continues the run |
 | `success` semantics | `success = (len(errors) == 0)` — an empty run with no errors is successful (clean scan / no-op) |
 | Nothing-to-compile | Successful no-op: synthesize empty `CompileResult` with success=true, skip model calls, proceed to apply |
-| Eval-record invariant | Exactly one record per `compile_one` call — scaffolded at entry, populated as stages run, written in a `finally` block so source-read / prompt-build failures are also captured |
+| Resp-stats invariant | Exactly one record per `compile_one` call — scaffolded at entry, populated as stages run, written in a `finally` block so source-read / prompt-build failures are also captured |
 | Context snapshot fields | `{slug, title, page_type, outgoing_links}` — no bodies, no paths, no timestamps |
 | Context page cap | 50 |
-| Eval record path | `KDB/state/llm_eval/<run_id>/<safe_source_id>.json` |
-| Eval always-on | metadata + hashes + four classification flags + `parsed_summary` + error lists |
-| Eval env-gated | `KDB_EVAL_CAPTURE_FULL=1` → include `parsed_json` + full system/user/raw bodies |
+| Resp-stats path | `KDB/state/llm_resp/<run_id>/<safe_source_id>.json` |
+| Resp-stats always-on | metadata + hashes + four classification flags + `parsed_summary` + error lists |
+| Resp-stats env-gated | `KDB_RESP_CAPTURE_FULL=1` → include `parsed_json` + full system/user/raw bodies |
 | Python post-processing | JSON extract, schema validate, semantic check, aggregate, write. **Not**: rename, coerce, slug-fix, infer missing fields. |
 | Kdb_compile seam | Hybrid: fixture-if-present else compile-if-to_compile-non-empty else fail |
 
@@ -45,18 +45,18 @@ This blueprint is the locked design for M2. Once approved, implementation procee
 |---|---|---|
 | `kdb_compiler/schemas/compiled_source_response.schema.json` | ~140 | Per-source model contract |
 | `kdb_compiler/validate_compiled_source_response.py` | ~110 | Schema + semantic validator |
-| `kdb_compiler/eval_writer.py` | ~100 | EvalRecord builder + atomic writer |
-| `kdb_compiler/eval_replay.py` | ~170 | `kdb-eval --replay <dir>` + report |
+| `kdb_compiler/resp_stats_writer.py` | ~100 | RespStatsRecord builder + atomic writer |
+| `kdb_compiler/response_replay.py` | ~170 | `kdb-replay --replay <dir>` + report |
 | `kdb_compiler/tests/test_validate_compiled_source_response.py` | ~200 | |
 | `kdb_compiler/tests/test_response_normalizer.py` | ~110 | |
-| `kdb_compiler/tests/test_eval_writer.py` | ~130 | |
+| `kdb_compiler/tests/test_resp_stats_writer.py` | ~130 | |
 | `kdb_compiler/tests/test_context_loader.py` | ~160 | |
 | `kdb_compiler/tests/test_prompt_builder.py` | ~160 | Snapshot tests |
 | `kdb_compiler/tests/test_planner.py` | ~100 | |
 | `kdb_compiler/tests/test_compiler.py` | ~310 | Mocked seam; no live API |
-| `kdb_compiler/tests/test_eval_replay.py` | ~110 | |
+| `kdb_compiler/tests/test_response_replay.py` | ~110 | |
 | `kdb_compiler/tests/test_m2_first_compile.py` | ~70 | **Env-blocked**; one live call |
-| `kdb_compiler/tests/fixtures/eval/` (3 cases × ~80 lines) | ~240 | Replay fixtures |
+| `kdb_compiler/tests/fixtures/response_replay/` (3 cases × ~80 lines) | ~240 | Replay fixtures |
 
 ### Change (9 files)
 
@@ -72,7 +72,7 @@ This blueprint is the locked design for M2. Once approved, implementation procee
 | `kdb_compiler/response_normalizer.py` | rewrite stub → ~60 | Shrink hard |
 | `kdb_compiler/compiler.py` | rewrite stub → ~300 | |
 | `kdb_compiler/kdb_compile.py` | ~25 line Δ | Step 5 hybrid |
-| `pyproject.toml` | +3 lines | `kdb-plan`, `kdb-compile-sources`, `kdb-eval`, `kdb-validate-response` scripts |
+| `pyproject.toml` | +3 lines | `kdb-plan`, `kdb-compile-sources`, `kdb-replay`, `kdb-validate-response` scripts |
 
 **Total**: ~1,400 production LOC + ~1,600 test/fixture LOC ≈ 3,000 lines of M2 work.
 
@@ -283,7 +283,7 @@ class ParsedSummary:
 
 
 @dataclass
-class EvalRecord:
+class RespStatsRecord:
     run_id: str
     source_id: str
     provider: str
@@ -576,10 +576,10 @@ def main(argv: list[str] | None = None) -> int:
     """CLI: kdb-plan --vault-root <path> [--json] [--page-cap 50]"""
 ```
 
-### 5.6 `eval_writer.py`
+### 5.6 `resp_stats_writer.py`
 
 ```python
-"""Atomic eval-record writer and builder."""
+"""Atomic resp-stats writer and builder."""
 
 import hashlib
 import os
@@ -588,10 +588,10 @@ from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.prompt_builder import BuiltPrompt
 from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import EvalRecord
+from kdb_compiler.types import RespStatsRecord
 
 def safe_source_id(source_id: str) -> str:
-    """Filesystem-safe key for eval record filename.
+    """Filesystem-safe key for resp-stats record filename.
     KDB/raw/foo/bar.md → KDB__raw__foo__bar.md.<8-hex>
     The 8-hex suffix is sha256(source_id)[:8] — disambiguates collisions
     (e.g. 'a/b.md' vs 'a__b.md' would otherwise map to the same name).
@@ -606,7 +606,7 @@ def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
     Never raises — missing fields produce None / 0 / [] entries.
     """
 
-def build_eval_record(
+def build_resp_stats(
     *,
     ctx: RunContext,
     source_id: str,
@@ -620,11 +620,11 @@ def build_eval_record(
     schema_errors: list[str],
     semantic_ok: bool,
     semantic_errors: list[str],
-) -> EvalRecord:
+) -> RespStatsRecord:
     """Assemble record. Hashes always computed. See §7 for the gating story.
 
     Always-on fields: metadata, hashes, flags, error lists, parsed_summary
-    (when parse_ok=True). Env-gated by KDB_EVAL_CAPTURE_FULL=='1':
+    (when parse_ok=True). Env-gated by KDB_RESP_CAPTURE_FULL=='1':
     parsed_json, system_prompt, user_prompt, raw_response_text.
 
     If model_response is None (pre-response failure — SDK error, network,
@@ -637,8 +637,8 @@ def build_eval_record(
     parsed_summary is built from parsed_json when parse_ok=True, else None.
     """
 
-def write_eval_record(record: EvalRecord, state_root: Path) -> Path:
-    """Atomic write to <state_root>/llm_eval/<run_id>/<safe_source_id>.json.
+def write_resp_stats(record: RespStatsRecord, state_root: Path) -> Path:
+    """Atomic write to <state_root>/llm_resp/<run_id>/<safe_source_id>.json.
     Ensures the parent directory exists via
     `dir.mkdir(parents=True, exist_ok=True)` before the atomic write —
     `atomic_write_json` writes a tempfile next to the target and renames,
@@ -646,7 +646,7 @@ def write_eval_record(record: EvalRecord, state_root: Path) -> Path:
     """
 ```
 
-Env contract: `KDB_EVAL_CAPTURE_FULL=1` → capture full bodies. Any other value (or unset) → omit.
+Env contract: `KDB_RESP_CAPTURE_FULL=1` → capture full bodies. Any other value (or unset) → omit.
 
 ### 5.7 `compiler.py`
 
@@ -673,7 +673,7 @@ def compile_one(
     """
     Returns (compiled_source | None, log_entries, warnings, error_str | None).
 
-    ALWAYS writes one EvalRecord per call, regardless of outcome.
+    ALWAYS writes one RespStatsRecord per call, regardless of outcome.
 
     See §9 for the locked step-by-step flow.
     """
@@ -699,7 +699,7 @@ def main(argv: list[str] | None = None) -> int:
     [--model claude-opus-4-7] [--max-tokens 4096] [--dry-run]"""
 ```
 
-### 5.8 `eval_replay.py`
+### 5.8 `response_replay.py`
 
 ```python
 """Replay harness: run stored responses through normalizer + validators."""
@@ -730,13 +730,13 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult: ...
 def print_report(results: list[ReplayResult]) -> None: ...
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI: kdb-eval --replay <fixtures-dir>
+    """CLI: kdb-replay --replay <fixtures-dir>
     Exit 0 iff all cases match expectations."""
 ```
 
 **Fixture layout** per case:
 ```
-kdb_compiler/tests/fixtures/eval/case01_minimal/
+kdb_compiler/tests/fixtures/response_replay/case01_minimal/
   source.md                  # raw input (informational, not replayed)
   stored_response.txt        # raw model output string (may include fences/prose)
   case.json                  # { "source_id": "...",
@@ -768,7 +768,7 @@ Token budget sanity check (back-of-envelope):
 
 ---
 
-## 7. Eval Record — Exact Shape
+## 7. Resp-Stats Record — Exact Shape
 
 Per the always-on vs. gated split:
 
@@ -813,7 +813,7 @@ Default (capture-full OFF):
 }
 ```
 
-With `KDB_EVAL_CAPTURE_FULL=1`, the four trailing `null`s become:
+With `KDB_RESP_CAPTURE_FULL=1`, the four trailing `null`s become:
 - `parsed_json` — full validated object (with generated page bodies)
 - `system_prompt`, `user_prompt` — full prompt strings
 - `raw_response_text` — unparsed model output (may include fences/prose)
@@ -880,8 +880,8 @@ tests cover branch 2 (live compile with sources) and branch 2-empty
 
 The implementation uses a **scaffold-and-fill** pattern: a mutable state dict is
 initialized at function entry, each stage updates it, and a single
-`finally` block writes the eval record. This guarantees the invariant:
-**exactly one eval record per `compile_one` call — including source-read
+`finally` block writes the resp-stats record. This guarantees the invariant:
+**exactly one resp-stats record per `compile_one` call — including source-read
 failures and prompt-build failures.**
 
 ```
@@ -996,8 +996,8 @@ try:
     )
 
 finally:
-    # --- ALWAYS write exactly one eval record, regardless of which stage failed ---
-    record = build_eval_record(
+    # --- ALWAYS write exactly one resp-stats record, regardless of which stage failed ---
+    record = build_resp_stats(
         ctx=ctx,
         source_id=source_id,
         prompt=state["prompt"],                     # None if prompt-build failed
@@ -1011,13 +1011,13 @@ finally:
         semantic_ok=state["semantic_ok"],
         semantic_errors=state["semantic_errors"],
     )
-    write_eval_record(record, state_root)
+    write_resp_stats(record, state_root)
 ```
 
 **Key invariants** (enforced by code structure):
-- Exactly one `write_eval_record` per `compile_one` call, via the single `finally` block.
+- Exactly one `write_resp_stats` per `compile_one` call, via the single `finally` block.
 - Every early-return goes through the same `finally`.
-- `state` is the only mutable carrier — no duplicate eval-record construction sprinkled through the flow.
+- `state` is the only mutable carrier — no duplicate resp-stats construction sprinkled through the flow.
 - Source-read failures and prompt-build failures are also captured (with `model_response=None` and `prompt=None` respectively).
 
 ### `run_compile` aggregation
@@ -1098,7 +1098,7 @@ with "is the run valid"; the clarified rule separates them.
 - page without source_id in `supports_page_existence` → semantic error
 - extra field → schema error (additionalProperties:false)
 
-### `test_eval_writer.py` (~9 cases)
+### `test_resp_stats_writer.py` (~9 cases)
 - `safe_source_id` stable + sha256 suffix disambiguates `a/b.md` vs `a__b.md`
 - **metadata+parsed_summary record written when env unset; parsed_json is null**
 - **full record (parsed_json + bodies) written when env=`1`**
@@ -1138,22 +1138,22 @@ with "is the run valid"; the clarified rule separates them.
 
 ### `test_compiler.py` (~15 cases, all with mocked `call_model_with_retry`)
 - happy path: 1 source → 1 compiled_source, meta threaded
-- **source-read failure** (missing file) → errors[], eval record with model_response=None, prompt=None
-- **prompt-build failure** (mocked to raise) → errors[], eval record written with prompt=None
-- SDK exception → errors[], no compiled_source, eval record model_response=None
-- extract failure (prose around object) → errors[], eval record extract_ok=False
-- parse failure (broken JSON) → eval record parse_ok=False, parsed_json=None, parsed_summary=None
-- schema failure (bad slug) → eval record schema_ok=False, parsed_summary populated
-- semantic failure (no summary page) → eval record semantic_ok=False
+- **source-read failure** (missing file) → errors[], resp-stats record with model_response=None, prompt=None
+- **prompt-build failure** (mocked to raise) → errors[], resp-stats record written with prompt=None
+- SDK exception → errors[], no compiled_source, resp-stats record model_response=None
+- extract failure (prose around object) → errors[], resp-stats record extract_ok=False
+- parse failure (broken JSON) → resp-stats record parse_ok=False, parsed_json=None, parsed_summary=None
+- schema failure (bad slug) → resp-stats record schema_ok=False, parsed_summary populated
+- semantic failure (no summary page) → resp-stats record semantic_ok=False
 - mixed run: 3 sources, 1 pass + 2 fail → **success=false**, errors has 2, compiled_sources has 1
 - **empty-jobs run** (planner returns []) → success=true, compiled_sources=[], log has 1 info entry
 - all-fail run → success=false
 - `compile_meta` threaded correctly from ModelResponse
 - `dry_run=True` skips compile_result.json write
-- **eval record written exactly once per `compile_one` call** — including source-read and prompt-build failure paths
+- **resp-stats record written exactly once per `compile_one` call** — including source-read and prompt-build failure paths
 - `run_compile` returns a valid `CompileResult` that passes `validate_compile_result`
 
-### `test_eval_replay.py` (~4 cases)
+### `test_response_replay.py` (~4 cases)
 - happy fixture: all flags match expected
 - schema-fail fixture: matches expected
 - semantic-fail fixture: matches expected
@@ -1161,9 +1161,9 @@ with "is the run valid"; the clarified rule separates them.
 
 ### `test_m2_first_compile.py` (env-blocked)
 - Excluded from default CI via pytest `--ignore`
-- Loads 1 real source from `kdb_compiler/tests/fixtures/eval/case01_minimal/source.md`
+- Loads 1 real source from `kdb_compiler/tests/fixtures/response_replay/case01_minimal/source.md`
 - Calls real Anthropic API
-- Asserts: compiled_source returned, passes schema + semantic checks, eval record written
+- Asserts: compiled_source returned, passes schema + semantic checks, resp-stats record written
 
 ### `test_kdb_compile.py` additions (~3 cases — extend existing)
 - compile_result.json absent + to_compile non-empty + mocked compiler → success, compiler invoked
@@ -1178,17 +1178,17 @@ Each step: implement → tests green → user approves → commit.
 
 | # | Step | Files | Commit gate |
 |---|---|---|---|
-| A1 | Schemas + types additions | `compiled_source_response.schema.json`, `compile_result.schema.json` edit, `types.py` (ContextPage, ContextSnapshot, CompileJob, CompileMeta, EvalRecord, extend CompiledSource) | Full existing suite green (207) + new types importable; schema file loads via `Draft202012Validator` |
+| A1 | Schemas + types additions | `compiled_source_response.schema.json`, `compile_result.schema.json` edit, `types.py` (ContextPage, ContextSnapshot, CompileJob, CompileMeta, RespStatsRecord, extend CompiledSource) | Full existing suite green (207) + new types importable; schema file loads via `Draft202012Validator` |
 | A2 | `ModelResponse.attempts` threading | `call_model.py` (+3 lines), `call_model_retry.py` (+5 lines) | Existing `test_call_model*.py` green (env-blocked tests unchanged); one new unit test confirms `response.attempts` reflects actual retry count |
 | B | `validate_compiled_source_response` | `validate_compiled_source_response.py`, tests | All validator tests pass |
 | C | `response_normalizer` shrink | `response_normalizer.py`, tests | Normalizer tests pass; grep confirms no semantic code |
-| D | `eval_writer` | `eval_writer.py`, tests | Writer tests pass under both env states |
+| D | `resp_stats_writer` | `resp_stats_writer.py`, tests | Writer tests pass under both env states |
 | E | `context_loader` | `context_loader.py`, tests | Loader tests pass; deterministic ordering verified |
 | F | `prompt_builder` + `KDB/KDB-Compiler-System-Prompt.md` verified present | `prompt_builder.py`, tests | Snapshot tests pass; contract lines present |
 | G | `planner` | `planner.py`, tests, `pyproject.toml` (kdb-plan) | Planner tests pass; CLI smoke works |
-| H | `compiler` (mocked seam) | `compiler.py`, tests, `pyproject.toml` | All compiler tests pass; eval record written every case |
+| H | `compiler` (mocked seam) | `compiler.py`, tests, `pyproject.toml` | All compiler tests pass; resp-stats record written every case |
 | I | `kdb_compile.py` Step 5 hybrid | `kdb_compile.py`, `test_kdb_compile.py` new cases | M1.7 existing tests unchanged; new cases pass |
-| J | `eval_replay` + 3 fixtures + **first real compile** | `eval_replay.py`, fixtures, `test_m2_first_compile.py`, `pyproject.toml` | Replay tests pass; **user runs `kdb-compile` against real `~/Droidoes/*/docs/` seeds and inspects wiki/ output for quality** |
+| J | `response_replay` + 3 fixtures + **first real compile** | `response_replay.py`, fixtures, `test_m2_first_compile.py`, `pyproject.toml` | Replay tests pass; **user runs `kdb-compile` against real `~/Droidoes/*/docs/` seeds and inspects wiki/ output for quality** |
 
 Step J is the green-light — all prior steps are preparation.
 
@@ -1200,7 +1200,7 @@ Before any implementation on a given step, verify these:
 
 - [ ] `~/Obsidian/KDB/KDB-Compiler-System-Prompt.md` is readable. If not, Step F is blocked.
 - [ ] `ModelResponse` in `call_model.py` has `attempts` field after Step A's edit.
-- [ ] `pyproject.toml` accepts 4 new `[project.scripts]` entries: `kdb-plan`, `kdb-compile-sources`, `kdb-eval`, `kdb-validate-response`.
+- [ ] `pyproject.toml` accepts 4 new `[project.scripts]` entries: `kdb-plan`, `kdb-compile-sources`, `kdb-replay`, `kdb-validate-response`.
 - [ ] `PageType`, `PageStatus`, `Confidence` literals in `types.py` match the per-source schema enums exactly.
 
 ---
@@ -1211,7 +1211,7 @@ Before any implementation on a given step, verify these:
 - Multi-provider benchmark (E3)
 - Anthropic tool-use-as-structured-output
 - Baseline diff dashboard
-- p50/p95 latency/cost metrics in eval replay report
+- p50/p95 latency/cost metrics in replay report
 - Re-compile of UNCHANGED sources via concept propagation
 - Prompt caching (Anthropic cache breakpoints)
 
@@ -1222,9 +1222,9 @@ None of these are blocked by M2 v1's shape — they're additive when evidence mo
 ## 14. Success Criteria for M2
 
 1. `python3 -m pytest kdb_compiler/tests --ignore=...env-blocked...` → 207 + ~74 new = ~281 tests green.
-2. `kdb-eval --replay kdb_compiler/tests/fixtures/eval/` → all seed cases match expectations.
+2. `kdb-replay --replay kdb_compiler/tests/fixtures/response_replay/` → all seed cases match expectations.
 3. `kdb-compile --vault-root ~/Obsidian` with 3-5 real seed docs in `KDB/raw/` → produces valid `compile_result.json`, applies to `KDB/wiki/`, and user confirms output quality on inspection.
-4. Eval records exist under `KDB/state/llm_eval/<run_id>/` for every call made.
+4. Resp-stats records exist under `KDB/state/llm_resp/<run_id>/` for every call made.
 5. `compile_meta` present on every `compiled_sources[i]` in live compiles; absent in fixture-backed runs.
 6. User approves commit of Step J.
 

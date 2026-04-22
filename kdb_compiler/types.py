@@ -253,7 +253,7 @@ class CompileResult:
         }
 
 
-# ---------- M2 planner / context / eval shapes ----------
+# ---------- M2 planner / context / resp-stats shapes ----------
 
 @dataclass
 class ContextPage:
@@ -293,7 +293,7 @@ class CompileJob:
 @dataclass
 class ParsedSummary:
     """Lossy reduction of a parsed per-source response. Stored in every
-    eval record (when parse succeeded) as a body-free shape digest."""
+    resp-stats record (when parse succeeded) as a body-free shape digest."""
     summary_slug: Optional[str]
     page_count: int
     page_types: dict[str, int]

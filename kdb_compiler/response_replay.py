@@ -1,11 +1,11 @@
-"""eval_replay — run stored model responses through the compile validator
+"""response_replay — run stored model responses through the compile validator
 stack (extract → parse → schema → semantic) and compare the observed
 flags against each fixture's expected flags.
 
-Complements the live eval records written by `compile_one` (blueprint
+Complements the live resp-stats records written by `compile_one` (blueprint
 §7). Replay fixtures pin down regressions in the extractor, schema, and
 semantic layers without burning API budget: you edit a validator, run
-`kdb-eval --replay kdb_compiler/tests/fixtures/eval/`, and see every
+`kdb-replay --replay kdb_compiler/tests/fixtures/response_replay/`, and see every
 known-good and known-bad case re-scored.
 
 Each fixture directory contains:
@@ -184,12 +184,12 @@ def print_report(results: list[ReplayResult]) -> None:
         if r.matches_expected:
             passed += 1
     total = len(results)
-    print(f"\nkdb-eval: {passed}/{total} case(s) matched expectations")
+    print(f"\nkdb-replay: {passed}/{total} case(s) matched expectations")
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="kdb-eval",
+        prog="kdb-replay",
         description=(
             "Replay stored model responses through the compile validator "
             "stack and compare against expected flags."
@@ -210,11 +210,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         fixtures = load_fixtures(fixtures_dir)
     except FileNotFoundError as exc:
-        print(f"kdb-eval: {exc}", file=sys.stderr)
+        print(f"kdb-replay: {exc}", file=sys.stderr)
         return 1
 
     if not fixtures:
-        print(f"kdb-eval: no cases found under {fixtures_dir}", file=sys.stderr)
+        print(f"kdb-replay: no cases found under {fixtures_dir}", file=sys.stderr)
         return 1
 
     results = [replay_case(f) for f in fixtures]

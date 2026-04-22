@@ -1,4 +1,4 @@
-"""Tests for eval_replay — fixture-driven replay of the validator stack.
+"""Tests for response_replay — fixture-driven replay of the validator stack.
 
 Coverage per blueprint §10:
     - happy fixture (case01): every flag true, matches expected
@@ -15,15 +15,15 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import eval_replay
-from kdb_compiler.eval_replay import (
+from kdb_compiler import response_replay
+from kdb_compiler.response_replay import (
     ReplayFixture,
     load_fixtures,
     main,
     replay_case,
 )
 
-_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "eval"
+_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "response_replay"
 
 
 # ---------- load_fixtures ----------

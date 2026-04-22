@@ -3,7 +3,7 @@
 Single sync entry point: sends a ModelRequest to one of
 {anthropic, openai, gemini, ollama} and returns a ModelResponse with
 the text, usage counts, wall-clock latency, and provider/model echo
-(eval-ready metadata per project memory).
+(resp-stats metadata per project memory).
 
 Providers:
     anthropic → native anthropic SDK (client.messages.create)

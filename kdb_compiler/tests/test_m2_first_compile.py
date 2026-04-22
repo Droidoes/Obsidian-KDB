@@ -28,7 +28,7 @@ from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
 _LIVE_ENV = "KDB_RUN_LIVE_API"
-_CASE_DIR = Path(__file__).parent / "fixtures" / "eval" / "case01_minimal_summary"
+_CASE_DIR = Path(__file__).parent / "fixtures" / "response_replay" / "case01_minimal_summary"
 
 pytestmark = pytest.mark.skipif(
     os.environ.get(_LIVE_ENV) != "1",

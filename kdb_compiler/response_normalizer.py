@@ -17,7 +17,7 @@ Explicitly NOT handled here:
     - multi-object recovery
 
 All of the above belong elsewhere: schema + semantic validation fail
-honestly so the eval record captures the model's failure mode, rather
+honestly so the resp-stats record captures the model's failure mode, rather
 than masking it with Python cleanup.
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ def extract_json_text(raw_text: str) -> str:
     """Return the JSON text payload from the model response.
 
     Accepts a bare object or a single fenced block. Raises ValueError for
-    every other shape (with a terse message suitable for eval records and
-    error logs).
+    every other shape (with a terse message suitable for resp-stats records
+    and error logs).
     """
     text = raw_text.strip()
 

@@ -142,7 +142,7 @@ def test_build_jobs_empty_to_compile_yields_empty(tmp_path: Path) -> None:
 def test_build_jobs_missing_source_file_still_emits_job(tmp_path: Path) -> None:
     """Source text read failure is recoverable at plan time — the job is
     emitted with empty context and compile_one captures the read failure
-    in its eval record (blueprint §9)."""
+    in its resp-stats record (blueprint §9)."""
     scan = _scan(to_compile=[SOURCE_A], files=[_file(SOURCE_A)])
     jobs = planner.build_jobs(scan, {}, tmp_path)
     assert len(jobs) == 1

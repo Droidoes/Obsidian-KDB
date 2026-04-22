@@ -85,10 +85,10 @@ class ResponseScore:
 def score_response(cr: dict, validation: ValidationResult) -> ResponseScore | None:
     """Score an LLM response on quality dimensions derived from validator findings.
 
-    STUB — returns None. Real scoring lands with the M2 eval framework (see
-    project_task5_eval_scoring_directions memory). When implemented, the score
-    feeds per-call eval records so we can compare LLM models by pairing
-    mismatch rate and other quality dimensions.
+    STUB — returns None. Real scoring lands with the M2 benchmark framework
+    (see project_task5_benchmark_scoring_directions memory). When implemented,
+    the score feeds per-call resp-stats records so we can compare LLM models
+    by pairing mismatch rate and other quality dimensions.
     """
     return None
 
