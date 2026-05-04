@@ -23,12 +23,16 @@ must not be used as the authoritative list.
 | 2  | open          | Scalability discussion                                        | Thinking-work; defer until benchmark baseline establishes real cost/latency numbers           |
 | 5  | in-progress   | LLM benchmarking                                              | Parent task; decomposed into #16–#23. Hook already scaffolded at stage-4 `response_score` slot |
 | 16 | open          | Stand up durable task ledger (`docs/TASKS.md`)                | **This doc.** Root-cause fix for losing track of numbered tasks between sessions              |
-| 19 | open          | Define KPIs + gate thresholds for KDB benchmark               | Parallel to yt-comment-chat `signal ≥75 \| parse ≥95 \| merge_err <2`                          |
+| 19 | in-progress   | Define KPIs + gate thresholds for KDB benchmark               | Phase 2 + Round 3 (Codex-driven) closed 2026-05-04; weights locked S0=20/M1=20/M2=5/M3=5/M4=15/M5=5/M6=15/M7=15. Phase 3 gated on **#28** (M5 impl) + **#29** (telemetry plumbing). See `docs/task19-kpi-design.md`, companion `task19-kpi-design-codex-feedback-take-1.md` |
 | 20 | open          | Decide ground-truth source                                    | GT-A/B/C/D/E; recommendation is GT-D as v1 + GT-E as v2                                       |
 | 21 | open          | Port/adapt `models.json` registry                             | Lift the 21-model shape from `youtube-comment-chat/src/eval/models.json`                      |
 | 22 | open          | Design KDB scorecard format                                   | Mirror `benchmark/scores/in-out-list.txt`; depends on #19 + #20                               |
 | 23 | open          | Document benchmark architecture in `CODEBASE_OVERVIEW.md`     | North Star first per CLAUDE.md; no implementation before docs land                            |
 | 25 | open          | Capture exception type+message in resp-stats on pre-response failures | Small patch; makes failure records self-explanatory. From 2026-04-19                  |
+| 26 | open          | Systematic review of EXISTING CONTEXT list design             | Surfaced from Task #19 Phase 2 dialogue (2026-04-30): rationale, manifest source data, step-by-step algorithm, objective, effectiveness measurement, industry-standard alignment. See `docs/task26-existing-context-design.md` |
+| 27 | open          | Manifest scalability assessment + industry-standard review    | Surfaced from Task #19 Phase 2 dialogue (2026-04-30): is single-JSON `manifest.json` scalable to 10K+ pages? Are we following knowledge-graph / metadata-store best practices? |
+| 28 | open          | M5 (`body_link_syntax_match`) implementation — symmetric Jaccard | Surfaced from Task #19 Round 3 (2026-05-04). Extend `validate_compiled_source_response` (~30 LOC) to scan body for `[[<slug>]]` tokens, build per-page body wikilink set, emit `\|declared ∩ body\|` and `\|declared ∪ body\|` counts. Symmetric Jaccard catches BOTH metadata-not-in-body AND body-wikilinks-not-declared. **Phase 3 gate** for Task #19. |
+| 29 | open          | `RespStatsRecord` telemetry plumbing for benchmark scorer     | Surfaced from Task #19 Round 3 (2026-05-04). Extend `RespStatsRecord` with `cost_usd` (computed at run time from `kdb_benchmark/models.json` `price_in`/`price_out`), `stop_reason` (raw), `token_overrun` (bool, `stop_reason in {"max_tokens","length"}`). Add `source_words` to corpus metadata (joined by `source_id` at scorer time, not in resp_stats). Update `resp_stats_writer.py` and `compiler.py` call site. **Phase 3 gate** for Task #19. |
 | —  | open          | Resolve `Open-1..Open-8` in `docs/CODEBASE_OVERVIEW.md`       | Tracked there, not here. Target: close before end of M2                                       |
 
 ---
@@ -57,7 +61,7 @@ must not be used as the authoritative list.
 
 ## Unused IDs
 
-`#24` — reserved for the next new task after #23. Gap is intentional — do not backfill.
+`#24` — historical gap (originally reserved on 2026-04-21 but was bypassed when #25 was assigned next). Per the no-backfill rule, this gap stays. Do not assign #24 to any new task.
 
 ---
 
