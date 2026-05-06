@@ -122,9 +122,16 @@ def build_resp_stats(
     schema_errors: list[str],
     semantic_ok: bool,
     semantic_errors: list[str],
+    source_words: int = 0,
 ) -> RespStatsRecord:
     """Assemble one RespStatsRecord. Hashes always computed. See module
-    docstring for the always-on vs env-gated field split."""
+    docstring for the always-on vs env-gated field split.
+
+    `source_words` is the whitespace-split count of the source text the
+    caller read (or 0 on source-read failure). Persisted on the record so
+    the benchmark scorer can derive cost/latency-per-1k-source-words
+    without re-reading the corpus.
+    """
     capture_full = _capture_full()
 
     if model_response is not None:
@@ -135,6 +142,7 @@ def build_resp_stats(
         input_tokens = model_response.input_tokens
         output_tokens = model_response.output_tokens
         response_hash = _sha256(raw_response_text) if raw_response_text else _sha256("")
+        stop_reason = model_response.stop_reason
     else:
         provider = ""
         model = ""
@@ -143,6 +151,9 @@ def build_resp_stats(
         input_tokens = 0
         output_tokens = 0
         response_hash = _NONE_HASH
+        stop_reason = None
+
+    token_overrun = stop_reason in ("max_tokens", "length")
 
     if prompt is not None:
         prompt_text = prompt.system + "\n\n" + prompt.user
@@ -174,6 +185,9 @@ def build_resp_stats(
         system_prompt=(prompt.system if capture_full and prompt is not None else None),
         user_prompt=(prompt.user if capture_full and prompt is not None else None),
         raw_response_text=(raw_response_text if capture_full else None),
+        stop_reason=stop_reason,
+        token_overrun=token_overrun,
+        source_words=source_words,
     )
 
 

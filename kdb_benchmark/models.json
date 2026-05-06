@@ -2,11 +2,15 @@
   {
     "id": "haiku-4.5",
     "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001"
+    "model": "claude-haiku-4-5-20251001",
+    "price_in": 1.0,
+    "price_out": 5.0
   },
   {
     "id": "sonnet-4.6",
     "provider": "anthropic",
-    "model": "claude-sonnet-4-6"
+    "model": "claude-sonnet-4-6",
+    "price_in": 3.0,
+    "price_out": 15.0
   }
 ]

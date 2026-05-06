@@ -247,6 +247,8 @@ def test_compile_one_source_read_failure_writes_resp_stats_record(
     assert record["response_hash"] == "sha256:none"
     assert record["extract_ok"] is False
     assert record["input_tokens"] == 0
+    # Source-read failure happens before source_words capture; defaults to 0.
+    assert record["source_words"] == 0
 
 
 def test_compile_one_prompt_build_failure_writes_resp_stats_record(
@@ -548,6 +550,75 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["schema_ok"] is True
     assert record["semantic_ok"] is False
+
+
+# ---------- source_words capture (Task #29) ----------
+
+def test_compile_one_persists_source_words_on_happy_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """source_words = whitespace-split count of source_text, captured
+    after successful read and persisted on the resp-stats record."""
+    vault = _write_vault(tmp_path)
+    body = "the quick brown fox jumps over the lazy dog"  # 9 whitespace tokens
+    _write_raw(vault, SOURCE_A, body)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
+    assert record["source_words"] == 9
+
+
+def test_compile_one_persists_stop_reason_and_token_overrun_on_truncation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Truncated calls flow through the finally block — stop_reason and
+    token_overrun must end up on the persisted record."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "two words")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    truncated = ModelResponse(
+        text=json.dumps(_good_response(SOURCE_A)),
+        input_tokens=10, output_tokens=4096, latency_ms=10,
+        model="m", provider="anthropic", attempts=1,
+        stop_reason="max_tokens",
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: truncated}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="m",
+        max_tokens=4096,
+    )
+
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
+    assert record["stop_reason"] == "max_tokens"
+    assert record["token_overrun"] is True
+    assert record["source_words"] == 2  # captured before the truncation guard fired
 
 
 # ---------- run_compile: aggregation ----------

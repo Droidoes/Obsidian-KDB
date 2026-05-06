@@ -171,6 +171,7 @@ def compile_one(
         "compiled_source": None,
         "log_entries": [],
         "warnings": [],
+        "source_words": 0,
     }
 
     try:
@@ -182,6 +183,7 @@ def compile_one(
                 f"{source_id}: source read failed: {type(e).__name__}: {e}"
             )
             return (None, [], [], state["error"])
+        state["source_words"] = len(source_text.split())
 
         # --- build prompt ---
         try:
@@ -315,6 +317,7 @@ def compile_one(
             schema_errors=state["schema_errors"],
             semantic_ok=state["semantic_ok"],
             semantic_errors=state["semantic_errors"],
+            source_words=state["source_words"],
         )
         resp_stats_path = write_resp_stats(record, state_root)
         if stats_record_sink is not None:

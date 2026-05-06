@@ -389,3 +389,85 @@ def test_write_resp_stats_content_is_json(tmp_path: Path) -> None:
     assert data["parsed_summary"]["page_count"] == 0  # parsed_json was {"x":1}
     # gated fields absent (serialized to null)
     assert data["parsed_json"] is None
+
+
+# ---------- stop_reason / token_overrun / source_words (Task #29) ----------
+
+def _model_response_with_stop(stop_reason: str | None) -> ModelResponse:
+    return ModelResponse(
+        text="{}", input_tokens=10, output_tokens=5, latency_ms=10,
+        model="m", provider="anthropic", attempts=1, stop_reason=stop_reason,
+    )
+
+
+def _build_with(
+    tmp_path: Path,
+    *,
+    model_response: ModelResponse | None,
+    source_words: int = 0,
+):
+    ctx = _ctx(tmp_path)
+    return resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=model_response,
+        extract_ok=True, parse_ok=True, parsed_json={},
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+        source_words=source_words,
+    )
+
+
+def test_stop_reason_persisted_from_model_response(tmp_path: Path) -> None:
+    record = _build_with(tmp_path, model_response=_model_response_with_stop("end_turn"))
+    assert record.stop_reason == "end_turn"
+
+
+def test_stop_reason_none_when_no_model_response(tmp_path: Path) -> None:
+    record = _build_with(tmp_path, model_response=None)
+    assert record.stop_reason is None
+
+
+def test_token_overrun_true_for_max_tokens(tmp_path: Path) -> None:
+    record = _build_with(tmp_path, model_response=_model_response_with_stop("max_tokens"))
+    assert record.token_overrun is True
+
+
+def test_token_overrun_true_for_length(tmp_path: Path) -> None:
+    """OpenAI-compat finish_reason='length' must also flip the flag."""
+    record = _build_with(tmp_path, model_response=_model_response_with_stop("length"))
+    assert record.token_overrun is True
+
+
+def test_token_overrun_false_for_normal_stop(tmp_path: Path) -> None:
+    for sr in ("stop", "end_turn", "tool_use", None):
+        record = _build_with(tmp_path, model_response=_model_response_with_stop(sr))
+        assert record.token_overrun is False, f"stop_reason={sr!r} should not overrun"
+
+
+def test_token_overrun_false_when_no_model_response(tmp_path: Path) -> None:
+    record = _build_with(tmp_path, model_response=None)
+    assert record.token_overrun is False
+
+
+def test_source_words_persisted(tmp_path: Path) -> None:
+    record = _build_with(
+        tmp_path, model_response=_model_response_with_stop("end_turn"),
+        source_words=4242,
+    )
+    assert record.source_words == 4242
+
+
+def test_source_words_defaults_to_zero(tmp_path: Path) -> None:
+    """Pre-call failure path: caller may omit source_words, defaults to 0."""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=None, raw_response_text="",
+        model_response=None,
+        extract_ok=False, parse_ok=False, parsed_json=None,
+        schema_ok=False, schema_errors=[],
+        semantic_ok=False, semantic_errors=[],
+    )
+    assert record.source_words == 0

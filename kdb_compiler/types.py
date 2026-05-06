@@ -345,6 +345,9 @@ class RespStatsRecord:
     system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     raw_response_text: Optional[str] = None
+    stop_reason: Optional[str] = None
+    token_overrun: bool = False
+    source_words: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)
