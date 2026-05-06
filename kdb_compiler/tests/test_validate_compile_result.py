@@ -317,3 +317,46 @@ def test_cli_invalid_exits_one() -> None:
 def test_cli_missing_file_exits_two(tmp_path: Path) -> None:
     result = _run_cli(str(tmp_path / "does-not-exist.json"))
     assert result.returncode == 2
+
+
+# ---------- HARD_ZERO_FINDING_TYPES + check_compiled_source (Round 4 CW1) ----------
+
+def test_hard_zero_finding_types_set() -> None:
+    """The 5 hard-zero finding types are exactly the gate-severity types
+    emitted by `_check_source` (excluding `schema_violation`, which is
+    emitted by the top-level `validate()` against the aggregate schema).
+    Stable contract for the benchmark scorer's S3 derivation."""
+    assert vcr.HARD_ZERO_FINDING_TYPES == frozenset({
+        "duplicate_slug",
+        "summary_slug_missing",
+        "summary_slug_wrong_type",
+        "pairing_type_mismatch",
+        "reserved_slug",
+    })
+
+
+def test_check_compiled_source_clean_returns_empty_list() -> None:
+    """A well-formed parsed source dict has no hard-zero findings."""
+    src = _src()  # default: one summary page named 'foo' with summary_slug='foo'
+    assert vcr.check_compiled_source(src) == []
+
+
+def test_check_compiled_source_surfaces_duplicate_slug() -> None:
+    """duplicate_slug is one of the 5 hard-zero types."""
+    src = _src(pages=[
+        {"slug": "foo", "page_type": "summary", "title": "Foo", "body": "x"},
+        {"slug": "foo", "page_type": "concept", "title": "Foo2", "body": "y"},
+    ])
+    findings = vcr.check_compiled_source(src)
+    assert "duplicate_slug" in findings
+
+
+def test_check_compiled_source_filters_out_measure_findings() -> None:
+    """`pairing_commission` and `pairing_omission` are measure-severity
+    (reconcilable, not hard-zero) — the wrapper must NOT include them.
+    A source with a missing concept slug should produce only the
+    measure-finding internally; the wrapper returns []."""
+    src = _src(concept_slugs=["missing_slug"])  # slug declared but no matching page
+    findings = vcr.check_compiled_source(src)
+    assert "pairing_commission" not in findings
+    assert findings == [], findings  # nothing hard-zero here

@@ -8,7 +8,21 @@ import httpx
 import pytest
 
 from kdb_compiler.call_model import ModelRequest, ModelResponse
-from kdb_compiler.call_model_retry import _parse_retry_after, call_model_with_retry
+from kdb_compiler.call_model_retry import (
+    MAX_RETRIES,
+    _parse_retry_after,
+    call_model_with_retry,
+)
+
+
+# ---------- MAX_RETRIES export (Round 4 CW1) ----------
+
+def test_max_retries_constant_is_two() -> None:
+    """MAX_RETRIES is exposed at module level so the benchmark scorer's
+    `retry_load` cap doesn't have to re-derive it from the function
+    default. Stable contract — bumping this value requires a coordinated
+    update to the scorer's clamping rule."""
+    assert MAX_RETRIES == 2
 
 
 # ---------- fixtures / helpers ----------

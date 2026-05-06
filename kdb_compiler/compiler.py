@@ -307,6 +307,8 @@ def compile_one(
         record = build_resp_stats(
             ctx=ctx,
             source_id=source_id,
+            provider=provider,
+            model=model,
             prompt=state["prompt"],
             raw_response_text=state["raw_response_text"],
             model_response=state["model_response"],

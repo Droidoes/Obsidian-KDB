@@ -94,6 +94,23 @@ def score_response(cr: dict, validation: ValidationResult) -> ResponseScore | No
 
 
 # -------------------------------------------------------------------------
+# Hard-zero finding types — exposed for the benchmark scorer (Task #19
+# Phase 3) so it can derive S3 (`validator_hard_zero_pass_rate`) directly
+# from a parsed-source dict via `check_compiled_source` below. Keep this
+# in sync with the gate-severity finding `type` strings emitted by
+# `_check_source`.
+# -------------------------------------------------------------------------
+
+HARD_ZERO_FINDING_TYPES: frozenset[str] = frozenset({
+    "duplicate_slug",
+    "summary_slug_missing",
+    "summary_slug_wrong_type",
+    "pairing_type_mismatch",
+    "reserved_slug",
+})
+
+
+# -------------------------------------------------------------------------
 # Core validation
 # -------------------------------------------------------------------------
 
@@ -250,6 +267,33 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
     for j, p in enumerate(pages):
         if isinstance(p, dict):
             _reserved_check(p.get("slug"), f"{loc}.pages[{j}].slug")
+
+
+# -------------------------------------------------------------------------
+# Public single-source check — wrapper around `_check_source` that
+# returns just the list of HARD-ZERO finding types found in one parsed
+# source dict. Used by the benchmark scorer (Task #19 Phase 3) to derive
+# S3 from `RespStatsRecord.parsed_json` without constructing an aggregate
+# `compile_result` shape. Empty list = source has no hard-zero failures.
+# -------------------------------------------------------------------------
+
+def check_compiled_source(parsed_json: dict) -> list[str]:
+    """Return hard-zero finding types emitted for a single parsed source.
+
+    `parsed_json` must have the same shape as one entry of
+    `compile_result.compiled_sources[]` (i.e. fields `source_id`,
+    `summary_slug`, `concept_slugs`, `article_slugs`, `pages`).
+
+    The 5 hard-zero types currently checked: `duplicate_slug`,
+    `summary_slug_missing`, `summary_slug_wrong_type`,
+    `pairing_type_mismatch`, `reserved_slug` (per
+    `HARD_ZERO_FINDING_TYPES`). Measure-severity findings
+    (`pairing_commission`, `pairing_omission`) are intentionally
+    excluded — they are reconcilable, not hard-zero.
+    """
+    result = ValidationResult()
+    _check_source(parsed_json, 0, result)
+    return [f.type for f in result.gate_errors if f.type in HARD_ZERO_FINDING_TYPES]
 
 
 # -------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # Task #19 — KDB Benchmark KPI Design
 
-**Status:** Phase 2 + **Round 3** (Codex-driven corrections) **CLOSED** 2026-05-04 — page-spam exploit closed, formulas hardened, M5/telemetry implementation tracked as Task #28 / #29 → ready for Phase 3 (detailed spec) once #28 + #29 land
-**Date:** 2026-04-30 (Phase 1 landed; Phase 2 Tier 2 Quality Core restructured same day) → 2026-05-02 (Phase 2 Tier 2 Output/Cost/Efficiency walkthrough complete; 11 → 9 measures) → 2026-05-03 (Phase 2 closed: Q2/Q4/Q5/Q6 resolved, intra-bucket weights allocated) → 2026-05-04 (Round 3: Codex hostile review surfaced M6/M7 page-spam exploit, M2/M3 math defects, M5 versioning ambiguity, doc contradictions; corrections landed — source-words denominator, Jaccard formulas, M5 symmetric + impl-first, M8/M9 demoted to diagnostic-only, weights re-allocated S0=20 / Quality=30 / Integrity=20 / Cost=30 / Efficiency=0)
+**Status:** **Phase 3 + Round 4 CLOSED 2026-05-06** — code-ready spec locked (function signatures, dataclass shapes, per-measure formulas, edge-case policies, average-rank tie handling, final-score formula). Round 4 followed Codex hostile review take 2 (`task19-kpi-design-codex-feedback-take-2.md`): all 8 must-fixes addressed (parse-fail / M6-M7 contradiction; pre-response provider/model fallback in telemetry; cost-persistence wording corrected to Option ε; non-dict parsed_json guards; Borda algorithm renamed to average-rank with all-equal policy; zero-denominator policy split into model-controlled (= 0.0 penalty) vs corpus-controlled (= None pro-rata); RunScore shape gains separate `m6_borda` / `m7_borda` fields; `retry_load` clamped). Only Phase 5 (CODEBASE_OVERVIEW promotion) remains. Earlier: Phase 2 + **Round 3** (Codex-driven corrections) **CLOSED** 2026-05-04 — page-spam exploit closed, formulas hardened, M5/telemetry implementation tracked as Task #28 / #29 (both closed 2026-05-05). See § *Phase 3 — Detailed Spec* below for the locked spec, and § *Round 4 Corrections* at its tail for the delta from take-2.
+**Date:** 2026-04-30 (Phase 1 landed; Phase 2 Tier 2 Quality Core restructured same day) → 2026-05-02 (Phase 2 Tier 2 Output/Cost/Efficiency walkthrough complete; 11 → 9 measures) → 2026-05-03 (Phase 2 closed: Q2/Q4/Q5/Q6 resolved, intra-bucket weights allocated) → 2026-05-04 (Round 3: Codex hostile review surfaced M6/M7 page-spam exploit, M2/M3 math defects, M5 versioning ambiguity, doc contradictions; corrections landed — source-words denominator, Jaccard formulas, M5 symmetric + impl-first, M8/M9 demoted to diagnostic-only, weights re-allocated S0=20 / Quality=30 / Integrity=20 / Cost=30 / Efficiency=0) → 2026-05-05 (Tasks #28 + #29 closed: M5 body-link symmetric Jaccard `validate_compiled_source_response.body_link_check` + RespStatsRecord telemetry plumbing) → 2026-05-06 (Phase 3 closed: detailed scorer spec) → **2026-05-06 Round 4 (Codex take 2: 8 must-fixes + 4 design-calls + 4 cheap-wins all landed; 1 small telemetry code fix + 7 new tests folded in)**
 **Reference:** [`docs/TASKS.md`](TASKS.md) → Task #19 (`open`, parent: Task #5 LLM benchmarking); Task #28 (M5 impl) and Task #29 (telemetry plumbing) gate Phase 3.
 **Companion docs:** [`post-gap-recall-2026-04-30.md`](post-gap-recall-2026-04-30.md) · [`session-handoff-2026-04-21.md`](session-handoff-2026-04-21.md) · [`task19-kpi-design-codex-feedback-take-1.md`](task19-kpi-design-codex-feedback-take-1.md) — adversarial review that drove Round 3
 
@@ -204,7 +204,7 @@ Continuous-valued KPIs that contribute to model ranking. Higher = better (after 
 - **Tier 2 reduces 9 measures / 4 buckets → 7 measures / 3 buckets** (Quality Core, Output Integrity, Production Cost).
 - **Weights re-allocated:** S0=20, M1=20, M2=5, M3=5, M4=15, M5=5, M6=15, M7=15. Total=100%. M1 dominant in Quality Core (graph integrity is the most fundamental KB-compounding signal); M6=M7 (batch workload values $/source-word and ms/source-word equally); Production Cost bucket bumped 20→30% to match Quality Core's importance.
 - **Doc contradictions resolved:** D2 dropped "Tier 2 diagnostic measure" wording (conflicted with Q6); D3 + D5 clarified that `RespStatsRecord` is the scorer's denominator authority (not `compile_result`); Q4 closing language scoped honestly to "deterministic structural telemetry" only.
-- **`scorecard_version` and `pricing_version` explicitly NOT added.** Per user's "rank latest, pick best" workflow — no cross-version comparison plan, so Codex's candidate-set-dependence critique is defused. Cost is computed at run time and persisted as `cost_usd` (no re-derivation). Versioning ceremony has no payoff for this single-user, infrequent workload (per `feedback_no_imaginary_risk`).
+- **`scorecard_version` and `pricing_version` explicitly NOT added.** Per user's "rank latest, pick best" workflow — no cross-version comparison plan, so Codex's candidate-set-dependence critique is defused. Cost is **derived at score time** by the benchmark scorer from `(input_tokens, output_tokens) × ModelEntry.price_in/price_out` (Option ε from 2026-05-05 — the boundary-respecting alternative; `cost_usd` is intentionally **not** persisted on `RespStatsRecord`). Re-priceability falls out for free: change `models.json`, re-score, no record migration. Versioning ceremony has no payoff for this single-user, infrequent workload (per `feedback_no_imaginary_risk`).
 
 **7 scored measures** (was 9 after Round 2, 11 after Round 1, 12 in Phase 1). Weights locked alongside Round 3 closure.
 
@@ -237,7 +237,7 @@ Both rates are **definitions only** — raw per-run aggregates. Cross-model norm
 
 | ID | KPI | What it measures | How to compute (micro-aggregate) | Weight |
 |---|---|---|---|---|
-| **M6** | `cost_per_1k_source_words` | Total LLM cost per 1K source words — input + output billing combined, normalized to a model-independent denominator. Captures the full economic dimension. | `(Σ resp_stats.cost_usd_i ÷ Σ source_words_i) × 1000`, where `cost_usd_i = (input_tokens_i × price_in + output_tokens_i × price_out) / 1_000_000` computed at call time using `kdb_benchmark/models.json` (the per-model `price_in` / `price_out` registry). `cost_usd` is persisted in `RespStatsRecord` (Task #29). | **15%** |
+| **M6** | `cost_per_1k_source_words` | Total LLM cost per 1K source words — input + output billing combined, normalized to a model-independent denominator. Captures the full economic dimension. | `(Σ cost_usd_i ÷ Σ source_words_i) × 1000`, where `cost_usd_i = (input_tokens_i × price_in + output_tokens_i × price_out) / 1_000_000` is **derived at score time** by the benchmark scorer (Option ε): `RespStatsRecord` carries the always-on `input_tokens` / `output_tokens` / `source_words`; the scorer multiplies through `kdb_benchmark/models.json`'s per-model `price_in` / `price_out`. Not persisted — re-priceable historical runs. | **15%** |
 | **M7** | `latency_per_1k_source_words` | Wall-clock latency per 1K source words. Mirrors M6's denominator for cross-model comparability. | `(Σ resp_stats.latency_ms_i ÷ Σ source_words_i) × 1000` | **15%** |
 
 ### Diagnostic-only Telemetry (no weight; tracked for inspection)
@@ -402,6 +402,8 @@ To keep the design tight, these are **explicitly out of scope** for Task #19 —
 
 ## Phase 2 — Status & remaining work
 
+> ⚠️ **Historical record. Superseded by Round 3 (2026-05-04) and Phase 3 / Round 4 (2026-05-06) below.** The intra-bucket weights, measure names, and per-page denominators recorded in this section reflect the pre-Round-3 state and do **not** match the locked Phase 3 spec. They are kept here for design-history continuity. For the current scorer contract, jump to *Phase 3 — Detailed Spec*.
+
 **Resolved in Phase 2** (2026-04-30 → 2026-05-03):
 - ✅ Q1 — Gate thresholds: dropped (D5: no gates).
 - ✅ Q3 — M2 instrumentation: dropped (M2 measure removed; rationale in Q3 below; Task #26 owns the deeper redesign).
@@ -432,16 +434,594 @@ To keep the design tight, these are **explicitly out of scope** for Task #19 —
 - ✅ **M6/M7 denominator → source-words** (page-spam exploit closed; model-independent denominator).
 - ✅ **M8/M9 demoted to diagnostic-only telemetry** + new diagnostic `pages_per_1k_source_words`. Tier 2: 9 measures / 4 buckets → 7 measures / 3 buckets.
 - ✅ **Weights re-allocated:** S0=20, M1=20, M2=5, M3=5, M4=15, M5=5, M6=15, M7=15. Bucket-level: 20/30/20/30/0.
-- ✅ **Telemetry plumbing tracked as Task #29** — extend `RespStatsRecord` with `cost_usd`, `stop_reason`, `token_overrun`; surface per-source `source_words` from corpus metadata.
+- ✅ **Telemetry plumbing tracked as Task #29** — extend `RespStatsRecord` with `stop_reason`, `token_overrun`; surface per-source `source_words` from corpus metadata; require `price_in` / `price_out` on `ModelEntry`. **Note:** the original Round 3 plan also called for persisting `cost_usd` on `RespStatsRecord`, but that was abandoned during Task #29 implementation when it was found to violate the `kdb_compiler -/-> kdb_benchmark` import boundary from Task #18 (`5825d0f`). Replaced with **Option ε** — scorer derives cost at score time from token counts × registry. Cleaner, smaller diff, and yields free re-priceability of historical runs.
 - ✅ **`scorecard_version` / `pricing_version` explicitly NOT added** — user's "rank latest, pick best" workflow has no cross-version compare plan; cost computed and frozen at run time.
 - ✅ **Doc contradictions resolved:** D2 dropped "Tier 2 diagnostic measure" wording; D3 + D5 clarified `RespStatsRecord` as scorer authority (not `compile_result`); Q4 closing language scoped honestly to "deterministic structural telemetry."
 - ✅ **Codex review #6 (Borda pathologies) reckoned with:** candidate-set dependence defused by user workflow; magnitude erasure acknowledged but accepted; tie handling deferred to Phase 3 spec.
 - ✅ **Codex review #12 (D1 blind spot) acknowledged:** Q4 resolution now states the benchmark cannot detect semantic-correctness failures (hallucinations, wrong definitions, near-duplicates) under D1 without ground truth. Task #20 territory.
 
-**Round 3 → Phase 3 Pivot.** Phase 3 is gated on **Task #28 (M5 implementation)** and **Task #29 (telemetry plumbing)** landing first. Once those complete, Phase 3 will:
+**Round 3 → Phase 3 Pivot.** Phase 3 was gated on **Task #28 (M5 implementation)** and **Task #29 (telemetry plumbing)** landing first; both closed 2026-05-05 (`0bcc2b6`, `26b345a`). Phase 3 then converted the locked design into the code-ready scorer spec below.
 
-1. Convert the locked design into code-ready spec — exact computation formulas with function signatures and expected input/output shapes for the future benchmark scorer module.
-2. Define edge cases per measure: zero-denominator policy (M1, M2, M3, M5, M6, M7 — all need explicit handling for empty sets / no-link sources / all-failed corpus), tie handling for Borda normalization, missing-telemetry handling (older models without `cost_usd`).
-3. Land the result as a single commit; this doc becomes the source-of-truth blueprint.
+**Phase 3 status: CLOSED 2026-05-06.** All deliverables landed in this doc as the *Phase 3 — Detailed Spec* section: function signatures, dataclass shapes, per-measure formulas with explicit edge-case policies, Borda tie handling, and the final-score formula (with pro-rata redistribution). Two small housekeeping changes folded into the Phase 3 commit: `MAX_RETRIES = 2` exported from `kdb_compiler/call_model_retry.py` (so the scorer's `retry_load` formula doesn't re-derive the cap); and a public `check_compiled_source(parsed_json) -> list[str]` wrapper added to `kdb_compiler/validate_compile_result.py` (so the scorer can derive S3 hard-zero findings from a parsed-source dict without re-shaping it as an aggregate `compile_result`). Tests: full suite at 455 passed / 1 skipped (unchanged baseline).
 
-Phase 5 will then move the agreed architecture into `docs/CODEBASE_OVERVIEW.md` and close Task #19 in `docs/TASKS.md` with a pointer back to this file as the historical design record.
+Phase 5 will then move the agreed architecture into `docs/CODEBASE_OVERVIEW.md` and close Task #19 in `docs/TASKS.md` with a pointer back to this file as the historical design record. Phase 5 trigger conditions are listed at the end of the Phase 3 spec below.
+
+---
+
+## Phase 3 — Detailed Spec (locked 2026-05-06)
+
+This section converts the locked Round 3 design into code-ready function signatures, dataclass shapes, and per-measure computation rules. The future scorer-impl task (sibling of Tasks #20–#23, depends on #19) lands the actual code; this spec is the contract that code must satisfy.
+
+### 1. Module layout & boundaries
+
+The benchmark scorer lives at `kdb_benchmark/scorer.py` (new file in the existing engine package from Task #18, commit `5825d0f`). It imports from `kdb_compiler` (types + validators) but is never imported by it — preserving the one-way `kdb_benchmark → kdb_compiler` boundary.
+
+**Imports allowed:**
+- `kdb_compiler.types.RespStatsRecord` (data shape)
+- `kdb_compiler.validate_compile_result.check_compiled_source` (added in this commit) and `HARD_ZERO_FINDING_TYPES`
+- `kdb_compiler.call_model_retry.MAX_RETRIES` (added in this commit; for `retry_load` cap)
+- `kdb_benchmark.registry.{ModelEntry, load_registry}` (for cost prices)
+- `kdb_benchmark.paths` constants
+
+**Imports forbidden:**
+- `kdb_compiler.compiler` (compile-time logic — scorer is read-only)
+- `kdb_compiler.run_journal` (journal is the runner's concern, not scorer's)
+
+### 2. Input contract
+
+The scorer reads exactly one source of truth: the `RespStatsRecord` JSON files written by `compile_one`'s finally block, located at:
+
+    <state_root>/llm_resp/<run_id>/<safe_source_id>.json
+
+One file per attempted source. Full corpus coverage (D5 Round 3 — `RespStatsRecord` is the scorer's denominator authority because `compile_result.compiled_sources` excludes failed sources via `compile_one`'s early returns at `compiler.py:185`/`200`/`219`/`231`/`241`/`251`/`262`/`275`).
+
+The aggregate `compile_result.json` is **not** read. Its compiled-sources list is success-only; the parse-failed sources the scorer needs are absent from it.
+
+For benchmark mode, `state_root` resolves under `benchmark/runs/<run_id>/` (exact layout owned by the future runner task; the scorer accepts `state_root` as a parameter and does not assume any specific layout).
+
+### 3. Operational requirement: capture-full mode
+
+Three measures (M1, M2, M3) and the S3 hard-zero derivation require `RespStatsRecord.parsed_json` to be populated. That field is env-gated by `KDB_RESP_STATS_CAPTURE_FULL=1` (`resp_stats_writer.py:42`). The always-on `parsed_summary` carries a *count*-style digest (`page_count`, `page_types: dict[str, int]` histogram, `slugs: list[str]`, `outgoing_link_count: int`) — but **not** per-page `outgoing_links` values nor a per-page `(slug → page_type)` mapping. M1/M2/M3/S3 need both.
+
+**Benchmark mode therefore mandates `KDB_RESP_STATS_CAPTURE_FULL=1`.** The runner sets it; the scorer asserts it. If `score_run()` encounters a matching record where `parse_ok=True` but `parsed_json is None`, it raises `RuntimeError("benchmark mode requires KDB_RESP_STATS_CAPTURE_FULL=1")`.
+
+Production runs (which don't score) can leave the env var unset — bodies stay slim in the steady state. The constraint is purely a benchmark-time operational one; the on-disk record schema is unchanged.
+
+### 4. Edge-case policies (locked)
+
+| Case | Policy | Rationale |
+|---|---|---|
+| **Source with `parse_ok=False`** | Contributes `(0, 0)` to M1/M2/M3/M5 numerator + denominator. Counts as `semantic_ok=False` in M4 (binary 0 to numerator, 1 to N). **Included in M6/M7 if `source_words > 0`** — failed calls still bill cost and latency. Counts in N for S0/S1/M4 and `token_overrun_rate`. | Failure already captured by S0/S1; including it in M1–M5 again would double-count. M6/M7 ARE expected to bill the cost / latency of failed calls — those are economically real (truncation, extract failure, parse failure, schema failure, semantic failure all happen *after* the model call). The `source_words > 0` filter (not `parse_ok=True`) is the right gate. **Round 4 MF1 fix.** |
+| **Source with `parse_ok=True` but non-dict `parsed_json`** | `json.loads()` succeeded but produced a list or scalar (`["foo", "bar"]`, `42`, `null`). Treat as if `parse_ok=False` for M1/M2/M3/M5/S3 derivation: contribute `(0, 0)`. The record is still counted in M4's denominator (`semantic_ok` will be False). The scorer guards every `parsed_json` access with `if not isinstance(r.parsed_json, dict): continue` before dereferencing `["pages"]`, `["concept_slugs"]`, etc. | `parse_ok=True` only proves the JSON parsed; it does NOT prove dict shape. M1/M2/M3 formulas would crash on a list. `check_compiled_source` likewise needs the same guard. **Round 4 MF4 fix.** |
+| **Source with dict `parsed_json` but wrong field types** (e.g., `concept_slugs` is a string, `pages` is `null`, `outgoing_links` not a list) | Treat the offending field as empty for that measure. `D = set(r.parsed_json.get("concept_slugs", []))` becomes `D = set(value) if isinstance(value, list) else set()`. Same defensive coercion `body_link_check` and `build_parsed_summary` already use. | Schema validation (S2) catches these as failures, but the measure formulas still need deterministic behavior. `set("abc")` would otherwise produce `{"a","b","c"}` — three character-slugs that score against the model. **Round 4 CW2 fix.** |
+| **Run-level zero denominator** — distinguish source by who controls it | **Model-controlled denominators (M1/M2/M3/M5):** zero-denominator scores `0.0`, NOT `None`. This prevents abstention from removing a scored dimension — a model emitting zero outgoing-links cannot dodge M1, a model emitting zero concept slugs cannot dodge M2, etc. **Corpus-controlled denominators (M6/M7 source_words):** zero-denominator stays `None` and triggers pro-rata weight redistribution; only true empty-corpus / invalid-corpus pathologies hit this. | Take-1 review's link-abstinence concern, raised again in take-2. The previous "all zero-denom = None" rule rewarded models that produced no structure to evaluate. The split policy keeps the empty-corpus failure mode honest while closing the abstention loophole. **Round 4 MF6 fix.** Reference wording: *"For scored measures whose denominator is model-controlled (M1/M2/M3/M5), a run-level zero denominator scores 0.0, not None. This prevents abstention from removing a scored dimension. Corpus-controlled zero denominators such as M6/M7 source_words remain None and trigger pro-rata redistribution only for true empty/invalid-corpus pathologies."* |
+| **Tie handling — M6/M7 average-rank normalization** | Tied candidates share the **average of their tied ordinal positions** (fractional rank). All-equal-candidates case (every model has the same raw rate): every candidate gets score `0.5` (no signal). | Cleanest mathematically; works for any tie pattern at any position. Worked example in § 7. **Round 4 MF5 fix** — the algorithm is "average-rank / fractional rank," not "dense rank with averaging" (the term used in earlier drafts described a different scheme). |
+| **`source_words = 0`** (empty-source pathology — corpus-side bug) | Source excluded from BOTH numerator and denominator of M6, M7, and `pages_per_1k_source_words`. Scorer logs a warning. | `(cost_usd, 0)` and `(latency_ms, 0)` are meaningless per-source contributions; corpus curation should prevent the case from arising. |
+| **`token_overrun=True` source** | No exclusion. Counts toward cost (M6) and latency (M7) like any other call. Surfaced separately in the unweighted `token_overrun_rate` diagnostic. | M8/M9 demotion's whole point: cost and latency naturally absorb overrun effort. Separate scoring would double-count. |
+| **`attempts` corner cases** for `retry_load` | Per-source contribution is `min(MAX_RETRIES, max(0, attempts_i − 1))` — clamped at `MAX_RETRIES` so overridden `max_attempts` cannot push the diagnostic above 1.0; floor-clamped at 0 so pre-call failures (where `attempts=0`) don't subtract. | `call_model_with_retry` accepts `max_attempts` as a parameter and nothing forbids `attempts > MAX_RETRIES + 1` in research/override modes. Clamping is permissive. **Round 4 MF8 fix.** |
+| **M1 link-resolution target set** (no Task #20 ground truth yet) | Resolution set = union of `parsed_summary.slugs` from all `parse_ok=True ∧ schema_ok=True ∧ isinstance(parsed_json, dict)` records in this run. When Task #20 ships, the truth manifest joins this union. | Without ground truth, the run's own emitted slugs are the only valid resolution corpus. Within-run cross-source resolution is meaningful (sources can legitimately link to each other's pages). |
+| **M1 duplicate outgoing links** in one page (`outgoing_links: ["bar", "bar"]`) | **List semantics**: each occurrence counts separately. `denominator += 2`; `numerator` increments once if `"bar"` is in `target_set`, twice if both occurrences are. | Matches the on-disk shape (no implicit dedup). M5 explicitly uses set semantics in `body_link_check`; M1 explicitly uses list semantics. The two contracts are complementary and both deliberate. **Round 4 CW3 fix** — undefined in Phase 3 take-1; locked here. |
+| **Multiple records for the same `source_id`** in one run | Scorer raises `ValueError("duplicate (run_id, source_id)")`. Do not silently dedupe. | `compile_one` writes one record per source per run by design. Duplication signals a bug. |
+| **`provider` / `model` field on pre-response failures** | The on-disk record now persists the **requested** provider/model (from the runner's call site) when `model_response is None`, not empty strings. The scorer's filter contract `(run_id, provider, model)` therefore holds for parse-failed and source-read-failed records too. | Earlier RespStatsRecord persisted `provider=""` / `model=""` when no `ModelResponse` existed (`resp_stats_writer.py:147-149` pre-Round-4) — pre-response failures vanished from the scorer's denominator. Telemetry code fix (one line) folded into this commit. **Round 4 MF2 fix.** |
+
+### 5. Dataclass shapes
+
+```python
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+@dataclass(frozen=True)
+class MeasureScore:
+    """One measure's contribution to a model's run score."""
+    name: str                # "S0", "M1", ..., "M7", "retry_load", ...
+    numerator: float         # raw aggregate; semantic per measure
+    denominator: float       # raw aggregate; semantic per measure
+    rate: Optional[float]    # numerator / denominator; None if denominator == 0
+    weight: float            # 0.20, 0.05, ... or 0.0 for diagnostics
+
+    def to_dict(self) -> dict: ...
+
+
+@dataclass(frozen=True)
+class RunScore:
+    """Per-(model, run) full scorecard. Single-model view.
+
+    `MeasureScore.rate` always carries the **raw** measurement (set ratios
+    in [0, 1] for S0/S1/S2/S3/M1–M5; raw $/ms-per-1K-words for M6/M7).
+    The Borda-normalized [0, 1] scores for M6/M7 live separately in
+    `m6_borda` / `m7_borda` so the underlying MeasureScore stays
+    immutable and unit-stable. `final_score` is None until normalization
+    has been applied across the candidate set via `score_runs()`.
+    """
+    run_id: str
+    model_id: str                          # ModelEntry.id — stable scorecard key
+    provider: str                          # ModelEntry.provider — derived for billing
+    model: str                             # ModelEntry.model — derived for billing
+    n_attempted: int                       # = len(matching RespStatsRecords)
+    s0: MeasureScore                       # weight = 0.20 (only S* with weight)
+    s1: MeasureScore                       # diagnostic, weight = 0.0
+    s2: MeasureScore                       # diagnostic, weight = 0.0
+    s3: MeasureScore                       # diagnostic, weight = 0.0
+    measures: dict[str, MeasureScore]      # keys: "M1", "M2", "M3", "M4", "M5", "M6", "M7"; M6/M7 rates are RAW
+    diagnostics: dict[str, MeasureScore]   # keys: "retry_load", "token_overrun_rate", "pages_per_1k_source_words"
+    m6_borda: Optional[float]              # M6 Borda-normalized score in [0, 1]; None until score_runs() applied
+    m7_borda: Optional[float]              # M7 Borda-normalized score in [0, 1]; None until score_runs() applied
+    final_score: Optional[float]           # populated by score_runs(); None on raw RunScore
+
+    def to_dict(self) -> dict: ...
+```
+
+`MeasureScore` carries both raw `(numerator, denominator)` and the derived `rate` so a scorecard reader can drill into the underlying counts without re-deriving. `weight` is stored on the score (not on a separate weight table) so the dataclass is self-describing. **MeasureScore is immutable and unit-stable** — `rate` for M6/M7 always denotes the raw $/ms-per-1K-words; the Borda-normalized [0, 1] form lives on `RunScore.m6_borda` / `m7_borda` instead. **Round 4 MF7 fix** — earlier draft proposed replacing M6/M7 rates in-place during `score_runs()`, which would have produced inconsistent shapes (raw numerator/denominator + normalized rate inside one `MeasureScore`). The split-field design preserves immutability and makes the scorecard layer's responsibilities clearer.
+
+### 6. Per-measure computation rules
+
+**Notation throughout:**
+- `R` = list of all `RespStatsRecord` matching `(run_id, provider, model)` derived from `model_id` lookup (see § 9 — score_run takes `model_id`, looks up the registry's `(provider, model)`, and filters records on those).
+- `R_p`  = `{ r ∈ R : r.parse_ok ∧ isinstance(r.parsed_json, dict) }` (parse-pass with dict shape).
+- `R_ps` = `{ r ∈ R_p : r.schema_ok }` (parse + schema pass).
+- `r.parsed_json` is the always-present parsed dict (capture-full mode required — see § 3). **Every dereference of `r.parsed_json["pages"]`, `r.parsed_json["concept_slugs"]`, etc. is guarded by `isinstance(r.parsed_json, dict)` first** (Round 4 MF4) — non-dict parsed values (parse succeeded into a list/scalar) contribute `(0, 0)` to per-page measures.
+- **Defensive field coercion:** for any field expected to be `list[str]`, the scorer treats non-list or non-string-element values as empty (Round 4 CW2). `D = set(value) if isinstance(value, list) else set()` — never `set(maybe_a_string)`, which would produce char-slugs.
+- All measures use **micro-aggregation** per D4: per-source numerators and denominators accumulate across the corpus; the rate is computed once over the sums.
+
+#### S0 — `pipeline_success_rate` (weight 20%)
+
+```
+numerator   = |{ r ∈ R : r.parse_ok ∧ r.schema_ok ∧ isinstance(r.parsed_json, dict)
+                         ∧ no_hard_zero(r.parsed_json) }|
+denominator = |R|
+rate        = numerator / denominator   (None iff |R| == 0)
+```
+
+where `no_hard_zero(parsed_json) := check_compiled_source(parsed_json) == []`.
+
+**Round 4 rename (MF5/DC1):** previously `end_to_end_success_rate`. The honest name is `pipeline_success_rate` — S0 = S1 ∧ S2 ∧ S3 covers parse + schema + hard-zero but **not** `semantic_ok`. Calling it "end-to-end" overclaimed against production semantics, where a source must also pass `semantic_check` to land in `compile_result.compiled_sources`. The locked Round 3 formula is preserved (no Round 3 reopening); only the name changes. Production behavior remains a slightly stronger condition than S0 PASS — the gap is captured by M4 at 15% weight, and a model with high S0 + low M4 is a recognizable failure pattern.
+
+#### S1 — `llm_resp_success_rate` (diagnostic, weight 0)
+
+```
+numerator   = |R_p|       # parse_ok == True ∧ isinstance(parsed_json, dict)
+denominator = |R|
+```
+
+#### S2 — `validator_schema_pass_rate` (diagnostic, weight 0; conditional on S1)
+
+```
+numerator   = |{ r ∈ R_p : r.schema_ok }|
+denominator = |R_p|
+```
+
+`schema_ok` is from the *per-source* validator (`validate_compiled_source_response.validate`), not the aggregate one. Maps 1:1 because the aggregate `schema_violation` finding type and the per-source schema-validation result both express "the JSON does not satisfy the response schema."
+
+#### S3 — `validator_hard_zero_pass_rate` (diagnostic, weight 0; conditional on S1)
+
+```
+numerator   = |{ r ∈ R_p : check_compiled_source(r.parsed_json) == [] }|
+denominator = |R_p|
+```
+
+The 5 hard-zero finding types live in `HARD_ZERO_FINDING_TYPES` (`kdb_compiler/validate_compile_result.py`) and are: `duplicate_slug`, `summary_slug_missing`, `summary_slug_wrong_type`, `pairing_type_mismatch`, `reserved_slug`. Measure-severity findings (`pairing_commission`, `pairing_omission`) are intentionally excluded — they are reconcilable, not hard-zero.
+
+#### M1 — `link_target_resolution` (weight 20%, Quality Core)
+
+```
+target_set = set()
+for r in R_ps:
+  pages = r.parsed_json.get("pages")
+  if isinstance(pages, list):
+    for p in pages:
+      if isinstance(p, dict) and isinstance(p.get("slug"), str):
+        target_set.add(p["slug"])
+
+numerator   = 0
+denominator = 0
+for r in R_p:
+  pages = r.parsed_json.get("pages")
+  if not isinstance(pages, list):
+    continue
+  for p in pages:
+    if not isinstance(p, dict):
+      continue
+    links = p.get("outgoing_links")
+    if not isinstance(links, list):
+      continue
+    for link in links:                      # LIST SEMANTICS — duplicates count
+      if not isinstance(link, str):
+        continue
+      denominator += 1
+      if link in target_set:
+        numerator += 1
+
+rate = numerator / denominator   (0.0 if denominator == 0 — see § 4 zero-denom row)
+```
+
+**List semantics for outgoing_links** (Round 4 CW3): duplicates within a single page's `outgoing_links` (`["bar", "bar"]`) count separately. M5 explicitly uses set semantics (in `body_link_check`); M1 uses list semantics. Both are deliberate — M1 measures graph-resolution rate per *declaration*, M5 measures parity per *unique slug*.
+
+**Zero-denominator policy** (Round 4 MF6): a model emitting zero outgoing_links across the corpus scores M1 = 0.0 (model-controlled denominator → abstention is penalized, not redistributed).
+
+**Self-link semantics:** if a page declares an outgoing link to its own slug, that counts as resolved (the slug is in `target_set` because the page is in `pages[]`). Production behavior agrees.
+
+**Cross-source semantics:** if source A's page X has `outgoing_links: ["Y"]` and slug "Y" is a page in source B (also parse-pass + schema-pass), it counts as resolved. Within-run cross-source resolution is the intended behavior — the run's emitted slugs collectively form the link target manifest in benchmark mode.
+
+#### M2 — `concept_slugs_coverage` (weight 5%, Quality Core, Jaccard)
+
+```
+numerator   = 0
+denominator = 0
+for r in R_p:
+  raw_slugs = r.parsed_json.get("concept_slugs")
+  D = set(raw_slugs) if isinstance(raw_slugs, list) else set()      # CW2 coercion
+  D = {s for s in D if isinstance(s, str)}
+  pages = r.parsed_json.get("pages")
+  E = set()
+  if isinstance(pages, list):
+    for p in pages:
+      if isinstance(p, dict) and p.get("page_type") == "concept" and isinstance(p.get("slug"), str):
+        E.add(p["slug"])
+  numerator   += | D ∩ E |
+  denominator += | D ∪ E |
+
+rate = numerator / denominator   (0.0 if denominator == 0 — see § 4 zero-denom row)
+```
+
+Per-source contribution `(0, 0)` when both `D` and `E` are empty does not affect the rate. The coercion guard (Round 4 CW2) protects against `concept_slugs` being something other than `list[str]` — `set("foo")` would otherwise produce `{"f", "o"}`.
+
+**Zero-denominator policy** (Round 4 MF6): a model emitting zero concept_slugs AND zero concept-typed pages across the corpus scores M2 = 0.0 (model-controlled denominator → abstention penalized).
+
+#### M3 — `article_slugs_coverage` (weight 5%, Quality Core, Jaccard)
+
+Identical to M2 with `concept_slugs` → `article_slugs` and `"concept"` → `"article"`. Same CW2 coercion guard, same MF6 zero-denominator policy (= 0.0 if a model emits no article structure).
+
+#### M4 — `semantic_pass_rate` (weight 15%, Output Integrity)
+
+```
+numerator   = |{ r ∈ R : r.semantic_ok }|
+denominator = |R|
+```
+
+`semantic_ok` is False whenever `parse_ok` is False (by `compile_one`'s state initialization at `compiler.py:168`), so M4 naturally captures parse failures without a separate clause. M4's 15% weight already absorbs the four semantic-contract rules enforced by `validate_compiled_source_response.semantic_check`.
+
+#### M5 — `body_link_syntax_match` (weight 5%, Output Integrity, symmetric Jaccard)
+
+```
+numerator   = Σ_{r ∈ R} r.body_link_intersection
+denominator = Σ_{r ∈ R} r.body_link_union
+
+rate = numerator / denominator   (0.0 if denominator == 0 — see § 4 zero-denom row)
+```
+
+Both fields are always-on (Task #28, commit `0bcc2b6`). They default to 0 when `parse_ok=False`, so failed sources contribute `(0, 0)` naturally.
+
+**Zero-denominator policy** (Round 4 MF6): a model emitting zero declared outgoing_links AND zero body wikilinks across the corpus scores M5 = 0.0 (model-controlled denominator → abstention penalized).
+
+#### M6 — `cost_per_1k_source_words` (weight 15%, Production Cost; raw $ rate, lower-is-better)
+
+```
+Look up (price_in, price_out) from load_registry() by model_id.
+
+numerator   = 0.0
+denominator = 0
+for r in R where r.source_words > 0:                  # parse_ok IRRELEVANT — failed calls bill too
+  cost_usd_i  = (r.input_tokens × price_in + r.output_tokens × price_out) / 1_000_000
+  numerator   += cost_usd_i
+  denominator += r.source_words
+
+rate = (numerator / denominator) × 1000   (raw $ / 1K source-words)
+       (None iff denominator == 0 — corpus-controlled, redistributed pro-rata in § 8)
+```
+
+**Round 4 MF1 clarification:** the filter is `source_words > 0`, **not** `parse_ok=True`. Truncation, extract failure, parse failure, schema failure, semantic failure — all happen *after* the model call (`compiler.py:203-321`); their token costs are economically real and should bill. The earlier "exclude parse-failed from M6/M7" rule was wrong (and contradicted the rationale column of the same edge-case table).
+
+Local/Ollama models have `price_in = price_out = 0.0` (Task #29 schema lock) so `cost_usd_i = 0` for them by construction — no special-casing needed in the scorer.
+
+The raw rate is preserved here per Q2's resolution. Cross-model rank-normalization happens at scorecard time via average-rank Borda (§ 7).
+
+**Zero-denominator policy** (Round 4 MF6): M6's denominator is **corpus-controlled** (every benchmark source has source_words > 0 by construction). Zero-denom is a degenerate empty/invalid-corpus pathology only — `rate = None` and the M6 weight redistributes pro-rata (§ 8). NOT the model-controlled abstention case.
+
+#### M7 — `latency_per_1k_source_words` (weight 15%, Production Cost; raw ms rate, lower-is-better)
+
+```
+numerator   = 0
+denominator = 0
+for r in R where r.source_words > 0:                  # parse_ok IRRELEVANT — failed calls take time too
+  numerator   += r.latency_ms
+  denominator += r.source_words
+
+rate = (numerator / denominator) × 1000   (raw ms / 1K source-words)
+       (None iff denominator == 0 — corpus-controlled, redistributed pro-rata in § 8)
+```
+
+Same rationale as M6: failed calls still take wall-clock time (`r.latency_ms` is set by `call_model_with_retry`), so they belong in the latency-per-1K-source-words rate. Same corpus-controlled MF6 zero-denom policy.
+
+#### Diagnostic — `retry_load` (weight 0)
+
+```
+numerator   = Σ_{r ∈ R} min(MAX_RETRIES, max(0, r.attempts − 1))
+denominator = |R| × MAX_RETRIES         # MAX_RETRIES from kdb_compiler.call_model_retry
+
+rate = numerator / denominator   (None iff |R| == 0; bounded [0.0, 1.0] always)
+```
+
+Cap-normalized — fraction of the maximum possible retry budget the run actually consumed. Sources with `attempts = 0` (pre-call failures, no model_response set) clamp to 0 (floor); sources where production code overrides `max_attempts > MAX_RETRIES + 1` (research mode) clamp at `MAX_RETRIES` (ceiling). **Round 4 MF8 fix** — without the upper clamp, an overridden `max_attempts` could push the diagnostic above 1.0, breaking the cap-normalized contract.
+
+#### Diagnostic — `token_overrun_rate` (weight 0)
+
+```
+numerator   = |{ r ∈ R : r.token_overrun }|
+denominator = |R|
+```
+
+`token_overrun` is the boolean from Task #29 telemetry plumbing (`stop_reason in {"max_tokens", "length"}`).
+
+#### Diagnostic — `pages_per_1k_source_words` (weight 0)
+
+```
+For each r ∈ R where r.source_words > 0:
+  pages_i      = r.parsed_summary.page_count if r.parse_ok else 0
+  numerator   += pages_i
+  denominator += r.source_words
+
+rate = (numerator / denominator) × 1000   (pages / 1K source-words)
+       (None iff denominator == 0)
+```
+
+Surfaces fragmentation tendency without scoring it. `parsed_summary.page_count` is always present when `parse_ok=True` (resp_stats_writer always builds it on parse-pass).
+
+### 7. Average-rank normalization (M6, M7)
+
+**Round 4 rename (MF5):** previously called "Borda rank-normalization, dense rank with averaging." The algorithm we actually run is **fractional rank** (a.k.a. average-rank): tied candidates share the average of their tied ordinal positions. Dense rank, standard competition rank, and modified competition rank are all distinct schemes that this algorithm is NOT. The function name `borda_normalize` is preserved for continuity but the algorithm-name in prose is now honest.
+
+```python
+def borda_normalize(
+    runs: list[RunScore],
+    measure: str,                # "M6" or "M7"
+    *,
+    lower_is_better: bool,
+) -> dict[str, float]:
+    """
+    Returns {model_id → normalized score in [0, 1]}.
+
+    Algorithm (fractional rank / average-rank):
+      1. Drop any RunScore where measures[measure].rate is None
+         (no data on this measure → no Borda value; that model gets
+         no entry in the returned dict).
+      2. Sort the remaining N runs by raw rate
+         (ascending if lower_is_better else descending).
+      3. Assign FRACTIONAL RANKS — for each candidate, its rank is
+         the AVERAGE of the consecutive ordinal positions it shares
+         with any tied peers (e.g., 3 candidates tied at sorted
+         positions 1, 2, 3 → all three get rank (1+2+3)/3 = 2.0).
+      4. Convert rank → score:
+            score = (N − rank) / (N − 1)            if N ≥ 2
+            score = 1.0                              if N == 1
+            score = 0.5  (every candidate)           if all rates equal       <-- all-equal policy
+         Strict best gets 1.0; strict worst gets 0.0; ties share the
+         interior value implied by their averaged rank. When *every*
+         rate is equal the all-equal-candidates policy returns 0.5
+         for every candidate (no signal in this dimension).
+    """
+```
+
+**Tie-handling worked example (5 candidates, lower-is-better, raw rates `[0.001, 0.001, 0.002, 0.005, 0.005]`):**
+
+| Candidate | Raw rate | Sorted ordinal positions | Fractional rank | Borda score |
+|---|---|---|---|---|
+| A | 0.001 | tied at 1st & 2nd | (1+2)/2 = 1.5 | (5−1.5)/4 = **0.875** |
+| B | 0.001 | tied at 1st & 2nd | 1.5 | **0.875** |
+| C | 0.002 | 3rd | 3 | (5−3)/4 = **0.5** |
+| D | 0.005 | tied at 4th & 5th | (4+5)/2 = 4.5 | (5−4.5)/4 = **0.125** |
+| E | 0.005 | tied at 4th & 5th | 4.5 | **0.125** |
+
+Strict best (no tie at top) would get 1.0; strict worst (no tie at bottom) would get 0.0. Here both extremes are tied, so the shared scores are interior (0.875 and 0.125 respectively) — by design. The "best gets 1.0, worst gets 0.0" prose holds for *strict* extremes only; tied extremes share the average-rank value, which is interior. **Round 4 MF5 fix** — earlier draft prose oversimplified to "best gets 1.0; worst gets 0.0" without qualifying for tied extremes.
+
+**All-equal policy (Round 4 MF5):** if every candidate has the same raw rate, the algorithm returns 0.5 for every candidate (no signal). Mathematically the natural behavior of fractional rank — when all N candidates tie at positions 1..N, each gets rank `(N+1)/2`, and `(N − (N+1)/2) / (N − 1)` simplifies to `0.5`.
+
+**Codex review #6 reckoning** (carried forward from Round 3, still applies):
+- *Candidate-set dependence* — adding/removing a candidate shifts other scores. **Defused** by user workflow ("rank latest, pick best", no cross-version compare).
+- *Magnitude erasure* — rank treats $0.001 → $0.002 (2×) and $0.002 → $0.100 (50×) as adjacent steps. **Acknowledged but accepted** under same workflow logic; raw rates remain visible in the scorecard for human magnitude inspection.
+- *Tie handling undefined* — **resolved here** as fractional rank (average ordinal) with explicit all-equal policy.
+
+### 8. Final-score formula (post-Borda)
+
+For each `RunScore` after average-rank normalization of M6 and M7:
+
+```python
+components = [
+    ("S0", 0.20, run.s0.rate),                        # always present (rate is 0.0/[0,1] never None for non-empty R)
+    ("M1", 0.20, run.measures["M1"].rate),            # 0.0 on model-controlled zero-denom (MF6) — never None
+    ("M2", 0.05, run.measures["M2"].rate),            # 0.0 on model-controlled zero-denom (MF6)
+    ("M3", 0.05, run.measures["M3"].rate),            # 0.0 on model-controlled zero-denom (MF6)
+    ("M4", 0.15, run.measures["M4"].rate),            # always present (binary over corpus N)
+    ("M5", 0.05, run.measures["M5"].rate),            # 0.0 on model-controlled zero-denom (MF6)
+    ("M6", 0.15, run.m6_borda),                       # None iff M6 corpus-controlled zero-denom — pro-rata redistributes
+    ("M7", 0.15, run.m7_borda),                       # None iff M7 corpus-controlled zero-denom — pro-rata redistributes
+]
+
+score_sum       = 0.0
+present_weights = 0.0
+for _, weight, rate in components:
+    if rate is not None:
+        score_sum       += weight * rate
+        present_weights += weight
+
+if present_weights == 0:
+    raise ValueError("degenerate run: every scored component is None")
+
+final_score = score_sum / present_weights   # always in [0, 1]
+```
+
+**Round 4 split-policy mechanics (MF6):**
+
+- **S0/M1/M2/M3/M5** (model-controlled denominator) never become `None` due to model abstention — they score `0.0` and stay weighted. Pro-rata redistribution does NOT save a model that produces no structure.
+- **M6/M7** (corpus-controlled denominator) become `None` only if the entire corpus has `source_words = 0` everywhere — a corpus-curation pathology, not a model behavior. Their weight redistributes pro-rata to the model-controlled measures and S0.
+- When all 8 components are present, `present_weights == 1.0` and `final_score` is the simple weighted sum. When M6 or M7 is `None` (corpus pathology), the remaining weights renormalize so `final_score` stays in `[0, 1]`. If every component is `None` (every measure missing — degenerate corpus), `score_runs` raises rather than producing a meaningless score.
+
+**Worth naming explicitly** (Round 4 design-call carried forward): this benchmark assumes the corpus contains opportunities for each scored dimension. If a future corpus is intentionally constructed without (say) any reason to emit outgoing links, M1's "0.0 on zero-denom" rule will mis-score model behavior; that scenario will need a corpus-aware policy. v1 chooses simplicity over corpus introspection.
+
+### 9. Function signatures
+
+```python
+from pathlib import Path
+from kdb_benchmark.paths import MODELS_JSON
+from kdb_benchmark.registry import ModelEntry
+
+
+def score_run(
+    state_root: Path,
+    run_id: str,
+    model_id: str,                              # ModelEntry.id — stable scorecard key
+    *,
+    registry_path: Path = MODELS_JSON,
+) -> RunScore:
+    """Single-model entry point.
+
+    Identity contract (Round 4 DC2): the scorer is parameterized by
+    `model_id` (ModelEntry.id), not by raw (provider, model). The scorer
+    looks up the matching ModelEntry in the registry, derives the
+    expected (provider, model) for billing-and-filter purposes, and
+    reads every RespStatsRecord JSON file under
+    <state_root>/llm_resp/<run_id>/. Each record's persisted
+    (provider, model) — including pre-response-failure records, which
+    now carry the requested values per Round 4 MF2 — must match the
+    expected (provider, model); otherwise ValueError.
+
+    The runner contract is **one run_id per ModelEntry.id** — if a single
+    benchmark run spans multiple models, each gets its own run_id. The
+    scorer enforces this by raising on any provider/model mismatch.
+
+    Returns: RunScore with raw rates (M6/M7 are raw $ / ms per 1K source
+    words). `m6_borda`, `m7_borda`, and `final_score` are all None on
+    the returned object — populated only by score_runs() across peers.
+
+    Raises:
+      ValueError    — no records match (run_id) in this state_root
+      ValueError    — duplicate (run_id, source_id) records found
+      ValueError    — record's (provider, model) doesn't match the
+                      ModelEntry derived from `model_id`
+      ValueError    — `model_id` not present in the registry
+      RuntimeError  — capture-full mode required (parse_ok=True records
+                      found with parsed_json=None)
+    """
+
+
+def score_runs(runs: list[RunScore]) -> list[RunScore]:
+    """Cross-model enrichment. Runs average-rank normalization on M6 and
+    M7 across the given runs, computes final_score for each, returns a
+    NEW list of RunScore objects with `m6_borda`, `m7_borda`, and
+    `final_score` populated. Raw `measures["M6"]` and `measures["M7"]`
+    rates are preserved unchanged on every returned RunScore — the
+    Borda values live in the dedicated `m6_borda` / `m7_borda` fields
+    so MeasureScore stays unit-stable (Round 4 MF7).
+
+    Original `runs` list is not mutated.
+
+    Raises ValueError if `runs` is empty or if every component on every
+    run is None (degenerate corpus / impossible scoring)."""
+
+
+def borda_normalize(
+    runs: list[RunScore],
+    measure: str,
+    *,
+    lower_is_better: bool,
+) -> dict[str, float]:
+    """See § 7. Returns {model_id → normalized score in [0, 1]}.
+    Public for testability and future scorecard reuse."""
+```
+
+**Loader contract (Round 4 DC3):** `score_run()` reads the raw JSON files via dict access. `RespStatsRecord` is reconstructed only as far as needed for the scorer's contract — at minimum, fields `run_id`, `source_id`, `provider`, `model`, `attempts`, `latency_ms`, `input_tokens`, `output_tokens`, `parse_ok`, `schema_ok`, `semantic_ok`, `parsed_json`, `parsed_summary`, `source_words`, `body_link_intersection`, `body_link_union`, `stop_reason`, `token_overrun` are required. Missing fields raise `ValueError`. The scorer uses dict access internally; the §6 pseudocode notation `r.attempts` etc. is shorthand for `record_dict["attempts"]`. (Round 4 doesn't mandate full dataclass reconstruction — that's a scorer-impl-task choice; the input contract is dict-shaped JSON.)
+
+### 10. Housekeeping changes folded into the Phase 3 + Round 4 commits
+
+Three Phase 3 refactors landed in commit (a) so the future scorer-impl task can import what it needs without re-touching `kdb_compiler` for ergonomic reasons; one Round 4 telemetry fix landed in commit (b) so the scorer's filter contract holds for pre-response failures:
+
+1. **`MAX_RETRIES = 2` exported from `kdb_compiler/call_model_retry.py`** (Phase 3). The function default `max_attempts=MAX_RETRIES + 1` so behavior is unchanged. `retry_load` cap derivation now imports the constant rather than re-deriving from the function default.
+
+2. **`check_compiled_source(parsed_json) -> list[str]` added to `kdb_compiler/validate_compile_result.py`** (Phase 3). A thin wrapper around the existing private `_check_source` that returns just the list of HARD-ZERO finding type strings (filtered against `HARD_ZERO_FINDING_TYPES`, also exposed). The existing `_check_source` API (in-place mutation of `ValidationResult`) is preserved for `validate()`'s use; the wrapper exists because the scorer needs a clean list-of-strings contract, not a result object to inspect. Measure-severity findings (`pairing_commission`, `pairing_omission`) are intentionally excluded by the wrapper — they are reconcilable, not hard-zero.
+
+3. **Round 4 MF2 telemetry fix.** `build_resp_stats` in `kdb_compiler/resp_stats_writer.py` gained optional `provider`/`model` keyword arguments (defaulting to `""` for backward compatibility) and uses them as fallback when `model_response is None`. `compile_one` now passes the requested `provider`/`model` to `build_resp_stats` so pre-response failures (source-read fail, prompt-build fail, model-call fail) persist the **requested** provider/model on `RespStatsRecord` — not empty strings. Without this fix, those records would vanish from the scorer's `(provider, model)` filter and skew S0/S1/M4 denominators.
+
+4. **CW1 tests added** (Round 4). Three small targeted tests cover the new exports and the MF2 fallback: `MAX_RETRIES == 2`, `HARD_ZERO_FINDING_TYPES` set membership, `check_compiled_source` clean-vs-hard-zero behavior, and `check_compiled_source` filtering of measure-severity findings (no `pairing_commission` leakage). Plus `build_resp_stats` correctly persisting the requested provider/model on pre-response failures and preferring `model_response`-derived values when present.
+
+**Stub at `kdb_compiler/validate_compile_result.score_response`** (returns None) is **NOT** removed in either commit. It is load-bearing-zero — called from `kdb_compiler/kdb_compile.py:314` and its None result is written into the run journal as `response_score`. Removing it would cascade into journal consumers and is out of Phase 3 / Round 4 scope. Marked for removal at Phase 5 (CODEBASE_OVERVIEW promotion) or with the future scorer-impl task, whichever lands first.
+
+### 11. Out of scope for Phase 3 (deferred)
+
+| Concern | Owner |
+|---|---|
+| Implementation of `kdb_benchmark/scorer.py` itself (the actual code) | Future scorer-impl task |
+| Unit tests per measure + integration test against a fixture corpus | Same task |
+| Scorecard rendering — column order, JSON shape, terminal pretty-print | Task #22 |
+| Multi-run aggregation (averaging scores across N runs of the same model) | Future runner task |
+| Weight-perturbation sensitivity analysis (the v2-trigger condition from the Weight Philosophy section) | Outside the static scorer; deferred until first benchmark spreads land |
+| Ground-truth-anchored evaluation (semantic correctness, hallucinations, near-duplicate slugs) | Task #20 |
+| Removing the dead `score_response` stub | Phase 5 / scorer-impl task |
+| Scorecard versioning (`scorecard_version` / `pricing_version`) | **NOT planned** per locked Round 3 decision; user workflow has no cross-version compare |
+| **Comparability disclaimer in scorecard output** (Round 4 DC4) | **Task #22 is responsible for emitting one.** The scorecard format must include explicit text that *final_score is comparable only within the candidate set emitted in the same scorecard*; raw rates remain the cross-run inspection surface. Without this disclaimer, the average-rank candidate-set dependence will be misread as historical comparability. Phase 3 spec calls it out here so #22 can't drop it. |
+| **Corpus-aware zero-denominator policy** (Round 4 MF6 design-call) | Future task / Task #20 territory. v1 chose simplicity: M1/M2/M3/M5 zero-denominator scores 0.0 (assumes corpus has opportunity for each dimension). If a future corpus is intentionally constructed without (say) any reason to emit outgoing links, M1's "0.0 on zero-denom" rule will mis-score model behavior. That scenario will need a corpus-aware policy. |
+
+### 12. Phase 5 trigger conditions
+
+This spec graduates to `docs/CODEBASE_OVERVIEW.md` once **all** of the following hold:
+
+1. The future scorer-impl task lands a working `kdb_benchmark/scorer.py` matching the contract in § 9.
+2. Unit tests covering each measure's edge-case policies from § 4 are green.
+3. At least one real benchmark run produces a `RunScore` that survives manual inspection — the rates are within plausible ranges and the diagnostic fields agree with raw `RespStatsRecord` counts.
+
+At that point Phase 5:
+- Promotes the *architecture* (the locked weights, the bucket structure, the input-contract / boundary rules) into the North Star doc.
+- Leaves the *spec mechanics* (the Phase 3 + Round 4 sections above) here as historical record.
+- Removes the dead `score_response` stub and its test.
+- Closes Task #19 in `docs/TASKS.md` with a pointer back to this file.
+
+---
+
+## Round 4 Corrections (locked 2026-05-06)
+
+**Trigger:** `task19-kpi-design-codex-feedback-take-2.md` — adversarial review of the Phase 3 spec landed earlier the same day. Review surfaced 8 must-fixes, 4 design-calls, 4 cheap-wins, and 3 defensible findings. All 8 must-fixes accepted; all 4 design-calls accepted with simple-policy leans (model_id-as-identity, dict-access loader, comparability disclaimer, S0 rename); all 4 cheap-wins folded in.
+
+**Outcome:** Phase 3 spec amended in-place above; this section is the change-log.
+
+### Round 4 corrections delta from Phase 3 take-1
+
+| ID (codex) | Issue | Fix landed in §… | Code change? |
+|---|---|---|---|
+| **MF1** | Edge-case table claimed "exclude parse-fail from M6/M7" while rationale + §6 pseudocode included via `source_words > 0`. Self-contradiction. | §4 row rewritten — failed calls bill cost/latency naturally; `source_words > 0` is the right gate. §6 M6/M7 pseudocode + prose clarified. | Doc only |
+| **MF2** | Pre-response failures persisted `provider=""`/`model=""` on `RespStatsRecord` → vanished from scorer's `(provider, model)` filter, skewing S0/S1/M4 denominators. | §4 new row "provider/model field on pre-response failures." §10 housekeeping point 3. | **Code:** `resp_stats_writer.py` + `compile_one` — `build_resp_stats` accepts requested provider/model as fallback when `model_response is None`. |
+| **MF3** | Three Round-3-era spec lines claimed `cost_usd` is persisted on `RespStatsRecord` — false (Option ε from 05-05 deliberately drops the field; scorer derives at score time). | Lines 207, 240, 435 (early-section text) rewritten to match Option ε. | Doc only |
+| **MF4** | `parse_ok=True` only proves JSON parsed; non-dict `parsed_json` (a list, scalar, null) crashed M1/M2/M3/S3. | §4 new row "Source with `parse_ok=True` but non-dict `parsed_json`." §6 notation block adds `R_p` definition with `isinstance(parsed_json, dict)` guard. Pseudocode for M1/M2/M3 explicitly guards every dereference. | Doc only (scorer-impl task implements) |
+| **MF5** | Borda algorithm called "dense rank with averaging" but worked example showed *fractional rank* (average ordinal). All-equal-candidates case was undefined. Tied-worst case got an interior score, contradicting "worst gets 0.0" prose. | §7 retitled "Average-rank normalization." Algorithm renamed; worked example annotation reworded; all-equal policy added (every candidate gets 0.5); tied-extremes prose qualified. | Doc only |
+| **MF6** | Zero-denominator redistribution rewarded link abstention — a model emitting zero outgoing_links could remove M1 from final score via pro-rata. | §4 row split — model-controlled denominators (M1/M2/M3/M5) score 0.0 on zero-denom (penalty); corpus-controlled (M6/M7 source_words) stay None for empty-corpus pathologies (pro-rata). §6 per-measure prose updated. §8 final-score formula updated. §11 adds "corpus-aware policy" deferral. | Doc only |
+| **MF7** | `score_runs()` proposed replacing `MeasureScore.rate` with normalized [0,1] values, leaving raw `(numerator, denominator)` paired with a unit-different rate. Inconsistent shape. | §5 RunScore gains separate `m6_borda` / `m7_borda` fields. MeasureScore stays unit-stable and immutable. §9 score_runs contract clarified. §8 final-score reads `run.m6_borda` / `run.m7_borda`. | Doc only |
+| **MF8** | `retry_load` could exceed 1.0 if `call_model_with_retry` was invoked with `max_attempts > MAX_RETRIES + 1` (research/override). | §4 retry-corner-cases row + §6 retry_load formula clamped: `min(MAX_RETRIES, max(0, attempts − 1))`. Bounded [0, 1]. | Doc only |
+| **DC1** | S0 named `end_to_end_success_rate` but excluded `semantic_ok` (locked Round 3 formula = S1 ∧ S2 ∧ S3). Production semantics is strictly stronger. | S0 renamed `pipeline_success_rate` everywhere in §6 + notation. Locked formula preserved (no Round 3 reopening). | Doc only |
+| **DC2** | Scoring by `(provider, model)` ignored ModelEntry's stable `id`; load_registry doesn't enforce `(provider, model)` uniqueness. | §9 score_run signature changed to take `model_id`. Scorer derives (provider, model) from registry lookup. RunScore gains `model_id` field (§5). One-run-per-model_id runner contract documented. | Doc only |
+| **DC3** | JSON loader shape underspecified (dataclass reconstruction vs dict access). | §9 loader contract: dict access; required field list explicit. §6 pseudocode `r.field` is shorthand for `record_dict["field"]`. | Doc only |
+| **DC4** | Scorecard candidate-set dependence not explicitly disclaimed in scorecard output. | §11 row added — Task #22's scorecard format MUST include "comparable only within candidate set" disclaimer. | Doc only (Task #22 implements) |
+| **CW1** | New exports (MAX_RETRIES, HARD_ZERO_FINDING_TYPES, check_compiled_source) had no dedicated tests. | §10 housekeeping point 4. | **Tests:** 7 new tests in `test_call_model_retry.py`, `test_validate_compile_result.py`, `test_resp_stats_writer.py` |
+| **CW2** | M2/M3 slug-list coercion: `set("foo")` produces char-slugs if `concept_slugs` is a string. | §4 row added. §6 M2 pseudocode coerces non-list to empty set. | Doc only |
+| **CW3** | M1 duplicate outgoing-link semantics undefined. | §4 row added — list semantics for M1 (matches on-disk shape). §6 M1 pseudocode loops with explicit list semantics. | Doc only |
+| **CW4** | Old Phase 2 status text close to live status text — easy to misread. | "Superseded by Round 3 / Phase 3 / Round 4 below" callout added to top of *Phase 2 — Status & remaining work*. | Doc only |
+| **Defensible #1, #2, #3** | M2/M3 Jaccard works; within-source vs cross-source duplicate semantics are separable; partial capture-full runs fail loud — codex agrees. | No change. | — |
+| **Continuity item: candidate-set comparability** | Acknowledged but accepted under user's "rank latest" workflow, with the now-required scorecard disclaimer (DC4) making this honest. | §11 row + §7 reckoning. | — |
+
+### Round 4 commit shape
+
+Single bundled commit:
+- This doc (`docs/task19-kpi-design.md`) — ~150 net-new lines; in-place fixes throughout.
+- `kdb_compiler/resp_stats_writer.py` — MF2 fallback (~6 lines).
+- `kdb_compiler/compiler.py` — MF2 call-site update (1 line).
+- `kdb_compiler/tests/test_resp_stats_writer.py` — 2 new tests (MF2 fallback + override).
+- `kdb_compiler/tests/test_validate_compile_result.py` — 4 new tests (CW1).
+- `kdb_compiler/tests/test_call_model_retry.py` — 1 new test (CW1).
+- `docs/TASKS.md` — Task #19 row notes updated.
+
+**Tests baseline post-commit:** 462 passed / 1 skipped (was 455 / 1 skipped after Phase 3; +7 new tests).
+
+### Open after Round 4 (still unresolved by design)
+
+- **Corpus-aware zero-denominator policy** — v1 chose simplicity (M1/M2/M3/M5 zero-denom = 0.0 penalty). If a future corpus is intentionally zero-opportunity for any dimension, that policy will need refinement. Tracked in §11 Out-of-Scope. (Design-call accepted in v1, deferred for v2.)
+- **`score_response` stub removal** — still load-bearing-zero in `kdb_compile.py:314`; planned for Phase 5 / scorer-impl future task.
+- **Comparability disclaimer text** — Phase 3 spec says Task #22 must emit one in the scorecard format; the literal disclaimer wording lives in Task #22's design.
+
+This subsection is the **final amendment** to the Phase 3 spec ahead of Phase 5 promotion. If take-3 review surfaces further must-fixes, a Round 5 subsection follows the same shape; otherwise the next milestone is the scorer-impl future task implementing § 5–§ 9.

@@ -17,6 +17,14 @@ import openai
 
 from kdb_compiler.call_model import ModelRequest, ModelResponse, call_model
 
+MAX_RETRIES = 2
+"""Number of *retries* (additional attempts) per call. Default
+`max_attempts` below is `MAX_RETRIES + 1` (one initial attempt plus
+two retries). Exposed as a module-level constant so the benchmark
+scorer can normalize `retry_load` (Task #19 Phase 3) without
+re-deriving the cap from the function default."""
+
+
 _RETRYABLE: tuple[type[BaseException], ...] = (
     anthropic.RateLimitError,
     anthropic.APIConnectionError,
@@ -49,7 +57,7 @@ def _parse_retry_after(exc: BaseException) -> float | None:
 def call_model_with_retry(
     req: ModelRequest,
     *,
-    max_attempts: int = 3,
+    max_attempts: int = MAX_RETRIES + 1,
     initial_backoff: float = 1.0,
     max_backoff: float = 30.0,
 ) -> ModelResponse:

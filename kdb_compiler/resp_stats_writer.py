@@ -113,6 +113,8 @@ def build_resp_stats(
     *,
     ctx: RunContext,
     source_id: str,
+    provider: str = "",
+    model: str = "",
     prompt: BuiltPrompt | None,
     raw_response_text: str,
     model_response: ModelResponse | None,
@@ -128,6 +130,15 @@ def build_resp_stats(
     """Assemble one RespStatsRecord. Hashes always computed. See module
     docstring for the always-on vs env-gated field split.
 
+    `provider` and `model` are the **requested** provider/model from the
+    runner's call site. They are persisted on every record (success or
+    pre-response failure) so the benchmark scorer's filter contract holds
+    for parse-failed and source-read-failed records too — see Task #19
+    Phase 3 / Round 4 (MF2). When `model_response` is present, its
+    provider/model echoes the request and is used directly; when
+    `model_response is None` (pre-response failure), the requested values
+    are persisted as fallback.
+
     `source_words` is the whitespace-split count of the source text the
     caller read (or 0 on source-read failure). Persisted on the record so
     the benchmark scorer can derive cost/latency-per-1k-source-words
@@ -136,8 +147,8 @@ def build_resp_stats(
     capture_full = _capture_full()
 
     if model_response is not None:
-        provider = model_response.provider
-        model = model_response.model
+        persisted_provider = model_response.provider
+        persisted_model = model_response.model
         attempts = model_response.attempts
         latency_ms = model_response.latency_ms
         input_tokens = model_response.input_tokens
@@ -145,8 +156,8 @@ def build_resp_stats(
         response_hash = _sha256(raw_response_text) if raw_response_text else _sha256("")
         stop_reason = model_response.stop_reason
     else:
-        provider = ""
-        model = ""
+        persisted_provider = provider
+        persisted_model = model
         attempts = 0
         latency_ms = 0
         input_tokens = 0
@@ -173,8 +184,8 @@ def build_resp_stats(
     return RespStatsRecord(
         run_id=ctx.run_id,
         source_id=source_id,
-        provider=provider,
-        model=model,
+        provider=persisted_provider,
+        model=persisted_model,
         attempts=attempts,
         latency_ms=latency_ms,
         input_tokens=input_tokens,

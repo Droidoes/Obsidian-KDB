@@ -521,3 +521,48 @@ def test_body_link_counts_zero_on_parse_failure(tmp_path: Path) -> None:
     )
     assert record.body_link_intersection == 0
     assert record.body_link_union == 0
+
+
+# ---------- requested provider/model fallback (Task #19 Round 4 MF2) ----------
+
+def test_requested_provider_model_fallback_when_no_model_response(tmp_path: Path) -> None:
+    """When model_response is None (pre-response failure), the persisted
+    provider/model fall back to the REQUESTED values from the runner's
+    call site — so the benchmark scorer's filter contract holds for
+    pre-call/source-read/prompt-build failures too. Round 4 MF2."""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        provider="anthropic", model="claude-opus-4-7",
+        prompt=None, raw_response_text="",
+        model_response=None,
+        extract_ok=False, parse_ok=False, parsed_json=None,
+        schema_ok=False, schema_errors=["pre-response failure"],
+        semantic_ok=False, semantic_errors=[],
+    )
+    assert record.provider == "anthropic"
+    assert record.model == "claude-opus-4-7"
+    # Other pre-response sentinels still hold.
+    assert record.attempts == 0
+    assert record.latency_ms == 0
+    assert record.response_hash == "sha256:none"
+
+
+def test_model_response_overrides_requested_provider_model(tmp_path: Path) -> None:
+    """When model_response IS present, its provider/model echoes the
+    request and is used directly — the requested kwargs are only a
+    fallback. (Belt-and-braces: in practice model_response.provider/model
+    matches the request, but the contract is unambiguous.)"""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        provider="ignored-fallback", model="ignored-fallback",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True, parse_ok=True, parsed_json={},
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+    )
+    assert record.provider == "anthropic"
+    assert record.model == "claude-opus-4-7"
