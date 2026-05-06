@@ -1,0 +1,32 @@
+source_id: 01-attention-is-all-you-need
+title: Attention Is All You Need
+authors: [Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin]
+publisher: arXiv
+version: 1706.03762v7
+canonical_url: https://arxiv.org/abs/1706.03762
+fetched_from: https://ar5iv.labs.arxiv.org/html/1706.03762
+license: arXiv non-exclusive distribution license (https://arxiv.org/licenses/nonexclusive-distrib/1.0/)
+license_caveat: |
+  Author retains copyright. arXiv has perpetual right to host and distribute.
+  Third-party redistribution rights are NOT explicitly granted by this license.
+  Committed here for personal/research benchmarking use only — fair-use claim
+  is strong for this purpose. If this repo ever goes public, replace with a
+  CC-licensed alternative paper (e.g., a Distill long-form article, or any
+  arXiv paper with explicit CC-BY rights metadata).
+  In-paper Google permission notice (top of source) grants reuse for tables
+  and figures; not full text.
+conversion_command: |
+  curl -sL https://ar5iv.labs.arxiv.org/html/1706.03762 -o attention.html
+  python -c "import html2text; h=html2text.HTML2Text(); h.ignore_links=False; h.ignore_images=True; h.body_width=0; h.unicode_snob=True; \
+              import sys; print(h.handle(open('attention.html').read()))" > attention.md
+  # Then strip ar5iv footer block starting at "[◄](/html/" (see cleanup.py).
+sha256: 00713889fa2e9a95b73190076428a2879d4c0003686aecf1c9e3d51f375a0bf5
+fetched_at: 2026-05-06
+word_count: 6061
+char_count: 43858
+notes: |
+  Math notation comes through doubled (visible char + LaTeX command + aria
+  text — e.g., 'α\alphaα'). Cosmetic; deterministic; identical bytes for
+  every model run, which is what the benchmark needs. If this proves to
+  hurt scoring quality more than it differentiates models, regenerate via
+  pandoc + LaTeXML for cleaner math rendering.

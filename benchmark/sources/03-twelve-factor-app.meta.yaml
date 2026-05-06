@@ -1,0 +1,44 @@
+source_id: 03-twelve-factor-app
+title: The Twelve-Factor App
+authors: [Wiggins, Adam]
+publisher: 12factor.net (originally Heroku)
+canonical_url: https://12factor.net/
+fetched_from: https://github.com/twelve-factor/twelve-factor (master, content/*.md)
+license: CC-BY-4.0
+license_url: https://creativecommons.org/licenses/by/4.0/
+attribution: |
+  "The Twelve-Factor App" by Adam Wiggins et al., https://12factor.net/,
+  licensed under CC-BY-4.0.
+source_files_concatenated:
+  - content/intro.md
+  - content/codebase.md          # I.   Codebase
+  - content/dependencies.md      # II.  Dependencies
+  - content/config.md            # III. Config
+  - content/backing-services.md  # IV.  Backing services
+  - content/build-release-run.md # V.   Build, release, run
+  - content/processes.md         # VI.  Processes
+  - content/port-binding.md      # VII. Port binding
+  - content/concurrency.md       # VIII.Concurrency
+  - content/disposability.md     # IX.  Disposability
+  - content/dev-prod-parity.md   # X.   Dev/prod parity
+  - content/logs.md              # XI.  Logs
+  - content/admin-processes.md   # XII. Admin processes
+conversion_command: |
+  for f in intro codebase dependencies config backing-services \
+           build-release-run processes port-binding concurrency \
+           disposability dev-prod-parity logs admin-processes; do
+    curl -sL https://raw.githubusercontent.com/twelve-factor/twelve-factor/master/content/${f}.md -o tf-${f}.md
+  done
+  # Concatenate with H2 section headers added per cleanup.py.
+sha256: f6c6e85658fd7b5801b7112e68fb9317d64cf56ba17d82b90fb5bae5d41153eb
+fetched_at: 2026-05-06
+word_count: 4692
+char_count: 33092
+skipped_files:
+  - content/background.md   # Meta-content about the manifesto's history; not the manifesto itself
+  - content/who.md          # Author/credits page
+  - content/toc.md          # Table of contents (redundant with assembled section headings)
+notes: |
+  Pure markdown source files concatenated in factor order with synthesized
+  H2 headers ("## I. Codebase", etc.) so the model sees the document as
+  one coherent reference manual.

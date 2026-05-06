@@ -1,0 +1,33 @@
+source_id: 05-understanding-ownership
+title: Understanding Ownership (The Rust Programming Language, Chapter 4)
+authors: [Klabnik, Steve; Nichols, Carol; with contributions from the Rust Community]
+publisher: Rust Project (rust-lang)
+canonical_url: https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html
+fetched_from: https://github.com/rust-lang/book (main, src/ch04-*.md)
+license: MIT OR Apache-2.0
+license_url: https://github.com/rust-lang/book/blob/main/LICENSE-MIT
+attribution: |
+  Excerpt from "The Rust Programming Language" by Steve Klabnik and Carol
+  Nichols, with contributions from the Rust Community, licensed under
+  MIT OR Apache-2.0.
+source_files_concatenated:
+  - src/ch04-00-understanding-ownership.md
+  - src/ch04-01-what-is-ownership.md
+  - src/ch04-02-references-and-borrowing.md
+  - src/ch04-03-slices.md
+conversion_command: |
+  for f in ch04-00-understanding-ownership ch04-01-what-is-ownership \
+           ch04-02-references-and-borrowing ch04-03-slices; do
+    curl -sL https://raw.githubusercontent.com/rust-lang/book/main/src/${f}.md -o ${f}.md
+  done
+  # Concatenate in chapter order (see cleanup.py).
+sha256: 18047396575ffc69d0e1dbe2bb8fc1c7feeed72b8786a0d3493c4f19d3efab77
+fetched_at: 2026-05-06
+word_count: 7749
+char_count: 49274
+notes: |
+  Pure markdown source from the Rust Book repository; no HTML conversion
+  needed. Chapter 4 covers ownership, references/borrowing, and slices —
+  three closely-related concepts. Anchors the "code-heavy tutorial /
+  non-ML technical domain" niche in the corpus, testing whether models
+  produce clean concept slugs for borrowing/lifetime/slice semantics.

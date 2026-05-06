@@ -1,0 +1,26 @@
+source_id: 04-research-debt
+title: Research Debt
+authors: [Olah, Chris; Carter, Shan]
+publisher: Distill
+publication_date: 2017-03-22
+canonical_url: https://distill.pub/2017/research-debt/
+doi: 10.23915/distill.00005
+fetched_from: https://distill.pub/2017/research-debt/
+license: CC-BY-4.0 (article content) / Apache-2.0 (code)
+license_url: https://creativecommons.org/licenses/by/4.0/
+attribution: |
+  "Research Debt" by Chris Olah and Shan Carter, published in Distill (2017),
+  https://distill.pub/2017/research-debt/, licensed under CC-BY-4.0.
+conversion_command: |
+  curl -sL https://distill.pub/2017/research-debt/ -o research-debt.html
+  python -c "import html2text; h=html2text.HTML2Text(); h.ignore_links=False; h.ignore_images=True; h.body_width=0; h.unicode_snob=True; \
+              import sys; print(h.handle(open('research-debt.html').read()))" > research-debt.md
+  # Then strip Distill site nav above the first H1 line (see cleanup.py).
+sha256: 5252f0201d1ce471c454804c77a7f3b8f66792462362f840540b417123273286
+fetched_at: 2026-05-06
+word_count: 2689
+char_count: 19188
+notes: |
+  Argumentative essay style, no code, minimal math. Cleanest of the three
+  HTML→MD-converted sources. Anchor for the "short prose / opinionated"
+  niche in the corpus.

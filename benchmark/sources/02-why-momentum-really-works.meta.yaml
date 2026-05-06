@@ -1,0 +1,26 @@
+source_id: 02-why-momentum-really-works
+title: Why Momentum Really Works
+authors: [Goh, Gabriel]
+publisher: Distill
+publication_date: 2017-04-04
+canonical_url: https://distill.pub/2017/momentum/
+doi: 10.23915/distill.00006
+fetched_from: https://distill.pub/2017/momentum/
+license: CC-BY-4.0 (article content) / Apache-2.0 (code)
+license_url: https://creativecommons.org/licenses/by/4.0/
+attribution: |
+  "Why Momentum Really Works" by Gabriel Goh, published in Distill (2017),
+  https://distill.pub/2017/momentum/, licensed under CC-BY-4.0.
+conversion_command: |
+  curl -sL https://distill.pub/2017/momentum/ -o momentum.html
+  python -c "import html2text; h=html2text.HTML2Text(); h.ignore_links=False; h.ignore_images=True; h.body_width=0; h.unicode_snob=True; \
+              import sys; print(h.handle(open('momentum.html').read()))" > momentum.md
+  # Then strip Distill site nav above the first H1 line (see cleanup.py).
+sha256: 10d46d8e22159d94f1489e5a269a8d95f92a02a2e6b0d96169ea9ebb46696bdb
+fetched_at: 2026-05-06
+word_count: 7416
+char_count: 66983
+notes: |
+  Distill articles are interactive HTML+JS. Static markdown conversion loses
+  the interactive figures but preserves all prose, math (doubled — see #01
+  notes), and structural headings. Article body identifiable; nav stripped.
