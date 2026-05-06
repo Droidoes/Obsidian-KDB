@@ -31,6 +31,7 @@ from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import ParsedSummary, RespStatsRecord
+from kdb_compiler.validate_compiled_source_response import body_link_check
 
 if TYPE_CHECKING:
     # BuiltPrompt is defined in prompt_builder (Step F). Runtime uses duck
@@ -161,7 +162,13 @@ def build_resp_stats(
     else:
         prompt_hash = _NONE_HASH
 
-    summary = build_parsed_summary(parsed_json) if (parse_ok and isinstance(parsed_json, dict)) else None
+    if parse_ok and isinstance(parsed_json, dict):
+        summary = build_parsed_summary(parsed_json)
+        body_link_intersection, body_link_union = body_link_check(parsed_json)
+    else:
+        summary = None
+        body_link_intersection = 0
+        body_link_union = 0
 
     return RespStatsRecord(
         run_id=ctx.run_id,
@@ -188,6 +195,8 @@ def build_resp_stats(
         stop_reason=stop_reason,
         token_overrun=token_overrun,
         source_words=source_words,
+        body_link_intersection=body_link_intersection,
+        body_link_union=body_link_union,
     )
 
 

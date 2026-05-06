@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from functools import cache
 from pathlib import Path
@@ -97,6 +98,68 @@ def semantic_check(payload: dict, *, source_id: str) -> list[str]:
             )
 
     return errors
+
+
+# ---------- M5 body-link counts (Task #28) ----------
+#
+# The schema description for `outgoing_links` already states "Must appear
+# in body as [[slug]]". M5 turns that contract from documentation into
+# measurable telemetry by emitting per-source intersection / union counts
+# of (declared outgoing_links) vs (slugs found in body wikilinks).
+# The benchmark scorer divides at score time for symmetric Jaccard;
+# this validator does not compute the ratio.
+
+_SLUG_RE = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_WIKILINK_RE = re.compile(
+    rf"(?<!\\)\[\[({_SLUG_RE})(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]"
+)
+_FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def _strip_code(text: str) -> str:
+    """Remove fenced and inline code spans before scanning for wikilinks.
+    Avoids false positives from documentation that demonstrates [[slug]]
+    syntax inside code blocks."""
+    return _INLINE_CODE_RE.sub("", _FENCED_CODE_RE.sub("", text))
+
+
+def _body_wikilink_slugs(body: str) -> set[str]:
+    """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]]
+    tokens in `body`, after stripping code spans. Strict kebab-case
+    match — out-of-pattern brackets (e.g. [[Foo Bar]]) are silently
+    ignored."""
+    return set(_WIKILINK_RE.findall(_strip_code(body)))
+
+
+def body_link_check(payload: dict) -> tuple[int, int]:
+    """Symmetric body-vs-declared link check (Task #19 M5).
+
+    For each page, declared = set(page.outgoing_links), body = slugs in
+    [[…]] tokens (code-stripped). Returns (Σ|D_p ∩ B_p|, Σ|D_p ∪ B_p|)
+    across all pages — the scorer divides at score time for symmetric
+    Jaccard.
+
+    Tolerant — never raises. Malformed payload (missing/non-dict pages,
+    non-list outgoing_links, non-string body) contributes (0, 0)."""
+    pages = payload.get("pages") or []
+    if not isinstance(pages, list):
+        return (0, 0)
+    intersection = 0
+    union = 0
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        declared_raw = p.get("outgoing_links") or []
+        if isinstance(declared_raw, list):
+            declared = {s for s in declared_raw if isinstance(s, str)}
+        else:
+            declared = set()
+        body = p.get("body")
+        body_links = _body_wikilink_slugs(body) if isinstance(body, str) else set()
+        intersection += len(declared & body_links)
+        union += len(declared | body_links)
+    return (intersection, union)
 
 
 def _build_parser() -> argparse.ArgumentParser:

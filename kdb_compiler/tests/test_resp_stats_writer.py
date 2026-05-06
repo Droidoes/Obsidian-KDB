@@ -471,3 +471,53 @@ def test_source_words_defaults_to_zero(tmp_path: Path) -> None:
         semantic_ok=False, semantic_errors=[],
     )
     assert record.source_words == 0
+
+
+# ---------- body_link counts (Task #28 / M5) ----------
+
+def test_body_link_counts_persisted_on_parse_ok(tmp_path: Path) -> None:
+    """parse_ok=True with a parsed_json that contains pages -> counts
+    match body_link_check's output."""
+    ctx = _ctx(tmp_path)
+    parsed = {
+        "source_id": "KDB/raw/foo.md",
+        "summary_slug": "foo",
+        "pages": [
+            {
+                "slug": "foo", "page_type": "summary", "title": "Foo",
+                "body": "see [[bar]] and [[baz]]",
+                "status": "active",
+                "supports_page_existence": ["KDB/raw/foo.md"],
+                "outgoing_links": ["bar", "qux"],   # bar matches body, baz extra in body, qux extra in declared
+                "confidence": "medium",
+            }
+        ],
+        "log_entries": [], "warnings": [],
+    }
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True, parse_ok=True, parsed_json=parsed,
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+    )
+    # declared = {bar, qux}, body = {bar, baz} -> ∩={bar}=1, ∪={bar,qux,baz}=3
+    assert record.body_link_intersection == 1
+    assert record.body_link_union == 3
+
+
+def test_body_link_counts_zero_on_parse_failure(tmp_path: Path) -> None:
+    """parse_ok=False or parsed_json=None -> both counts default to 0."""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=None, raw_response_text="",
+        model_response=None,
+        extract_ok=False, parse_ok=False, parsed_json=None,
+        schema_ok=False, schema_errors=[],
+        semantic_ok=False, semantic_errors=[],
+    )
+    assert record.body_link_intersection == 0
+    assert record.body_link_union == 0

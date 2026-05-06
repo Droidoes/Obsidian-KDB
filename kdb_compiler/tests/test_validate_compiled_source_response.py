@@ -200,3 +200,109 @@ def test_cli_source_id_triggers_semantic_check(
     assert rc == 1
     out = capsys.readouterr().out
     assert "source_id" in out or "echo" in out.lower()
+
+
+# ---------- body_link_check (Task #28 / M5 symmetric Jaccard inputs) ----------
+
+def _payload(*pages: dict) -> dict:
+    """Build a minimal payload around one-or-more handcrafted pages.
+    Schema-validity is irrelevant for body_link_check; only `pages` is read."""
+    return {
+        "source_id": SOURCE_ID,
+        "summary_slug": pages[0].get("slug", "x") if pages else "x",
+        "pages": list(pages),
+        "log_entries": [],
+        "warnings": [],
+    }
+
+
+def test_body_link_check_happy_path() -> None:
+    """declared {a,b}, body has [[a]] and [[c]] -> intersection={a},
+    union={a,b,c}."""
+    page = _page(slug="foo", outgoing=["a", "b"], body="see [[a]] and [[c]]")
+    assert V.body_link_check(_payload(page)) == (1, 3)
+
+
+def test_body_link_check_alias_token_captures_slug() -> None:
+    page = _page(outgoing=["a"], body="link: [[a|nice label]]")
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_heading_anchor_captures_slug() -> None:
+    page = _page(outgoing=["a"], body="link: [[a#section-1]]")
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_combined_anchor_and_alias_captures_slug() -> None:
+    page = _page(outgoing=["a"], body="link: [[a#sec|x]]")
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_excludes_fenced_code_block() -> None:
+    """Fenced ```...[[fake]]...``` must not contribute to body set."""
+    body = "real: [[a]]\n\n```\nexample [[fake]] inside fence\n```\n"
+    page = _page(outgoing=["a"], body=body)
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_excludes_inline_code() -> None:
+    """Inline `[[fake]]` must not contribute."""
+    body = "real [[a]]; sample `[[fake]]` shown."
+    page = _page(outgoing=["a"], body=body)
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_excludes_escaped_brackets() -> None:
+    r"""`\[[fake]]` (single-backslash escape) must not contribute."""
+    body = "real [[a]]; literal \\[[fake]] in prose."
+    page = _page(outgoing=["a"], body=body)
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_dedupes_repeats_in_body() -> None:
+    """Set semantics: [[a]] [[a]] [[a]] still contributes one slug."""
+    page = _page(outgoing=["a"], body="[[a]] [[a]] [[a]]")
+    assert V.body_link_check(_payload(page)) == (1, 1)
+
+
+def test_body_link_check_dedupes_repeats_in_declared() -> None:
+    """outgoing_links=[a,a,b] dedups to {a,b}."""
+    page = _page(outgoing=["a", "a", "b"], body="[[a]]")
+    assert V.body_link_check(_payload(page)) == (1, 2)
+
+
+def test_body_link_check_case_mismatch_does_not_match_slug() -> None:
+    """`[[Foo]]` is not a valid slug pattern (lowercase only); does not
+    join the body set. declared {foo} vs body {} -> (0, 1)."""
+    page = _page(outgoing=["foo"], body="see [[Foo]]")
+    assert V.body_link_check(_payload(page)) == (0, 1)
+
+
+def test_body_link_check_empty_body_only_declared_contributes() -> None:
+    page = _page(outgoing=["a", "b"], body="prose with no links here.")
+    assert V.body_link_check(_payload(page)) == (0, 2)
+
+
+def test_body_link_check_empty_declared_only_body_contributes() -> None:
+    page = _page(outgoing=[], body="see [[a]]")
+    assert V.body_link_check(_payload(page)) == (0, 1)
+
+
+def test_body_link_check_aggregates_across_pages() -> None:
+    """page1: D={a},B={a} (∩=1, ∪=1); page2: D={},B={c} (∩=0, ∪=1).
+    Source totals: (1, 2)."""
+    p1 = _page(slug="p1", outgoing=["a"], body="[[a]]")
+    p2 = _page(slug="p2", outgoing=[], body="[[c]]")
+    assert V.body_link_check(_payload(p1, p2)) == (1, 2)
+
+
+def test_body_link_check_tolerates_malformed_payloads() -> None:
+    """Never raises on missing/wrong-typed fields. All return (0, 0)."""
+    assert V.body_link_check({}) == (0, 0)
+    assert V.body_link_check({"pages": "not-a-list"}) == (0, 0)
+    assert V.body_link_check({"pages": [None, "x", 42]}) == (0, 0)
+    # Page with non-list outgoing_links + non-string body
+    bad_page = {"slug": "x", "outgoing_links": "oops", "body": 12345}
+    assert V.body_link_check({"pages": [bad_page]}) == (0, 0)
+    # Page without body or outgoing_links keys at all
+    assert V.body_link_check({"pages": [{"slug": "x"}]}) == (0, 0)
