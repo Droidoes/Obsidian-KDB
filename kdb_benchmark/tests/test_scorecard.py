@@ -129,3 +129,22 @@ class TestScorecardWrite:
         # Filename contains scorecard_id (which embeds timestamp + model ids)
         data = json.loads(out_path.read_text())
         assert data["scorecard_id"] in out_path.name
+
+    def test_write_also_creates_sibling_txt_with_rendered_table(self, tmp_path):
+        """Task #38 — write_scorecard persists both .json and .txt so users
+        can `cat` the rendered table without parsing JSON."""
+        runs = [
+            _runscore(model_id="x", final_score=0.85, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000),
+            _runscore(model_id="y", final_score=0.40, m6_borda=0.0, m7_borda=0.0, m6_rate=0.005, m7_rate=5000),
+        ]
+        sc = scorecard.build_scorecard(runs)
+        json_path = scorecard.write_scorecard(sc, scores_dir=tmp_path)
+        txt_path = json_path.with_suffix(".txt")
+
+        assert txt_path.exists()
+        rendered = txt_path.read_text()
+        # The .txt should match what render_terminal produces (single source of truth).
+        assert rendered == scorecard.render_terminal(sc)
+        # And it should look like a scorecard (cheap structural sanity checks).
+        assert "rank" in rendered and "FINAL" in rendered
+        assert "x" in rendered and "y" in rendered

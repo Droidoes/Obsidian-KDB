@@ -88,13 +88,23 @@ def build_scorecard(runs: list[RunScore]) -> Scorecard:
 
 
 def write_scorecard(sc: Scorecard, *, scores_dir: Path) -> Path:
-    """Atomically write the scorecard JSON to scores_dir/<scorecard_id>.json."""
+    """Persist a scorecard. Writes two sibling files:
+      * `scores_dir/<scorecard_id>.json` — full structured archive
+      * `scores_dir/<scorecard_id>.txt`  — rendered terminal table for
+        eyeballing without parsing JSON
+
+    Returns the JSON path. The two files are written together so they
+    never drift; consumers wanting the rendered table can `cat` the
+    sibling .txt instead of re-running the scorer.
+    """
     scores_dir.mkdir(parents=True, exist_ok=True)
     out_path = scores_dir / f"{sc.scorecard_id}.json"
     out_path.write_text(
         json.dumps(sc.to_dict(), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    txt_path = scores_dir / f"{sc.scorecard_id}.txt"
+    txt_path.write_text(render_terminal(sc), encoding="utf-8")
     return out_path
 
 
