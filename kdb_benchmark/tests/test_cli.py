@@ -74,6 +74,12 @@ def patched_runner_and_scorer(monkeypatch, tmp_path):
         return run_id, state_root
 
     def fake_score_run(state_root, run_id, model_id, **kwargs):
+        # Append a marker line to the trace_sink (Task #36 — verifies the
+        # CLI persists per-run trace lines to <run_dir>/score_trace.txt
+        # regardless of --verbose).
+        sink = kwargs.get("trace_sink")
+        if sink is not None:
+            sink.append(f"[verbose] fake S0 trace for {model_id}")
         # Return a synthesized RunScore keyed off model_id
         rates = {
             "haiku-4.5": (0.001, 2000.0),
@@ -127,6 +133,60 @@ class TestCLI:
         assert "sonnet-4.6" in captured.out
         assert "FINAL" in captured.out
         assert "candidate" in captured.out.lower()  # disclaimer
+
+    def test_main_persists_score_trace_per_run_without_verbose(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        """Task #36 — every run dir must contain a score_trace.txt with
+        per-run + cross-run sections, regardless of --verbose."""
+        runs_root = tmp_path / "runs"
+        cli.main([
+            "--models", "haiku-4.5,sonnet-4.6",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(tmp_path / "scores"),
+        ])
+        for model_id in ("haiku-4.5", "sonnet-4.6"):
+            trace_path = runs_root / f"{model_id}-fake" / "score_trace.txt"
+            assert trace_path.exists(), f"missing {trace_path}"
+            content = trace_path.read_text()
+            # Per-run section: marker line from fake_score_run
+            assert f"[verbose] fake S0 trace for {model_id}" in content
+            # Cross-run section: Borda + final_score lines from real score_runs
+            assert "score_runs: candidate_set=" in content
+            assert "final_score=" in content
+
+    def test_main_verbose_flag_mirrors_trace_to_stdout(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
+    ):
+        """--verbose mirrors the on-disk trace to stdout (after the scorecard)."""
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+            "--verbose",
+        ])
+        out = capsys.readouterr().out
+        assert "Verbose trace (--verbose)" in out
+        assert "[verbose] fake S0 trace for haiku-4.5" in out
+
+    def test_main_without_verbose_does_not_print_trace_to_stdout(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
+    ):
+        """Without --verbose the trace is only on disk, not on stdout."""
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+        ])
+        out = capsys.readouterr().out
+        assert "Verbose trace" not in out
+        assert "[verbose] fake S0 trace" not in out
 
     def test_main_returns_nonzero_on_unknown_model_id(
         self, tmp_path, fake_corpus, fake_prompt, monkeypatch

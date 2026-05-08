@@ -92,7 +92,12 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --models must be non-empty", file=sys.stderr)
         return 2
 
-    trace_sink: list[str] | None = [] if args.verbose else None
+    # Task #36: trace is ALWAYS captured per-run and ALWAYS persisted to
+    # disk. --verbose now controls only whether the trace also prints to
+    # stdout after the scorecard. Disk path: <run_dir>/score_trace.txt.
+    per_run_sinks: dict[str, list[str]] = {}
+    per_run_dirs:  dict[str, Path]      = {}
+    cross_run_sink: list[str] = []
 
     raw_run_scores = []
     try:
@@ -107,10 +112,13 @@ def main(argv: list[str] | None = None) -> int:
                 registry_path=args.registry_path,
             )
             print(f"[{model_id}] scoring run {run_id}...")
+            sink: list[str] = []
+            per_run_sinks[run_id] = sink
+            per_run_dirs[run_id]  = state_root.parent  # <runs_root>/<run_id>/
             run_score = score_run(
                 state_root, run_id, model_id,
                 registry_path=args.registry_path,
-                trace_sink=trace_sink,
+                trace_sink=sink,
             )
             raw_run_scores.append(run_score)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
@@ -118,7 +126,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print("aggregating Borda + final_score...")
-    enriched = score_runs(raw_run_scores, trace_sink=trace_sink)
+    enriched = score_runs(raw_run_scores, trace_sink=cross_run_sink)
+
+    # Persist each run's trace to <run_dir>/score_trace.txt — self-contained
+    # (per-run section + cross-run Borda/final_score section).
+    for run_id, run_dir in per_run_dirs.items():
+        full = per_run_sinks[run_id] + [""] + cross_run_sink
+        (run_dir / "score_trace.txt").write_text("\n".join(full) + "\n", encoding="utf-8")
 
     sc = build_scorecard(enriched)
     out_path = write_scorecard(sc, scores_dir=args.scores_dir)
@@ -126,12 +140,16 @@ def main(argv: list[str] | None = None) -> int:
     print(render_terminal(sc))
 
     # --verbose: per-measure trace prints AFTER the scorecard so the table
-    # stays at the top of the user's terminal when they scroll up.
-    if trace_sink:
+    # stays at the top of the user's terminal when they scroll up. The
+    # trace is on disk regardless; this just mirrors it to the screen.
+    if args.verbose:
         print("\n" + "=" * 100)
         print("Verbose trace (--verbose)")
         print("=" * 100)
-        for line in trace_sink:
+        for sink in per_run_sinks.values():
+            for line in sink:
+                print(line)
+        for line in cross_run_sink:
             print(line)
 
     return 0
