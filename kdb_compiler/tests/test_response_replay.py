@@ -47,7 +47,7 @@ def test_load_fixtures_ignores_incomplete_case_dirs(tmp_path: Path) -> None:
     # Has case.json but no stored_response.txt — should be skipped
     (tmp_path / "bad_case" / "case.json").write_text(
         json.dumps({
-            "source_id": "KDB/raw/x.md",
+            "source_name": "x.md",
             "expected_extract_ok": True,
             "expected_parse_ok": True,
             "expected_schema_ok": True,
@@ -102,7 +102,7 @@ def test_replay_case03_semantic_violation_flags() -> None:
 def _synth(**overrides) -> ReplayFixture:
     base = dict(
         case_id="synth",
-        source_id="KDB/raw/x.md",
+        source_name="x.md",
         stored_response_text="{}",
         expected_extract_ok=True,
         expected_parse_ok=True,
@@ -153,7 +153,7 @@ def test_replay_mismatch_flags_expected() -> None:
     """If the fixture says schema_ok=True but the response breaks schema,
     matches_expected must be False — guards the regression reporter."""
     f = _synth(
-        stored_response_text="{\"source_id\": \"KDB/raw/x.md\"}",  # missing required fields
+        stored_response_text="{\"source_name\": \"x.md\"}",  # missing required fields
         expected_extract_ok=True,
         expected_parse_ok=True,
         expected_schema_ok=True,   # LIE — actual schema will fail
@@ -185,7 +185,7 @@ def test_cli_exits_1_when_any_case_mismatches(
     )
     (case / "case.json").write_text(
         json.dumps({
-            "source_id": "KDB/raw/x.md",
+            "source_name": "x.md",
             "expected_extract_ok": True,   # wrong — extract will fail
             "expected_parse_ok": True,
             "expected_schema_ok": True,

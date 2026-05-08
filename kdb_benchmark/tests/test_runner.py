@@ -54,7 +54,6 @@ def patched_compile_one(monkeypatch):
             "provider": provider,
             "model": model,
             "max_tokens": max_tokens,
-            "source_id_prefix": kwargs.get("source_id_prefix"),
             "env_capture_full": os.environ.get("KDB_RESP_STATS_CAPTURE_FULL"),
         })
         return (None, [], [], None)
@@ -113,9 +112,11 @@ class TestRunnerEntryPoint:
 
 
 class TestSourceIdPrefix:
-    """Task #34 — runner derives a path-prefix from sources_dir, constructs
-    source_ids as `<prefix>/<filename>`, and forwards the prefix to
-    compile_one so the schema validator accepts the resulting source_ids."""
+    """Task #34 + #41 — runner derives a path-prefix from sources_dir and
+    constructs source_ids as `<prefix>/<filename>`. Post-#41 the prefix
+    is no longer threaded to compile_one (the LLM contract no longer
+    constrains source_id format); the runner uses the prefix only when
+    constructing each job's source_id for downstream artifacts."""
 
     def test_derive_source_id_prefix_relative(self):
         assert runner._derive_source_id_prefix(Path("benchmark/sources")) == "benchmark/sources"
@@ -129,19 +130,16 @@ class TestSourceIdPrefix:
     def test_derive_source_id_prefix_strips_trailing_slash(self):
         assert runner._derive_source_id_prefix(Path("benchmark/sources/")) == "benchmark/sources"
 
-    def test_compile_one_receives_matching_source_id_prefix(
+    def test_each_job_source_id_starts_with_derived_prefix(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
     ):
-        """The prefix passed to compile_one as a kwarg must equal the prefix
-        embedded in each source_id — otherwise the schema validator will
-        reject what the runner constructs."""
+        """Source_ids built by the runner must use `<derived-prefix>/<filename>`."""
         runner.run_benchmark(
             sources_dir=fake_corpus, model_id="haiku-4.5",
             runs_root=runs_root, system_prompt_path=fake_system_prompt,
         )
         expected_prefix = runner._derive_source_id_prefix(fake_corpus)
         for c in patched_compile_one:
-            assert c.get("source_id_prefix") == expected_prefix
             assert c["job"].source_id.startswith(f"{expected_prefix}/")
 
     def test_run_benchmark_uses_registry_provider_model_for_id(

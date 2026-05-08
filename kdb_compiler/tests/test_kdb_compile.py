@@ -104,8 +104,9 @@ def _write_vault_system_prompt(vault: Path) -> None:
 
 
 def _good_model_response(source_id: str, run_id: str) -> ModelResponse:
+    """Build a slim LLM-emitted response (Task #41 — no source-id-space fields)."""
     payload = {
-        "source_id": source_id,
+        "source_name": Path(source_id).name,
         "summary_slug": "summary-paper",
         "concept_slugs": [],
         "article_slugs": [],
@@ -115,7 +116,6 @@ def _good_model_response(source_id: str, run_id: str) -> ModelResponse:
             "title": "Paper",
             "body": "Live-compiled body.",
             "status": "active",
-            "supports_page_existence": [source_id],
             "outgoing_links": [],
             "confidence": "medium",
         }],
@@ -205,7 +205,7 @@ def test_missing_compile_result_triggers_live_compile(
 
     def fake_call(req):
         # Extract source_id from prompt to echo it back correctly.
-        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        source_name = req.prompt.splitlines()[0][len("source_name: "):]; source_id = "KDB/raw/" + source_name
         return _good_model_response(source_id, ctx.run_id)
     monkeypatch.setattr(
         "kdb_compiler.compiler.call_model_with_retry", fake_call
@@ -239,7 +239,7 @@ def test_stale_compile_result_falls_through_to_live(
     _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "summary-stale-slug"))
 
     def fake_call(req):
-        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        source_name = req.prompt.splitlines()[0][len("source_name: "):]; source_id = "KDB/raw/" + source_name
         return _good_model_response(source_id, ctx.run_id)
     monkeypatch.setattr(
         "kdb_compiler.compiler.call_model_with_retry", fake_call
@@ -713,7 +713,7 @@ def test_run_journal_contains_resp_stats_refs_for_live_jobs(
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
 
     def fake_call(req):
-        source_id = req.prompt.splitlines()[0][len("source_id: "):]
+        source_name = req.prompt.splitlines()[0][len("source_name: "):]; source_id = "KDB/raw/" + source_name
         return _good_model_response(source_id, ctx.run_id)
     monkeypatch.setattr(
         "kdb_compiler.compiler.call_model_with_retry", fake_call

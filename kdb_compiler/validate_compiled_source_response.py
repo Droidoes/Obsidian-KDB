@@ -1,28 +1,28 @@
 """validate_compiled_source_response — per-source model output gate (M2).
 
 Applied to ONE parsed response object from a single compile call, BEFORE
-it is folded into compile_result.json. Complements validate_compile_result
-(which validates the aggregate file) by enforcing the stricter per-call
-contract: all 8 pageIntent fields required, non-empty
-supports_page_existence, schema-only checks that compile_result can't
-express because compile_result is lenient at aggregate level.
+it is enriched with runner-injected source-id-space fields and folded
+into compile_result.json. Complements validate_compile_result (which
+validates the aggregate file) by enforcing the stricter per-call
+contract: all 7 LLM-emitted pageIntent fields required, schema-only
+checks that compile_result can't express because compile_result is
+lenient at aggregate level.
 
 Two independent layers:
     1. validate(payload)               — JSON-Schema, accumulating
-    2. semantic_check(payload, ...)    — post-schema, 4 semantic rules
+    2. semantic_check(payload, ...)    — post-schema, semantic rules
 
 CLI:
-    kdb-validate-response [path.json] [--source-id <id>]
+    kdb-validate-response [path.json] [--source-name <name>]
     exit 0 — valid; exit 1 — invalid; exit 2 — runtime/config error
 """
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import re
 import sys
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -30,58 +30,46 @@ from jsonschema import Draft202012Validator
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
 
-DEFAULT_SOURCE_ID_PREFIX = "KDB/raw"
 
-
-@lru_cache(maxsize=None)
-def _validator(source_id_prefix: str = DEFAULT_SOURCE_ID_PREFIX) -> Draft202012Validator:
-    """Build a validator whose sourceId pattern is `^<prefix>/.+`.
-
-    Default `KDB/raw` matches the production runner. Benchmark callers
-    pass their own prefix (e.g. `benchmark/sources`) so the schema accepts
-    source_ids the runner actually constructs — without weakening
-    production validation.
-    """
+@cache
+def _validator() -> Draft202012Validator:
+    """Build the response-schema validator. The schema constrains only
+    LLM-emitted fields (slug-space + a path-free source_name). Source-id-
+    space fields are runner-injected post-parse and validated at the
+    persistence layer (compile_result.schema.json), not here."""
     with _SCHEMA_PATH.open("r", encoding="utf-8") as f:
         schema = json.load(f)
-    schema = copy.deepcopy(schema)
-    schema["$defs"]["sourceId"]["pattern"] = f"^{re.escape(source_id_prefix)}/.+"
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
 
-def validate(payload: Any, *, source_id_prefix: str = DEFAULT_SOURCE_ID_PREFIX) -> list[str]:
+def validate(payload: Any) -> list[str]:
     """JSON-Schema validation. Returns [] if valid.
 
     Errors formatted as '[<json_path>] <message>' matching
     validate_compile_result's convention.
-
-    `source_id_prefix` overrides the path-prefix the schema requires for
-    source_id and supports_page_existence entries. Default `KDB/raw`
-    preserves production behavior; benchmark callers pass their own.
     """
     return [
         f"[{err.json_path}] {err.message}"
-        for err in _validator(source_id_prefix).iter_errors(payload)
+        for err in _validator().iter_errors(payload)
     ]
 
 
-def semantic_check(payload: dict, *, source_id: str) -> list[str]:
+def semantic_check(payload: dict, *, source_name: str) -> list[str]:
     """Run AFTER schema validation passes. Returns [] if valid.
 
     Rules (in evaluation order, accumulating):
-      1. payload['source_id'] == source_id                 (echoed verbatim)
+      1. payload['source_name'] == source_name             (echoed verbatim)
       2. summary_slug appears in [p['slug'] for p in pages]
       3. exactly one page has page_type='summary' AND slug == summary_slug
-      4. every page's supports_page_existence[] contains source_id
     """
     errors: list[str] = []
 
-    echoed = payload.get("source_id")
-    if echoed != source_id:
+    echoed = payload.get("source_name")
+    if echoed != source_name:
         errors.append(
-            f"[$.source_id] expected {source_id!r}, got {echoed!r} "
-            "(model must echo the provided source_id verbatim)"
+            f"[$.source_name] expected {source_name!r}, got {echoed!r} "
+            "(model must echo the provided source_name verbatim)"
         )
 
     pages = payload.get("pages") or []
@@ -105,16 +93,6 @@ def semantic_check(payload: dict, *, source_id: str) -> list[str]:
             f"page_type='summary' and slug={summary_slug!r}, "
             f"got {len(summary_page_matches)}"
         )
-
-    for i, p in enumerate(pages):
-        if not isinstance(p, dict):
-            continue
-        spe = p.get("supports_page_existence") or []
-        if source_id not in spe:
-            errors.append(
-                f"[$.pages[{i}].supports_page_existence] must contain {source_id!r} "
-                "(every page must attribute its existence to this source)"
-            )
 
     return errors
 
@@ -225,8 +203,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("path", nargs="?", help="Path to JSON file; reads stdin if omitted")
     p.add_argument(
-        "--source-id",
-        help="If provided, run semantic_check against this source_id too",
+        "--source-name",
+        help="If provided, run semantic_check against this source_name too",
     )
     return p
 
@@ -243,8 +221,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     errors = validate(payload)
-    if not errors and args.source_id and isinstance(payload, dict):
-        errors.extend(semantic_check(payload, source_id=args.source_id))
+    if not errors and args.source_name and isinstance(payload, dict):
+        errors.extend(semantic_check(payload, source_name=args.source_name))
 
     if errors:
         for msg in errors:

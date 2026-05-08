@@ -1,6 +1,6 @@
 ```json
 {
-  "source_id": "KDB/raw/bayes.md",
+  "source_name": "bayes.md",
   "summary_slug": "Bayes Theorem",
   "concept_slugs": [],
   "article_slugs": [],
@@ -11,7 +11,6 @@
       "title": "Bayes' Theorem",
       "body": "Relates conditional and marginal probabilities of two random events.",
       "status": "active",
-      "supports_page_existence": ["KDB/raw/bayes.md"],
       "outgoing_links": [],
       "confidence": "high"
     }

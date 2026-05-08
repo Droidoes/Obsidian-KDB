@@ -51,8 +51,10 @@ def _resolve_model_entry(model_id: str, registry_path: Path) -> ModelEntry:
 
 
 def _derive_source_id_prefix(sources_dir: Path) -> str:
-    """Build the path-prefix the schema validator expects for source_ids
-    coming out of `sources_dir`.
+    """Build the path-prefix used when constructing source_ids for sources
+    in `sources_dir`. After Task #41 the schema no longer constrains
+    source_id format (the LLM emits source_name only), so this prefix is
+    a runner-side convention for the persisted compile_result artifact.
 
     `--sources benchmark/sources/`     → `benchmark/sources`
     `--sources /tmp/kdb-smoke/`        → `tmp/kdb-smoke`
@@ -143,11 +145,12 @@ def run_benchmark(
     # Capture-full mode is mandatory for benchmark scoring (§ 3).
     os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = "1"
 
-    # Schema gate (Task #34): the validator's sourceId pattern is
-    # `^<prefix>/.+`. Production prefix is "KDB/raw"; benchmark sources
-    # don't live there, so derive a prefix from `sources_dir` and
-    # construct each source_id as "<prefix>/<filename>" so model echo +
-    # schema validation align.
+    # Construct source_ids for the persisted compile_result artifact using
+    # a path-prefix derived from `sources_dir`. After Task #41 the schema
+    # no longer constrains source_id format (the LLM emits source_name only,
+    # the runner injects source_id post-parse), so this prefix is a
+    # runner-side convention for downstream artifacts and is not threaded
+    # through to validation.
     source_id_prefix = _derive_source_id_prefix(sources_dir)
 
     for src_path in source_files:
@@ -165,7 +168,6 @@ def run_benchmark(
             provider=entry.provider,
             model=entry.model,
             max_tokens=max_tokens,
-            source_id_prefix=source_id_prefix,
         )
 
     return run_id, state_root

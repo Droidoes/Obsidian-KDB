@@ -4,11 +4,15 @@ Coverage per blueprint §10:
     - load_system_prompt returns the file at <vault>/KDB/KDB-Compiler-System-Prompt.md
     - load_response_schema_text returns schema text with the expected keys
     - build_prompt system includes the system prompt + contract lines
-    - build_prompt user includes source_id, source_text, context, schema, exemplar
-    - exemplar_response echoes the supplied source_id and is schema+semantic valid
+    - build_prompt user includes source_name, source_text, context, schema, exemplar
+    - exemplar_response echoes the supplied source_name and is schema+semantic valid
     - key contract sentences are present verbatim
 
 Plus a drift-guard: the user section order must match what compile_one reads.
+
+Task #41: source-id-space fields (source_id, supports_page_existence,
+related_source_ids) no longer appear in LLM-emitted shape — runner
+injects them post-parse. Tests use source_name accordingly.
 """
 from __future__ import annotations
 
@@ -28,7 +32,8 @@ from kdb_compiler.prompt_builder import (
 from kdb_compiler.types import ContextPage, ContextSnapshot
 from kdb_compiler.validate_compiled_source_response import semantic_check, validate
 
-SOURCE_ID = "KDB/raw/foo.md"
+SOURCE_NAME = "foo.md"
+SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction
 
 SYSTEM_PROMPT_FILENAME = "KDB-Compiler-System-Prompt.md"
 
@@ -94,10 +99,12 @@ def test_load_response_schema_text_is_valid_json_with_expected_keys() -> None:
     # Per-source contract has these top-level schema markers
     assert schema.get("title", "").lower().startswith("kdb compiled source response")
     assert schema["type"] == "object"
-    assert "source_id" in schema["properties"]
+    assert "source_name" in schema["properties"]
     assert "summary_slug" in schema["properties"]
     assert "pages" in schema["properties"]
     assert schema["additionalProperties"] is False
+    # Task #41: source-id-space fields are NOT in the LLM contract
+    assert "source_id" not in schema["properties"]
 
 
 def test_load_response_schema_text_is_pretty_printed() -> None:
@@ -109,18 +116,20 @@ def test_load_response_schema_text_is_pretty_printed() -> None:
 
 # ---------- exemplar_response ----------
 
-def test_exemplar_echoes_source_id() -> None:
-    ex = exemplar_response("KDB/raw/other.md")
-    assert ex["source_id"] == "KDB/raw/other.md"
-    assert ex["pages"][0]["supports_page_existence"] == ["KDB/raw/other.md"]
+def test_exemplar_echoes_source_name() -> None:
+    ex = exemplar_response("other.md")
+    assert ex["source_name"] == "other.md"
+    # Task #41: exemplar must NOT include source-id-space fields
+    assert "source_id" not in ex
+    assert "supports_page_existence" not in ex["pages"][0]
 
 
 def test_exemplar_passes_schema_and_semantic() -> None:
     """The example we send the model must itself satisfy every rule we
     enforce. Otherwise we'd be training the model on invalid shape."""
-    ex = exemplar_response(SOURCE_ID)
+    ex = exemplar_response(SOURCE_NAME)
     assert validate(ex) == []
-    assert semantic_check(ex, source_id=SOURCE_ID) == []
+    assert semantic_check(ex, source_name=SOURCE_NAME) == []
 
 
 # ---------- build_prompt: system ----------
@@ -129,7 +138,7 @@ def test_system_includes_system_prompt_and_contract(tmp_path: Path) -> None:
     vault = _write_vault_system_prompt(tmp_path, "# KDB invariants\n\nsome rules\n")
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text="hello",
         context_snapshot=_snapshot(),
     )
@@ -137,15 +146,14 @@ def test_system_includes_system_prompt_and_contract(tmp_path: Path) -> None:
     assert "some rules" in bp.system
     assert "RESPONSE CONTRACT (non-negotiable):" in bp.system
     assert "Return EXACTLY ONE JSON object." in bp.system
-    assert 'The "source_id" field MUST echo' in bp.system
-    assert 'supports_page_existence" array MUST contain' in bp.system
+    assert 'The "source_name" field MUST echo' in bp.system
 
 
 def test_system_does_not_include_user_sections(tmp_path: Path) -> None:
     vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text="hello",
         context_snapshot=_snapshot(),
     )
@@ -159,7 +167,7 @@ def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
     vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text="SOURCE BODY",
         context_snapshot=_snapshot(),
     )
@@ -168,8 +176,8 @@ def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
     schema_idx = bp.user.index("## RESPONSE SCHEMA")
     ex_idx = bp.user.index("## EXAMPLE RESPONSE")
     assert src_idx < ctx_idx < schema_idx < ex_idx
-    # source_id header comes before SOURCE CONTENT
-    assert bp.user.index(f"source_id: {SOURCE_ID}") < src_idx
+    # source_name header comes before SOURCE CONTENT
+    assert bp.user.index(f"source_name: {SOURCE_NAME}") < src_idx
 
 
 def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
@@ -177,7 +185,7 @@ def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
     text = "# Transformers\n\nSelf-attention is the key idea.\n"
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text=text,
         context_snapshot=_snapshot(),
     )
@@ -189,7 +197,7 @@ def test_user_includes_context_snapshot_as_json(tmp_path: Path) -> None:
     snap = _snapshot()
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=snap,
     )
@@ -201,26 +209,28 @@ def test_user_includes_schema_and_exemplar(tmp_path: Path) -> None:
     vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
-        source_id=SOURCE_ID,
+        source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
     )
     # Schema section includes a distinctive schema token
     assert "compiled_source_response.schema.json" in bp.user or '"pageIntent"' in bp.user
-    # Exemplar section contains the echoed source_id inside the JSON block
-    ex_json = json.dumps(exemplar_response(SOURCE_ID), indent=2, ensure_ascii=False)
+    # Exemplar section contains the echoed source_name inside the JSON block
+    ex_json = json.dumps(exemplar_response(SOURCE_NAME), indent=2, ensure_ascii=False)
     assert ex_json in bp.user
 
 
 # ---------- drift guard ----------
 
-def test_response_contract_mentions_all_four_semantic_rules() -> None:
+def test_response_contract_mentions_semantic_rules() -> None:
     """The contract block the model sees must surface every rule enforced
     by validate_compiled_source_response.semantic_check. If that file grows
-    a fifth rule, either add it to RESPONSE_CONTRACT too or update this
+    a new rule, either add it to RESPONSE_CONTRACT too or update this
     test deliberately."""
     c = RESPONSE_CONTRACT
-    assert "echo the provided source_id verbatim" in c
-    assert "supports_page_existence" in c
+    assert "echo the provided source_name verbatim" in c
     assert "EXACTLY ONE JSON object" in c
     assert "DO NOT" in c and "fabricate pages" in c
+    # Task #41: source-id-space rules are runner-side, not LLM-side
+    assert "supports_page_existence" not in c
+    assert "source_id" not in c

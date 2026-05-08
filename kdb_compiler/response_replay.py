@@ -31,7 +31,7 @@ from kdb_compiler import response_normalizer, validate_compiled_source_response
 @dataclass
 class ReplayFixture:
     case_id: str
-    source_id: str
+    source_name: str
     stored_response_text: str
     expected_extract_ok: bool
     expected_parse_ok: bool
@@ -73,7 +73,7 @@ def load_fixtures(fixtures_dir: Path) -> list[ReplayFixture]:
         cases.append(
             ReplayFixture(
                 case_id=entry.name,
-                source_id=meta["source_id"],
+                source_name=meta["source_name"],
                 stored_response_text=response_txt.read_text(encoding="utf-8"),
                 expected_extract_ok=bool(meta["expected_extract_ok"]),
                 expected_parse_ok=bool(meta["expected_parse_ok"]),
@@ -128,7 +128,7 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
         return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
 
     semantic_errors = validate_compiled_source_response.semantic_check(
-        parsed, source_id=fixture.source_id
+        parsed, source_name=fixture.source_name
     )
     semantic_ok = semantic_errors == []
     if not semantic_ok:

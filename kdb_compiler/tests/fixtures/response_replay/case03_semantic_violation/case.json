@@ -1,5 +1,5 @@
 {
-  "source_id": "KDB/raw/markov.md",
+  "source_name": "markov.md",
   "expected_extract_ok": true,
   "expected_parse_ok": true,
   "expected_schema_ok": true,

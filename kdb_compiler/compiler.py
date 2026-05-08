@@ -147,15 +147,21 @@ def compile_one(
     model: str,
     max_tokens: int,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
-    source_id_prefix: str = validate_compiled_source_response.DEFAULT_SOURCE_ID_PREFIX,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
 
     Returns (compiled_source | None, log_entries, warnings, error | None).
     Always writes exactly one RespStatsRecord in the finally block, regardless
     of which stage (if any) failed.
+
+    Source-id-space split (Task #41): the LLM emits slug-space fields plus a
+    path-free `source_name`; the runner constructs `source_id` from
+    `job.source_id` and injects it into the persisted CompiledSource shape
+    after parse. RespStatsRecord.parsed_json reflects the slim LLM-emitted
+    payload (no source-id-space fields).
     """
     source_id = job.source_id
+    source_name = Path(job.abs_path).name
 
     state: dict = {
         "prompt": None,
@@ -190,7 +196,7 @@ def compile_one(
         try:
             state["prompt"] = prompt_builder.build_prompt(
                 vault_root=vault_root,
-                source_id=source_id,
+                source_name=source_name,
                 source_text=source_text,
                 context_snapshot=job.context_snapshot,
             )
@@ -253,7 +259,7 @@ def compile_one(
 
         # --- schema ---
         state["schema_errors"] = validate_compiled_source_response.validate(
-            state["parsed_json"], source_id_prefix=source_id_prefix
+            state["parsed_json"]
         )
         state["schema_ok"] = state["schema_errors"] == []
         if not state["schema_ok"]:
@@ -265,7 +271,7 @@ def compile_one(
         # --- semantic ---
         state["semantic_errors"] = (
             validate_compiled_source_response.semantic_check(
-                state["parsed_json"], source_id=source_id
+                state["parsed_json"], source_name=source_name
             )
         )
         state["semantic_ok"] = state["semantic_errors"] == []
@@ -275,13 +281,31 @@ def compile_one(
             )
             return (None, [], [], state["error"])
 
-        # --- success ---
+        # --- success: enrich LLM payload with runner-injected source-id-space ---
+        # Task #41: LLM emits slug-space + source_name only; runner injects
+        # source_id (top-level), supports_page_existence (per page), and
+        # related_source_ids (per log_entry) using job.source_id. Manifest
+        # lookup for prior-support enrichment is the responsibility of
+        # downstream stages (patch_applier) — here we just stamp the current
+        # source_id on every page, matching the today-LLM-emitted behavior.
         parsed = state["parsed_json"]
         mr = state["model_response"]
         state["compiled_source"] = CompiledSource(
-            source_id=parsed["source_id"],
+            source_id=source_id,
             summary_slug=parsed["summary_slug"],
-            pages=[PageIntent(**p) for p in parsed["pages"]],
+            pages=[
+                PageIntent(
+                    slug=p["slug"],
+                    page_type=p["page_type"],
+                    title=p["title"],
+                    body=p["body"],
+                    status=p["status"],
+                    outgoing_links=list(p.get("outgoing_links", [])),
+                    confidence=p["confidence"],
+                    supports_page_existence=[source_id],
+                )
+                for p in parsed["pages"]
+            ],
             concept_slugs=list(parsed.get("concept_slugs", [])),
             article_slugs=list(parsed.get("article_slugs", [])),
             compile_meta=CompileMeta(
@@ -295,7 +319,10 @@ def compile_one(
                 error=None,
             ),
         )
-        state["log_entries"] = list(parsed.get("log_entries", []))
+        state["log_entries"] = [
+            {**le, "related_source_ids": []}
+            for le in parsed.get("log_entries", [])
+        ]
         state["warnings"] = list(parsed.get("warnings", []))
         return (
             state["compiled_source"],

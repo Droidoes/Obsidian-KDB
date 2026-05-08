@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
   "title": "KDB Compiled Source Response (per-call model output)",
-  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. Run-level fields (run_id, success, aggregate errors) are Python-owned and NOT present here; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 8 page fields required) so the model must commit to status, support, links, and confidence on every page rather than relying on Python backfill.",
+  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. Source-id-space fields (top-level source_id, per-page supports_page_existence, per-log_entry related_source_ids) are NOT in this contract — the runner injects them after parse from runtime knowledge + manifest lookup. This separation is structural: the LLM owns slug-space, the runner owns source_id-space. Run-level fields (run_id, success, aggregate errors) are also Python-owned; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 7 LLM-emitted page fields required) so the model must commit to status, links, and confidence on every page rather than relying on Python backfill.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["source_id", "summary_slug", "pages", "log_entries", "warnings"],
+  "required": ["source_name", "summary_slug", "pages", "log_entries", "warnings"],
   "properties": {
-    "source_id": { "$ref": "#/$defs/sourceId" },
+    "source_name": { "$ref": "#/$defs/sourceName" },
     "summary_slug": { "$ref": "#/$defs/summarySlug" },
     "concept_slugs": {
       "type": "array",
@@ -46,11 +46,12 @@
       "minLength": 9,
       "maxLength": 120
     },
-    "sourceId": {
+    "sourceName": {
       "type": "string",
-      "description": "Canonical relative path of a raw source. The LLM echoes the id it was given verbatim.",
-      "pattern": "^KDB/raw/.+",
-      "minLength": 1
+      "description": "The source filename the LLM was given, echoed verbatim. No path separators — the runner constructs the full source_id from runtime knowledge after parse.",
+      "pattern": "^[^/\\\\]+\\.md$",
+      "minLength": 4,
+      "maxLength": 200
     },
     "pageType": {
       "type": "string",
@@ -66,7 +67,7 @@
     },
     "pageIntent": {
       "type": "object",
-      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 8 fields required, no Python backfill.",
+      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 7 LLM-emitted fields required. Source-id-space field supports_page_existence is runner-injected post-parse.",
       "additionalProperties": false,
       "required": [
         "slug",
@@ -74,7 +75,6 @@
         "title",
         "body",
         "status",
-        "supports_page_existence",
         "outgoing_links",
         "confidence"
       ],
@@ -88,12 +88,6 @@
           "description": "Full markdown body, no frontmatter. Python prepends frontmatter during apply."
         },
         "status": { "$ref": "#/$defs/pageStatus" },
-        "supports_page_existence": {
-          "type": "array",
-          "minItems": 1,
-          "description": "source_ids that justify this page existing. Every page MUST include the compile call's source_id.",
-          "items": { "$ref": "#/$defs/sourceId" }
-        },
         "outgoing_links": {
           "type": "array",
           "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
@@ -104,8 +98,9 @@
     },
     "logEntry": {
       "type": "object",
+      "description": "One structured note about this compile. Source-id-space field related_source_ids is runner-derived post-parse from related_slugs via manifest lookup.",
       "additionalProperties": false,
-      "required": ["level", "message", "related_slugs", "related_source_ids"],
+      "required": ["level", "message", "related_slugs"],
       "properties": {
         "level": {
           "type": "string",
@@ -115,10 +110,6 @@
         "related_slugs": {
           "type": "array",
           "items": { "$ref": "#/$defs/slug" }
-        },
-        "related_source_ids": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/sourceId" }
         }
       }
     }

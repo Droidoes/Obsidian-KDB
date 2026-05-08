@@ -7,7 +7,7 @@ The prompt has two halves:
            without a code change) + a locked response-contract block
            that enforces the shape the Python side actually parses.
 
-  user   — source_id (echoed for semantic check), the verbatim source
+  user   — source_name (echoed for semantic check), the verbatim source
            text, a body-free manifest snapshot from context_loader,
            the per-source response schema, and a minimal exemplar.
 
@@ -18,9 +18,12 @@ the cache key is the vault Path. The schema lives in the package and
 has no key.
 
 The response-contract block below is intentionally terse and mirrors the
-four semantic rules in validate_compiled_source_response.semantic_check.
+semantic rules in validate_compiled_source_response.semantic_check.
 If a rule is added there, it belongs here too — the contract the model
-sees and the contract we enforce must not drift.
+sees and the contract we enforce must not drift. Source-id-space fields
+(top-level source_id, per-page supports_page_existence, per-log_entry
+related_source_ids) are runner-injected after parse and intentionally
+absent from this contract — see Task #41.
 """
 from __future__ import annotations
 
@@ -40,8 +43,7 @@ RESPONSE CONTRACT (non-negotiable):
 - No markdown code fences around the object.
 - No prose before or after the object.
 - The object MUST satisfy the schema provided in the user message exactly.
-- The "source_id" field MUST echo the provided source_id verbatim.
-- Every page's "supports_page_existence" array MUST contain the provided source_id.
+- The "source_name" field MUST echo the provided source_name verbatim.
 - Use the "warnings" array for non-fatal observations about the source
   (ambiguous terms, unresolved references, uncertain categorization). DO NOT
   fabricate pages to satisfy the schema. If the source genuinely contains
@@ -76,13 +78,13 @@ def load_response_schema_text() -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False)
 
 
-def exemplar_response(source_id: str) -> dict:
+def exemplar_response(source_name: str) -> dict:
     """Minimal valid per-source response. Satisfies both the JSON-Schema
-    and the four semantic rules for the supplied source_id, so the model
+    and the semantic rules for the supplied source_name, so the model
     sees a concrete target rather than guessing shape from the schema
     alone."""
     return {
-        "source_id": source_id,
+        "source_name": source_name,
         "summary_slug": "summary-example",
         "concept_slugs": [],
         "article_slugs": [],
@@ -93,7 +95,6 @@ def exemplar_response(source_id: str) -> dict:
                 "title": "Example Summary",
                 "body": "A short summary of what this source is about.",
                 "status": "active",
-                "supports_page_existence": [source_id],
                 "outgoing_links": [],
                 "confidence": "medium",
             }
@@ -106,7 +107,7 @@ def exemplar_response(source_id: str) -> dict:
 def build_prompt(
     *,
     vault_root: Path,
-    source_id: str,
+    source_name: str,
     source_text: str,
     context_snapshot: ContextSnapshot,
 ) -> BuiltPrompt:
@@ -118,10 +119,10 @@ def build_prompt(
     system = f"{system_prompt}\n\n{RESPONSE_CONTRACT}"
 
     context_json = json.dumps(context_snapshot.to_dict(), indent=2, ensure_ascii=False)
-    exemplar_json = json.dumps(exemplar_response(source_id), indent=2, ensure_ascii=False)
+    exemplar_json = json.dumps(exemplar_response(source_name), indent=2, ensure_ascii=False)
 
     user = (
-        f"source_id: {source_id}\n\n"
+        f"source_name: {source_name}\n\n"
         f"## SOURCE CONTENT\n{source_text}\n\n"
         f"## EXISTING CONTEXT (manifest snapshot)\n{context_json}\n\n"
         f"## RESPONSE SCHEMA\n{schema_text}\n\n"

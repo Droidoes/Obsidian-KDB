@@ -81,8 +81,9 @@ def _job(vault: Path, source_id: str) -> CompileJob:
 
 
 def _good_response(source_id: str) -> dict:
+    """Build a slim LLM-emitted response (Task #41 — no source-id-space fields)."""
     return {
-        "source_id": source_id,
+        "source_name": Path(source_id).name,
         "summary_slug": "summary-foo",
         "concept_slugs": [],
         "article_slugs": [],
@@ -93,7 +94,6 @@ def _good_response(source_id: str) -> dict:
                 "title": "Foo Summary",
                 "body": "Body.",
                 "status": "active",
-                "supports_page_existence": [source_id],
                 "outgoing_links": [],
                 "confidence": "medium",
             }
@@ -129,13 +129,23 @@ def _resp_stats_files(state_root: Path, run_id: str) -> list[Path]:
 def _fake_call(mapping: dict) -> callable:
     """Return a fake call_model_with_retry that dispatches on source_id in
     the request's user prompt. Supports text responses, ModelResponse
-    instances, or callables (raise path)."""
+    instances, or callables (raise path).
+
+    Task #41: the user prompt now begins with `source_name: <basename>` —
+    we re-derive the source_id key by matching the basename against the
+    mapping's source_id keys."""
     def fake(req):
-        # user prompt is mandatory and begins with "source_id: <id>\n"
         first_line = req.prompt.splitlines()[0]
-        assert first_line.startswith("source_id: "), first_line
-        source_id = first_line[len("source_id: "):]
-        entry = mapping[source_id]
+        assert first_line.startswith("source_name: "), first_line
+        source_name = first_line[len("source_name: "):]
+        # mapping is keyed by source_id; match by basename
+        match = next(
+            (sid for sid in mapping if Path(sid).name == source_name),
+            None,
+        )
+        if match is None:
+            raise AssertionError(f"no mapping entry for source_name {source_name!r}")
+        entry = mapping[match]
         if callable(entry):
             return entry(req)
         if isinstance(entry, ModelResponse):

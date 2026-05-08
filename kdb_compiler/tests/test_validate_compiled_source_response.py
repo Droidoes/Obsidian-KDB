@@ -11,7 +11,7 @@ import pytest
 from kdb_compiler import validate_compiled_source_response as V
 
 
-SOURCE_ID = "KDB/raw/foo.md"
+SOURCE_NAME = "foo.md"
 
 
 def _page(
@@ -21,7 +21,6 @@ def _page(
     title: str = "Foo",
     body: str = "A thing about foo.",
     status: str = "active",
-    supports: list[str] | None = None,
     outgoing: list[str] | None = None,
     confidence: str = "medium",
 ) -> dict:
@@ -31,7 +30,6 @@ def _page(
         "title": title,
         "body": body,
         "status": status,
-        "supports_page_existence": supports if supports is not None else [SOURCE_ID],
         "outgoing_links": outgoing if outgoing is not None else [],
         "confidence": confidence,
     }
@@ -39,7 +37,7 @@ def _page(
 
 def _minimal() -> dict:
     return {
-        "source_id": SOURCE_ID,
+        "source_name": SOURCE_NAME,
         "summary_slug": "summary-foo",
         "pages": [_page()],
         "log_entries": [],
@@ -54,7 +52,7 @@ def test_minimal_valid_passes_schema() -> None:
 
 
 def test_minimal_valid_passes_semantic() -> None:
-    assert V.semantic_check(_minimal(), source_id=SOURCE_ID) == []
+    assert V.semantic_check(_minimal(), source_name=SOURCE_NAME) == []
 
 
 # ---------- schema: structural failures ----------
@@ -73,17 +71,6 @@ def test_bad_slug_pattern_fails_schema() -> None:
     assert any("Foo_Bar" in e or "pattern" in e.lower() for e in errors), errors
 
 
-def test_supports_page_existence_empty_fails_schema() -> None:
-    payload = _minimal()
-    payload["pages"][0]["supports_page_existence"] = []
-    errors = V.validate(payload)
-    # minItems=1 violation surfaces at schema layer
-    assert any(
-        "supports_page_existence" in e or "minItems" in e.lower() or "short" in e.lower()
-        for e in errors
-    ), errors
-
-
 def test_pages_empty_fails_schema() -> None:
     payload = _minimal()
     payload["pages"] = []
@@ -92,7 +79,7 @@ def test_pages_empty_fails_schema() -> None:
 
 
 def test_missing_required_page_field_fails_schema() -> None:
-    """Strict per-source contract: all 8 page fields required, no Python backfill."""
+    """Strict per-source contract: all 7 LLM-emitted page fields required."""
     payload = _minimal()
     del payload["pages"][0]["status"]
     errors = V.validate(payload)
@@ -109,71 +96,84 @@ def test_extra_top_level_field_fails_schema() -> None:
     ), errors
 
 
-def test_bad_source_id_shape_fails_schema() -> None:
+# ---------- schema: source_name (Task #41) ----------
+
+def test_top_level_source_id_field_rejected_as_unexpected() -> None:
+    """Task #41 dropped source_id from the LLM contract — runner injects it.
+    A model that emits a top-level `source_id` violates the schema."""
     payload = _minimal()
-    payload["source_id"] = "some/other/path.md"  # must start with KDB/raw/
+    payload["source_id"] = "KDB/raw/foo.md"
     errors = V.validate(payload)
-    assert any("source_id" in e or "pattern" in e.lower() for e in errors), errors
+    assert any(
+        "additional" in e.lower() or "source_id" in e
+        for e in errors
+    ), errors
 
 
-# ---------- schema: source_id_prefix override (Task #34) ----------
-
-def _minimal_with_prefix(prefix: str) -> dict:
-    """Build a minimal payload whose source_id and supports_page_existence
-    entries use the given prefix instead of `KDB/raw`."""
-    sid = f"{prefix}/foo.md"
-    return {
-        "source_id": sid,
-        "summary_slug": "summary-foo",
-        "pages": [_page(supports=[sid])],
-        "log_entries": [],
-        "warnings": [],
-    }
-
-
-def test_default_prefix_rejects_benchmark_style_source_id() -> None:
-    """Default `KDB/raw` regex must still reject non-production prefixes —
-    production validation is unchanged."""
-    payload = _minimal_with_prefix("benchmark/sources")
-    errors = V.validate(payload)
-    assert any("pattern" in e.lower() or "KDB/raw" in e for e in errors), errors
-
-
-def test_override_prefix_accepts_benchmark_style_source_id() -> None:
-    """Benchmark callers pass their own prefix; the schema accepts it."""
-    payload = _minimal_with_prefix("benchmark/sources")
-    errors = V.validate(payload, source_id_prefix="benchmark/sources")
-    assert errors == [], errors
-
-
-def test_override_prefix_still_rejects_other_prefixes() -> None:
-    """Override doesn't disable validation — it just shifts the accepted prefix."""
-    payload = _minimal_with_prefix("benchmark/sources")
-    errors = V.validate(payload, source_id_prefix="tmp/elsewhere")
-    assert any("pattern" in e.lower() or "tmp/elsewhere" in e for e in errors), errors
-
-
-def test_override_prefix_handles_regex_special_chars() -> None:
-    """Prefix is regex-escaped so directory names with regex metachars
-    (dots, plus, parens) don't break the validator."""
-    payload = _minimal_with_prefix("benchmark/sources-v1.2")
-    errors = V.validate(payload, source_id_prefix="benchmark/sources-v1.2")
-    assert errors == [], errors
-
-
-# ---------- semantic: the four rules ----------
-
-def test_source_id_mismatch_fails_semantic() -> None:
+def test_per_page_supports_page_existence_rejected_as_unexpected() -> None:
+    """Task #41 dropped supports_page_existence from the LLM contract."""
     payload = _minimal()
-    payload["source_id"] = "KDB/raw/other.md"
-    errors = V.semantic_check(payload, source_id=SOURCE_ID)
-    assert any("echo" in e.lower() or "source_id" in e for e in errors)
+    payload["pages"][0]["supports_page_existence"] = ["KDB/raw/foo.md"]
+    errors = V.validate(payload)
+    assert any(
+        "additional" in e.lower() or "supports_page_existence" in e
+        for e in errors
+    ), errors
+
+
+def test_per_log_entry_related_source_ids_rejected_as_unexpected() -> None:
+    """Task #41 dropped related_source_ids from the LLM contract."""
+    payload = _minimal()
+    payload["log_entries"] = [{
+        "level": "info",
+        "message": "a note",
+        "related_slugs": [],
+        "related_source_ids": ["KDB/raw/foo.md"],
+    }]
+    errors = V.validate(payload)
+    assert any(
+        "additional" in e.lower() or "related_source_ids" in e
+        for e in errors
+    ), errors
+
+
+def test_source_name_with_path_separator_fails_schema() -> None:
+    """source_name is path-free — slashes belong to source_id, which is
+    runner-injected, not LLM-emitted."""
+    payload = _minimal()
+    payload["source_name"] = "KDB/raw/foo.md"
+    errors = V.validate(payload)
+    assert any("source_name" in e or "pattern" in e.lower() for e in errors), errors
+
+
+def test_source_name_must_end_with_md() -> None:
+    payload = _minimal()
+    payload["source_name"] = "foo.txt"
+    errors = V.validate(payload)
+    assert any("source_name" in e or "pattern" in e.lower() for e in errors), errors
+
+
+def test_source_name_with_spaces_accepted() -> None:
+    """Real vault filenames can have spaces (e.g. `EP1 - The Journey of China.md`).
+    The pattern must accept any path-separator-free string ending in .md."""
+    payload = _minimal()
+    payload["source_name"] = "EP1 - The Journey of China.md"
+    assert V.validate(payload) == []
+
+
+# ---------- semantic rules ----------
+
+def test_source_name_mismatch_fails_semantic() -> None:
+    payload = _minimal()
+    payload["source_name"] = "other.md"
+    errors = V.semantic_check(payload, source_name=SOURCE_NAME)
+    assert any("echo" in e.lower() or "source_name" in e for e in errors)
 
 
 def test_summary_slug_not_in_pages_fails_semantic() -> None:
     payload = _minimal()
     payload["summary_slug"] = "summary-missing"
-    errors = V.semantic_check(payload, source_id=SOURCE_ID)
+    errors = V.semantic_check(payload, source_name=SOURCE_NAME)
     assert any("summary_slug" in e for e in errors)
 
 
@@ -183,7 +183,7 @@ def test_two_summary_pages_fails_semantic() -> None:
     payload["pages"].append(
         _page(slug="summary-foo", title="Foo duplicate")  # second page with same slug + page_type=summary
     )
-    errors = V.semantic_check(payload, source_id=SOURCE_ID)
+    errors = V.semantic_check(payload, source_name=SOURCE_NAME)
     assert any("exactly one" in e.lower() for e in errors), errors
 
 
@@ -191,20 +191,8 @@ def test_summary_slug_wrong_page_type_fails_semantic() -> None:
     """summary_slug resolves to a page, but that page's page_type != 'summary'."""
     payload = _minimal()
     payload["pages"][0]["page_type"] = "concept"
-    errors = V.semantic_check(payload, source_id=SOURCE_ID)
+    errors = V.semantic_check(payload, source_name=SOURCE_NAME)
     assert any("exactly one" in e.lower() for e in errors)
-
-
-def test_page_missing_source_id_in_supports_fails_semantic() -> None:
-    payload = _minimal()
-    payload["pages"].append(
-        _page(
-            slug="concept-a", page_type="concept", title="Concept A",
-            supports=["KDB/raw/unrelated.md"],  # MUST include SOURCE_ID
-        )
-    )
-    errors = V.semantic_check(payload, source_id=SOURCE_ID)
-    assert any("supports_page_existence" in e for e in errors)
 
 
 # ---------- CLI ----------
@@ -212,7 +200,7 @@ def test_page_missing_source_id_in_supports_fails_semantic() -> None:
 def test_cli_exit_0_on_valid(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     f = tmp_path / "resp.json"
     f.write_text(json.dumps(_minimal()), encoding="utf-8")
-    rc = V.main([str(f), "--source-id", SOURCE_ID])
+    rc = V.main([str(f), "--source-name", SOURCE_NAME])
     assert rc == 0
     assert "OK" in capsys.readouterr().out
 
@@ -234,17 +222,17 @@ def test_cli_exit_2_on_missing_file(
     assert rc == 2
 
 
-def test_cli_source_id_triggers_semantic_check(
+def test_cli_source_name_triggers_semantic_check(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     payload = _minimal()
-    payload["source_id"] = "KDB/raw/other.md"  # schema-valid but wrong echo
+    payload["source_name"] = "other.md"  # schema-valid but wrong echo
     f = tmp_path / "resp.json"
     f.write_text(json.dumps(payload), encoding="utf-8")
-    rc = V.main([str(f), "--source-id", SOURCE_ID])
+    rc = V.main([str(f), "--source-name", SOURCE_NAME])
     assert rc == 1
     out = capsys.readouterr().out
-    assert "source_id" in out or "echo" in out.lower()
+    assert "source_name" in out or "echo" in out.lower()
 
 
 # ---------- body_link_check (Task #28 / M5 symmetric Jaccard inputs) ----------
@@ -253,7 +241,7 @@ def _payload(*pages: dict) -> dict:
     """Build a minimal payload around one-or-more handcrafted pages.
     Schema-validity is irrelevant for body_link_check; only `pages` is read."""
     return {
-        "source_id": SOURCE_ID,
+        "source_name": SOURCE_NAME,
         "summary_slug": pages[0].get("slug", "x") if pages else "x",
         "pages": list(pages),
         "log_entries": [],
