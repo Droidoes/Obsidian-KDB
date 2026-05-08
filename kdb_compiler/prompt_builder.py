@@ -83,12 +83,12 @@ def exemplar_response(source_id: str) -> dict:
     alone."""
     return {
         "source_id": source_id,
-        "summary_slug": "example-summary",
+        "summary_slug": "summary-example",
         "concept_slugs": [],
         "article_slugs": [],
         "pages": [
             {
-                "slug": "example-summary",
+                "slug": "summary-example",
                 "page_type": "summary",
                 "title": "Example Summary",
                 "body": "A short summary of what this source is about.",

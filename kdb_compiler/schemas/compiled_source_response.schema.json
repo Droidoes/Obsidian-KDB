@@ -8,7 +8,7 @@
   "required": ["source_id", "summary_slug", "pages", "log_entries", "warnings"],
   "properties": {
     "source_id": { "$ref": "#/$defs/sourceId" },
-    "summary_slug": { "$ref": "#/$defs/slug" },
+    "summary_slug": { "$ref": "#/$defs/summarySlug" },
     "concept_slugs": {
       "type": "array",
       "items": { "$ref": "#/$defs/slug" }
@@ -34,9 +34,16 @@
   "$defs": {
     "slug": {
       "type": "string",
-      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators.",
+      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators. The 'summary-' prefix is reserved (see summarySlug).",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "minLength": 1,
+      "maxLength": 120
+    },
+    "summarySlug": {
+      "type": "string",
+      "description": "Slug for the per-source summary page. MUST start with the reserved 'summary-' prefix followed by the kebab-cased source filename stem. Concept and article slugs do NOT use this prefix. Reserving the prefix structurally prevents within-source slug collision between the summary and a concept whose name matches the source's main topic.",
+      "pattern": "^summary-[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 9,
       "maxLength": 120
     },
     "sourceId": {

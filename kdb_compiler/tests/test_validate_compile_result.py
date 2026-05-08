@@ -43,9 +43,9 @@ def test_invalid_fixture_surfaces_multiple_violations() -> None:
 def _src(**overrides) -> dict:
     base = {
         "source_id": "KDB/raw/foo.md",
-        "summary_slug": "foo",
+        "summary_slug": "summary-foo",
         "pages": [
-            {"slug": "foo", "page_type": "summary", "title": "Foo", "body": "x"}
+            {"slug": "summary-foo", "page_type": "summary", "title": "Foo", "body": "x"}
         ],
     }
     base.update(overrides)
@@ -64,26 +64,26 @@ def _payload(*sources: dict) -> dict:
 
 def test_duplicate_slug_in_pages() -> None:
     src = _src(pages=[
-        {"slug": "foo", "page_type": "summary", "title": "A", "body": "x"},
-        {"slug": "foo", "page_type": "concept", "title": "B", "body": "y"},
+        {"slug": "summary-foo", "page_type": "summary", "title": "A", "body": "x"},
+        {"slug": "summary-foo", "page_type": "concept", "title": "B", "body": "y"},
     ])
     result = vcr.validate(_payload(src))
     errors = _details(result)
-    assert any("duplicate slug 'foo'" in e for e in errors), errors
+    assert any("duplicate slug 'summary-foo'" in e for e in errors), errors
     assert any(f.type == "duplicate_slug" for f in result.gate_errors), result.gate_errors
 
 
 def test_summary_slug_not_in_pages() -> None:
-    result = vcr.validate(_payload(_src(summary_slug="missing")))
+    result = vcr.validate(_payload(_src(summary_slug="summary-missing")))
     errors = _details(result)
-    assert any("'missing' not found in pages[]" in e for e in errors), errors
+    assert any("'summary-missing' not found in pages[]" in e for e in errors), errors
     assert any(f.type == "summary_slug_missing" for f in result.gate_errors)
 
 
 def test_summary_slug_wrong_page_type() -> None:
     src = _src(
-        summary_slug="foo",
-        pages=[{"slug": "foo", "page_type": "concept", "title": "x", "body": "y"}],
+        summary_slug="summary-foo",
+        pages=[{"slug": "summary-foo", "page_type": "concept", "title": "x", "body": "y"}],
     )
     result = vcr.validate(_payload(src))
     errors = _details(result)
@@ -101,7 +101,9 @@ def test_concept_slug_missing_from_pages() -> None:
 
 
 def test_concept_slug_points_to_wrong_type() -> None:
-    result = vcr.validate(_payload(_src(concept_slugs=["foo"])))
+    # 'summary-foo' is the default summary page slug. Listing it in concept_slugs
+    # points at a page whose page_type is 'summary' → pairing_type_mismatch.
+    result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
     errors = _details(result)
     assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
     # pairing_type_mismatch is GATE — unreconcilable.
@@ -122,7 +124,7 @@ def test_concept_page_missing_from_concept_slugs() -> None:
     src = _src(
         concept_slugs=[],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "mencius", "page_type": "concept", "title": "Mencius", "body": "z"},
         ],
     )
@@ -139,7 +141,7 @@ def test_article_page_missing_from_article_slugs() -> None:
     src = _src(
         article_slugs=[],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "some-essay", "page_type": "article", "title": "Essay", "body": "z"},
         ],
     )
@@ -156,7 +158,7 @@ def test_pairing_omission_and_commission_both_caught_in_one_pass() -> None:
     src = _src(
         concept_slugs=["ghost"],  # ghost has no page (commission)
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "real-concept", "page_type": "concept", "title": "RC", "body": "z"},
             # real-concept is a concept page but not in concept_slugs (omission)
         ],
@@ -173,7 +175,7 @@ def test_multiple_concept_pages_all_missing_produce_per_page_findings() -> None:
     src = _src(
         concept_slugs=[],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
             {"slug": "c2", "page_type": "concept", "title": "x", "body": "y"},
             {"slug": "c3", "page_type": "concept", "title": "x", "body": "y"},
@@ -191,7 +193,7 @@ def test_pairing_fully_correct_no_findings() -> None:
         concept_slugs=["c1"],
         article_slugs=["a1"],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
             {"slug": "a1", "page_type": "article", "title": "x", "body": "y"},
         ],
@@ -202,31 +204,33 @@ def test_pairing_fully_correct_no_findings() -> None:
 
 @pytest.mark.parametrize("reserved", ["index", "log"])
 def test_reserved_slug_in_pages(reserved: str) -> None:
+    """Reserved-slug check fires when a concept page uses a reserved slug.
+    (Summary slugs can't trigger this anymore — the schema's `summarySlug`
+    pattern requires the `summary-` prefix, which forecloses 'index'/'log'.)"""
     src = _src(
-        summary_slug=reserved,
-        pages=[{"slug": reserved, "page_type": "summary", "title": "x", "body": "y"}],
+        concept_slugs=[reserved],
+        pages=[
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": reserved, "page_type": "concept", "title": "x", "body": "y"},
+        ],
     )
     result = vcr.validate(_payload(src))
     errors = _details(result)
-    assert any("pages[0].slug" in e and "Reserved" in e for e in errors), errors
+    assert any("pages[1].slug" in e and "Reserved" in e for e in errors), errors
     assert any(f.type == "reserved_slug" for f in result.gate_errors)
 
 
-def test_reserved_slug_in_summary_slug() -> None:
-    src = _src(
-        summary_slug="index",
-        pages=[{"slug": "index", "page_type": "summary", "title": "x", "body": "y"}],
-    )
-    result = vcr.validate(_payload(src))
-    errors = _details(result)
-    assert any("summary_slug" in e and "Reserved" in e for e in errors), errors
+# `test_reserved_slug_in_summary_slug` removed: with the `summary-` prefix
+# requirement on summary_slug (Task #37), a bare reserved slug like 'index'
+# can never appear there — schema rejects before the reserved check runs.
+# Reserved-slug coverage for summary contexts is structurally redundant.
 
 
 def test_reserved_slug_in_concept_slugs() -> None:
     src = _src(
         concept_slugs=["log"],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "log", "page_type": "concept", "title": "x", "body": "y"},
         ],
     )
@@ -264,7 +268,7 @@ def test_pairing_mismatches_do_not_gate_the_run() -> None:
     src = _src(
         concept_slugs=["ghost"],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "real-concept", "page_type": "concept", "title": "x", "body": "y"},
         ],
     )
@@ -278,7 +282,9 @@ def test_pairing_mismatches_do_not_gate_the_run() -> None:
 
 def test_pairing_type_mismatch_stays_gate() -> None:
     """pairing_type_mismatch is unreconcilable — must block the run."""
-    result = vcr.validate(_payload(_src(concept_slugs=["foo"])))  # 'foo' is summary, not concept
+    # 'summary-foo' is the default summary page slug; listing it in concept_slugs
+    # points at the summary page → page_type mismatch → gate finding.
+    result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
     assert not result.is_valid
     assert any(f.type == "pairing_type_mismatch" and f.severity == "gate" for f in result.gate_errors)
 

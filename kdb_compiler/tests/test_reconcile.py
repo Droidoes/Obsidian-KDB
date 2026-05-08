@@ -14,11 +14,11 @@ SRC_ID = "KDB/raw/foo.md"
 def _src(**overrides) -> dict:
     base = {
         "source_id": SRC_ID,
-        "summary_slug": "foo",
+        "summary_slug": "summary-foo",
         "concept_slugs": [],
         "article_slugs": [],
         "pages": [
-            {"slug": "foo", "page_type": "summary", "title": "Foo", "body": "x"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "Foo", "body": "x"},
         ],
     }
     base.update(overrides)
@@ -112,7 +112,7 @@ def test_fix_pairing_commission_article() -> None:
 def test_fix_pairing_omission_concept() -> None:
     cr = _cr(_src(
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "mencius", "page_type": "concept", "title": "Mencius", "body": "z"},
         ],
     ))
@@ -132,7 +132,7 @@ def test_fix_pairing_omission_concept() -> None:
 def test_fix_pairing_omission_article() -> None:
     cr = _cr(_src(
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "some-essay", "page_type": "article", "title": "E", "body": "z"},
         ],
     ))
@@ -154,7 +154,7 @@ def test_fix_both_directions_in_one_pass() -> None:
     cr = _cr(_src(
         concept_slugs=["ghost"],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "real-concept", "page_type": "concept", "title": "RC", "body": "z"},
         ],
     ))
@@ -210,7 +210,7 @@ def test_validate_then_reconcile_then_validate_produces_no_pairing_findings() ->
         concept_slugs=["ghost"],           # commission
         article_slugs=[],
         pages=[
-            {"slug": "foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
             {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},    # omission
             {"slug": "a1", "page_type": "article", "title": "x", "body": "y"},    # omission
         ],

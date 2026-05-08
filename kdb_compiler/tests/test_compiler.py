@@ -83,12 +83,12 @@ def _job(vault: Path, source_id: str) -> CompileJob:
 def _good_response(source_id: str) -> dict:
     return {
         "source_id": source_id,
-        "summary_slug": "foo-summary",
+        "summary_slug": "summary-foo",
         "concept_slugs": [],
         "article_slugs": [],
         "pages": [
             {
-                "slug": "foo-summary",
+                "slug": "summary-foo",
                 "page_type": "summary",
                 "title": "Foo Summary",
                 "body": "Body.",
@@ -172,7 +172,7 @@ def test_compile_one_happy_path_returns_compiled_source(
     assert err is None
     assert cs is not None
     assert cs.source_id == SOURCE_A
-    assert cs.summary_slug == "foo-summary"
+    assert cs.summary_slug == "summary-foo"
     assert logs == []
     assert warns == []
     assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
@@ -524,7 +524,7 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
 
     # Schema-valid but summary_slug doesn't match any page slug.
     bad_payload = _good_response(SOURCE_A)
-    bad_payload["summary_slug"] = "not-in-pages"
+    bad_payload["summary_slug"] = "summary-not-in-pages"
     bad = ModelResponse(
         text=json.dumps(bad_payload),
         input_tokens=10, output_tokens=5, latency_ms=10,

@@ -4,12 +4,12 @@
   "compiled_sources": [
     {
       "source_id": "KDB/raw/attention-paper.md",
-      "summary_slug": "attention-paper",
+      "summary_slug": "summary-attention-paper",
       "concept_slugs": ["attention-mechanism"],
       "article_slugs": [],
       "pages": [
         {
-          "slug": "attention-paper",
+          "slug": "summary-attention-paper",
           "page_type": "summary",
           "title": "Attention Paper",
           "status": "active",
@@ -23,9 +23,9 @@
           "page_type": "concept",
           "title": "Attention Mechanism",
           "status": "active",
-          "body": "Attention lets a sequence model weight its inputs by learned relevance, replacing the fixed recurrent state of RNNs.\n\nIntroduced in context by [[attention-paper]].\n",
+          "body": "Attention lets a sequence model weight its inputs by learned relevance, replacing the fixed recurrent state of RNNs.\n\nIntroduced in context by [[summary-attention-paper]].\n",
           "supports_page_existence": ["KDB/raw/attention-paper.md"],
-          "outgoing_links": ["attention-paper"],
+          "outgoing_links": ["summary-attention-paper"],
           "confidence": "high"
         }
       ]

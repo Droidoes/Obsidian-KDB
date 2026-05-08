@@ -16,7 +16,7 @@ SOURCE_ID = "KDB/raw/foo.md"
 
 def _page(
     *,
-    slug: str = "foo",
+    slug: str = "summary-foo",
     page_type: str = "summary",
     title: str = "Foo",
     body: str = "A thing about foo.",
@@ -40,7 +40,7 @@ def _page(
 def _minimal() -> dict:
     return {
         "source_id": SOURCE_ID,
-        "summary_slug": "foo",
+        "summary_slug": "summary-foo",
         "pages": [_page()],
         "log_entries": [],
         "warnings": [],
@@ -124,7 +124,7 @@ def _minimal_with_prefix(prefix: str) -> dict:
     sid = f"{prefix}/foo.md"
     return {
         "source_id": sid,
-        "summary_slug": "foo",
+        "summary_slug": "summary-foo",
         "pages": [_page(supports=[sid])],
         "log_entries": [],
         "warnings": [],
@@ -172,7 +172,7 @@ def test_source_id_mismatch_fails_semantic() -> None:
 
 def test_summary_slug_not_in_pages_fails_semantic() -> None:
     payload = _minimal()
-    payload["summary_slug"] = "missing-slug"
+    payload["summary_slug"] = "summary-missing"
     errors = V.semantic_check(payload, source_id=SOURCE_ID)
     assert any("summary_slug" in e for e in errors)
 
@@ -181,7 +181,7 @@ def test_two_summary_pages_fails_semantic() -> None:
     """Exactly one summary page whose slug == summary_slug."""
     payload = _minimal()
     payload["pages"].append(
-        _page(slug="foo", title="Foo duplicate")  # second page with same slug + page_type=summary
+        _page(slug="summary-foo", title="Foo duplicate")  # second page with same slug + page_type=summary
     )
     errors = V.semantic_check(payload, source_id=SOURCE_ID)
     assert any("exactly one" in e.lower() for e in errors), errors

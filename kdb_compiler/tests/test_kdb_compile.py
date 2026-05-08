@@ -106,11 +106,11 @@ def _write_vault_system_prompt(vault: Path) -> None:
 def _good_model_response(source_id: str, run_id: str) -> ModelResponse:
     payload = {
         "source_id": source_id,
-        "summary_slug": "paper",
+        "summary_slug": "summary-paper",
         "concept_slugs": [],
         "article_slugs": [],
         "pages": [{
-            "slug": "paper",
+            "slug": "summary-paper",
             "page_type": "summary",
             "title": "Paper",
             "body": "Live-compiled body.",
@@ -141,7 +141,7 @@ def test_happy_path_dry_run(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     result = compile(vault, run_ctx=ctx)
 
@@ -171,15 +171,15 @@ def test_happy_path_wet_run(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     result = compile(vault, run_ctx=ctx)
 
     assert result.success is True
     assert result.manifest_written is True
     assert result.journal_written is True
-    assert "KDB/wiki/summaries/paper.md" in result.pages_written
-    assert (vault / "KDB/wiki/summaries/paper.md").exists()
+    assert "KDB/wiki/summaries/summary-paper.md" in result.pages_written
+    assert (vault / "KDB/wiki/summaries/summary-paper.md").exists()
     assert not (vault / "KDB/wiki/index.md").exists()
     assert not (vault / "KDB/wiki/log.md").exists()
     assert (state / "manifest.json").exists()
@@ -236,7 +236,7 @@ def test_stale_compile_result_falls_through_to_live(
     _write_vault_system_prompt(vault)
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
     # Stale CR from a "previous run" — wrong run_id, different slug.
-    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "stale-slug"))
+    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "summary-stale-slug"))
 
     def fake_call(req):
         source_id = req.prompt.splitlines()[0][len("source_id: "):]
@@ -253,7 +253,7 @@ def test_stale_compile_result_falls_through_to_live(
     assert cr["run_id"] == _RUN1_ID
     # Stale slug never materialised; live slug did.
     assert not (vault / "KDB/wiki/summaries/stale-slug.md").exists()
-    assert (vault / "KDB/wiki/summaries/paper.md").exists()
+    assert (vault / "KDB/wiki/summaries/summary-paper.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -302,11 +302,11 @@ def test_second_run_incremental(tmp_path: Path) -> None:
     # Run 1
     src.write_text("# Paper\nFirst version.", encoding="utf-8")
     ctx1 = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper", body="First version body."))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper", body="First version body."))
     result1 = compile(vault, run_ctx=ctx1)
     assert result1.success is True
 
-    page_path = vault / "KDB/wiki/summaries/paper.md"
+    page_path = vault / "KDB/wiki/summaries/summary-paper.md"
     assert "First version body." in page_path.read_text()
 
     # Modify source (different content → different hash)
@@ -314,7 +314,7 @@ def test_second_run_incremental(tmp_path: Path) -> None:
 
     # Run 2
     ctx2 = _ctx(_RUN2_ID, _RUN2_AT, vault)
-    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "paper", body="Second version body."))
+    _write_cr(state, _cr(_RUN2_ID, "KDB/raw/paper.md", "summary-paper", body="Second version body."))
     result2 = compile(vault, run_ctx=ctx2)
     assert result2.success is True
 
@@ -334,7 +334,7 @@ def test_moved_file(tmp_path: Path) -> None:
     # Run 1: source-a.md
     (raw / "source-a.md").write_text("# Source A\nContent.", encoding="utf-8")
     ctx1 = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/source-a.md", "source-a"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/source-a.md", "summary-source-a"))
     result1 = compile(vault, run_ctx=ctx1)
     assert result1.success is True
 
@@ -362,7 +362,7 @@ def test_dry_run_leaves_no_artifacts(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     result = compile(vault, dry_run=True, run_ctx=ctx)
 
@@ -516,7 +516,7 @@ def test_fixture_branch_does_not_invoke_compiler(
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     calls: list[object] = []
     def track(req):
@@ -555,7 +555,7 @@ def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     events, cb = _capture_progress()
     result = compile(vault, run_ctx=ctx, progress=cb)
@@ -608,7 +608,7 @@ def test_stage_8_under_dry_run_writes_journal_only(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     events, cb = _capture_progress()
     result = compile(vault, run_ctx=ctx, progress=cb)
@@ -789,7 +789,7 @@ def test_run_journal_builder_replay_mode_nullables(tmp_path: Path) -> None:
             "page_count": 1, "log_entry_count": 0,
             "outgoing_link_count": 0, "warning_count": 0,
             "page_types": {"summary": 1},
-            "summary_slug": "paper", "slugs": ["paper"],
+            "summary_slug": "summary-paper", "slugs": ["summary-paper"],
             "source_id_echoed": "KDB/raw/paper.md",
         },
     })
@@ -825,12 +825,12 @@ def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
         "success": True,
         "compiled_sources": [{
             "source_id": source_id,
-            "summary_slug": "paper",
+            "summary_slug": "summary-paper",
             "concept_slugs": [],            # <-- empty
             "article_slugs": [],
             "pages": [
                 {
-                    "slug": "paper", "page_type": "summary",
+                    "slug": "summary-paper", "page_type": "summary",
                     "title": "Paper", "body": "Summary body.",
                     "status": "active",
                     "supports_page_existence": [source_id],
@@ -838,10 +838,10 @@ def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
                 },
                 {
                     "slug": "mencius", "page_type": "concept",  # <-- concept page
-                    "title": "Mencius", "body": "Concept body [[paper]].",
+                    "title": "Mencius", "body": "Concept body [[summary-paper]].",
                     "status": "active",
                     "supports_page_existence": [source_id],
-                    "outgoing_links": ["paper"], "confidence": "medium",
+                    "outgoing_links": ["summary-paper"], "confidence": "medium",
                 },
             ],
         }],
@@ -855,7 +855,7 @@ def test_stage4_journal_records_clean_when_no_findings(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\n", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     result = compile(vault, run_ctx=ctx)
     assert result.success is True
@@ -968,7 +968,7 @@ def test_full_journal_contains_all_eight_stages_with_folded_payloads(
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
-    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "paper"))
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
 
     result = compile(vault, run_ctx=ctx)
     assert result.success is True
@@ -987,7 +987,7 @@ def test_full_journal_contains_all_eight_stages_with_folded_payloads(
     # Stage 7 carries the apply-pages payload (fold target moved from 6→7).
     stage7 = by_idx[7]
     assert "pages_written" in stage7
-    assert "KDB/wiki/summaries/paper.md" in stage7["pages_written"]
+    assert "KDB/wiki/summaries/summary-paper.md" in stage7["pages_written"]
     assert stage7["pages_written_count"] == 1
 
     # Stage 4/5 split is preserved in the journal even on a clean run.
@@ -1012,7 +1012,7 @@ def test_pairing_omission_repair_flows_through_to_disk_wet_run(
     assert result.success is True, result.errors
 
     # The reconciler-repaired concept page materialized on disk.
-    assert (vault / "KDB/wiki/summaries/paper.md").exists()
+    assert (vault / "KDB/wiki/summaries/summary-paper.md").exists()
     assert (vault / "KDB/wiki/concepts/mencius.md").exists()
 
     journal = _load_journal(state, ctx.run_id)
@@ -1024,7 +1024,7 @@ def test_pairing_omission_repair_flows_through_to_disk_wet_run(
 
     # Stage 6 deltas include both pages as created.
     created = by_idx[6]["deltas"]["pages_created"]
-    assert "KDB/wiki/summaries/paper.md" in created
+    assert "KDB/wiki/summaries/summary-paper.md" in created
     assert "KDB/wiki/concepts/mencius.md" in created
 
     # Stage 7 pages_written matches.
