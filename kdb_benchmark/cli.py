@@ -92,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         print("error: --models must be non-empty", file=sys.stderr)
         return 2
 
+    trace_sink: list[str] | None = [] if args.verbose else None
+
     raw_run_scores = []
     try:
         for model_id in model_ids:
@@ -108,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
             run_score = score_run(
                 state_root, run_id, model_id,
                 registry_path=args.registry_path,
-                verbose=args.verbose,
+                trace_sink=trace_sink,
             )
             raw_run_scores.append(run_score)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
@@ -116,12 +118,22 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print("aggregating Borda + final_score...")
-    enriched = score_runs(raw_run_scores, verbose=args.verbose)
+    enriched = score_runs(raw_run_scores, trace_sink=trace_sink)
 
     sc = build_scorecard(enriched)
     out_path = write_scorecard(sc, scores_dir=args.scores_dir)
     print(f"\nscorecard written: {out_path}\n")
     print(render_terminal(sc))
+
+    # --verbose: per-measure trace prints AFTER the scorecard so the table
+    # stays at the top of the user's terminal when they scroll up.
+    if trace_sink:
+        print("\n" + "=" * 100)
+        print("Verbose trace (--verbose)")
+        print("=" * 100)
+        for line in trace_sink:
+            print(line)
+
     return 0
 
 

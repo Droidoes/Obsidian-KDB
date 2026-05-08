@@ -291,9 +291,17 @@ def check_compiled_source(parsed_json: dict) -> list[str]:
     (`pairing_commission`, `pairing_omission`) are intentionally
     excluded — they are reconcilable, not hard-zero.
     """
+    return [f.type for f in check_compiled_source_findings(parsed_json)]
+
+
+def check_compiled_source_findings(parsed_json: dict) -> list[ValidationFinding]:
+    """Like `check_compiled_source` but returns the full ValidationFinding
+    objects (with `detail`, `slug`, `page_type`, etc.) for hard-zero gate
+    errors only. Used by the benchmark `--verbose` trace to surface per-source
+    S0 failure detail beyond the bare type list."""
     result = ValidationResult()
     _check_source(parsed_json, 0, result)
-    return [f.type for f in result.gate_errors if f.type in HARD_ZERO_FINDING_TYPES]
+    return [f for f in result.gate_errors if f.type in HARD_ZERO_FINDING_TYPES]
 
 
 # -------------------------------------------------------------------------

@@ -25,7 +25,10 @@ from typing import Optional
 from kdb_benchmark.paths import MODELS_JSON
 from kdb_benchmark.registry import ModelEntry, load_registry
 from kdb_compiler.call_model_retry import MAX_RETRIES
-from kdb_compiler.validate_compile_result import check_compiled_source
+from kdb_compiler.validate_compile_result import (
+    check_compiled_source,
+    check_compiled_source_findings,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +407,7 @@ def score_run(
     model_id: str,
     *,
     registry_path: Path = MODELS_JSON,
-    verbose: bool = False,
+    trace_sink: list[str] | None = None,
 ) -> RunScore:
     """Phase 3 § 9 entry point.
 
@@ -414,9 +417,11 @@ def score_run(
     raw rates. m6_borda / m7_borda / final_score are None on the returned
     object — populated only by score_runs() across peers.
 
-    `verbose=True` prints a per-measure trace to stdout — numerator,
-    denominator, rate, weight, plus evidence snippets for measures whose
-    derivation isn't visible from the rate alone (S0 cause, M1 target_set).
+    `trace_sink`: when a list is provided, append per-measure trace lines
+    (numerator, denominator, rate, weight, plus per-source evidence for S0
+    and derivation snippets for M1/M6/M7). The CLI uses this to surface
+    `--verbose` output after the scorecard render rather than mid-flight.
+    Pass `None` to disable tracing entirely.
     """
     registry = load_registry(registry_path)
     entry = _resolve_model_entry(model_id, registry)
@@ -464,8 +469,8 @@ def score_run(
         final_score=None,
     )
 
-    if verbose:
-        _emit_verbose_trace(records, rs)
+    if trace_sink is not None:
+        _emit_verbose_trace(records, rs, trace_sink)
 
     return rs
 
@@ -498,43 +503,67 @@ def _fmt_score(label: str, ms: MeasureScore) -> str:
     )
 
 
-def _s0_evidence(records: list[dict]) -> list[str]:
-    """Per-record breakdown of why S0 may have failed."""
+def _s0_per_source_lines(records: list[dict]) -> list[str]:
+    """One block per source showing the S0 gate chain: parse_ok →
+    schema_ok → parsed_json-is-dict → hard-zero findings → verdict.
+    Always emitted under --verbose so passing sources are visible too."""
     lines: list[str] = []
     for r in records:
         sid = r.get("source_id", "<unknown>")
+        lines.append(f"[verbose]   {sid}")
+
         if not r.get("parse_ok"):
-            lines.append(f"  └─ {sid}: parse failed")
+            lines.append(f"[verbose]     parse_ok=False  → S0 FAIL")
             continue
+
         if not r.get("schema_ok"):
             errs = r.get("schema_errors") or []
             head = errs[0] if errs else "(no error captured)"
-            lines.append(f"  └─ {sid}: schema failed — {head}")
+            lines.append(f"[verbose]     parse_ok=True  schema_ok=False")
+            lines.append(f"[verbose]     schema_error: {head}")
+            lines.append(f"[verbose]     → S0 FAIL")
             continue
+
         parsed = r.get("parsed_json")
         if not isinstance(parsed, dict):
-            lines.append(f"  └─ {sid}: parsed_json is not a dict")
+            lines.append(
+                f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=NOT_DICT"
+            )
+            lines.append(f"[verbose]     → S0 FAIL")
             continue
-        hz = check_compiled_source(parsed)
-        if hz:
-            lines.append(f"  └─ {sid}: hard-zero findings {hz}")
+
+        findings = check_compiled_source_findings(parsed)
+        if findings:
+            lines.append(f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=dict")
+            lines.append(f"[verbose]     hard-zero findings:")
+            for f in findings:
+                lines.append(f"[verbose]       - {f.type}: {f.detail}")
+            lines.append(f"[verbose]     → S0 FAIL")
+        else:
+            lines.append(
+                f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=dict"
+                f"  hard-zero=none  → S0 PASS"
+            )
     return lines
 
 
-def _emit_verbose_trace(records: list[dict], rs: RunScore) -> None:
-    """Print per-measure trace for one RunScore. Called from score_run when
-    verbose=True. Output is best-effort for human inspection; not a stable
-    contract."""
-    print(f"[verbose] ── score_run: {rs.model_id}  (n_attempted={rs.n_attempted}) ──")
-    for ms in (rs.s0, rs.s1, rs.s2, rs.s3):
-        print(_fmt_score(ms.name, ms))
-        if ms.name == "S0" and ms.rate is not None and ms.rate < 1.0:
-            for line in _s0_evidence(records):
-                print(f"[verbose] {line}")
+def _emit_verbose_trace(records: list[dict], rs: RunScore, sink: list[str]) -> None:
+    """Append per-measure trace for one RunScore to `sink`. Called from
+    score_run when a trace_sink list is provided. Output is best-effort
+    for human inspection; not a stable contract."""
+    sink.append(
+        f"[verbose] ── score_run: {rs.model_id}  (n_attempted={rs.n_attempted}) ──"
+    )
+    sink.append(_fmt_score(rs.s0.name, rs.s0))
+    sink.append("[verbose]   per-source S0 breakdown:")
+    sink.extend(_s0_per_source_lines(records))
+
+    for ms in (rs.s1, rs.s2, rs.s3):
+        sink.append(_fmt_score(ms.name, ms))
 
     for key in ("M1", "M2", "M3", "M4", "M5", "M6", "M7"):
         ms = rs.measures[key]
-        print(_fmt_score(ms.name, ms))
+        sink.append(_fmt_score(ms.name, ms))
         if key == "M1":
             target = {
                 p.get("slug")
@@ -543,32 +572,37 @@ def _emit_verbose_trace(records: list[dict], rs: RunScore) -> None:
                 for p in _iter_pages(r["parsed_json"])
                 if isinstance(p.get("slug"), str)
             }
-            print(f"[verbose]   └─ target_set: {len(target)} unique slugs")
+            sink.append(f"[verbose]   └─ target_set: {len(target)} unique slugs")
         elif key == "M6":
-            print(
+            sink.append(
                 f"[verbose]   └─ ${ms.numerator:.4f} cost / {ms.denominator} source-words"
             )
         elif key == "M7":
-            print(
+            sink.append(
                 f"[verbose]   └─ {ms.numerator}ms latency / {ms.denominator} source-words"
             )
 
-    print("[verbose] diagnostics:")
+    sink.append("[verbose] diagnostics:")
     for ms in rs.diagnostics.values():
         rate_str = "None" if ms.rate is None else f"{ms.rate:.4f}"
-        print(
+        sink.append(
             f"[verbose]   {ms.name:<28} {ms.numerator}/{ms.denominator}"
             f"  rate={rate_str}"
         )
 
 
-def score_runs(runs: list[RunScore], *, verbose: bool = False) -> list[RunScore]:
+def score_runs(
+    runs: list[RunScore],
+    *,
+    trace_sink: list[str] | None = None,
+) -> list[RunScore]:
     """Cross-model enrichment per § 9. Borda-normalizes M6 / M7 across the
     candidate set and computes final_score for each run. Returns NEW frozen
     RunScore objects — input list is not mutated.
 
-    `verbose=True` prints the raw → Borda → final_score derivation for each
-    candidate.
+    `trace_sink`: when a list is provided, append the raw → Borda →
+    final_score derivation lines for each candidate. The CLI accumulates
+    this with score_run's trace and prints once after the scorecard render.
     """
     if not runs:
         raise ValueError("score_runs: empty input")
@@ -576,22 +610,28 @@ def score_runs(runs: list[RunScore], *, verbose: bool = False) -> list[RunScore]
     m6_scores = borda_normalize(runs, "M6", lower_is_better=True)
     m7_scores = borda_normalize(runs, "M7", lower_is_better=True)
 
-    if verbose:
-        print(f"[verbose] ── score_runs: candidate_set={[r.model_id for r in runs]} ──")
-        print("[verbose] M6 raw rates → Borda:")
+    if trace_sink is not None:
+        trace_sink.append(
+            f"[verbose] ── score_runs: candidate_set={[r.model_id for r in runs]} ──"
+        )
+        trace_sink.append("[verbose] M6 raw rates → Borda:")
         for run in runs:
             raw = run.measures["M6"].rate
             raw_str = "None" if raw is None else f"{raw:.6f}"
             b = m6_scores.get(run.model_id)
             b_str = "None" if b is None else f"{b:.4f}"
-            print(f"[verbose]   {run.model_id:<16} raw={raw_str}  →  borda={b_str}")
-        print("[verbose] M7 raw rates → Borda:")
+            trace_sink.append(
+                f"[verbose]   {run.model_id:<16} raw={raw_str}  →  borda={b_str}"
+            )
+        trace_sink.append("[verbose] M7 raw rates → Borda:")
         for run in runs:
             raw = run.measures["M7"].rate
             raw_str = "None" if raw is None else f"{raw:.2f}"
             b = m7_scores.get(run.model_id)
             b_str = "None" if b is None else f"{b:.4f}"
-            print(f"[verbose]   {run.model_id:<16} raw={raw_str}ms  →  borda={b_str}")
+            trace_sink.append(
+                f"[verbose]   {run.model_id:<16} raw={raw_str}ms  →  borda={b_str}"
+            )
 
     enriched: list[RunScore] = []
     for run in runs:
@@ -603,10 +643,10 @@ def score_runs(runs: list[RunScore], *, verbose: bool = False) -> list[RunScore]
         except ValueError:
             final = None
         enriched.append(replace(provisional, final_score=final))
-        if verbose:
-            print(
-                f"[verbose] {run.model_id:<16} final_score="
-                f"{final if final is None else f'{final:.4f}'}"
+        if trace_sink is not None:
+            final_str = "None" if final is None else f"{final:.4f}"
+            trace_sink.append(
+                f"[verbose] {run.model_id:<16} final_score={final_str}"
             )
     return enriched
 
