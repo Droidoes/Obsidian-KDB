@@ -497,53 +497,55 @@ _MEASURE_LABELS: dict[str, str] = {
 def _fmt_score(label: str, ms: MeasureScore) -> str:
     """Format one MeasureScore as a single trace line."""
     rate_str = "None" if ms.rate is None else f"{ms.rate:.4f}"
+    weight_str = f"{int(round(ms.weight * 100))}/100"
     return (
         f"[verbose] {ms.name:<3} {_MEASURE_LABELS.get(ms.name, label):<48}"
-        f" {ms.numerator}/{ms.denominator}  rate={rate_str}  weight={ms.weight:.2f}"
+        f" {ms.numerator}/{ms.denominator}  rate={rate_str}  weight={weight_str}"
     )
 
 
 def _s0_per_source_lines(records: list[dict]) -> list[str]:
-    """One block per source showing the S0 gate chain: parse_ok →
-    schema_ok → parsed_json-is-dict → hard-zero findings → verdict.
-    Always emitted under --verbose so passing sources are visible too."""
+    """One block per source showing the S0 gate chain as numbered KPIs:
+        [1] parse_ok        [2] schema_ok        [3] parsed_json shape
+        [4] hard-zero findings
+    Followed by → S0 PASS / FAIL. Always emitted under --verbose so passing
+    sources are visible too."""
     lines: list[str] = []
     for r in records:
         sid = r.get("source_id", "<unknown>")
         lines.append(f"[verbose]   {sid}")
 
         if not r.get("parse_ok"):
-            lines.append(f"[verbose]     parse_ok=False  → S0 FAIL")
+            lines.append(f"[verbose]     [1] parse_ok=False")
+            lines.append(f"[verbose]     → S0 FAIL")
             continue
+        lines.append(f"[verbose]     [1] parse_ok=True")
 
         if not r.get("schema_ok"):
             errs = r.get("schema_errors") or []
             head = errs[0] if errs else "(no error captured)"
-            lines.append(f"[verbose]     parse_ok=True  schema_ok=False")
-            lines.append(f"[verbose]     schema_error: {head}")
+            lines.append(f"[verbose]     [2] schema_ok=False")
+            lines.append(f"[verbose]         schema_error: {head}")
             lines.append(f"[verbose]     → S0 FAIL")
             continue
+        lines.append(f"[verbose]     [2] schema_ok=True")
 
         parsed = r.get("parsed_json")
         if not isinstance(parsed, dict):
-            lines.append(
-                f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=NOT_DICT"
-            )
+            lines.append(f"[verbose]     [3] parsed_json=NOT_DICT")
             lines.append(f"[verbose]     → S0 FAIL")
             continue
+        lines.append(f"[verbose]     [3] parsed_json=dict")
 
         findings = check_compiled_source_findings(parsed)
         if findings:
-            lines.append(f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=dict")
-            lines.append(f"[verbose]     hard-zero findings:")
+            lines.append(f"[verbose]     [4] hard-zero findings:")
             for f in findings:
-                lines.append(f"[verbose]       - {f.type}: {f.detail}")
+                lines.append(f"[verbose]         - {f.type}: {f.detail}")
             lines.append(f"[verbose]     → S0 FAIL")
         else:
-            lines.append(
-                f"[verbose]     parse_ok=True  schema_ok=True  parsed_json=dict"
-                f"  hard-zero=none  → S0 PASS"
-            )
+            lines.append(f"[verbose]     [4] hard-zero=none")
+            lines.append(f"[verbose]     → S0 PASS")
     return lines
 
 
