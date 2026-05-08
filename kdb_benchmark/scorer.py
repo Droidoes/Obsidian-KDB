@@ -404,6 +404,7 @@ def score_run(
     model_id: str,
     *,
     registry_path: Path = MODELS_JSON,
+    verbose: bool = False,
 ) -> RunScore:
     """Phase 3 § 9 entry point.
 
@@ -412,6 +413,10 @@ def score_run(
     for `model_id`, runs all measures + diagnostics, returns a RunScore with
     raw rates. m6_borda / m7_borda / final_score are None on the returned
     object — populated only by score_runs() across peers.
+
+    `verbose=True` prints a per-measure trace to stdout — numerator,
+    denominator, rate, weight, plus evidence snippets for measures whose
+    derivation isn't visible from the rate alone (S0 cause, M1 target_set).
     """
     registry = load_registry(registry_path)
     entry = _resolve_model_entry(model_id, registry)
@@ -430,7 +435,7 @@ def score_run(
 
     _verify_capture_full(records)
 
-    return RunScore(
+    rs = RunScore(
         run_id=run_id,
         model_id=model_id,
         provider=entry.provider,
@@ -459,17 +464,134 @@ def score_run(
         final_score=None,
     )
 
+    if verbose:
+        _emit_verbose_trace(records, rs)
 
-def score_runs(runs: list[RunScore]) -> list[RunScore]:
+    return rs
+
+
+# ---------------------------------------------------------------------------
+# §9b — verbose trace (CLI --verbose hook, no schema impact)
+# ---------------------------------------------------------------------------
+
+_MEASURE_LABELS: dict[str, str] = {
+    "S0": "pipeline_success_rate",
+    "S1": "llm_resp_success_rate           (diagnostic)",
+    "S2": "validator_schema_pass_rate       (diagnostic)",
+    "S3": "validator_hard_zero_pass_rate    (diagnostic)",
+    "M1": "link_target_resolution",
+    "M2": "concept_slugs_jaccard",
+    "M3": "article_slugs_jaccard",
+    "M4": "semantic_pass_rate",
+    "M5": "body_link_jaccard",
+    "M6": "cost_per_1k_source_words",
+    "M7": "latency_per_1k_source_words",
+}
+
+
+def _fmt_score(label: str, ms: MeasureScore) -> str:
+    """Format one MeasureScore as a single trace line."""
+    rate_str = "None" if ms.rate is None else f"{ms.rate:.4f}"
+    return (
+        f"[verbose] {ms.name:<3} {_MEASURE_LABELS.get(ms.name, label):<48}"
+        f" {ms.numerator}/{ms.denominator}  rate={rate_str}  weight={ms.weight:.2f}"
+    )
+
+
+def _s0_evidence(records: list[dict]) -> list[str]:
+    """Per-record breakdown of why S0 may have failed."""
+    lines: list[str] = []
+    for r in records:
+        sid = r.get("source_id", "<unknown>")
+        if not r.get("parse_ok"):
+            lines.append(f"  └─ {sid}: parse failed")
+            continue
+        if not r.get("schema_ok"):
+            errs = r.get("schema_errors") or []
+            head = errs[0] if errs else "(no error captured)"
+            lines.append(f"  └─ {sid}: schema failed — {head}")
+            continue
+        parsed = r.get("parsed_json")
+        if not isinstance(parsed, dict):
+            lines.append(f"  └─ {sid}: parsed_json is not a dict")
+            continue
+        hz = check_compiled_source(parsed)
+        if hz:
+            lines.append(f"  └─ {sid}: hard-zero findings {hz}")
+    return lines
+
+
+def _emit_verbose_trace(records: list[dict], rs: RunScore) -> None:
+    """Print per-measure trace for one RunScore. Called from score_run when
+    verbose=True. Output is best-effort for human inspection; not a stable
+    contract."""
+    print(f"[verbose] ── score_run: {rs.model_id}  (n_attempted={rs.n_attempted}) ──")
+    for ms in (rs.s0, rs.s1, rs.s2, rs.s3):
+        print(_fmt_score(ms.name, ms))
+        if ms.name == "S0" and ms.rate is not None and ms.rate < 1.0:
+            for line in _s0_evidence(records):
+                print(f"[verbose] {line}")
+
+    for key in ("M1", "M2", "M3", "M4", "M5", "M6", "M7"):
+        ms = rs.measures[key]
+        print(_fmt_score(ms.name, ms))
+        if key == "M1":
+            target = {
+                p.get("slug")
+                for r in records
+                if _is_parse_pass(r) and r.get("schema_ok")
+                for p in _iter_pages(r["parsed_json"])
+                if isinstance(p.get("slug"), str)
+            }
+            print(f"[verbose]   └─ target_set: {len(target)} unique slugs")
+        elif key == "M6":
+            print(
+                f"[verbose]   └─ ${ms.numerator:.4f} cost / {ms.denominator} source-words"
+            )
+        elif key == "M7":
+            print(
+                f"[verbose]   └─ {ms.numerator}ms latency / {ms.denominator} source-words"
+            )
+
+    print("[verbose] diagnostics:")
+    for ms in rs.diagnostics.values():
+        rate_str = "None" if ms.rate is None else f"{ms.rate:.4f}"
+        print(
+            f"[verbose]   {ms.name:<28} {ms.numerator}/{ms.denominator}"
+            f"  rate={rate_str}"
+        )
+
+
+def score_runs(runs: list[RunScore], *, verbose: bool = False) -> list[RunScore]:
     """Cross-model enrichment per § 9. Borda-normalizes M6 / M7 across the
     candidate set and computes final_score for each run. Returns NEW frozen
     RunScore objects — input list is not mutated.
+
+    `verbose=True` prints the raw → Borda → final_score derivation for each
+    candidate.
     """
     if not runs:
         raise ValueError("score_runs: empty input")
 
     m6_scores = borda_normalize(runs, "M6", lower_is_better=True)
     m7_scores = borda_normalize(runs, "M7", lower_is_better=True)
+
+    if verbose:
+        print(f"[verbose] ── score_runs: candidate_set={[r.model_id for r in runs]} ──")
+        print("[verbose] M6 raw rates → Borda:")
+        for run in runs:
+            raw = run.measures["M6"].rate
+            raw_str = "None" if raw is None else f"{raw:.6f}"
+            b = m6_scores.get(run.model_id)
+            b_str = "None" if b is None else f"{b:.4f}"
+            print(f"[verbose]   {run.model_id:<16} raw={raw_str}  →  borda={b_str}")
+        print("[verbose] M7 raw rates → Borda:")
+        for run in runs:
+            raw = run.measures["M7"].rate
+            raw_str = "None" if raw is None else f"{raw:.2f}"
+            b = m7_scores.get(run.model_id)
+            b_str = "None" if b is None else f"{b:.4f}"
+            print(f"[verbose]   {run.model_id:<16} raw={raw_str}ms  →  borda={b_str}")
 
     enriched: list[RunScore] = []
     for run in runs:
@@ -481,6 +603,11 @@ def score_runs(runs: list[RunScore]) -> list[RunScore]:
         except ValueError:
             final = None
         enriched.append(replace(provisional, final_score=final))
+        if verbose:
+            print(
+                f"[verbose] {run.model_id:<16} final_score="
+                f"{final if final is None else f'{final:.4f}'}"
+            )
     return enriched
 
 

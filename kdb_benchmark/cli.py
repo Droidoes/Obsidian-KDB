@@ -75,6 +75,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=MODELS_JSON,
         help=f"Path to models.json registry (default: {MODELS_JSON})",
     )
+    p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Emit a per-measure scoring trace to stdout (numerator, "
+             "denominator, rate, weight, plus evidence for S0 / M1 / M6 / M7 / Borda).",
+    )
     return p
 
 
@@ -99,7 +106,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"[{model_id}] scoring run {run_id}...")
             run_score = score_run(
-                state_root, run_id, model_id, registry_path=args.registry_path,
+                state_root, run_id, model_id,
+                registry_path=args.registry_path,
+                verbose=args.verbose,
             )
             raw_run_scores.append(run_score)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
@@ -107,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print("aggregating Borda + final_score...")
-    enriched = score_runs(raw_run_scores)
+    enriched = score_runs(raw_run_scores, verbose=args.verbose)
 
     sc = build_scorecard(enriched)
     out_path = write_scorecard(sc, scores_dir=args.scores_dir)
