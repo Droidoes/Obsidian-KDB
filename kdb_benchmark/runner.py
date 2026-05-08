@@ -91,8 +91,24 @@ def run_benchmark(
       * Sets `KDB_RESP_STATS_CAPTURE_FULL=1` in os.environ.
 
     Raises:
-      ValueError — `model_id` not found in registry at `registry_path`.
+      FileNotFoundError — `sources_dir` does not exist or is not a directory.
+      ValueError — `model_id` not found in registry at `registry_path`,
+        or `sources_dir` contains no `.md` files.
     """
+    # Task #40: validate sources_dir up front, before any side effects
+    # (run dir creation, prompt snapshot, env var). A missing or empty
+    # sources_dir would otherwise silently produce zero records and only
+    # surface as a misleading "no records found" downstream in the scorer.
+    if not sources_dir.is_dir():
+        raise FileNotFoundError(
+            f"sources_dir does not exist or is not a directory: {sources_dir}"
+        )
+    source_files = sorted(p for p in sources_dir.glob("*.md"))
+    if not source_files:
+        raise ValueError(
+            f"sources_dir contains no .md files: {sources_dir}"
+        )
+
     entry = _resolve_model_entry(model_id, registry_path)
 
     # Generate run_id: <model_id>-<filename-safe local ISO timestamp_TZ>
@@ -133,10 +149,6 @@ def run_benchmark(
     # construct each source_id as "<prefix>/<filename>" so model echo +
     # schema validation align.
     source_id_prefix = _derive_source_id_prefix(sources_dir)
-
-    # Walk the corpus. Filter to *.md (skip *.meta.yaml companions and
-    # any other non-markdown files).
-    source_files = sorted(p for p in sources_dir.glob("*.md"))
 
     for src_path in source_files:
         source_id = f"{source_id_prefix}/{src_path.name}"

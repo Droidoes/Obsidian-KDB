@@ -164,6 +164,38 @@ class TestSourceIdPrefix:
                 runs_root=runs_root, system_prompt_path=fake_system_prompt,
             )
 
+    def test_run_benchmark_raises_on_missing_sources_dir(
+        self, tmp_path, fake_system_prompt, runs_root, patched_compile_one
+    ):
+        """Task #40: a non-existent sources_dir must fail loud at runner
+        start with a clear message naming the path. No side effects (no
+        run dir, no vault snapshot) should be created."""
+        missing = tmp_path / "does-not-exist"
+        with pytest.raises(FileNotFoundError, match=str(missing)):
+            runner.run_benchmark(
+                sources_dir=missing, model_id="haiku-4.5",
+                runs_root=runs_root, system_prompt_path=fake_system_prompt,
+            )
+        assert not runs_root.exists()
+        assert len(patched_compile_one) == 0
+
+    def test_run_benchmark_raises_on_empty_sources_dir(
+        self, tmp_path, fake_system_prompt, runs_root, patched_compile_one
+    ):
+        """Task #40: a sources_dir that exists but has no .md files must
+        also fail loud (typo / wrong dir). Companion .meta.yaml-only dirs
+        without their .md siblings hit this same path."""
+        empty = tmp_path / "empty-sources"
+        empty.mkdir()
+        (empty / "stray.meta.yaml").write_text("license: x\n")  # not .md
+        with pytest.raises(ValueError, match="no .md files"):
+            runner.run_benchmark(
+                sources_dir=empty, model_id="haiku-4.5",
+                runs_root=runs_root, system_prompt_path=fake_system_prompt,
+            )
+        assert not runs_root.exists()
+        assert len(patched_compile_one) == 0
+
     def test_run_benchmark_uses_empty_context_snapshot(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
     ):
