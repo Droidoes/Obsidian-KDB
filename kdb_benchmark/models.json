@@ -3,6 +3,8 @@
     "id": "haiku-4.5",
     "provider": "anthropic",
     "model": "claude-haiku-4-5-20251001",
+    "ctx_window": 200000,
+    "max_output_tokens": 64000,
     "price_in": 1.0,
     "price_out": 5.0
   },
@@ -10,7 +12,19 @@
     "id": "sonnet-4.6",
     "provider": "anthropic",
     "model": "claude-sonnet-4-6",
+    "ctx_window": 1048576,
+    "max_output_tokens": 64000,
     "price_in": 3.0,
     "price_out": 15.0
+  },
+  {
+    "id": "gpt-5.4-mini",
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "ctx_window": 400000,
+    "max_output_tokens": 128000,
+    "use_completion_tokens": true,
+    "price_in": 0.75,
+    "price_out": 4.5
   }
 ]

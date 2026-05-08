@@ -146,6 +146,8 @@ def compile_one(
     provider: str,
     model: str,
     max_tokens: int,
+    use_completion_tokens: bool = False,
+    extra_body: dict | None = None,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
@@ -216,6 +218,8 @@ def compile_one(
                     prompt=state["prompt"].user,
                     temperature=0.0,
                     max_tokens=max_tokens,
+                    use_completion_tokens=use_completion_tokens,
+                    extra_body=extra_body,
                 )
             )
             state["raw_response_text"] = state["model_response"].text

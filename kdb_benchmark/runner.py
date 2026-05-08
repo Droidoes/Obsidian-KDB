@@ -168,6 +168,8 @@ def run_benchmark(
             provider=entry.provider,
             model=entry.model,
             max_tokens=max_tokens,
+            use_completion_tokens=entry.use_completion_tokens,
+            extra_body=entry.extra_body,
         )
 
     return run_id, state_root

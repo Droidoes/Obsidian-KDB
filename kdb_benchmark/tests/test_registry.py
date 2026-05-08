@@ -141,3 +141,75 @@ def test_loader_coerces_int_to_float(tmp_path: Path) -> None:
     [entry] = load_registry(p)
     assert entry.price_in == 3.0 and isinstance(entry.price_in, float)
     assert entry.price_out == 15.0 and isinstance(entry.price_out, float)
+
+
+# ---------- optional behavior knobs (yt-comment-chat shape) ----------
+
+def test_optional_fields_default_to_none_or_false(tmp_path: Path) -> None:
+    """Entries that omit ctx_window / max_output_tokens / use_completion_tokens
+    / extra_body get sensible defaults."""
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry()]), encoding="utf-8")
+    [entry] = load_registry(p)
+    assert entry.ctx_window is None
+    assert entry.max_output_tokens is None
+    assert entry.use_completion_tokens is False
+    assert entry.extra_body is None
+
+
+def test_loader_parses_optional_fields(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(
+        json.dumps([_entry(
+            ctx_window=400000,
+            max_output_tokens=128000,
+            use_completion_tokens=True,
+            extra_body={"think": False},
+        )]),
+        encoding="utf-8",
+    )
+    [entry] = load_registry(p)
+    assert entry.ctx_window == 400000
+    assert entry.max_output_tokens == 128000
+    assert entry.use_completion_tokens is True
+    assert entry.extra_body == {"think": False}
+
+
+def test_loader_rejects_non_int_ctx_window(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(ctx_window=4.5)]), encoding="utf-8")
+    with pytest.raises(ValueError, match="ctx_window"):
+        load_registry(p)
+
+
+def test_loader_rejects_zero_or_negative_max_output_tokens(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(max_output_tokens=0)]), encoding="utf-8")
+    with pytest.raises(ValueError, match="max_output_tokens"):
+        load_registry(p)
+
+
+def test_loader_rejects_non_bool_use_completion_tokens(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(use_completion_tokens="yes")]), encoding="utf-8")
+    with pytest.raises(ValueError, match="use_completion_tokens"):
+        load_registry(p)
+
+
+def test_loader_rejects_non_dict_extra_body(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(extra_body=["not", "a", "dict"])]), encoding="utf-8")
+    with pytest.raises(ValueError, match="extra_body"):
+        load_registry(p)
+
+
+def test_default_registry_includes_gpt_5_4_mini_with_completion_tokens() -> None:
+    """Live models.json carries the GPT-5.4-mini entry with the
+    use_completion_tokens flag (GPT-5+ family requirement)."""
+    by_id = {e.id: e for e in load_registry()}
+    if "gpt-5.4-mini" in by_id:
+        gpt = by_id["gpt-5.4-mini"]
+        assert gpt.use_completion_tokens is True
+        assert gpt.provider == "openai"
+        assert gpt.ctx_window == 400000
+        assert gpt.max_output_tokens == 128000

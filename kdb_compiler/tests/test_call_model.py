@@ -135,6 +135,72 @@ def test_json_mode_threads_through(
     assert client.chat.completions.create.call_args.kwargs["response_format"] == {"type": "json_object"}
 
 
+def test_use_completion_tokens_switches_to_max_completion_tokens_param(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    """GPT-5+ family rejects `max_tokens`; the openai-compat path emits
+    `max_completion_tokens` instead when the flag is set."""
+    _use_settings(monkeypatch, openai_api_key="sk")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(
+            provider="openai", model="gpt-5.4-mini", prompt="hi",
+            max_tokens=128000, use_completion_tokens=True,
+        ))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs.get("max_completion_tokens") == 128000
+    assert "max_tokens" not in kwargs  # mutual exclusion
+
+
+def test_default_uses_max_tokens_param(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    """Pre-GPT-5 OpenAI / Gemini / Ollama keep using `max_tokens`."""
+    _use_settings(monkeypatch, openai_api_key="sk")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(
+            provider="openai", model="gpt-4.1-mini", prompt="hi", max_tokens=4096,
+        ))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs.get("max_tokens") == 4096
+    assert "max_completion_tokens" not in kwargs
+
+
+def test_extra_body_forwarded_to_openai_compat(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    """`extra_body` carries provider-specific knobs (e.g. Qwen `{"think": false}`)."""
+    _use_settings(monkeypatch, openai_api_key="sk")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(
+            provider="openai", model="gpt-4.1-mini", prompt="hi",
+            extra_body={"reasoning_effort": "low"},
+        ))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs.get("extra_body") == {"reasoning_effort": "low"}
+
+
+def test_extra_body_omitted_when_none(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    """No `extra_body` kwarg when the request didn't set one — keeps the
+    SDK call shape minimal for the common case."""
+    _use_settings(monkeypatch, openai_api_key="sk")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(
+            provider="openai", model="gpt-4.1-mini", prompt="hi",
+        ))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert "extra_body" not in kwargs
+
+
 def test_extra_dict_overrides_kwargs(
     monkeypatch: pytest.MonkeyPatch, anthropic_resp: MagicMock
 ) -> None:

@@ -37,6 +37,13 @@ class ModelRequest:
     json_mode: bool = False
     temperature: float = 0.0
     max_tokens: int = 4096
+    # `use_completion_tokens=True` switches the openai-compat path from the
+    # legacy `max_tokens` body field to `max_completion_tokens`, required by
+    # GPT-5+ family models. No-op for the anthropic path.
+    use_completion_tokens: bool = False
+    # `extra_body` is forwarded to the openai-compat SDK as `extra_body=...`,
+    # carrying provider-specific kwargs (e.g. Qwen's `{"think": false}`).
+    extra_body: dict | None = None
     extra: dict = field(default_factory=dict)
 
 
@@ -137,14 +144,17 @@ def _call_openai_compat(
     else:
         model = req.model
 
+    max_tokens_param = "max_completion_tokens" if req.use_completion_tokens else "max_tokens"
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
         "temperature": req.temperature,
-        "max_tokens": req.max_tokens,
+        max_tokens_param: req.max_tokens,
     }
     if req.json_mode:
         kwargs["response_format"] = {"type": "json_object"}
+    if req.extra_body:
+        kwargs["extra_body"] = req.extra_body
     kwargs.update(req.extra)
 
     resp = client.chat.completions.create(**kwargs)
