@@ -181,6 +181,42 @@ def body_link_check(payload: dict) -> tuple[int, int]:
     return (intersection, union)
 
 
+def body_link_per_page_asymmetry(payload: dict) -> list[dict]:
+    """Per-page asymmetry detail for M5 verbose trace (Task #39).
+
+    Returns one dict per page where `declared != body`, in `pages[]` order,
+    with keys: `page_slug`, `declared_only` (slugs in outgoing_links missing
+    from body), `body_only` (slugs in body missing from outgoing_links).
+    `declared_only` / `body_only` are sorted lists for stable output.
+    Aligned pages (declared == body) are omitted. Pages without a string
+    slug are reported as `page_slug=None`.
+
+    Same payload-tolerance contract as body_link_check — never raises."""
+    pages = payload.get("pages") or []
+    if not isinstance(pages, list):
+        return []
+    out: list[dict] = []
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        declared_raw = p.get("outgoing_links") or []
+        if isinstance(declared_raw, list):
+            declared = {s for s in declared_raw if isinstance(s, str)}
+        else:
+            declared = set()
+        body = p.get("body")
+        body_links = _body_wikilink_slugs(body) if isinstance(body, str) else set()
+        if declared == body_links:
+            continue
+        slug = p.get("slug")
+        out.append({
+            "page_slug": slug if isinstance(slug, str) else None,
+            "declared_only": sorted(declared - body_links),
+            "body_only": sorted(body_links - declared),
+        })
+    return out
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="kdb-validate-response",

@@ -29,6 +29,9 @@ from kdb_compiler.validate_compile_result import (
     check_compiled_source,
     check_compiled_source_findings,
 )
+from kdb_compiler.validate_compiled_source_response import (
+    body_link_per_page_asymmetry,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +552,31 @@ def _s0_per_source_lines(records: list[dict]) -> list[str]:
     return lines
 
 
+def _m5_per_page_asymmetry_lines(records: list[dict]) -> list[str]:
+    """Per-page asymmetry detail under the M5 line, emitted only when M5
+    rate < 1.0 (Task #39). Iterates records, calls validator helper on
+    each parsed_json, renders one block per asymmetric page. Returns
+    empty list (caller emits nothing — not even a header) when no
+    asymmetric pages are found."""
+    body: list[str] = []
+    for r in records:
+        parsed = r.get("parsed_json")
+        if not isinstance(parsed, dict):
+            continue
+        sid = r.get("source_id", "<unknown>")
+        for entry in body_link_per_page_asymmetry(parsed):
+            body.append(f"[verbose]     {sid} → page {entry['page_slug']}")
+            body.append(
+                f"[verbose]       declared-only (in outgoing_links, missing from body): {entry['declared_only']}"
+            )
+            body.append(
+                f"[verbose]       body-only (in body, missing from outgoing_links): {entry['body_only']}"
+            )
+    if not body:
+        return []
+    return ["[verbose]   per-page M5 asymmetry:"] + body
+
+
 def _emit_verbose_trace(records: list[dict], rs: RunScore, sink: list[str]) -> None:
     """Append per-measure trace for one RunScore to `sink`. Called from
     score_run when a trace_sink list is provided. Output is best-effort
@@ -575,6 +603,8 @@ def _emit_verbose_trace(records: list[dict], rs: RunScore, sink: list[str]) -> N
                 if isinstance(p.get("slug"), str)
             }
             sink.append(f"[verbose]   └─ target_set: {len(target)} unique slugs")
+        elif key == "M5" and ms.rate is not None and ms.rate < 1.0:
+            sink.extend(_m5_per_page_asymmetry_lines(records))
         elif key == "M6":
             sink.append(
                 f"[verbose]   └─ ${ms.numerator:.4f} cost / {ms.denominator} source-words"

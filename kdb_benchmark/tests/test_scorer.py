@@ -939,3 +939,97 @@ class TestScoreRuns:
             scorer.final_score(run)
 
 
+# ===========================================================================
+# §9b — verbose trace M5 per-page asymmetry block (Task #39)
+# ===========================================================================
+
+def _record_with_pages(
+    *,
+    source_id: str,
+    pages: list[dict],
+    body_link_intersection: int,
+    body_link_union: int,
+):
+    """Build a record whose parsed_json carries the supplied pages and whose
+    persisted body_link_* counters can be set independently — so a test can
+    drive M5 rate < 1.0 from the aggregate while controlling per-page detail."""
+    return fake_record(
+        source_id=source_id,
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        run_id="haiku-test",
+        pages=pages,
+        body_link_intersection=body_link_intersection,
+        body_link_union=body_link_union,
+    )
+
+
+class TestVerboseTraceM5Asymmetry:
+    def _aligned_page(self):
+        return {
+            "slug": "summary-foo", "page_type": "summary", "title": "Foo",
+            "body": "[[a]] and [[b]]", "outgoing_links": ["a", "b"],
+            "supports_page_existence": ["s1"], "status": "active", "confidence": "high",
+        }
+
+    def _asymmetric_page(self):
+        # Mirrors the haiku 2026-05-08 slip: declared 3, body 2 → declared-only=[c]
+        return {
+            "slug": "summary-foo", "page_type": "summary", "title": "Foo",
+            "body": "[[a]] and [[b]]", "outgoing_links": ["a", "b", "c"],
+            "supports_page_existence": ["s1"], "status": "active", "confidence": "high",
+        }
+
+    def test_trace_omits_m5_block_when_perfect(self, tmp_path):
+        """M5 = 1.0 (rate exactly 1) → no per-page asymmetry block in trace."""
+        rec = _record_with_pages(
+            source_id="s1", pages=[self._aligned_page()],
+            body_link_intersection=2, body_link_union=2,
+        )
+        _write_records(tmp_path, "haiku-test", [rec])
+        sink: list[str] = []
+        run = scorer.score_run(
+            tmp_path, "haiku-test", "haiku-4.5", trace_sink=sink,
+        )
+        assert run.measures["M5"].rate == 1.0
+        joined = "\n".join(sink)
+        assert "per-page M5 asymmetry" not in joined
+
+    def test_trace_emits_m5_block_when_asymmetric(self, tmp_path):
+        """M5 < 1.0 → block present, names the offending page + slug."""
+        rec = _record_with_pages(
+            source_id="s1", pages=[self._asymmetric_page()],
+            body_link_intersection=2, body_link_union=3,
+        )
+        _write_records(tmp_path, "haiku-test", [rec])
+        sink: list[str] = []
+        run = scorer.score_run(
+            tmp_path, "haiku-test", "haiku-4.5", trace_sink=sink,
+        )
+        assert run.measures["M5"].rate == pytest.approx(2 / 3)
+        joined = "\n".join(sink)
+        assert "per-page M5 asymmetry:" in joined
+        assert "s1 → page summary-foo" in joined
+        assert "declared-only" in joined and "['c']" in joined
+        assert "body-only" in joined and "[]" in joined
+
+    def test_trace_omits_m5_block_when_no_link_activity(self, tmp_path):
+        """When the union is 0 (no link activity), M5 rate is 0.0 per
+        Round 4 MF6. The trigger (rate<1.0) fires, but the helper finds
+        nothing — so no header and no entries land in the sink."""
+        rec = _record_with_pages(
+            source_id="s1", pages=[self._aligned_page()],
+            body_link_intersection=0, body_link_union=0,
+        )
+        rec["parsed_json"]["pages"][0]["outgoing_links"] = []
+        rec["parsed_json"]["pages"][0]["body"] = "no links."
+        _write_records(tmp_path, "haiku-test", [rec])
+        sink: list[str] = []
+        run = scorer.score_run(
+            tmp_path, "haiku-test", "haiku-4.5", trace_sink=sink,
+        )
+        assert run.measures["M5"].rate == 0.0
+        joined = "\n".join(sink)
+        assert "per-page M5 asymmetry" not in joined
+
+

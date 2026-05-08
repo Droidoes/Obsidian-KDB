@@ -351,3 +351,86 @@ def test_body_link_check_tolerates_malformed_payloads() -> None:
     assert V.body_link_check({"pages": [bad_page]}) == (0, 0)
     # Page without body or outgoing_links keys at all
     assert V.body_link_check({"pages": [{"slug": "x"}]}) == (0, 0)
+
+
+# ---- body_link_per_page_asymmetry (Task #39 / M5 verbose-trace detail) ----
+
+def test_per_page_asymmetry_empty_when_aligned() -> None:
+    """declared == body on every page → []."""
+    p = _page(slug="p1", outgoing=["a", "b"], body="[[a]] and [[b]]")
+    assert V.body_link_per_page_asymmetry(_payload(p)) == []
+
+
+def test_per_page_asymmetry_declared_only() -> None:
+    """The exact haiku-summary slip: declared has slug not present in body."""
+    p = _page(slug="summary-x", outgoing=["a", "b", "c"], body="[[a]] and [[b]]")
+    assert V.body_link_per_page_asymmetry(_payload(p)) == [
+        {"page_slug": "summary-x", "declared_only": ["c"], "body_only": []}
+    ]
+
+
+def test_per_page_asymmetry_body_only() -> None:
+    """Body has wikilink not in outgoing_links."""
+    p = _page(slug="p1", outgoing=["a"], body="[[a]] and [[c]]")
+    assert V.body_link_per_page_asymmetry(_payload(p)) == [
+        {"page_slug": "p1", "declared_only": [], "body_only": ["c"]}
+    ]
+
+
+def test_per_page_asymmetry_both_directions() -> None:
+    p = _page(slug="p1", outgoing=["a", "b"], body="[[a]] and [[c]]")
+    assert V.body_link_per_page_asymmetry(_payload(p)) == [
+        {"page_slug": "p1", "declared_only": ["b"], "body_only": ["c"]}
+    ]
+
+
+def test_per_page_asymmetry_skips_aligned_pages_only_returns_offenders() -> None:
+    """Multi-page payload — only the asymmetric page surfaces."""
+    aligned = _page(slug="p1", outgoing=["a"], body="[[a]]")
+    asym = _page(slug="p2", outgoing=["x", "y"], body="[[x]]")
+    other_aligned = _page(slug="p3", outgoing=[], body="prose only")
+    out = V.body_link_per_page_asymmetry(_payload(aligned, asym, other_aligned))
+    assert out == [
+        {"page_slug": "p2", "declared_only": ["y"], "body_only": []}
+    ]
+
+
+def test_per_page_asymmetry_alias_and_anchor_resolve_to_slug() -> None:
+    """Body uses [[a|alias]] / [[b#anchor]] — slugs still extracted, so
+    declared {a, b} aligns with body {a, b} → no asymmetry."""
+    p = _page(slug="p1", outgoing=["a", "b"], body="[[a|alias]] and [[b#sec]]")
+    assert V.body_link_per_page_asymmetry(_payload(p)) == []
+
+
+def test_per_page_asymmetry_code_strip_excludes_fenced_and_inline() -> None:
+    """[[fake]] inside fenced/inline code blocks must NOT register as body."""
+    body = "real [[a]]\n```\n[[fake]]\n```\n`[[fake2]]` shown."
+    p = _page(slug="p1", outgoing=["a"], body=body)
+    assert V.body_link_per_page_asymmetry(_payload(p)) == []
+
+
+def test_per_page_asymmetry_returns_sorted_lists() -> None:
+    """`declared_only` / `body_only` must be sorted for stable trace output."""
+    p = _page(slug="p1", outgoing=["zebra", "apple", "mango"], body="prose")
+    out = V.body_link_per_page_asymmetry(_payload(p))
+    assert out[0]["declared_only"] == ["apple", "mango", "zebra"]
+
+
+def test_per_page_asymmetry_non_string_slug_reports_none() -> None:
+    """If a page has a non-string slug, the entry surfaces with page_slug=None
+    rather than dropping silently. Asymmetric content still shows."""
+    bad = {"slug": 42, "outgoing_links": ["a"], "body": "no link here"}
+    assert V.body_link_per_page_asymmetry({"pages": [bad]}) == [
+        {"page_slug": None, "declared_only": ["a"], "body_only": []}
+    ]
+
+
+def test_per_page_asymmetry_tolerates_malformed_payloads() -> None:
+    """Same tolerance contract as body_link_check — never raises."""
+    assert V.body_link_per_page_asymmetry({}) == []
+    assert V.body_link_per_page_asymmetry({"pages": "not-a-list"}) == []
+    assert V.body_link_per_page_asymmetry({"pages": [None, "x", 42]}) == []
+    bad_page = {"slug": "x", "outgoing_links": "oops", "body": 12345}
+    assert V.body_link_per_page_asymmetry({"pages": [bad_page]}) == []
+    # Missing keys → declared and body both empty → page is "aligned" → omitted
+    assert V.body_link_per_page_asymmetry({"pages": [{"slug": "x"}]}) == []
