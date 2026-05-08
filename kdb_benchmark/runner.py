@@ -50,6 +50,24 @@ def _resolve_model_entry(model_id: str, registry_path: Path) -> ModelEntry:
     )
 
 
+def _derive_source_id_prefix(sources_dir: Path) -> str:
+    """Build the path-prefix the schema validator expects for source_ids
+    coming out of `sources_dir`.
+
+    `--sources benchmark/sources/`     → `benchmark/sources`
+    `--sources /tmp/kdb-smoke/`        → `tmp/kdb-smoke`
+    `--sources ./benchmark/sources`    → `benchmark/sources`
+
+    POSIX-normalized; leading `/` and trailing `/` stripped; relative
+    `.` segments collapsed. Falls back to `"."` only for empty input
+    (which the runner never produces).
+    """
+    s = Path(sources_dir).as_posix().lstrip("/").rstrip("/")
+    if s.startswith("./"):
+        s = s[2:]
+    return s or "."
+
+
 def run_benchmark(
     *,
     sources_dir: Path,
@@ -109,15 +127,23 @@ def run_benchmark(
     # Capture-full mode is mandatory for benchmark scoring (§ 3).
     os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = "1"
 
+    # Schema gate (Task #34): the validator's sourceId pattern is
+    # `^<prefix>/.+`. Production prefix is "KDB/raw"; benchmark sources
+    # don't live there, so derive a prefix from `sources_dir` and
+    # construct each source_id as "<prefix>/<filename>" so model echo +
+    # schema validation align.
+    source_id_prefix = _derive_source_id_prefix(sources_dir)
+
     # Walk the corpus. Filter to *.md (skip *.meta.yaml companions and
     # any other non-markdown files).
     source_files = sorted(p for p in sources_dir.glob("*.md"))
 
     for src_path in source_files:
+        source_id = f"{source_id_prefix}/{src_path.name}"
         job = CompileJob(
-            source_id=src_path.name,
+            source_id=source_id,
             abs_path=str(src_path.absolute()),
-            context_snapshot=ContextSnapshot(source_id=src_path.name, pages=[]),
+            context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
         )
         compile_one(
             job,
@@ -127,6 +153,7 @@ def run_benchmark(
             provider=entry.provider,
             model=entry.model,
             max_tokens=max_tokens,
+            source_id_prefix=source_id_prefix,
         )
 
     return run_id, state_root

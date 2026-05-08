@@ -147,6 +147,7 @@ def compile_one(
     model: str,
     max_tokens: int,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
+    source_id_prefix: str = validate_compiled_source_response.DEFAULT_SOURCE_ID_PREFIX,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
 
@@ -252,7 +253,7 @@ def compile_one(
 
         # --- schema ---
         state["schema_errors"] = validate_compiled_source_response.validate(
-            state["parsed_json"]
+            state["parsed_json"], source_id_prefix=source_id_prefix
         )
         state["schema_ok"] = state["schema_errors"] == []
         if not state["schema_ok"]:

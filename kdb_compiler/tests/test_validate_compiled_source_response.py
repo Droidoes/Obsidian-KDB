@@ -116,6 +116,51 @@ def test_bad_source_id_shape_fails_schema() -> None:
     assert any("source_id" in e or "pattern" in e.lower() for e in errors), errors
 
 
+# ---------- schema: source_id_prefix override (Task #34) ----------
+
+def _minimal_with_prefix(prefix: str) -> dict:
+    """Build a minimal payload whose source_id and supports_page_existence
+    entries use the given prefix instead of `KDB/raw`."""
+    sid = f"{prefix}/foo.md"
+    return {
+        "source_id": sid,
+        "summary_slug": "foo",
+        "pages": [_page(supports=[sid])],
+        "log_entries": [],
+        "warnings": [],
+    }
+
+
+def test_default_prefix_rejects_benchmark_style_source_id() -> None:
+    """Default `KDB/raw` regex must still reject non-production prefixes —
+    production validation is unchanged."""
+    payload = _minimal_with_prefix("benchmark/sources")
+    errors = V.validate(payload)
+    assert any("pattern" in e.lower() or "KDB/raw" in e for e in errors), errors
+
+
+def test_override_prefix_accepts_benchmark_style_source_id() -> None:
+    """Benchmark callers pass their own prefix; the schema accepts it."""
+    payload = _minimal_with_prefix("benchmark/sources")
+    errors = V.validate(payload, source_id_prefix="benchmark/sources")
+    assert errors == [], errors
+
+
+def test_override_prefix_still_rejects_other_prefixes() -> None:
+    """Override doesn't disable validation — it just shifts the accepted prefix."""
+    payload = _minimal_with_prefix("benchmark/sources")
+    errors = V.validate(payload, source_id_prefix="tmp/elsewhere")
+    assert any("pattern" in e.lower() or "tmp/elsewhere" in e for e in errors), errors
+
+
+def test_override_prefix_handles_regex_special_chars() -> None:
+    """Prefix is regex-escaped so directory names with regex metachars
+    (dots, plus, parens) don't break the validator."""
+    payload = _minimal_with_prefix("benchmark/sources-v1.2")
+    errors = V.validate(payload, source_id_prefix="benchmark/sources-v1.2")
+    assert errors == [], errors
+
+
 # ---------- semantic: the four rules ----------
 
 def test_source_id_mismatch_fails_semantic() -> None:

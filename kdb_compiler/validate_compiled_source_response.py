@@ -18,10 +18,11 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import sys
-from functools import cache
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -29,22 +30,40 @@ from jsonschema import Draft202012Validator
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
 
+DEFAULT_SOURCE_ID_PREFIX = "KDB/raw"
 
-@cache
-def _validator() -> Draft202012Validator:
+
+@lru_cache(maxsize=None)
+def _validator(source_id_prefix: str = DEFAULT_SOURCE_ID_PREFIX) -> Draft202012Validator:
+    """Build a validator whose sourceId pattern is `^<prefix>/.+`.
+
+    Default `KDB/raw` matches the production runner. Benchmark callers
+    pass their own prefix (e.g. `benchmark/sources`) so the schema accepts
+    source_ids the runner actually constructs — without weakening
+    production validation.
+    """
     with _SCHEMA_PATH.open("r", encoding="utf-8") as f:
         schema = json.load(f)
+    schema = copy.deepcopy(schema)
+    schema["$defs"]["sourceId"]["pattern"] = f"^{re.escape(source_id_prefix)}/.+"
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
 
 
-def validate(payload: Any) -> list[str]:
+def validate(payload: Any, *, source_id_prefix: str = DEFAULT_SOURCE_ID_PREFIX) -> list[str]:
     """JSON-Schema validation. Returns [] if valid.
 
     Errors formatted as '[<json_path>] <message>' matching
     validate_compile_result's convention.
+
+    `source_id_prefix` overrides the path-prefix the schema requires for
+    source_id and supports_page_existence entries. Default `KDB/raw`
+    preserves production behavior; benchmark callers pass their own.
     """
-    return [f"[{err.json_path}] {err.message}" for err in _validator().iter_errors(payload)]
+    return [
+        f"[{err.json_path}] {err.message}"
+        for err in _validator(source_id_prefix).iter_errors(payload)
+    ]
 
 
 def semantic_check(payload: dict, *, source_id: str) -> list[str]:

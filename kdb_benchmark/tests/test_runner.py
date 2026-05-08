@@ -54,6 +54,7 @@ def patched_compile_one(monkeypatch):
             "provider": provider,
             "model": model,
             "max_tokens": max_tokens,
+            "source_id_prefix": kwargs.get("source_id_prefix"),
             "env_capture_full": os.environ.get("KDB_RESP_STATS_CAPTURE_FULL"),
         })
         return (None, [], [], None)
@@ -88,8 +89,16 @@ class TestRunnerEntryPoint:
             system_prompt_path=fake_system_prompt,
         )
         assert len(patched_compile_one) == 2  # only the 2 .md files
+        # Task #34: source_ids carry the derived path-prefix so they match
+        # the schema validator's pattern. fake_corpus is tmp_path/sources/
+        # → prefix is everything up to and including "/sources" with a leading
+        # slash stripped.
+        expected_prefix = runner._derive_source_id_prefix(fake_corpus)
         source_ids = sorted(c["job"].source_id for c in patched_compile_one)
-        assert source_ids == ["01-foo.md", "02-bar.md"]
+        assert source_ids == [
+            f"{expected_prefix}/01-foo.md",
+            f"{expected_prefix}/02-bar.md",
+        ]
 
     def test_run_benchmark_skips_meta_yaml_files(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
@@ -101,6 +110,39 @@ class TestRunnerEntryPoint:
         # No CompileJob should be built for the .meta.yaml file
         for c in patched_compile_one:
             assert not c["job"].source_id.endswith(".meta.yaml")
+
+
+class TestSourceIdPrefix:
+    """Task #34 — runner derives a path-prefix from sources_dir, constructs
+    source_ids as `<prefix>/<filename>`, and forwards the prefix to
+    compile_one so the schema validator accepts the resulting source_ids."""
+
+    def test_derive_source_id_prefix_relative(self):
+        assert runner._derive_source_id_prefix(Path("benchmark/sources")) == "benchmark/sources"
+
+    def test_derive_source_id_prefix_strips_leading_dot_slash(self):
+        assert runner._derive_source_id_prefix(Path("./benchmark/sources/")) == "benchmark/sources"
+
+    def test_derive_source_id_prefix_absolute(self):
+        assert runner._derive_source_id_prefix(Path("/tmp/kdb-smoke/")) == "tmp/kdb-smoke"
+
+    def test_derive_source_id_prefix_strips_trailing_slash(self):
+        assert runner._derive_source_id_prefix(Path("benchmark/sources/")) == "benchmark/sources"
+
+    def test_compile_one_receives_matching_source_id_prefix(
+        self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
+    ):
+        """The prefix passed to compile_one as a kwarg must equal the prefix
+        embedded in each source_id — otherwise the schema validator will
+        reject what the runner constructs."""
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        expected_prefix = runner._derive_source_id_prefix(fake_corpus)
+        for c in patched_compile_one:
+            assert c.get("source_id_prefix") == expected_prefix
+            assert c["job"].source_id.startswith(f"{expected_prefix}/")
 
     def test_run_benchmark_uses_registry_provider_model_for_id(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
