@@ -12,7 +12,6 @@ Two validation layers, both accumulating (no short-circuit):
 
 Public API:
     validate(payload) -> ValidationResult
-    score_response(cr, result) -> ResponseScore | None   # stub, returns None
     main() -> None                                       # CLI entry point
 
 CLI:
@@ -73,24 +72,6 @@ class ValidationResult:
     def detail_strings(self) -> list[str]:
         """All findings flattened to the legacy string list (gate first)."""
         return [f.detail for f in self.gate_errors] + [f.detail for f in self.measure_findings]
-
-
-@dataclass
-class ResponseScore:
-    total: float                        # 0.0–1.0, higher = better
-    dimensions: dict = field(default_factory=dict)
-    penalties: list[dict] = field(default_factory=list)
-
-
-def score_response(cr: dict, validation: ValidationResult) -> ResponseScore | None:
-    """Score an LLM response on quality dimensions derived from validator findings.
-
-    STUB — returns None. Real scoring lands with the M2 benchmark framework
-    (see project_task5_benchmark_scoring_directions memory). When implemented,
-    the score feeds per-call resp-stats records so we can compare LLM models
-    by pairing mismatch rate and other quality dimensions.
-    """
-    return None
 
 
 # -------------------------------------------------------------------------

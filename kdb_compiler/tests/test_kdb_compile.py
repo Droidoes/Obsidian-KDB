@@ -814,7 +814,7 @@ def test_run_journal_builder_replay_mode_nullables(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stage 4/5 — validator findings + reconciler actions + response_score in journal
+# Stage 4/5 — validator findings + reconciler actions in journal
 # ---------------------------------------------------------------------------
 
 def _cr_with_pairing_omission(run_id: str, source_id: str) -> dict:
@@ -864,7 +864,6 @@ def test_stage4_journal_records_clean_when_no_findings(tmp_path: Path) -> None:
     stage4 = next(s for s in journal["stages"] if s["index"] == 4)
     stage5 = next(s for s in journal["stages"] if s["index"] == 5)
     assert stage4["measure_findings"] == []
-    assert stage4["response_score"] is None
     assert stage5["reconciler_actions"] == []
     assert stage5["actions_count"] == 0
     assert stage5["ok"] is True
@@ -894,7 +893,6 @@ def test_stage4_journal_records_findings_and_reconciler_actions(tmp_path: Path) 
     assert f["slug"] == "mencius"
     assert f["page_type"] == "concept"
     # Stub scoring still returns null.
-    assert stage4["response_score"] is None
     # Stage 4 still "ok" — pairing mismatches don't abort.
     assert stage4["ok"] is True
 
@@ -929,7 +927,6 @@ def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
     journal = _load_journal(state, ctx.run_id)
     stage4 = next(s for s in journal["stages"] if s["index"] == 4)
     assert stage4["ok"] is False
-    assert stage4["response_score"] is None
     # Stage 5 never ran — no entry.
     assert not any(s["index"] == 5 for s in journal["stages"])
     # reconcile_done sub-line never emitted either.

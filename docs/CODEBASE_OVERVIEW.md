@@ -1,7 +1,7 @@
 # Obsidian-KDB — Codebase Overview (North Star)
 
-**Status:** v1 architecture locked — M0 scaffolding in progress
-**Last updated:** 2026-04-18
+**Status:** v1 architecture locked; M0 → M2 landed (compiler + validator + reconciler + benchmark engine all live)
+**Last updated:** 2026-05-08
 **Owners:** Joseph (human) + Claude Opus 4.7 (staff architect) + GPT 5.4 / Codex 5.3 (external review)
 
 This is the **single source of truth** for the Obsidian-KDB project. All design rationale, decisions, and open questions live here. External AI consultation artifacts (Grok / Gemini Pro / GPT 5.4 / Codex 5.3) are referenced but not authoritative — they fed into the consensus captured below.
@@ -115,7 +115,120 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 
 ---
 
-## 7. Decisions Ledger
+## 7. Benchmark Architecture (`kdb_benchmark/`)
+
+The benchmark engine is the cross-model quality + cost + latency comparison layer that sits *next to* the compiler, not inside it. It consumes the per-call telemetry the compiler already emits (`RespStatsRecord` written by `compile_one`'s `finally` block) and produces a Borda-normalized scorecard ranking the participating models on a curated source corpus.
+
+The full spec lives in [`docs/task19-kpi-design.md`](task19-kpi-design.md) (Phase 3 + Round 4 corrections, ~1000 lines). This section is the architectural summary — what someone needs to know to navigate the engine and modify it without re-reading the spec.
+
+### 7.1 Package layout & boundary
+
+```
+kdb_benchmark/
+├── runner.py     # invokes compile_one per source, isolated state_root
+├── scorer.py     # per-measure functions, Borda, final_score
+├── scorecard.py  # JSON + render_terminal artifact
+├── registry.py   # models.json (provider, model, prices)
+├── cli.py        # `kdb-benchmark --models a,b --sources <dir>`
+└── tests/
+benchmark/
+├── sources/      # canonical 5-source corpus (CC-BY etc., tracked in git)
+├── runs/         # per-model resp_stats records (gitignored)
+├── inspect/      # ad-hoc inspection scratchpad (gitignored)
+└── scores/       # JSON + .txt scorecards (tracked)
+```
+
+**One-way import boundary** (D25): `kdb_benchmark` imports from `kdb_compiler` (via `compile_one`, validators, types); `kdb_compiler` never imports from `kdb_benchmark`. The benchmark depends on the compiler's contract, not the reverse — keeps the production pipeline unaware of measurement concerns.
+
+### 7.2 Input contract
+
+The scorer reads dict-shaped `RespStatsRecord` JSONs the compiler writes during a benchmark run. **Capture-full mode (`KDB_RESP_STATS_CAPTURE_FULL=1`) is mandatory for scoring** (D26): without it, `parsed_json` is None on parse-pass records and measures M1/M2/M3/M4/M5/S3 cannot be computed. The runner sets the env var; the scorer raises `RuntimeError` if a benchmark record violates the contract.
+
+`RespStatsRecord` is corpus-coverage authoritative — it has one record per attempted compile, including failed ones. `compile_result.compiled_sources[]` only contains successful compiles, so it is *not* the scorer's denominator authority for stage-success rates.
+
+### 7.3 KPI structure (locked Round 3 + Round 4)
+
+**Tier 1 — Stage Success Rates (S0 weighted; S1/S2/S3 diagnostic)**
+
+| ID | Name | What it measures |
+|---|---|---|
+| **S0** | `pipeline_success_rate` | parse_ok ∧ schema_ok ∧ no hard-zero validator findings — the per-source binary "did this attempt produce a usable artifact" gate |
+| S1 | `llm_resp_success_rate` | parse_ok rate (diagnostic only) |
+| S2 | `validator_schema_pass_rate` | schema_ok rate over parse-pass set (diagnostic only) |
+| S3 | `validator_hard_zero_pass_rate` | no-hard-zero rate over schema-pass set (diagnostic only) |
+
+**Tier 2 — Measures (all weighted)**
+
+| ID | Name | Formula | Domain |
+|---|---|---|---|
+| **M1** | `link_target_resolution` | (outgoing_links pointing to slugs in own emit-set) ÷ total | Graph integrity |
+| **M2** | `concept_slugs_jaccard` | symmetric Jaccard of declared concept_slugs vs concept-typed pages | Slug-page pairing |
+| **M3** | `article_slugs_jaccard` | same for article_slugs | Slug-page pairing |
+| **M4** | `semantic_pass_rate` | post-schema semantic_check pass rate | Output integrity |
+| **M5** | `body_link_jaccard` | symmetric Jaccard of declared outgoing_links vs body `[[slug]]` tokens | Output integrity |
+| **M6** | `cost_per_1k_source_words` | (Σ input × price_in + Σ output × price_out) ÷ (source_words/1000) | Production cost |
+| **M7** | `latency_per_1k_source_words` | Σ latency_ms ÷ (source_words/1000) | Production latency |
+
+**Diagnostic-only telemetry (no weight, tracked for inspection):** `retry_load`, `token_overrun_rate`, `pages_per_1k_source_words`.
+
+### 7.4 Locked weights (D27, Round 3)
+
+| Bucket | Weight | Members |
+|---|---|---|
+| Pipeline gate | **20%** | S0 |
+| Quality core | **30%** | M1 (20%) + M5 (5%) + M4 (15% — split between Quality and Output Integrity but lives in Quality core for total) |
+| Slug-page pairing | **10%** | M2 (5%) + M3 (5%) |
+| Output integrity | (folded into Quality core via M4 + M5) | — |
+| Cost | **15%** | M6 |
+| Latency | **15%** | M7 |
+| **Total** | **100%** | (S0 20 + M1 20 + M2 5 + M3 5 + M4 15 + M5 5 + M6 15 + M7 15) |
+
+Source-words denominator on M6/M7 (vs. per-page or per-token): closes the page-spam exploit Codex review surfaced; corpus-controlled, model-independent, tokenizer-independent.
+
+### 7.5 Cross-model normalization
+
+Cost/latency raw rates differ in magnitude across models by 3× or more. Direct weighted summation would let cost dominate everything. Instead:
+
+- **M6 / M7 are Borda-normalized within the candidate set** (D28). Average-rank algorithm: best raw rate → 1.0, worst → 0.0, ties get the average rank, all-equal candidates each get 0.5.
+- **The other measures stay as raw rates** in [0,1]. They're already in a comparable scale (Jaccard, pass rates, etc.).
+- **`final_score`** is the weighted sum, with pro-rata redistribution if any measure has rate=None (model-controlled zero-denom on M1/M2/M3/M5 scores 0.0 not None, per Round 4 MF6).
+
+Borda is candidate-set-dependent — `final_score` is comparable **only within the same scorecard's candidate set**. The user's workflow is "rank latest, pick best" (D28); cross-version comparison is not a designed-for use case. Raw rates are exposed in the scorecard footer for cross-run magnitude inspection.
+
+### 7.6 Data flow
+
+```
+benchmark/sources/*.md
+        │ (corpus, manifest gitignored)
+        ▼
+kdb_benchmark.runner.run_benchmark
+        │  compile_one(source, isolated state_root, capture-full)
+        ▼
+benchmark/runs/<run_id>/state/llm_resp/*.json   (one RespStatsRecord per source)
+        │
+        ▼
+kdb_benchmark.scorer.score_run → RunScore (raw rates per measure)
+        │
+        ▼  (collect across candidate models)
+kdb_benchmark.scorer.score_runs → enriched RunScores with m6_borda, m7_borda, final_score
+        │
+        ▼
+kdb_benchmark.scorecard.write_scorecard
+        │  → benchmark/scores/<scorecard_id>.json   (machine)
+        │  → benchmark/scores/<scorecard_id>.txt    (human, byte-equal to render_terminal)
+        ▼
+benchmark/runs/<run_id>/score_trace.txt  (always-on per-run + cross-run trace, --verbose mirrors to stdout)
+```
+
+CLI: `kdb-benchmark --models <a,b,...> --sources <dir> [--verbose]`.
+
+### 7.7 Pointer to spec
+
+For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorithm details, Round 4 corrections), see [`docs/task19-kpi-design.md`](task19-kpi-design.md). That doc is the historical record of design rounds 1–4 and the locked spec; this section in the North Star doc is the durable summary.
+
+---
+
+## 8. Decisions Ledger
 
 | # | Date | Decision | Rationale |
 |---|---|---|---|
@@ -143,10 +256,14 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 | D22 | 2026-04-18 | Design philosophy: **no complexity for imaginary risk** | Single-user, single-process, infrequent workload. Individual file corruption is recoverable by re-compile; the value is the collective body, not any single file. Drop machinery designed for multi-tenant/concurrent scenarios. See `~/.claude/projects/.../memory/feedback_no_imaginary_risk.md`. |
 | D23 | 2026-04-20 | Drop `index.md`. Obsidian's file explorer + `manifest.json.pages{}` already serve as the TOC; the generated `index.md` was adding a misleading hub node to the graph view (every page had an inbound edge from it) without unique value. | Graph noise was real; the "single entry-point file" was redundant with Obsidian's native navigation and with `manifest.json` for programmatic consumers. Revises D19. |
 | D24 | 2026-04-20 | Drop `log.md`. Same reasoning as D23: derived state, zero wikilinks = isolate node in graph view, and `state/runs/<run_id>.json` already holds the authoritative per-run journal with full detail. Warnings/info surfaced via stdout banners during the run; anyone needing post-hoc detail opens the JSON journal. | Eliminates a redundant human-facing mirror; no information is lost — just stops maintaining two views of the same data. Revises D19. |
+| D25 | 2026-05-04 | Benchmark engine is a separate top-level package (`kdb_benchmark/`) with a strict one-way import boundary: `kdb_benchmark` may import from `kdb_compiler`; `kdb_compiler` never imports from `kdb_benchmark`. | Production pipeline stays unaware of measurement concerns. Forces clean dependency direction; Codex review confirmed this catches accidental coupling early. See §7.1. |
+| D26 | 2026-05-04 | `RespStatsRecord` (capture-full mode) is the scorer's authoritative input — not `compile_result.compiled_sources[]`. | Resp-stats has one record per attempted compile (success or fail); compile_result only contains successful sources, so it can't ground stage-success rates. See §7.2. |
+| D27 | 2026-05-04 | Locked benchmark weights: S0=20, M1=20, M2=5, M3=5, M4=15, M5=5, M6=15, M7=15 (sums to 100). Source-words denominator on M6/M7. | Round 3 closure after Codex hostile review surfaced page-spam exploit on per-page denominators. Per-1K-source-words is corpus-controlled, model-independent, tokenizer-independent — least-bad denominator without ground truth. See §7.3 / §7.4. |
+| D28 | 2026-05-04 | Average-rank Borda for cross-model normalization on M6/M7 only; `final_score` comparable only within the same candidate set (rank-latest-pick-best workflow). | Cost/latency raw magnitudes differ 3× or more across models; direct summation would dominate. Other measures stay as raw rates (already on a [0,1] scale). User workflow does not need cross-version comparability — defuses Codex's biggest critique without adding scorecard_version ceremony. See §7.5. |
 
 ---
 
-## 8. Open Questions
+## 9. Open Questions
 
 | # | Question | Status | Plan |
 |---|---|---|---|
@@ -161,7 +278,7 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 
 ---
 
-## 9. Roadmap
+## 10. Roadmap
 
 ### M0 — Scaffolding (commit `796848b`) ✅
 - [x] Vault scaffold: `~/Obsidian/KDB/{raw, wiki/{summaries, concepts, articles}, state/runs, KDB-Compiler-System-Prompt.md}`
@@ -173,32 +290,22 @@ Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
 - [x] `kdb_compiler/__init__.py` + 8 module stubs
 - [x] Initial commit
 
-### M0.1 — Codex review remediation (current)
-Responds to `docs/code-review-M0-codex.md`:
-- [ ] Rewrite `KDB/KDB-Compiler-System-Prompt.md` — logical intent output only, no paths / metadata / forced prose
-- [ ] Update overview: rename patch-ops → page intents; add D18–D22
-- [ ] Stub shared seams: `paths.py`, `atomic_io.py`, `types.py`, `run_context.py`
-- [ ] Reserve split-point stubs: `prompt_builder.py`, `context_loader.py`, `response_normalizer.py`
-- [ ] Add `kdb_compiler/schemas/compile_result.schema.json` skeleton
-- [ ] Add `docs/manifest.schema.md`
-- [ ] Add 3 test fixtures (manifest.empty, compile_result.valid, compile_result.invalid)
+### M0.1 — Codex review remediation ✅
+All M0.1 items landed; system prompt rewritten, shared seams added, schema skeleton + test fixtures committed.
 
-### M1 — Deterministic layer (no LLM yet)
-- [ ] `kdb_scan.py` (hardened v2: symlinks, binaries, two-pass rename, atomic writes)
-- [ ] `manifest_update.py` (port Codex implementation verbatim)
-- [ ] `compile_result.schema.json` + `validate_compile_result.py`
-- [ ] `call_model.py` (port from `youtube-comment-chat`)
-- [ ] `call_model_retry.py` (port Codex wrapper)
-- [ ] `tests/` — fixture-based unit tests for scanner + manifest updater
-- [ ] End-to-end dry run with synthetic `compile_result.json` fixture
+### M1 — Deterministic layer (no LLM yet) ✅
+Scanner, manifest updater, validators, call_model + retry, end-to-end dry run all landed. Fixture-based unit tests green throughout.
 
-### M2 — LLM layer (first real compile)
-- [ ] `patch_ops.schema.json` — design + Codex review
-- [ ] `planner.py` (chunk scanner)
-- [ ] `compiler.py` (per-source LLM call, JSON output)
-- [ ] `patch_applier.py` (markdown writer from patch ops)
-- [ ] First compile: seed `KDB/raw/` with 3–5 docs from `~/Droidoes/*/docs/`
-- [ ] Iterate on prompt + schema based on observed quality
+### M1.7 — Validator + reconciler on real vault ✅
+`patch_applier`, `manifest_update.write_outputs`, `kdb_compile.py` orchestrator (8-stage pipeline), validate_compile_result with gate/measure split, reconciler for measure findings. Verified live on real vault 2026-04-21.
+
+### M2 — LLM layer + benchmark ✅
+- Live LLM compiler producing `compile_result.json` from real sources
+- Per-call response capture (`RespStatsRecord` + `kdb-replay` fixture-driven replay)
+- `kdb_benchmark/` engine: runner + scorer + scorecard + CLI (see §7)
+- Canonical 5-source corpus + `models.json` registry
+- Headline scorecard 2026-05-08 baseline established (haiku-4.5 vs sonnet-4.6)
+- See `docs/TASKS.md` for the 30+ tasks closed across this milestone
 
 ### M3+ (deferred)
 - [ ] Track 2 (`llm-linker`) — separate sub-project
@@ -206,10 +313,12 @@ Responds to `docs/code-review-M0-codex.md`:
 - [ ] Books sub-project (Track 3)
 - [ ] Binary parsers (PDF, image OCR)
 - [ ] Scale validation at 1,000+ sources
+- [ ] Add 3rd model to benchmark to restore Borda gradient on M6/M7
+- [ ] Ground truth dataset for benchmark (Task #20)
 
 ---
 
-## 10. External References
+## 11. External References
 
 Consulted AI artifacts (stored in `~/Obsidian/Projects/Obsidian-KDB/`):
 - `Karpathy LLM Knowledge Base in Obsidian - Grok.md` — original design + lean v1 statefulness

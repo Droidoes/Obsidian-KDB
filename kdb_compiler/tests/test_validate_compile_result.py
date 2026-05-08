@@ -289,13 +289,6 @@ def test_pairing_type_mismatch_stays_gate() -> None:
     assert any(f.type == "pairing_type_mismatch" and f.severity == "gate" for f in result.gate_errors)
 
 
-def test_score_response_stub_returns_none() -> None:
-    """Scoring stub is wired but returns None until M2 benchmark work implements it."""
-    cr = _load("compile_result.minimal.valid.json")
-    result = vcr.validate(cr)
-    assert vcr.score_response(cr, result) is None
-
-
 # ---------- CLI smoke ----------
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:

@@ -155,4 +155,4 @@ That's the compounding loop working.
 - **Code:** `kdb_compiler/context_loader.py` (selection algorithm), `kdb_compiler/prompt_builder.py` (assembly into user prompt), `kdb_compiler/types.py:260–281` (`ContextPage` / `ContextSnapshot`)
 - **Full prompt example:** `docs/example-prompt-ep1-china.md` (cold-start, 0 context pages)
 - **Wiki design rationale:** `docs/wiki.md`
-- **Decision ledger:** `docs/CODEBASE_OVERVIEW.md` §7 (D8 is the relevant entry)
+- **Decision ledger:** `docs/CODEBASE_OVERVIEW.md` §8 (D8 is the relevant entry)

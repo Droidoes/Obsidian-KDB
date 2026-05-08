@@ -304,16 +304,11 @@ def compile(
 
     # ----- [4] validate compile_result -----
     # Diagnose only. Pairing mismatches fall into measure_findings (not gate);
-    # the reconciler stage picks them up next. response_score is a stub today
-    # but lives on the validator stage so the benchmark framework has a stable
-    # home for it.
+    # the reconciler stage picks them up next. Cross-model quality scoring
+    # now lives in `kdb_benchmark.scorer` (Task #31, Task #19 Phase 5).
     _stage_open(4)
     cr_result = validate_compile_result.validate(cr)
     cr_errors = [f.detail for f in cr_result.gate_errors]
-    response_score = (
-        validate_compile_result.score_response(cr, cr_result)
-        if not cr_errors else None
-    )
     measure_findings_payload = [asdict(f) for f in cr_result.measure_findings]
     _stage_close(
         4, ok=not cr_errors,
@@ -321,7 +316,6 @@ def compile(
         error_count=len(cr_errors),
         errors=list(cr_errors),
         measure_findings=measure_findings_payload,
-        response_score=asdict(response_score) if response_score is not None else None,
     )
     _emit(
         "validate_done",
