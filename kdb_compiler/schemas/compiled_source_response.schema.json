@@ -85,12 +85,12 @@
         "body": {
           "type": "string",
           "minLength": 1,
-          "description": "Full markdown body, no frontmatter. Python prepends frontmatter during apply."
+          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax `[[slug]]` inline whenever you reference another page in this response or in EXISTING CONTEXT — concepts, articles, and the summary all link to each other via `[[slug]]` in body prose, not as separate metadata. Every `[[slug]]` you write here MUST also appear in this page's `outgoing_links`, and conversely every entry in `outgoing_links` MUST appear as `[[slug]]` somewhere in this body. Building outgoing_links without writing the matching `[[slug]]` in the body is a contract violation."
         },
         "status": { "$ref": "#/$defs/pageStatus" },
         "outgoing_links": {
           "type": "array",
-          "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
+          "description": "Slugs this page's body links to. Bidirectional with body: every entry MUST appear as `[[slug]]` somewhere in this page's body, and every `[[slug]]` in the body MUST appear here. Build this list by collecting the distinct slugs you wrote in `[[…]]` tokens in the body — not as a separate list of related concepts. Python reconciles incoming_links_known from these.",
           "items": { "$ref": "#/$defs/slug" }
         },
         "confidence": { "$ref": "#/$defs/confidence" }

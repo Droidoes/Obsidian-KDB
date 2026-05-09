@@ -82,22 +82,33 @@ def exemplar_response(source_name: str) -> dict:
     """Minimal valid per-source response. Satisfies both the JSON-Schema
     and the semantic rules for the supplied source_name, so the model
     sees a concrete target rather than guessing shape from the schema
-    alone."""
+    alone. Two pages — summary + one concept — so the exemplar
+    demonstrates the body↔outgoing_links bidirectional rule by example."""
     return {
         "source_name": source_name,
         "summary_slug": "summary-example",
-        "concept_slugs": [],
+        "concept_slugs": ["example-concept"],
         "article_slugs": [],
         "pages": [
             {
                 "slug": "summary-example",
                 "page_type": "summary",
                 "title": "Example Summary",
-                "body": "A short summary of what this source is about.",
+                "body": "A short summary of what this source is about, "
+                        "introducing [[example-concept]] as the central idea.",
+                "status": "active",
+                "outgoing_links": ["example-concept"],
+                "confidence": "medium",
+            },
+            {
+                "slug": "example-concept",
+                "page_type": "concept",
+                "title": "Example Concept",
+                "body": "Definition and treatment of the concept as the source presents it.",
                 "status": "active",
                 "outgoing_links": [],
                 "confidence": "medium",
-            }
+            },
         ],
         "log_entries": [],
         "warnings": [],
