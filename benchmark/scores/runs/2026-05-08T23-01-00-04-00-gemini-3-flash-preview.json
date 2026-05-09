@@ -1,0 +1,123 @@
+{
+  "scorecard_id": "2026-05-08T23-01-00-04-00-gemini-3-flash-preview",
+  "candidate_set": [
+    "gemini-3-flash-preview"
+  ],
+  "emitted_at": "2026-05-08T23:01:00-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "gemini-3-flash-preview-2026-05-08T22-55-43_EDT",
+      "model_id": "gemini-3-flash-preview",
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 3,
+        "denominator": 5,
+        "rate": 0.6,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 3,
+        "denominator": 5,
+        "rate": 0.6,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 67,
+          "denominator": 67,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 26,
+          "denominator": 26,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 3,
+          "denominator": 5,
+          "rate": 0.6,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 67,
+          "denominator": 67,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.07909399999999998,
+          "denominator": 28607,
+          "rate": 0.002764847764533156,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 333827,
+          "denominator": 28607,
+          "rate": 11669.416576362428,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 2,
+          "denominator": 5,
+          "rate": 0.4,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 31,
+          "denominator": 28607,
+          "rate": 1.083650854685916,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.8600000000000001,
+      "ran_at": "gemini-3-flash-preview-2026-05-08T22-55-43_EDT"
+    }
+  ]
+}

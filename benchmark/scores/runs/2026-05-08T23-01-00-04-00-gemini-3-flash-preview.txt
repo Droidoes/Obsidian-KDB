@@ -1,0 +1,14 @@
+Scorecard: candidate_set=['gemini-3-flash-preview']   emitted_at=2026-05-08T23:01:00-04:00
+====================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b   FINAL  RAN_AT                          
+----------------------------------------------------------------------------------------------------
+   1  gemini-3-flash-preview  0.600 1.000 1.000 1.000 0.600 1.000 1.000 1.000   0.860  gemini-3-flash-preview-2026-05-08T22-55-43_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  gemini-3-flash-preview  M6=$0.0028/1K-words  M7=11669ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  gemini-3-flash-preview  0.0000                        0.4000                        1.0837                      
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.

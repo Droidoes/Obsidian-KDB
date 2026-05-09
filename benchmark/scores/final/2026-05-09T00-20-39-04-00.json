@@ -1,0 +1,584 @@
+{
+  "scorecard_id": "2026-05-09T00-20-39-04-00",
+  "candidate_set": [
+    "gemini-3-flash-preview",
+    "gpt-5.4-mini",
+    "grok-4-1-fast-reasoning",
+    "haiku-4.5",
+    "sonnet-4.6"
+  ],
+  "emitted_at": "2026-05-09T00:20:39-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "gpt-5.4-mini-2026-05-08T20-35-38_EDT",
+      "model_id": "gpt-5.4-mini",
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 245,
+          "denominator": 245,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 63,
+          "denominator": 63,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 232,
+          "denominator": 246,
+          "rate": 0.943089430894309,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.1460955,
+          "denominator": 28607,
+          "rate": 0.005106984304540846,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 113414,
+          "denominator": 28607,
+          "rate": 3964.5541301080157,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 77,
+          "denominator": 28607,
+          "rate": 2.6916488971230814,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.5,
+      "m7_borda": 1.0,
+      "final_score": 0.9221544715447154,
+      "ran_at": "gpt-5.4-mini-2026-05-08T20-35-38_EDT",
+      "source_scorecard_id": "2026-05-08T20-37-25-04-00-gpt-5.4-mini"
+    },
+    {
+      "run_id": "haiku-4.5-2026-05-08T14-47-24_EDT",
+      "model_id": "haiku-4.5",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 197,
+          "denominator": 197,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 48,
+          "denominator": 48,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 11,
+          "denominator": 11,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 187,
+          "denominator": 198,
+          "rate": 0.9444444444444444,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.221049,
+          "denominator": 28607,
+          "rate": 0.0077270947670150655,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 216634,
+          "denominator": 28607,
+          "rate": 7572.761911420282,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 64,
+          "denominator": 28607,
+          "rate": 2.2372146677386655,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.25,
+      "m7_borda": 0.75,
+      "final_score": 0.8472222222222221,
+      "ran_at": "haiku-4.5-2026-05-08T14-47-24_EDT",
+      "source_scorecard_id": "2026-05-08T14-58-08-04-00"
+    },
+    {
+      "run_id": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT",
+      "model_id": "grok-4-1-fast-reasoning",
+      "provider": "xai",
+      "model": "grok-4-1-fast-reasoning",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 82,
+          "denominator": 83,
+          "rate": 0.9879518072289156,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 29,
+          "denominator": 29,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 65,
+          "denominator": 95,
+          "rate": 0.6842105263157895,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0225109,
+          "denominator": 28607,
+          "rate": 0.0007869018072499738,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 248234,
+          "denominator": 28607,
+          "rate": 8677.386653616248,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 34,
+          "denominator": 28607,
+          "rate": 1.188520292236166,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 0.5,
+      "final_score": 0.8368008877615726,
+      "ran_at": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT",
+      "source_scorecard_id": "2026-05-09T00-20-39-04-00-grok-4-1-fast-reasoning"
+    },
+    {
+      "run_id": "sonnet-4.6-2026-05-08T14-50-49_EDT",
+      "model_id": "sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 205,
+          "denominator": 205,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 45,
+          "denominator": 45,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 203,
+          "denominator": 205,
+          "rate": 0.9902439024390244,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.711927,
+          "denominator": 28607,
+          "rate": 0.02488646135561226,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 460942,
+          "denominator": 28607,
+          "rate": 16112.909427762435,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 55,
+          "denominator": 28607,
+          "rate": 1.9226063550879156,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.0,
+      "m7_borda": 0.25,
+      "final_score": 0.7370121951219513,
+      "ran_at": "sonnet-4.6-2026-05-08T14-50-49_EDT",
+      "source_scorecard_id": "2026-05-08T14-58-08-04-00"
+    },
+    {
+      "run_id": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "model_id": "gemini-3-flash-preview",
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 1,
+          "denominator": 5,
+          "rate": 0.2,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.069545,
+          "denominator": 28607,
+          "rate": 0.0024310483448107107,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 564339,
+          "denominator": 28607,
+          "rate": 19727.304505890166,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 6,
+          "denominator": 28607,
+          "rate": 0.20973887510049988,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.75,
+      "m7_borda": 0.0,
+      "final_score": 0.48250000000000004,
+      "ran_at": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "source_scorecard_id": "2026-05-08T23-59-23-04-00-gemini-3-flash-preview"
+    }
+  ]
+}

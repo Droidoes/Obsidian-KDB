@@ -1,0 +1,123 @@
+{
+  "scorecard_id": "2026-05-09T00-20-39-04-00-grok-4-1-fast-reasoning",
+  "candidate_set": [
+    "grok-4-1-fast-reasoning"
+  ],
+  "emitted_at": "2026-05-09T00:20:39-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT",
+      "model_id": "grok-4-1-fast-reasoning",
+      "provider": "xai",
+      "model": "grok-4-1-fast-reasoning",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 82,
+          "denominator": 83,
+          "rate": 0.9879518072289156,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 29,
+          "denominator": 29,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 65,
+          "denominator": 95,
+          "rate": 0.6842105263157895,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0225109,
+          "denominator": 28607,
+          "rate": 0.0007869018072499738,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 248234,
+          "denominator": 28607,
+          "rate": 8677.386653616248,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 34,
+          "denominator": 28607,
+          "rate": 1.188520292236166,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.9118008877615726,
+      "ran_at": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT"
+    }
+  ]
+}
