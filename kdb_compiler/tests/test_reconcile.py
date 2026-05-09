@@ -244,3 +244,161 @@ def test_reconcile_does_not_touch_other_sources() -> None:
     reconcile.reconcile(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == []
     assert cr["compiled_sources"][1]["concept_slugs"] == ["untouched"]
+
+
+# ---------- reconcile_body_links (Task #57) ----------
+
+class TestReconcileBodyLinks:
+    def test_drops_declared_only_slugs(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "summary-foo",
+                    "body": "Discusses [[bar]] only.",
+                    "outgoing_links": ["bar", "baz", "qux"],
+                },
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 1
+        assert parsed["pages"][0]["outgoing_links"] == ["bar"]
+
+    def test_adds_body_only_slugs(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "p",
+                    "body": "Mentions [[alpha]] and [[beta]].",
+                    "outgoing_links": [],
+                },
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 1
+        assert parsed["pages"][0]["outgoing_links"] == ["alpha", "beta"]
+
+    def test_aligned_page_unchanged(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "p",
+                    "body": "[[a]] and [[b]].",
+                    "outgoing_links": ["a", "b"],
+                },
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 0
+        assert parsed["pages"][0]["outgoing_links"] == ["a", "b"]
+
+    def test_empty_body_clears_outgoing_links(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "p",
+                    "body": "Plain prose with no wikilinks.",
+                    "outgoing_links": ["abandoned-slug"],
+                },
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 1
+        assert parsed["pages"][0]["outgoing_links"] == []
+
+    def test_alias_and_heading_forms_recognized(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "p",
+                    "body": "See [[alpha|the alpha]] and [[beta#intro]].",
+                    "outgoing_links": [],
+                },
+            ],
+        }
+        reconcile.reconcile_body_links(parsed)
+        assert parsed["pages"][0]["outgoing_links"] == ["alpha", "beta"]
+
+    def test_code_spans_stripped_before_scan(self) -> None:
+        parsed = {
+            "pages": [
+                {
+                    "slug": "p",
+                    "body": "Real link [[real]].\n\n```\nfake [[fake]] link\n```\n",
+                    "outgoing_links": ["fake", "real"],
+                },
+            ],
+        }
+        reconcile.reconcile_body_links(parsed)
+        assert parsed["pages"][0]["outgoing_links"] == ["real"]
+
+    def test_idempotent_on_second_pass(self) -> None:
+        parsed = {
+            "pages": [
+                {"slug": "p", "body": "[[a]] [[b]]", "outgoing_links": ["zzz"]},
+            ],
+        }
+        n1 = reconcile.reconcile_body_links(parsed)
+        snapshot = list(parsed["pages"][0]["outgoing_links"])
+        n2 = reconcile.reconcile_body_links(parsed)
+        assert n1 == 1
+        assert n2 == 0
+        assert parsed["pages"][0]["outgoing_links"] == snapshot
+
+    def test_multi_page_independent(self) -> None:
+        parsed = {
+            "pages": [
+                {"slug": "a", "body": "[[x]]", "outgoing_links": ["x"]},
+                {"slug": "b", "body": "no links", "outgoing_links": ["y"]},
+                {"slug": "c", "body": "[[z]]", "outgoing_links": []},
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 2
+        assert parsed["pages"][0]["outgoing_links"] == ["x"]
+        assert parsed["pages"][1]["outgoing_links"] == []
+        assert parsed["pages"][2]["outgoing_links"] == ["z"]
+
+    def test_tolerant_missing_pages(self) -> None:
+        assert reconcile.reconcile_body_links({}) == 0
+
+    def test_tolerant_non_list_pages(self) -> None:
+        assert reconcile.reconcile_body_links({"pages": "oops"}) == 0
+
+    def test_tolerant_non_dict_page_entry(self) -> None:
+        parsed = {
+            "pages": [
+                "not a dict",
+                {"slug": "p", "body": "[[a]]", "outgoing_links": []},
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 1
+        assert parsed["pages"][1]["outgoing_links"] == ["a"]
+
+    def test_tolerant_non_string_body(self) -> None:
+        parsed = {
+            "pages": [
+                {"slug": "p", "body": None, "outgoing_links": ["a"]},
+            ],
+        }
+        n = reconcile.reconcile_body_links(parsed)
+        assert n == 1
+        assert parsed["pages"][0]["outgoing_links"] == []
+
+    def test_output_is_sorted(self) -> None:
+        parsed = {
+            "pages": [
+                {"slug": "p", "body": "[[zeta]] [[alpha]] [[mu]]", "outgoing_links": []},
+            ],
+        }
+        reconcile.reconcile_body_links(parsed)
+        assert parsed["pages"][0]["outgoing_links"] == ["alpha", "mu", "zeta"]
+
+    def test_duplicate_body_links_dedup(self) -> None:
+        parsed = {
+            "pages": [
+                {"slug": "p", "body": "[[a]] [[a]] [[a|alias]] and [[b]]", "outgoing_links": []},
+            ],
+        }
+        reconcile.reconcile_body_links(parsed)
+        assert parsed["pages"][0]["outgoing_links"] == ["a", "b"]

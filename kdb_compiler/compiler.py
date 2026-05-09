@@ -43,6 +43,7 @@ from kdb_compiler import (
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
+from kdb_compiler.reconcile import reconcile_body_links
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext, now_iso
 from kdb_compiler.types import (
@@ -284,6 +285,9 @@ def compile_one(
                 f"{source_id}: semantic check failed: {state['semantic_errors'][0]}"
             )
             return (None, [], [], state["error"])
+
+        # --- body-link reconciliation ---
+        reconcile_body_links(state["parsed_json"])
 
         # --- success: enrich LLM payload with runner-injected source-id-space ---
         # Task #41: LLM emits slug-space + source_name only; runner injects

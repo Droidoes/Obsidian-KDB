@@ -14,6 +14,12 @@ Architecture:
     * Adding a new reconcilable finding type = adding one @register_rule
       function. Core dispatch never changes.
 
+    * `reconcile_body_links(parsed_json)` is unconditional normalization,
+      not finding-driven. Sits in this module because it's the same
+      "post-validate, pre-persist repair" purpose; called per-source
+      after semantic_check passes and before downstream stages read
+      parsed_json. See Task #57.
+
 Invariants:
     * Only consumes findings with severity="measure". Passing gate findings
       is a programmer error (the run should have aborted before reconcile).
@@ -26,6 +32,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .validate_compile_result import ValidationFinding
+from .validate_compiled_source_response import _body_wikilink_slugs
 
 
 class ReconcileError(Exception):
@@ -108,6 +115,32 @@ def _fix_pairing_omission(src: dict, finding: ValidationFinding) -> ReconcileAct
 # -------------------------------------------------------------------------
 # Dispatch
 # -------------------------------------------------------------------------
+
+def reconcile_body_links(parsed_json: dict) -> int:
+    """Body-wins normalization: each page's `outgoing_links` is replaced by
+    the sorted set of slugs found as `[[slug]]` in its body. Enforces the
+    bidirectional invariant by construction — after this, body and
+    outgoing_links are guaranteed to agree exactly. Returns the number of
+    pages whose `outgoing_links` field was modified.
+
+    Mutates parsed_json in place. Tolerant: missing/non-list pages → 0;
+    non-dict page entry → skipped; non-string body → empty link set."""
+    pages = parsed_json.get("pages") or []
+    if not isinstance(pages, list):
+        return 0
+    n_changed = 0
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        body = p.get("body")
+        new_links = sorted(_body_wikilink_slugs(body)) if isinstance(body, str) else []
+        prior = p.get("outgoing_links") or []
+        prior_list = list(prior) if isinstance(prior, list) else []
+        if prior_list != new_links:
+            n_changed += 1
+        p["outgoing_links"] = new_links
+    return n_changed
+
 
 def reconcile(cr: dict, findings: list[ValidationFinding]) -> list[ReconcileAction]:
     """Apply registered rules for each finding. Mutates cr in place."""
