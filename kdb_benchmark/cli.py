@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 from kdb_benchmark.paths import BENCHMARK_DIR, MODELS_JSON, RUNS_DIR, SCORES_DIR, SOURCES_DIR
+from kdb_benchmark.registry import ModelEntry, load_registry
 from kdb_benchmark.runner import run_benchmark
 from kdb_benchmark.scorecard import (
     build_final_scorecard,
@@ -116,23 +117,33 @@ def _merge_with_prior_final(
     new_per_run_scorecard_id: str,
     *,
     scores_dir: Path,
-) -> tuple[list[RunScore], dict[str, str]]:
+    registry_entries: list[ModelEntry],
+) -> tuple[list[RunScore], list[RunScore], dict[str, str], dict[str, str]]:
     """Combine the new per-run RunScores with the prior final scorecard
-    (if any). Returns (merged_runs_post_borda, source_scorecard_id_by_model)
-    ready for build_final_scorecard.
+    (if any) and partition the result by registry drop-status.
 
-    Merge rule (Task #42):
-      * Union by model_id.
-      * Where a model_id appears in BOTH the prior final and the new
-        per-run, the new per-run wins (latest measurement).
-      * Borda + final_score are recomputed across the union — cross-set
-        semantics shift when the candidate set changes, so prior
-        m6_borda / m7_borda / final_score values from the loaded final
-        are discarded.
+    Returns (active_runs_with_borda, dropped_runs_no_borda, source_map,
+    dropped_reasons) — ready for build_final_scorecard.
 
-    The returned source map points each model at its originating per-run
-    scorecard_id: new arrivals → `new_per_run_scorecard_id`; carried-over
-    models → whatever the prior final declared for them.
+    Merge rule (Task #42 + Task #44):
+      * Union by model_id (prior final + new per-run; load_runs_from_scorecard
+        combines prior active + prior dropped into one list).
+      * Where a model_id appears in BOTH the prior and the new per-run,
+        the new per-run wins (latest measurement).
+      * Partition by current registry: models flagged `dropped: true`
+        route to the dropped subset; everyone else stays active.
+      * Borda + final_score recomputed across ACTIVE only (excluded from
+        dropped). Dropped runs get m6_borda / m7_borda / final_score = None
+        — they are not part of the active candidate set, so Borda over
+        them isn't meaningful.
+      * source_map carries per-model originating per-run scorecard_id for
+        BOTH active and dropped (callers may need it for either).
+      * dropped_reasons maps each dropped model_id → its reason string
+        from the registry, for inline display in the scorecard.
+
+    A model can flip between active/dropped between fires by editing
+    `dropped: true|false` in models.json — the next merge re-partitions
+    fresh. Drop status is registry-driven, not scorecard-snapshot-driven.
     """
     by_model: dict[str, RunScore] = {}
     source_map: dict[str, str] = {}
@@ -149,16 +160,21 @@ def _merge_with_prior_final(
         by_model[r.model_id] = r
         source_map[r.model_id] = new_per_run_scorecard_id
 
-    # Strip stale Borda/final fields before re-scoring across the union —
-    # score_runs will repopulate them across the new candidate set.
-    # `replace()` keeps every other field so additions to RunScore don't
-    # silently drop here.
-    union = [
-        replace(r, m6_borda=None, m7_borda=None, final_score=None)
-        for r in by_model.values()
-    ]
-    enriched_union = score_runs(union)
-    return enriched_union, source_map
+    # Strip stale Borda/final fields — they are re-derived for active
+    # below, and forced None for dropped.
+    cleaned = {
+        mid: replace(r, m6_borda=None, m7_borda=None, final_score=None)
+        for mid, r in by_model.items()
+    }
+
+    dropped_set = {e.id for e in registry_entries if e.dropped}
+    dropped_reasons = {e.id: e.dropped_reason for e in registry_entries if e.dropped}
+
+    active = [r for mid, r in cleaned.items() if mid not in dropped_set]
+    dropped = [r for mid, r in cleaned.items() if mid in dropped_set]
+
+    enriched_active = score_runs(active)
+    return enriched_active, dropped, source_map, dropped_reasons
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -166,6 +182,23 @@ def main(argv: list[str] | None = None) -> int:
     model_ids = [m.strip() for m in args.models.split(",") if m.strip()]
     if not model_ids:
         print("error: --models must be non-empty", file=sys.stderr)
+        return 2
+
+    # Task #44: load registry early so we can fail-fast when every selected
+    # --models entry is flagged dropped, before incurring any API cost.
+    try:
+        registry_entries = load_registry(args.registry_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    by_id = {e.id: e for e in registry_entries}
+    selected_known = [by_id[mid] for mid in model_ids if mid in by_id]
+    if selected_known and all(e.dropped for e in selected_known):
+        print(
+            "error: all selected models are marked dropped in registry — "
+            "un-drop them or select active models",
+            file=sys.stderr,
+        )
         return 2
 
     # Task #36: trace is ALWAYS captured per-run and ALWAYS persisted to
@@ -223,11 +256,16 @@ def main(argv: list[str] | None = None) -> int:
     # ---- Final scorecard (merge with prior, unless --no-merge) ----
     if not args.no_merge:
         print("merging with prior final scorecard...")
-        merged_runs, source_map = _merge_with_prior_final(
-            enriched, per_run_sc.scorecard_id, scores_dir=args.scores_dir,
+        active_runs, dropped_runs, source_map, dropped_reasons = _merge_with_prior_final(
+            enriched, per_run_sc.scorecard_id,
+            scores_dir=args.scores_dir,
+            registry_entries=registry_entries,
         )
         final_sc = build_final_scorecard(
-            merged_runs, source_scorecard_id_by_model=source_map,
+            active_runs,
+            source_scorecard_id_by_model=source_map,
+            dropped_runs=dropped_runs,
+            dropped_reasons=dropped_reasons,
         )
         final_path = write_scorecard(final_sc, scores_dir=args.scores_dir, subdir="final")
         print(f"\nfinal scorecard written: {final_path}\n")

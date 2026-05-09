@@ -53,16 +53,24 @@ class Scorecard:
     (see Task #42): each entry maps a model_id → the per-run scorecard_id
     it originated from. For per-run scorecards this stays empty — the
     per-run scorecard *is* the source.
+
+    `dropped_runs` and `dropped_reasons` (Task #44) hold runs for models
+    marked `dropped: true` in `models.json`. They appear in the JSON's
+    `dropped_models` array and the terminal render's "Dropped Models"
+    section, but DO NOT participate in active Borda — `candidate_set`
+    and `runs` reflect active models only.
     """
     scorecard_id: str
-    candidate_set: list[str]                  # sorted model_ids
+    candidate_set: list[str]                  # sorted ACTIVE model_ids only
     emitted_at: str                           # local ISO timestamp with offset
     disclaimer: str
-    runs: list[RunScore] = field(default_factory=list)  # ordered by final_score desc
+    runs: list[RunScore] = field(default_factory=list)  # active, ordered by final_score desc
     source_scorecard_id_by_model: dict[str, str] = field(default_factory=dict)
+    dropped_runs: list[RunScore] = field(default_factory=list)  # raw measures only (no Borda)
+    dropped_reasons: dict[str, str] = field(default_factory=dict)  # model_id → reason
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "scorecard_id": self.scorecard_id,
             "candidate_set": list(self.candidate_set),
             "emitted_at": self.emitted_at,
@@ -71,16 +79,34 @@ class Scorecard:
                 _run_summary(r, self.source_scorecard_id_by_model.get(r.model_id))
                 for r in self.runs
             ],
+            "dropped_models": [
+                _run_summary(
+                    r,
+                    self.source_scorecard_id_by_model.get(r.model_id),
+                    drop_reason=self.dropped_reasons.get(r.model_id),
+                )
+                for r in self.dropped_runs
+            ],
         }
+        return result
 
 
-def _run_summary(run: RunScore, source_scorecard_id: Optional[str]) -> dict:
+def _run_summary(
+    run: RunScore,
+    source_scorecard_id: Optional[str],
+    *,
+    drop_reason: Optional[str] = None,
+) -> dict:
     """Per-model JSON entry for the scorecard. Adds `ran_at` (Round 4 [4])
-    and, for final scorecards, the `source_scorecard_id` pointer (Task #42)."""
+    and, for final scorecards, the `source_scorecard_id` pointer (Task #42).
+    For dropped models (Task #44), inlines `drop_reason` so the JSON entry
+    is self-describing."""
     d = run.to_dict()
     d["ran_at"] = run.run_id  # full run_id includes the timestamp suffix
     if source_scorecard_id is not None:
         d["source_scorecard_id"] = source_scorecard_id
+    if drop_reason is not None:
+        d["drop_reason"] = drop_reason
     return d
 
 
@@ -127,22 +153,33 @@ def build_final_scorecard(
     runs: list[RunScore],
     *,
     source_scorecard_id_by_model: dict[str, str],
+    dropped_runs: Optional[list[RunScore]] = None,
+    dropped_reasons: Optional[dict[str, str]] = None,
 ) -> Scorecard:
-    """Merged-view scorecard (Task #42).
+    """Merged-view scorecard (Task #42, extended Task #44).
 
-    `runs` is the post-Borda union across all known models (caller is
+    `runs` is the post-Borda union across active models (caller is
     responsible for de-duping by model_id and re-scoring across the
-    union — see cli.py merge logic). Filename is always timestamp-only
-    so finals form a clean version history when sorted lexically.
-    `source_scorecard_id_by_model` MUST cover every model in `runs`.
+    active subset — see cli.py merge logic). Filename is always
+    timestamp-only so finals form a clean version history when sorted
+    lexically. `source_scorecard_id_by_model` MUST cover every model in
+    BOTH `runs` and `dropped_runs`.
+
+    `dropped_runs` (Task #44) carries models flagged `dropped: true` in
+    the registry. Their RunScore.{m6_borda, m7_borda, final_score} should
+    be None — they are NOT in the active candidate_set, so Borda over them
+    is not meaningful. `dropped_reasons` maps each dropped model_id to its
+    free-form reason string for human display.
     """
     emitted_at = now_iso()
-    candidate_set = sorted(r.model_id for r in runs)
+    candidate_set = sorted(r.model_id for r in runs)  # active only
     scorecard_id = _format_scorecard_id(emitted_at, single_model_id=None)
     ordered = sorted(
         runs,
         key=lambda r: (r.final_score is None, -(r.final_score or 0.0)),
     )
+    dropped_list = list(dropped_runs) if dropped_runs else []
+    dropped_reasons_map = dict(dropped_reasons) if dropped_reasons else {}
     return Scorecard(
         scorecard_id=scorecard_id,
         candidate_set=candidate_set,
@@ -150,6 +187,8 @@ def build_final_scorecard(
         disclaimer=_DISCLAIMER,
         runs=ordered,
         source_scorecard_id_by_model=dict(source_scorecard_id_by_model),
+        dropped_runs=dropped_list,
+        dropped_reasons=dropped_reasons_map,
     )
 
 
@@ -202,19 +241,28 @@ def latest_final_scorecard_path(scores_dir: Path) -> Optional[Path]:
 def load_runs_from_scorecard(
     path: Path,
 ) -> tuple[list[RunScore], dict[str, str]]:
-    """Reverse-load a scorecard JSON into (runs, source_scorecard_id_by_model).
+    """Reverse-load a scorecard JSON into (combined_runs, source_map).
+
+    Combines `models` (active) and `dropped_models` (Task #44) into a
+    single returned list — the active/dropped partition is decided fresh
+    at merge time by the current registry, not by the prior scorecard's
+    snapshot. So a model that was active when this scorecard was emitted
+    can flow into the dropped subset on the next merge if the registry
+    now flags it `dropped: true`, and vice versa.
 
     The source map carries each model's per-run scorecard_id when the
-    scorecard JSON declares it on the entry. For bootstrap cases (entries
-    without a `source_scorecard_id` field), we fall back to the
-    scorecard's own `scorecard_id` — meaning "we don't know which per-run
-    produced this; this scorecard is the best handle we have".
+    scorecard JSON declares it. For bootstrap cases (entries without a
+    `source_scorecard_id` field), we fall back to the scorecard's own
+    `scorecard_id` — meaning "we don't know which per-run produced this;
+    this scorecard is the best handle we have". Backward compat: scorecards
+    written before #44 lack `dropped_models` entirely; `data.get` defaults
+    to empty list.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
     fallback_id = data.get("scorecard_id")
     runs: list[RunScore] = []
     source_map: dict[str, str] = {}
-    for entry in data.get("models", []):
+    for entry in list(data.get("models", [])) + list(data.get("dropped_models", [])):
         rs = RunScore.from_dict(entry)
         runs.append(rs)
         source_map[rs.model_id] = entry.get("source_scorecard_id") or fallback_id
@@ -295,6 +343,43 @@ def render_terminal(sc: Scorecard) -> str:
         lines.append(
             "  " + f"{run.model_id:<14}  " + "  ".join(f"{c:<28}" for c in cells)
         )
+
+    # Dropped Models (Task #44) — render only when present
+    if sc.dropped_runs:
+        lines.append("")
+        lines.append("Dropped Models (excluded from active Borda):")
+        drop_header = (
+            "  "
+            f"{'model_id':<24}  "
+            f"{'S0':>5} "
+            f"{'M1':>5} "
+            f"{'M2':>5} "
+            f"{'M3':>5} "
+            f"{'M4':>5} "
+            f"{'M5':>5}  "
+            f"{'M6_raw':<10}  "
+            f"{'M7_raw':<10}  "
+            f"DROP_REASON"
+        )
+        lines.append(drop_header)
+        for run in sc.dropped_runs:
+            s0 = _fmt_rate(run.s0.rate)
+            m_rates = [_fmt_rate(run.measures[k].rate) for k in ("M1", "M2", "M3", "M4", "M5")]
+            m6_raw = run.measures["M6"].rate
+            m7_raw = run.measures["M7"].rate
+            m6_str = f"${m6_raw:.4f}" if m6_raw is not None else "n/a"
+            m7_str = f"{m7_raw:.0f}ms" if m7_raw is not None else "n/a"
+            reason = sc.dropped_reasons.get(run.model_id, "")
+            lines.append(
+                "  "
+                f"{run.model_id:<24}  "
+                f"{s0:>5} "
+                + " ".join(f"{m:>5}" for m in m_rates)
+                + "  "
+                + f"{m6_str:<10}  "
+                + f"{m7_str:<10}  "
+                + reason
+            )
 
     # Disclaimer (Round 4 DC4)
     lines.append("")

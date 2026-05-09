@@ -336,3 +336,178 @@ class TestCLICrossRunMerge:
         d = json.loads(final_json.read_text())
         for entry in d["models"]:
             assert "source_scorecard_id" in entry
+
+
+# ---------- Dropped Models (Task #44) ----------
+
+
+def _write_registry(path: Path, entries: list[dict]) -> None:
+    path.write_text(json.dumps(entries), encoding="utf-8")
+
+
+class TestCLIDroppedModelsGuard:
+    def test_main_errors_when_all_selected_models_are_dropped(
+        self, tmp_path, fake_corpus, fake_prompt, capsys
+    ):
+        """Fail-fast guard: when every --models entry is flagged dropped
+        in the registry, exit with code 2 BEFORE any runner invocation
+        (no API cost wasted)."""
+        registry_path = tmp_path / "models.json"
+        _write_registry(registry_path, [
+            {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
+             "price_in": 1.0, "price_out": 5.0,
+             "dropped": True, "dropped_reason": "test"},
+        ])
+        rc = cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+            "--registry-path", str(registry_path),
+        ])
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "all selected models are marked dropped" in captured.err
+
+    def test_main_proceeds_when_only_some_selected_are_dropped(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        """Mixed active+dropped selection — guard does NOT trip. The merge
+        step routes the dropped runs to the dropped section as designed."""
+        registry_path = tmp_path / "models.json"
+        _write_registry(registry_path, [
+            {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
+             "price_in": 1.0, "price_out": 5.0},
+            {"id": "sonnet-4.6", "provider": "anthropic", "model": "m",
+             "price_in": 3.0, "price_out": 15.0,
+             "dropped": True, "dropped_reason": "test reason"},
+        ])
+        scores_dir = tmp_path / "scores"
+        rc = cli.main([
+            "--models", "haiku-4.5,sonnet-4.6",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+            "--registry-path", str(registry_path),
+        ])
+        assert rc == 0
+        finals = sorted((scores_dir / "final").glob("*.json"))
+        assert len(finals) == 1
+        d = json.loads(finals[0].read_text())
+        assert sorted(d["candidate_set"]) == ["haiku-4.5"]
+        active_ids = [m["model_id"] for m in d["models"]]
+        dropped_ids = [m["model_id"] for m in d["dropped_models"]]
+        assert active_ids == ["haiku-4.5"]
+        assert dropped_ids == ["sonnet-4.6"]
+        # Borda nulled for dropped
+        gem = d["dropped_models"][0]
+        assert gem["m6_borda"] is None
+        assert gem["m7_borda"] is None
+        assert gem["final_score"] is None
+        assert gem["drop_reason"] == "test reason"
+
+
+class TestCLIDroppedModelsMergePartition:
+    def test_merge_partitions_dropped_via_registry(self, tmp_path):
+        """Direct unit test of `_merge_with_prior_final`. New per-run runs
+        for two models — one active in registry, one dropped. Merge must
+        route them to active vs dropped subsets and recompute Borda over
+        active only (forced None for dropped)."""
+        from kdb_benchmark.registry import ModelEntry
+        scores_dir = tmp_path / "scores"
+        scores_dir.mkdir()
+
+        registry = [
+            ModelEntry(id="haiku-4.5", provider="anthropic", model="m",
+                       price_in=1.0, price_out=5.0),
+            ModelEntry(id="sonnet-4.6", provider="anthropic", model="m",
+                       price_in=3.0, price_out=15.0,
+                       dropped=True, dropped_reason="ex-broken"),
+        ]
+        new_runs = [
+            _fake_runscore("haiku-4.5", m6_rate=0.001, m7_rate=2000.0),
+            _fake_runscore("sonnet-4.6", m6_rate=0.018, m7_rate=3500.0),
+        ]
+        active, dropped, source_map, dropped_reasons = cli._merge_with_prior_final(
+            new_runs, "fake-scorecard-id",
+            scores_dir=scores_dir,
+            registry_entries=registry,
+        )
+        assert {r.model_id for r in active} == {"haiku-4.5"}
+        assert {r.model_id for r in dropped} == {"sonnet-4.6"}
+        # Active gets Borda (1 candidate → degenerate but Borda computes)
+        for r in active:
+            assert r.m6_borda is not None
+            assert r.final_score is not None
+        # Dropped have Borda nulled
+        for r in dropped:
+            assert r.m6_borda is None
+            assert r.m7_borda is None
+            assert r.final_score is None
+        assert dropped_reasons == {"sonnet-4.6": "ex-broken"}
+        # source_map covers both
+        assert source_map["haiku-4.5"] == "fake-scorecard-id"
+        assert source_map["sonnet-4.6"] == "fake-scorecard-id"
+
+    def test_merge_carries_prior_dropped_through_when_new_run_doesnt_touch(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        """End-to-end: Run #1 fires gemini-3-flash-preview while it's
+        active (registry says active). Then registry flips gemini to
+        dropped. Run #2 fires haiku — gemini is carried through from the
+        prior final into the new dropped subset (registry-driven, not
+        scorecard-snapshot-driven)."""
+        registry_path = tmp_path / "models.json"
+        scores_dir = tmp_path / "scores"
+        runs_root = tmp_path / "runs"
+
+        # Registry v1: gemini active
+        _write_registry(registry_path, [
+            {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
+             "price_in": 1.0, "price_out": 5.0},
+            {"id": "gemini-3-flash-preview", "provider": "gemini", "model": "g",
+             "price_in": 0.5, "price_out": 3.0},
+        ])
+        # Run #1 — gemini active
+        rc = cli.main([
+            "--models", "gemini-3-flash-preview",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+            "--registry-path", str(registry_path),
+        ])
+        assert rc == 0
+        d1 = json.loads(sorted((scores_dir / "final").glob("*.json"))[-1].read_text())
+        assert sorted(d1["candidate_set"]) == ["gemini-3-flash-preview"]
+        assert d1["dropped_models"] == []
+
+        # Registry v2: flip gemini to dropped
+        _write_registry(registry_path, [
+            {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
+             "price_in": 1.0, "price_out": 5.0},
+            {"id": "gemini-3-flash-preview", "provider": "gemini", "model": "g",
+             "price_in": 0.5, "price_out": 3.0,
+             "dropped": True, "dropped_reason": "flipped post-run"},
+        ])
+        # Run #2 — fire haiku (different model). Merge inherits gemini
+        # from prior final, but registry says it's now dropped → routes
+        # to dropped subset.
+        rc = cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+            "--registry-path", str(registry_path),
+        ])
+        assert rc == 0
+        d2 = json.loads(sorted((scores_dir / "final").glob("*.json"))[-1].read_text())
+        assert sorted(d2["candidate_set"]) == ["haiku-4.5"]
+        active_ids = [m["model_id"] for m in d2["models"]]
+        dropped_ids = [m["model_id"] for m in d2["dropped_models"]]
+        assert active_ids == ["haiku-4.5"]
+        assert dropped_ids == ["gemini-3-flash-preview"]
+        assert d2["dropped_models"][0]["drop_reason"] == "flipped post-run"

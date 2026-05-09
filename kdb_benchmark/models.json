@@ -34,7 +34,9 @@
     "ctx_window": 1048576,
     "max_output_tokens": 65536,
     "price_in": 0.5,
-    "price_out": 3.0
+    "price_out": 3.0,
+    "dropped": true,
+    "dropped_reason": "high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)"
   },
   {
     "id": "grok-4-1-fast-reasoning",

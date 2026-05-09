@@ -213,3 +213,52 @@ def test_default_registry_includes_gpt_5_4_mini_with_completion_tokens() -> None
         assert gpt.provider == "openai"
         assert gpt.ctx_window == 400000
         assert gpt.max_output_tokens == 128000
+
+
+# ---------- dropped status (Task #44) ----------
+
+def test_dropped_defaults_to_false_when_absent(tmp_path: Path) -> None:
+    """Entries without a `dropped` field default to active (dropped=False)."""
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry()]), encoding="utf-8")
+    [entry] = load_registry(p)
+    assert entry.dropped is False
+    assert entry.dropped_reason == ""
+
+
+def test_loader_parses_dropped_true_with_reason(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(
+        json.dumps([_entry(
+            dropped=True,
+            dropped_reason="known-broken on canonical corpus",
+        )]),
+        encoding="utf-8",
+    )
+    [entry] = load_registry(p)
+    assert entry.dropped is True
+    assert entry.dropped_reason == "known-broken on canonical corpus"
+
+
+def test_loader_rejects_non_bool_dropped(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(dropped="yes")]), encoding="utf-8")
+    with pytest.raises(ValueError, match="'dropped' must be a boolean"):
+        load_registry(p)
+
+
+def test_loader_rejects_non_string_dropped_reason(tmp_path: Path) -> None:
+    p = tmp_path / "models.json"
+    p.write_text(json.dumps([_entry(dropped_reason=42)]), encoding="utf-8")
+    with pytest.raises(ValueError, match="'dropped_reason' must be a string"):
+        load_registry(p)
+
+
+def test_default_registry_marks_gemini_3_flash_preview_dropped() -> None:
+    """Live models.json: gemini-3-flash-preview is flagged dropped pending
+    investigation of run-to-run variance + intermittent token-overrun."""
+    by_id = {e.id: e for e in load_registry()}
+    if "gemini-3-flash-preview" in by_id:
+        gemini = by_id["gemini-3-flash-preview"]
+        assert gemini.dropped is True
+        assert gemini.dropped_reason  # non-empty

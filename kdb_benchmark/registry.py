@@ -19,8 +19,13 @@ mirrors the proven pattern from
                               in OpenAI-compat API calls
       extra_body           — dict, passed to the SDK's `extra_body` (for
                               provider-specific knobs like `think: false`)
+      dropped              — bool, true to exclude from active Borda; the
+                              model still appears in the scorecard's
+                              "Dropped Models" section with raw measures
+      dropped_reason       — str, free-form explanation; surfaced in the
+                              scorecard's Dropped Models section
 
-Optional fields default to None / False / None when absent.
+Optional fields default to None / False / None / "" when absent.
 """
 from __future__ import annotations
 
@@ -43,6 +48,8 @@ class ModelEntry:
     max_output_tokens: Optional[int] = None
     use_completion_tokens: bool = False
     extra_body: Optional[dict] = None
+    dropped: bool = False     # excluded from active Borda; routed to "Dropped Models"
+    dropped_reason: str = ""  # surfaced in scorecard's Dropped Models section
 
 
 def _coerce_price(raw: object, *, index: int, field: str) -> float:
@@ -109,6 +116,16 @@ def load_registry(path: Path = MODELS_JSON) -> list[ModelEntry]:
             raise ValueError(
                 f"models.json[{i}] field 'use_completion_tokens' must be a boolean"
             )
+        dropped_raw = raw.get("dropped", False)
+        if not isinstance(dropped_raw, bool):
+            raise ValueError(
+                f"models.json[{i}] field 'dropped' must be a boolean"
+            )
+        dropped_reason_raw = raw.get("dropped_reason", "")
+        if not isinstance(dropped_reason_raw, str):
+            raise ValueError(
+                f"models.json[{i}] field 'dropped_reason' must be a string"
+            )
 
         entries.append(ModelEntry(
             id=raw["id"],
@@ -124,6 +141,8 @@ def load_registry(path: Path = MODELS_JSON) -> list[ModelEntry]:
             ),
             use_completion_tokens=use_completion_tokens_raw,
             extra_body=extra_body_raw,
+            dropped=dropped_raw,
+            dropped_reason=dropped_reason_raw,
         ))
 
     return entries

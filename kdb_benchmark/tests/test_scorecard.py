@@ -295,3 +295,160 @@ class TestRunScoreFromDict:
         d["source_scorecard_id"] = "src"
         rebuilt = RunScore.from_dict(d)
         assert rebuilt.model_id == "x"
+
+
+# ---------- Dropped Models (Task #44) ----------
+
+
+def _dropped_runscore(model_id: str, *, m6_rate: float = 0.0024, m7_rate: float = 19727.0) -> RunScore:
+    """Helper for dropped runs: Borda fields are None (not part of active set)."""
+    return RunScore(
+        run_id=f"{model_id}-dropped-fake",
+        model_id=model_id,
+        provider="gemini",
+        model="gemini-3-flash-preview",
+        n_attempted=5,
+        s0=MeasureScore("S0", 1, 5, 0.20, 0.20),
+        s1=MeasureScore("S1", 5, 5, 1.0, 0.0),
+        s2=MeasureScore("S2", 5, 5, 1.0, 0.0),
+        s3=MeasureScore("S3", 5, 5, 1.0, 0.0),
+        measures={
+            "M1": MeasureScore("M1", 1, 1, 1.0, 0.20),
+            "M2": MeasureScore("M2", 1, 1, 1.0, 0.05),
+            "M3": MeasureScore("M3", 0, 1, 0.0, 0.05),
+            "M4": MeasureScore("M4", 1, 5, 0.20, 0.15),
+            "M5": MeasureScore("M5", 1, 1, 1.0, 0.05),
+            "M6": MeasureScore("M6", 0.001, 1000, m6_rate, 0.15),
+            "M7": MeasureScore("M7", 2000, 1000, m7_rate, 0.15),
+        },
+        diagnostics={
+            "retry_load":              MeasureScore("retry_load", 0, 5, 0.0, 0.0),
+            "token_overrun_rate":      MeasureScore("token_overrun_rate", 4, 5, 0.8, 0.0),
+            "pages_per_1k_source_words": MeasureScore("pages_per_1k_source_words", 1, 5000, 0.21, 0.0),
+        },
+        m6_borda=None,
+        m7_borda=None,
+        final_score=None,
+    )
+
+
+class TestScorecardDroppedRuns:
+    def test_default_scorecard_has_empty_dropped(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs)
+        assert sc.dropped_runs == []
+        assert sc.dropped_reasons == {}
+
+    def test_build_final_scorecard_accepts_dropped_runs(self):
+        active = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                            m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        dropped = [_dropped_runscore("gemini-3-flash-preview")]
+        sc = scorecard.build_final_scorecard(
+            active,
+            source_scorecard_id_by_model={"haiku-4.5": "src1", "gemini-3-flash-preview": "src2"},
+            dropped_runs=dropped,
+            dropped_reasons={"gemini-3-flash-preview": "test reason"},
+        )
+        assert [r.model_id for r in sc.dropped_runs] == ["gemini-3-flash-preview"]
+        assert sc.dropped_reasons == {"gemini-3-flash-preview": "test reason"}
+        # candidate_set reflects active only — Borda comparison set
+        assert sc.candidate_set == ["haiku-4.5"]
+
+    def test_to_dict_emits_dropped_models_array(self):
+        active = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                            m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        dropped = [_dropped_runscore("gemini-3-flash-preview")]
+        sc = scorecard.build_final_scorecard(
+            active,
+            source_scorecard_id_by_model={"haiku-4.5": "src1", "gemini-3-flash-preview": "src2"},
+            dropped_runs=dropped,
+            dropped_reasons={"gemini-3-flash-preview": "test reason"},
+        )
+        d = sc.to_dict()
+        assert "dropped_models" in d
+        assert len(d["dropped_models"]) == 1
+        entry = d["dropped_models"][0]
+        assert entry["model_id"] == "gemini-3-flash-preview"
+        assert entry["drop_reason"] == "test reason"
+        assert entry["source_scorecard_id"] == "src2"
+        # Active list excludes dropped
+        assert [m["model_id"] for m in d["models"]] == ["haiku-4.5"]
+
+    def test_to_dict_dropped_models_empty_when_none(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs)
+        d = sc.to_dict()
+        assert d["dropped_models"] == []
+
+
+class TestScorecardDroppedRender:
+    def test_render_includes_dropped_section_when_present(self):
+        active = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                            m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        dropped = [_dropped_runscore("gemini-3-flash-preview")]
+        sc = scorecard.build_final_scorecard(
+            active,
+            source_scorecard_id_by_model={"haiku-4.5": "s1", "gemini-3-flash-preview": "s2"},
+            dropped_runs=dropped,
+            dropped_reasons={"gemini-3-flash-preview": "high run-to-run variance"},
+        )
+        text = scorecard.render_terminal(sc)
+        assert "Dropped Models" in text
+        assert "gemini-3-flash-preview" in text
+        assert "high run-to-run variance" in text
+        # Raw $/ms format
+        assert "$0.0024" in text
+        assert "19727ms" in text
+
+    def test_render_omits_dropped_section_when_empty(self):
+        """Backward-compat regression: scorecards with no dropped runs
+        render exactly as before #44 — no 'Dropped Models' header."""
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs)
+        text = scorecard.render_terminal(sc)
+        assert "Dropped Models" not in text
+
+
+class TestLoadRunsCombined:
+    def test_load_runs_combines_active_and_dropped(self, tmp_path):
+        """load_runs_from_scorecard returns active + dropped as one list,
+        so the merge step can re-partition fresh against the current
+        registry rather than honoring the prior scorecard's snapshot."""
+        active = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                            m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        dropped = [_dropped_runscore("gemini-3-flash-preview")]
+        sc = scorecard.build_final_scorecard(
+            active,
+            source_scorecard_id_by_model={"haiku-4.5": "s1", "gemini-3-flash-preview": "s2"},
+            dropped_runs=dropped,
+            dropped_reasons={"gemini-3-flash-preview": "test"},
+        )
+        out = scorecard.write_scorecard(sc, scores_dir=tmp_path, subdir="final")
+        loaded_runs, loaded_map = scorecard.load_runs_from_scorecard(out)
+        loaded_ids = {r.model_id for r in loaded_runs}
+        assert loaded_ids == {"haiku-4.5", "gemini-3-flash-preview"}
+        assert loaded_map == {"haiku-4.5": "s1", "gemini-3-flash-preview": "s2"}
+
+    def test_load_runs_handles_pre_44_scorecard_without_dropped_models(self, tmp_path):
+        """Backward compat: scorecards committed before #44 lack the
+        `dropped_models` field. Loader defaults to empty — no crash."""
+        # Synthesize a pre-#44 scorecard JSON by hand — no dropped_models field.
+        legacy = {
+            "scorecard_id": "2026-05-08T14-58-08-04-00",
+            "candidate_set": ["haiku-4.5"],
+            "emitted_at": "2026-05-08T14:58:08-04:00",
+            "disclaimer": "test",
+            "models": [
+                _runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)
+                .to_dict() | {"ran_at": "haiku-4.5-fake", "source_scorecard_id": "self"},
+            ],
+        }
+        legacy_path = tmp_path / "legacy.json"
+        legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+        loaded_runs, loaded_map = scorecard.load_runs_from_scorecard(legacy_path)
+        assert [r.model_id for r in loaded_runs] == ["haiku-4.5"]
+        assert loaded_map == {"haiku-4.5": "self"}
