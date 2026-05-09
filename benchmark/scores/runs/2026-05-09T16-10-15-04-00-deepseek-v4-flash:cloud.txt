@@ -1,0 +1,16 @@
+Scorecard: candidate_set=['deepseek-v4-flash:cloud']   emitted_at=2026-05-09T16:10:15-04:00
+Config:    ollama-cloud/deepseek-v4-flash:cloud   ctx=1000000   --max-tokens=32768   prices=$0.14/$0.28/1M-tok   sources=benchmark/sources (5 files, 28607 source_words)
+Timing:    compile=10m 18s   score=0.0s   total=10m 18s
+====================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b   FINAL  RAN_AT                          
+----------------------------------------------------------------------------------------------------
+   1  deepseek-v4-flash:cloud  1.000 0.981 1.000 1.000 1.000 1.000 1.000 1.000   0.996  deepseek-v4-flash:cloud-2026-05-09T16-00-52_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  deepseek-v4-flash:cloud  M6=$0.0007/1K-words  M7=21608ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  deepseek-v4-flash:cloud  0.0000                        0.0000                        1.5031                      
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.
