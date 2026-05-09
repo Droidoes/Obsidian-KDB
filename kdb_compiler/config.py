@@ -39,6 +39,7 @@ class Settings:
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
+    xai_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"
     llm_timeout_seconds: int = 300
 
@@ -48,6 +49,8 @@ class Settings:
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+            # The repo's .env uses XAI_GROK_API_KEY (vendor + product).
+            xai_api_key=os.getenv("XAI_GROK_API_KEY", ""),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
             llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
         )

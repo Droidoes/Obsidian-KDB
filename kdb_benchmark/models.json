@@ -26,5 +26,22 @@
     "use_completion_tokens": true,
     "price_in": 0.75,
     "price_out": 4.5
+  },
+  {
+    "id": "gemini-3-flash-preview",
+    "provider": "gemini",
+    "model": "gemini-3-flash-preview",
+    "ctx_window": 1048576,
+    "max_output_tokens": 65536,
+    "price_in": 0.5,
+    "price_out": 3.0
+  },
+  {
+    "id": "grok-4-1-fast-reasoning",
+    "provider": "xai",
+    "model": "grok-4-1-fast-reasoning",
+    "ctx_window": 2000000,
+    "price_in": 0.2,
+    "price_out": 0.5
   }
 ]

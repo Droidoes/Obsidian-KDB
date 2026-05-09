@@ -120,6 +120,20 @@ def test_ollama_dispatch_uses_local_url(
     assert ctor.call_args.kwargs["api_key"] == "ollama"
 
 
+def test_xai_dispatch_uses_xai_endpoint(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    _use_settings(monkeypatch, xai_api_key="xai-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="xai", model="grok-4-1-fast-reasoning", prompt="hi"))
+    assert ctor.call_args.kwargs["base_url"] == "https://api.x.ai/v1"
+    assert ctor.call_args.kwargs["api_key"] == "xai-test"
+    # Unlike gemini, xAI does NOT require a "models/" prefix on model id.
+    assert client.chat.completions.create.call_args.kwargs["model"] == "grok-4-1-fast-reasoning"
+
+
 # ---------- request features ----------
 
 def test_json_mode_threads_through(
@@ -246,6 +260,12 @@ def test_missing_gemini_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_settings(monkeypatch, gemini_api_key="")
     with pytest.raises(ModelConfigError):
         call_model(ModelRequest(provider="gemini", model="gemini-pro", prompt="hi"))
+
+
+def test_missing_xai_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_settings(monkeypatch, xai_api_key="")
+    with pytest.raises(ModelConfigError):
+        call_model(ModelRequest(provider="xai", model="grok-4-1-fast-reasoning", prompt="hi"))
 
 
 def test_unknown_provider_raises() -> None:

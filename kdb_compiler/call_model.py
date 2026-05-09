@@ -9,6 +9,7 @@ Providers:
     anthropic → native anthropic SDK (client.messages.create)
     openai    → openai SDK, standard endpoint
     gemini    → openai SDK, base_url=generativelanguage.googleapis.com/v1beta/openai/
+    xai       → openai SDK, base_url=https://api.x.ai/v1
     ollama    → openai SDK, base_url=http://localhost:11434/v1
 
 No streaming; batch-compile workload. SDK httpx timeout handles pre-first-byte
@@ -25,7 +26,7 @@ from openai import OpenAI
 
 from kdb_compiler.config import settings
 
-Provider = Literal["anthropic", "openai", "gemini", "ollama"]
+Provider = Literal["anthropic", "openai", "gemini", "xai", "ollama"]
 
 
 @dataclass
@@ -79,6 +80,10 @@ def call_model(req: ModelRequest) -> ModelResponse:
             req,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             api_key=settings.gemini_api_key,
+        )
+    elif req.provider == "xai":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
+            req, base_url="https://api.x.ai/v1", api_key=settings.xai_api_key,
         )
     elif req.provider == "ollama":
         text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
