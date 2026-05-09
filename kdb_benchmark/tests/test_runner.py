@@ -68,7 +68,7 @@ class TestRunnerEntryPoint:
     def test_run_benchmark_returns_run_id_and_state_root(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
     ):
-        run_id, state_root = runner.run_benchmark(
+        run_id, state_root, _metrics = runner.run_benchmark(
             sources_dir=fake_corpus,
             model_id="haiku-4.5",
             runs_root=runs_root,
@@ -222,7 +222,7 @@ class TestSourceIdPrefix:
     def test_run_benchmark_copies_system_prompt_to_benchmark_vault_stub(
         self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one
     ):
-        run_id, state_root = runner.run_benchmark(
+        run_id, state_root, _metrics = runner.run_benchmark(
             sources_dir=fake_corpus, model_id="haiku-4.5",
             runs_root=runs_root, system_prompt_path=fake_system_prompt,
         )
@@ -237,10 +237,116 @@ class TestSourceIdPrefix:
     ):
         """Isolation: state_root must be under runs_root/<run_id>/, NEVER
         the user's live vault state."""
-        run_id, state_root = runner.run_benchmark(
+        run_id, state_root, _metrics = runner.run_benchmark(
             sources_dir=fake_corpus, model_id="haiku-4.5",
             runs_root=runs_root, system_prompt_path=fake_system_prompt,
         )
         for c in patched_compile_one:
             assert c["state_root"] == state_root
             assert str(c["state_root"]).startswith(str(runs_root))
+
+
+# ---------------------------------------------------------------------------
+# Task #46 — per-source progress + compile_metrics return
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+
+@pytest.fixture
+def patched_compile_one_writing_records(monkeypatch):
+    """Variant of patched_compile_one that also writes a fake
+    RespStatsRecord JSON file — mimics compile_one's `finally`-block
+    side effect — so the runner can read tokens/latency/stop_reason for
+    its per-source progress line.
+
+    Returns a callable `set_record(stop_reason, in_tok, out_tok, latency_ms,
+    source_words)` so individual tests can vary the record content per call.
+    """
+    from kdb_compiler.resp_stats_writer import safe_source_id
+
+    record_template = {
+        "stop_reason": "stop",
+        "input_tokens": 1234,
+        "output_tokens": 567,
+        "latency_ms": 8200,
+        "source_words": 250,
+    }
+
+    def fake_compile_one(job, *, vault_root, state_root, ctx, provider, model, max_tokens, **kwargs):
+        # Mimic the resp_stats writer path (Task #29 via Task #28 fields).
+        rec_dir = state_root / "llm_resp" / ctx.run_id
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        rec = dict(record_template)
+        rec_path = rec_dir / f"{safe_source_id(job.source_id)}.json"
+        rec_path.write_text(_json.dumps(rec), encoding="utf-8")
+        return (None, [], [], None)
+
+    def set_record(**kwargs):
+        record_template.update(kwargs)
+
+    monkeypatch.setattr("kdb_benchmark.runner.compile_one", fake_compile_one)
+    return set_record
+
+
+class TestRunBenchmarkProgressOutput:
+    def test_compile_metrics_returned(
+        self, fake_corpus, fake_system_prompt, runs_root, patched_compile_one_writing_records
+    ):
+        """Task #46: third return value carries compile_seconds, n_sources,
+        n_source_words. n_source_words is summed from per-source records."""
+        _, _, metrics = runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        assert set(metrics.keys()) == {"compile_seconds", "n_sources", "n_source_words"}
+        assert metrics["n_sources"] == 2  # fake_corpus has 2 .md files
+        assert metrics["n_source_words"] == 500  # 2 sources × 250 words each
+        assert isinstance(metrics["compile_seconds"], (int, float))
+        assert metrics["compile_seconds"] >= 0
+
+    def test_per_source_progress_line_printed(
+        self, fake_corpus, fake_system_prompt, runs_root,
+        patched_compile_one_writing_records, capsys,
+    ):
+        """Task #46: every completed compile_one prints a progress line
+        with ordinal, filename, latency, and token counts."""
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        out = capsys.readouterr().out
+        # Two sources → two progress lines
+        assert "[haiku-4.5]   1/2" in out
+        assert "[haiku-4.5]   2/2" in out
+        # Token + latency shape (format: right-justified width 6)
+        assert "in=  1234" in out
+        assert "out=   567" in out
+        assert "8.2s" in out  # 8200ms → 8.2s
+
+    def test_truncation_warning_emitted_when_stop_reason_length(
+        self, fake_corpus, fake_system_prompt, runs_root,
+        patched_compile_one_writing_records, capsys,
+    ):
+        """Task #46: when a per-source record's stop_reason is `length` or
+        `max_tokens`, the progress line gets a `⚠ stop=length` warning —
+        surfaces truncation IMMEDIATELY, ahead of scorer-side detection."""
+        patched_compile_one_writing_records(stop_reason="length")
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        out = capsys.readouterr().out
+        assert "⚠ stop=length" in out
+
+    def test_no_warning_for_clean_stop(
+        self, fake_corpus, fake_system_prompt, runs_root,
+        patched_compile_one_writing_records, capsys,
+    ):
+        """No ⚠ when stop_reason is the normal `stop`."""
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        out = capsys.readouterr().out
+        assert "⚠" not in out

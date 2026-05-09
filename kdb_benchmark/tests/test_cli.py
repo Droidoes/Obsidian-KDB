@@ -71,7 +71,13 @@ def patched_runner_and_scorer(monkeypatch, tmp_path):
         state_root = runs_root / run_id / "state"
         state_root.mkdir(parents=True, exist_ok=True)
         fake_run_states[model_id] = state_root
-        return run_id, state_root
+        # Task #46: 3-tuple return — (run_id, state_root, compile_metrics)
+        compile_metrics = {
+            "compile_seconds": 1.5,
+            "n_sources": 1,
+            "n_source_words": 250,
+        }
+        return run_id, state_root, compile_metrics
 
     def fake_score_run(state_root, run_id, model_id, **kwargs):
         # Append a marker line to the trace_sink (Task #36 — verifies the
@@ -102,7 +108,7 @@ class TestCLI:
         scores_dir = tmp_path / "scores"
         runs_root = tmp_path / "runs"
         rc = cli.main([
-            "--models", "haiku-4.5,sonnet-4.6",
+            "--models", "haiku-4.5",
             "--sources", str(fake_corpus),
             "--system-prompt-path", str(fake_prompt),
             "--runs-root", str(runs_root),
@@ -113,10 +119,8 @@ class TestCLI:
         run_jsons = list((scores_dir / "runs").glob("*.json"))
         assert len(run_jsons) == 1
         data = json.loads(run_jsons[0].read_text())
-        assert sorted(data["candidate_set"]) == ["haiku-4.5", "sonnet-4.6"]
-        # Models sorted by final_score desc — haiku faster + cheaper → wins
+        assert data["candidate_set"] == ["haiku-4.5"]
         assert data["models"][0]["model_id"] == "haiku-4.5"
-        assert data["models"][1]["model_id"] == "sonnet-4.6"
         # Final scorecard auto-written under final/ (Task #42)
         final_jsons = list((scores_dir / "final").glob("*.json"))
         assert len(final_jsons) == 1
@@ -125,7 +129,7 @@ class TestCLI:
         self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
     ):
         cli.main([
-            "--models", "haiku-4.5,sonnet-4.6",
+            "--models", "haiku-4.5",
             "--sources", str(fake_corpus),
             "--system-prompt-path", str(fake_prompt),
             "--runs-root", str(tmp_path / "runs"),
@@ -133,7 +137,6 @@ class TestCLI:
         ])
         captured = capsys.readouterr()
         assert "haiku-4.5" in captured.out
-        assert "sonnet-4.6" in captured.out
         assert "FINAL" in captured.out
         assert "candidate" in captured.out.lower()  # disclaimer
 
@@ -144,21 +147,20 @@ class TestCLI:
         per-run + cross-run sections, regardless of --verbose."""
         runs_root = tmp_path / "runs"
         cli.main([
-            "--models", "haiku-4.5,sonnet-4.6",
+            "--models", "haiku-4.5",
             "--sources", str(fake_corpus),
             "--system-prompt-path", str(fake_prompt),
             "--runs-root", str(runs_root),
             "--scores-dir", str(tmp_path / "scores"),
         ])
-        for model_id in ("haiku-4.5", "sonnet-4.6"):
-            trace_path = runs_root / f"{model_id}-fake" / "score_trace.txt"
-            assert trace_path.exists(), f"missing {trace_path}"
-            content = trace_path.read_text()
-            # Per-run section: marker line from fake_score_run
-            assert f"[verbose] fake S0 trace for {model_id}" in content
-            # Cross-run section: Borda + final_score lines from real score_runs
-            assert "score_runs: candidate_set=" in content
-            assert "final_score=" in content
+        trace_path = runs_root / "haiku-4.5-fake" / "score_trace.txt"
+        assert trace_path.exists(), f"missing {trace_path}"
+        content = trace_path.read_text()
+        # Per-run section: marker line from fake_score_run
+        assert "[verbose] fake S0 trace for haiku-4.5" in content
+        # Cross-run section: Borda + final_score lines from real score_runs
+        assert "score_runs: candidate_set=" in content
+        assert "final_score=" in content
 
     def test_main_verbose_flag_mirrors_trace_to_stdout(
         self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
@@ -326,7 +328,7 @@ class TestCLICrossRunMerge:
     ):
         scores_dir = tmp_path / "scores"
         cli.main([
-            "--models", "haiku-4.5,sonnet-4.6",
+            "--models", "haiku-4.5",
             "--sources", str(fake_corpus),
             "--system-prompt-path", str(fake_prompt),
             "--runs-root", str(tmp_path / "runs"),
@@ -346,12 +348,12 @@ def _write_registry(path: Path, entries: list[dict]) -> None:
 
 
 class TestCLIDroppedModelsGuard:
-    def test_main_errors_when_all_selected_models_are_dropped(
+    def test_main_errors_when_selected_model_is_dropped(
         self, tmp_path, fake_corpus, fake_prompt, capsys
     ):
-        """Fail-fast guard: when every --models entry is flagged dropped
-        in the registry, exit with code 2 BEFORE any runner invocation
-        (no API cost wasted)."""
+        """Fail-fast guard (Task #44 + #46): firing a dropped model exits
+        with code 2 BEFORE any runner invocation (no API cost wasted).
+        Single-model only after #46 — there's no "mixed selection" path."""
         registry_path = tmp_path / "models.json"
         _write_registry(registry_path, [
             {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
@@ -368,45 +370,7 @@ class TestCLIDroppedModelsGuard:
         ])
         assert rc == 2
         captured = capsys.readouterr()
-        assert "all selected models are marked dropped" in captured.err
-
-    def test_main_proceeds_when_only_some_selected_are_dropped(
-        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
-    ):
-        """Mixed active+dropped selection — guard does NOT trip. The merge
-        step routes the dropped runs to the dropped section as designed."""
-        registry_path = tmp_path / "models.json"
-        _write_registry(registry_path, [
-            {"id": "haiku-4.5", "provider": "anthropic", "model": "m",
-             "price_in": 1.0, "price_out": 5.0},
-            {"id": "sonnet-4.6", "provider": "anthropic", "model": "m",
-             "price_in": 3.0, "price_out": 15.0,
-             "dropped": True, "dropped_reason": "test reason"},
-        ])
-        scores_dir = tmp_path / "scores"
-        rc = cli.main([
-            "--models", "haiku-4.5,sonnet-4.6",
-            "--sources", str(fake_corpus),
-            "--system-prompt-path", str(fake_prompt),
-            "--runs-root", str(tmp_path / "runs"),
-            "--scores-dir", str(scores_dir),
-            "--registry-path", str(registry_path),
-        ])
-        assert rc == 0
-        finals = sorted((scores_dir / "final").glob("*.json"))
-        assert len(finals) == 1
-        d = json.loads(finals[0].read_text())
-        assert sorted(d["candidate_set"]) == ["haiku-4.5"]
-        active_ids = [m["model_id"] for m in d["models"]]
-        dropped_ids = [m["model_id"] for m in d["dropped_models"]]
-        assert active_ids == ["haiku-4.5"]
-        assert dropped_ids == ["sonnet-4.6"]
-        # Borda nulled for dropped
-        gem = d["dropped_models"][0]
-        assert gem["m6_borda"] is None
-        assert gem["m7_borda"] is None
-        assert gem["final_score"] is None
-        assert gem["drop_reason"] == "test reason"
+        assert "is marked dropped in registry" in captured.err
 
 
 class TestCLIDroppedModelsMergePartition:
@@ -511,3 +475,119 @@ class TestCLIDroppedModelsMergePartition:
         assert active_ids == ["haiku-4.5"]
         assert dropped_ids == ["gemini-3-flash-preview"]
         assert d2["dropped_models"][0]["drop_reason"] == "flipped post-run"
+
+
+# ---------- Task #46 — single-model + run metadata + progress output ----------
+
+
+class TestCLISingleModelEnforcement:
+    def test_main_rejects_comma_separated_models(
+        self, tmp_path, fake_corpus, fake_prompt, capsys
+    ):
+        """Task #46: --models must be a single model_id. Comma-separated
+        invocations are rejected with code 2 and a guidance message."""
+        rc = cli.main([
+            "--models", "haiku-4.5,sonnet-4.6",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+        ])
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "single model_id" in err
+
+
+class TestCLIRunMetadataPersistence:
+    def test_per_run_scorecard_carries_run_config_and_run_timing(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        """Task #46: per-run scorecard JSON has populated `run_config` and
+        `run_timing` so the artifact is self-describing."""
+        scores_dir = tmp_path / "scores"
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+            "--max-tokens", "24000",
+        ])
+        [run_json] = list((scores_dir / "runs").glob("*.json"))
+        d = json.loads(run_json.read_text())
+        # run_config: at least max_tokens + sources_dir + n_sources + n_source_words
+        assert d["run_config"]["max_tokens"] == 24000
+        assert d["run_config"]["sources_dir"] == str(fake_corpus)
+        assert d["run_config"]["n_sources"] == 1  # fake_corpus has 1 .md file
+        assert "n_source_words" in d["run_config"]
+        # When the model is in the registry, provider/model/ctx/prices land too
+        assert d["run_config"]["provider"] == "anthropic"
+        # run_timing: compile + score + total seconds
+        assert "compile_seconds" in d["run_timing"]
+        assert "score_seconds" in d["run_timing"]
+        assert "total_seconds" in d["run_timing"]
+
+    def test_final_scorecard_has_empty_run_metadata(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        """Final scorecards aggregate across many fires — they intentionally
+        leave run_config/run_timing empty (no single config/timing applies)."""
+        scores_dir = tmp_path / "scores"
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+        ])
+        [final_json] = list((scores_dir / "final").glob("*.json"))
+        d = json.loads(final_json.read_text())
+        assert d["run_config"] == {}
+        assert d["run_timing"] == {}
+
+
+class TestCLIProgressOutput:
+    def test_config_header_printed_at_start(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
+    ):
+        """Task #46: a config header line names provider/model, ctx,
+        --max-tokens, and prices BEFORE the runner produces output —
+        so the user knows exactly what's about to fire."""
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+            "--max-tokens", "24000",
+        ])
+        out = capsys.readouterr().out
+        assert "[haiku-4.5] config:" in out
+        assert "anthropic/claude-haiku-4-5-20251001" in out
+        assert "--max-tokens=24000" in out
+        assert "[haiku-4.5] sources:" in out
+
+    def test_kpi_summary_and_total_time_printed(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
+    ):
+        """Task #46: end-of-run summary line(s) carry per-measure KPIs +
+        total wall time so users see the headline outcome without scrolling
+        to find it in the table."""
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(tmp_path / "scores"),
+        ])
+        out = capsys.readouterr().out
+        assert "[haiku-4.5] KPIs:" in out
+        # Single-shot scorecard line includes S0, M1..M5, M6_raw, M7_raw
+        assert "S0=" in out
+        assert "M5=" in out
+        assert "M6_raw=" in out
+        assert "M7_raw=" in out
+        # Timing footer
+        assert "[haiku-4.5] compile complete:" in out
+        assert "[haiku-4.5] score complete:" in out
+        assert "[haiku-4.5] total run time:" in out

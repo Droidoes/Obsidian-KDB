@@ -1,7 +1,7 @@
-"""kdb-benchmark CLI — Tasks #30 / #31 / #22 / #33 / #42 orchestrator.
+"""kdb-benchmark CLI — Tasks #30 / #31 / #22 / #33 / #42 / #46 orchestrator.
 
 Usage:
-  kdb-benchmark --models haiku-4.5,sonnet-4.6 \\
+  kdb-benchmark --models <model_id> \\
                 [--sources benchmark/sources] \\
                 [--system-prompt-path PATH] \\
                 [--runs-root benchmark/runs] \\
@@ -9,20 +9,26 @@ Usage:
                 [--max-tokens 32768] \\
                 [--no-merge]
 
-For each model_id in --models:
-  1. runner.run_benchmark — compile every source (isolated state_root)
-  2. scorer.score_run — derive a RunScore from the captured records
+Single-model invocation (Task #46): `--models` accepts ONE model_id.
+Multi-model comparison happens via cross-run merge (Task #42) — fire each
+model separately and the latest final scorecard accumulates the union.
 
-Then once across all models in this invocation:
-  3. scorer.score_runs — Borda-normalize M6/M7 + compute final_score
-  4. scorecard.build_per_run_scorecard + write to <scores_dir>/runs/
-
-Then (Task #42 — unless --no-merge):
-  5. Load latest <scores_dir>/final/<ts>.json (if any)
-  6. Merge by model_id (replace where overlapping, combine new ones)
-  7. Re-Borda + re-final the merged union (cross-set semantics shift
-     when the candidate set changes)
-  8. write a NEW versioned final at <scores_dir>/final/<ts>.json
+Flow:
+  1. Print config header (provider/model, ctx, --max-tokens, prices, sources)
+  2. runner.run_benchmark — compile every source (isolated state_root);
+     prints per-source progress line as each compile_one returns
+     (Task #46)
+  3. scorer.score_run — derive a RunScore from the captured records
+  4. scorer.score_runs — Borda + final_score (degenerate single-candidate
+     rank for the per-run scorecard; full Borda happens at merge)
+  5. Print KPI summary + total run time (compile + score)
+  6. scorecard.build_per_run_scorecard with run_config + run_timing
+     embedded; write to <scores_dir>/runs/
+  7. Final scorecard merge (Task #42 — unless --no-merge):
+       a. Load latest <scores_dir>/final/<ts>.json (if any)
+       b. Merge by model_id; partition active vs dropped via registry
+          (Task #44); re-Borda over active subset
+       c. Write a NEW versioned final at <scores_dir>/final/<ts>.json
 
 Exit code: 0 on success, non-zero on user error / runtime failure.
 """
@@ -30,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from kdb_benchmark.paths import BENCHMARK_DIR, MODELS_JSON, RUNS_DIR, SCORES_DIR, SOURCES_DIR
@@ -38,6 +45,7 @@ from kdb_benchmark.runner import run_benchmark
 from kdb_benchmark.scorecard import (
     build_final_scorecard,
     build_per_run_scorecard,
+    fmt_duration,
     latest_final_scorecard_path,
     load_runs_from_scorecard,
     render_terminal,
@@ -56,7 +64,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--models",
         required=True,
-        help="Comma-separated list of model_ids from kdb_benchmark/models.json.",
+        help="Single model_id from kdb_benchmark/models.json. Multi-model "
+             "comparison happens via cross-run merge — fire each model "
+             "separately. (Task #46: legacy comma-separated form is no "
+             "longer accepted; use `--models X` for one model per fire.)",
     )
     p.add_argument(
         "--sources",
@@ -183,8 +194,17 @@ def main(argv: list[str] | None = None) -> int:
     if not model_ids:
         print("error: --models must be non-empty", file=sys.stderr)
         return 2
+    # Task #46: single model only. Cross-run merge handles comparison.
+    if len(model_ids) > 1:
+        print(
+            "error: --models takes a single model_id (Task #46) — fire each "
+            "model separately and the cross-run merge accumulates them",
+            file=sys.stderr,
+        )
+        return 2
+    model_id = model_ids[0]
 
-    # Task #44: load registry early so we can fail-fast when every selected
+    # Task #44: load registry early so we can fail-fast when the selected
     # --models entry is flagged dropped, before incurring any API cost.
     try:
         registry_entries = load_registry(args.registry_path)
@@ -192,11 +212,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     by_id = {e.id: e for e in registry_entries}
-    selected_known = [by_id[mid] for mid in model_ids if mid in by_id]
-    if selected_known and all(e.dropped for e in selected_known):
+    entry = by_id.get(model_id)
+    if entry is not None and entry.dropped:
         print(
-            "error: all selected models are marked dropped in registry — "
-            "un-drop them or select active models",
+            f"error: model '{model_id}' is marked dropped in registry — "
+            f"un-drop it or select an active model",
             file=sys.stderr,
         )
         return 2
@@ -204,51 +224,94 @@ def main(argv: list[str] | None = None) -> int:
     # Task #36: trace is ALWAYS captured per-run and ALWAYS persisted to
     # disk. --verbose now controls only whether the trace also prints to
     # stdout after the scorecard. Disk path: <run_dir>/score_trace.txt.
-    per_run_sinks: dict[str, list[str]] = {}
-    per_run_dirs:  dict[str, Path]      = {}
+    sink: list[str] = []
     cross_run_sink: list[str] = []
 
-    raw_run_scores = []
+    # Task #46: config header — surface the inputs before the runner
+    # produces output, so the user sees exactly what's about to fire.
+    if entry is not None:
+        print(
+            f"[{model_id}] config: {entry.provider}/{entry.model}  "
+            f"ctx_window={entry.ctx_window}  --max-tokens={args.max_tokens}  "
+            f"prices=${entry.price_in}/${entry.price_out}/1M-tok"
+        )
+    print(f"[{model_id}] sources: {args.sources}")
+    print(f"[{model_id}] running benchmark...", flush=True)
+
+    t_compile_start = time.monotonic()
     try:
-        for model_id in model_ids:
-            print(f"[{model_id}] running benchmark...")
-            run_id, state_root = run_benchmark(
-                sources_dir=args.sources,
-                model_id=model_id,
-                runs_root=args.runs_root,
-                system_prompt_path=args.system_prompt_path,
-                max_tokens=args.max_tokens,
-                registry_path=args.registry_path,
-            )
-            print(f"[{model_id}] scoring run {run_id}...")
-            sink: list[str] = []
-            per_run_sinks[run_id] = sink
-            per_run_dirs[run_id]  = state_root.parent  # <runs_root>/<run_id>/
-            run_score = score_run(
-                state_root, run_id, model_id,
-                registry_path=args.registry_path,
-                trace_sink=sink,
-            )
-            raw_run_scores.append(run_score)
+        run_id, state_root, compile_metrics = run_benchmark(
+            sources_dir=args.sources,
+            model_id=model_id,
+            runs_root=args.runs_root,
+            system_prompt_path=args.system_prompt_path,
+            max_tokens=args.max_tokens,
+            registry_path=args.registry_path,
+        )
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    compile_seconds = time.monotonic() - t_compile_start
+    print(f"[{model_id}] compile complete: {fmt_duration(compile_seconds)}")
 
-    print("aggregating Borda + final_score...")
-    enriched = score_runs(raw_run_scores, trace_sink=cross_run_sink)
+    print(f"[{model_id}] scoring run {run_id}...", flush=True)
+    t_score_start = time.monotonic()
+    try:
+        run_score = score_run(
+            state_root, run_id, model_id,
+            registry_path=args.registry_path,
+            trace_sink=sink,
+        )
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    enriched = score_runs([run_score], trace_sink=cross_run_sink)
+    score_seconds = time.monotonic() - t_score_start
 
-    # Persist each run's trace to <run_dir>/score_trace.txt — self-contained
-    # (per-run section + cross-run Borda/final_score section).
-    for run_id, run_dir in per_run_dirs.items():
-        full = per_run_sinks[run_id] + [""] + cross_run_sink
-        (run_dir / "score_trace.txt").write_text("\n".join(full) + "\n", encoding="utf-8")
+    # Persist this run's trace (self-contained per-run + cross-run section).
+    full = sink + [""] + cross_run_sink
+    (state_root.parent / "score_trace.txt").write_text(
+        "\n".join(full) + "\n", encoding="utf-8",
+    )
 
-    # ---- Per-run scorecard (always written) ----
-    # Filename embeds model_id only when the invocation scored exactly one
-    # model — multi-model invocations stay timestamp-only so adding/
-    # removing a model later doesn't blow up the naming convention.
-    single_model_id = model_ids[0] if len(model_ids) == 1 else None
-    per_run_sc = build_per_run_scorecard(enriched, single_model_id=single_model_id)
+    # Task #46: KPI summary + timing footer. The full table follows from
+    # render_terminal below; this gives a one-line at-a-glance view.
+    rs = enriched[0]
+    m = rs.measures
+    print(
+        f"[{model_id}] KPIs:  "
+        f"S0={rs.s0.rate:.3f}  M1={m['M1'].rate:.3f}  M2={m['M2'].rate:.3f}  "
+        f"M3={m['M3'].rate:.3f}  M4={m['M4'].rate:.3f}  M5={m['M5'].rate:.3f}  "
+        f"M6_raw=${m['M6'].rate:.4f}/1Kw  M7_raw={m['M7'].rate:.0f}ms/1Kw"
+    )
+    print(f"[{model_id}] score complete: {fmt_duration(score_seconds)}")
+    print(f"[{model_id}] total run time: {fmt_duration(compile_seconds + score_seconds)}")
+
+    # Task #46: snapshot inputs + timing onto the per-run scorecard so it
+    # is self-describing — readers don't need to consult outside artifacts.
+    run_config: dict = {
+        "max_tokens": args.max_tokens,
+        "sources_dir": str(args.sources),
+        "n_sources": compile_metrics["n_sources"],
+        "n_source_words": compile_metrics["n_source_words"],
+        "system_prompt_path": str(args.system_prompt_path),
+    }
+    if entry is not None:
+        run_config["provider"] = entry.provider
+        run_config["model"] = entry.model
+        run_config["ctx_window"] = entry.ctx_window
+        run_config["price_in"] = entry.price_in
+        run_config["price_out"] = entry.price_out
+    run_timing: dict = {
+        "compile_seconds": round(compile_seconds, 2),
+        "score_seconds": round(score_seconds, 2),
+        "total_seconds": round(compile_seconds + score_seconds, 2),
+    }
+
+    per_run_sc = build_per_run_scorecard(
+        enriched, single_model_id=model_id,
+        run_config=run_config, run_timing=run_timing,
+    )
     per_run_path = write_scorecard(per_run_sc, scores_dir=args.scores_dir, subdir="runs")
     print(f"\nper-run scorecard written: {per_run_path}\n")
     print(render_terminal(per_run_sc))
@@ -278,9 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         print("\n" + "=" * 100)
         print("Verbose trace (--verbose)")
         print("=" * 100)
-        for sink in per_run_sinks.values():
-            for line in sink:
-                print(line)
+        for line in sink:
+            print(line)
         for line in cross_run_sink:
             print(line)
 

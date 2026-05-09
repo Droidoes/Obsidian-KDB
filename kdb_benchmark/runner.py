@@ -22,14 +22,17 @@ The output of `run_benchmark` is consumed by `kdb_benchmark.scorer.score_run`.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 from kdb_benchmark.paths import MODELS_JSON
 from kdb_benchmark.registry import ModelEntry, load_registry
 from kdb_compiler import __version__ as _COMPILER_VERSION
 from kdb_compiler.compiler import compile_one
+from kdb_compiler.resp_stats_writer import safe_source_id
 from kdb_compiler.run_context import (
     MANIFEST_SCHEMA_VERSION,
     RunContext,
@@ -78,12 +81,23 @@ def run_benchmark(
     system_prompt_path: Path,
     max_tokens: int = 32768,
     registry_path: Path = MODELS_JSON,
-) -> tuple[str, Path]:
+) -> tuple[str, Path, dict]:
     """Run `compile_one` against `model_id` for every .md file in
-    `sources_dir`. Returns (run_id, state_root).
+    `sources_dir`. Returns (run_id, state_root, compile_metrics).
 
     `state_root` is rooted at `runs_root/<run_id>/state/` so the scorer
     can subsequently call `score_run(state_root, run_id, model_id)`.
+
+    `compile_metrics` (Task #46) is a dict with: compile_seconds (wall
+    clock for the source loop), n_sources, n_source_words (sum of
+    per-source word counts read from the just-written RespStatsRecord
+    files; 0 if any record is missing).
+
+    Per-source progress (Task #46): after each compile_one returns, prints
+    a single line to stdout — `[{model_id}]   N/M  filename  XX.Xs
+    in=NNNNN  out=NNNNN  [⚠ stop=length]`. The truncation warning fires
+    when `stop_reason in ('length', 'max_tokens')`. Best-effort: if the
+    record file isn't readable, the line is skipped (compile still runs).
 
     Side effects:
       * Creates `runs_root/<run_id>/state/llm_resp/<run_id>/*.json`
@@ -153,7 +167,11 @@ def run_benchmark(
     # through to validation.
     source_id_prefix = _derive_source_id_prefix(sources_dir)
 
-    for src_path in source_files:
+    n_sources = len(source_files)
+    n_source_words = 0
+    t_compile_start = time.monotonic()
+
+    for i, src_path in enumerate(source_files, start=1):
         source_id = f"{source_id_prefix}/{src_path.name}"
         job = CompileJob(
             source_id=source_id,
@@ -172,4 +190,33 @@ def run_benchmark(
             extra_body=entry.extra_body,
         )
 
-    return run_id, state_root
+        # Task #46: per-source progress line. Read the just-written
+        # RespStatsRecord (compile_one writes in `finally`, so it exists
+        # even on failure) for tokens/latency/stop_reason. Best-effort —
+        # if the file is unreadable we skip the line and the word count.
+        rec_path = state_root / "llm_resp" / run_id / f"{safe_source_id(source_id)}.json"
+        try:
+            rec = json.loads(rec_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            continue
+        in_tok = rec.get("input_tokens") or 0
+        out_tok = rec.get("output_tokens") or 0
+        latency_ms = rec.get("latency_ms") or 0
+        stop_reason = rec.get("stop_reason") or ""
+        n_source_words += rec.get("source_words") or 0
+        warning = f"  ⚠ stop={stop_reason}" if stop_reason in ("length", "max_tokens") else ""
+        print(
+            f"[{model_id}]   {i}/{n_sources}  "
+            f"{src_path.name:<35}  "
+            f"{latency_ms / 1000:>5.1f}s  "
+            f"in={in_tok:>6}  out={out_tok:>6}{warning}",
+            flush=True,
+        )
+
+    compile_seconds = time.monotonic() - t_compile_start
+    compile_metrics = {
+        "compile_seconds": round(compile_seconds, 2),
+        "n_sources": n_sources,
+        "n_source_words": n_source_words,
+    }
+    return run_id, state_root, compile_metrics

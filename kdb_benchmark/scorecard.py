@@ -59,6 +59,13 @@ class Scorecard:
     `dropped_models` array and the terminal render's "Dropped Models"
     section, but DO NOT participate in active Borda — `candidate_set`
     and `runs` reflect active models only.
+
+    `run_config` and `run_timing` (Task #46) are populated only for PER-RUN
+    scorecards. `run_config` snapshots the inputs used (max_tokens, ctx,
+    sources_dir, n_sources, n_source_words, system_prompt_path, registry
+    fields). `run_timing` captures wall-clock duration of compile vs score
+    phases. Final (merged) scorecards leave both empty — they aggregate
+    across many fires and don't have a single config/timing.
     """
     scorecard_id: str
     candidate_set: list[str]                  # sorted ACTIVE model_ids only
@@ -68,6 +75,8 @@ class Scorecard:
     source_scorecard_id_by_model: dict[str, str] = field(default_factory=dict)
     dropped_runs: list[RunScore] = field(default_factory=list)  # raw measures only (no Borda)
     dropped_reasons: dict[str, str] = field(default_factory=dict)  # model_id → reason
+    run_config: dict = field(default_factory=dict)   # per-run inputs (Task #46)
+    run_timing: dict = field(default_factory=dict)   # per-run wall-clock timing (Task #46)
 
     def to_dict(self) -> dict:
         result = {
@@ -87,6 +96,8 @@ class Scorecard:
                 )
                 for r in self.dropped_runs
             ],
+            "run_config": dict(self.run_config),
+            "run_timing": dict(self.run_timing),
         }
         return result
 
@@ -123,13 +134,21 @@ def build_per_run_scorecard(
     runs: list[RunScore],
     *,
     single_model_id: Optional[str] = None,
+    run_config: Optional[dict] = None,
+    run_timing: Optional[dict] = None,
 ) -> Scorecard:
-    """Per-invocation scorecard (Task #42).
+    """Per-invocation scorecard (Task #42, extended Task #46).
 
     Carries only the models scored in this invocation. Filename is
     `<ts>-<model_id>` when `single_model_id` is provided (1-model runs),
     else `<ts>`. No source_scorecard_id_by_model — the per-run scorecard
     IS the source.
+
+    `run_config` (Task #46) snapshots the invocation inputs (max_tokens,
+    ctx_window, provider/model from registry, prices, sources_dir,
+    n_sources, n_source_words, system_prompt_path) so the scorecard is
+    self-describing — readers don't need to consult outside artifacts.
+    `run_timing` carries compile_seconds, score_seconds, total_seconds.
 
     Models are ordered by final_score descending (None goes last).
     """
@@ -146,6 +165,8 @@ def build_per_run_scorecard(
         emitted_at=emitted_at,
         disclaimer=_DISCLAIMER,
         runs=ordered,
+        run_config=dict(run_config) if run_config else {},
+        run_timing=dict(run_timing) if run_timing else {},
     )
 
 
@@ -269,14 +290,61 @@ def load_runs_from_scorecard(
     return runs, source_map
 
 
+def fmt_duration(seconds: float) -> str:
+    """Compact wall-clock formatter — `2m 14s` or `12.3s`. Used by
+    render_terminal's Timing line and the CLI's progress output."""
+    if seconds is None:
+        return "n/a"
+    if seconds >= 60:
+        m, s = divmod(int(seconds), 60)
+        return f"{m}m {s}s"
+    return f"{seconds:.1f}s"
+
+
 def render_terminal(sc: Scorecard) -> str:
     """Pretty-printed scorecard for stdout. Self-contained — caller just
     prints the returned string. Includes the DC4 disclaimer at the
-    bottom plus a raw-rates inspection footer for M6/M7."""
+    bottom plus a raw-rates inspection footer for M6/M7.
+
+    Per-run scorecards (Task #46) emit Config and Timing lines after the
+    header when `run_config` / `run_timing` are populated. Final scorecards
+    leave both empty and skip these lines — preserves the pre-#46 render."""
     lines: list[str] = []
     lines.append(
         f"Scorecard: candidate_set={sc.candidate_set}   emitted_at={sc.emitted_at}"
     )
+
+    # Task #46: Config / Timing lines for per-run scorecards.
+    if sc.run_config:
+        cfg = sc.run_config
+        config_parts: list[str] = []
+        if "provider" in cfg or "model" in cfg:
+            config_parts.append(f"{cfg.get('provider','?')}/{cfg.get('model','?')}")
+        if "ctx_window" in cfg and cfg["ctx_window"] is not None:
+            config_parts.append(f"ctx={cfg['ctx_window']}")
+        if "max_tokens" in cfg:
+            config_parts.append(f"--max-tokens={cfg['max_tokens']}")
+        if "price_in" in cfg and "price_out" in cfg:
+            config_parts.append(f"prices=${cfg['price_in']}/${cfg['price_out']}/1M-tok")
+        if "sources_dir" in cfg:
+            n_files = cfg.get("n_sources", "?")
+            n_words = cfg.get("n_source_words", "?")
+            config_parts.append(f"sources={cfg['sources_dir']} ({n_files} files, {n_words} source_words)")
+        if config_parts:
+            lines.append("Config:    " + "   ".join(config_parts))
+
+    if sc.run_timing:
+        t = sc.run_timing
+        timing_parts: list[str] = []
+        if "compile_seconds" in t:
+            timing_parts.append(f"compile={fmt_duration(t['compile_seconds'])}")
+        if "score_seconds" in t:
+            timing_parts.append(f"score={fmt_duration(t['score_seconds'])}")
+        if "total_seconds" in t:
+            timing_parts.append(f"total={fmt_duration(t['total_seconds'])}")
+        if timing_parts:
+            lines.append("Timing:    " + "   ".join(timing_parts))
+
     lines.append("=" * 100)
 
     # Header

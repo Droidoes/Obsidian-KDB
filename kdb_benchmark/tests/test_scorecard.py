@@ -452,3 +452,116 @@ class TestLoadRunsCombined:
         loaded_runs, loaded_map = scorecard.load_runs_from_scorecard(legacy_path)
         assert [r.model_id for r in loaded_runs] == ["haiku-4.5"]
         assert loaded_map == {"haiku-4.5": "self"}
+
+
+# ---------- run_config / run_timing (Task #46) ----------
+
+
+class TestScorecardRunMetadata:
+    def test_default_per_run_scorecard_has_empty_run_config_and_timing(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs)
+        assert sc.run_config == {}
+        assert sc.run_timing == {}
+
+    def test_build_per_run_scorecard_accepts_run_config_and_run_timing(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(
+            runs,
+            single_model_id="haiku-4.5",
+            run_config={"max_tokens": 24000, "n_sources": 5, "n_source_words": 28607},
+            run_timing={"compile_seconds": 131.4, "score_seconds": 3.2, "total_seconds": 134.6},
+        )
+        assert sc.run_config == {"max_tokens": 24000, "n_sources": 5, "n_source_words": 28607}
+        assert sc.run_timing == {"compile_seconds": 131.4, "score_seconds": 3.2, "total_seconds": 134.6}
+
+    def test_to_dict_emits_run_config_and_run_timing(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(
+            runs,
+            single_model_id="haiku-4.5",
+            run_config={"max_tokens": 24000},
+            run_timing={"total_seconds": 134.6},
+        )
+        d = sc.to_dict()
+        assert d["run_config"] == {"max_tokens": 24000}
+        assert d["run_timing"] == {"total_seconds": 134.6}
+
+    def test_to_dict_run_metadata_empty_when_unset(self):
+        """Final scorecards (no run_config / run_timing) emit empty dicts —
+        keeps JSON shape deterministic without erroring on absence."""
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_final_scorecard(
+            runs, source_scorecard_id_by_model={"haiku-4.5": "src"},
+        )
+        d = sc.to_dict()
+        assert d["run_config"] == {}
+        assert d["run_timing"] == {}
+
+
+class TestScorecardRunMetadataRender:
+    def test_render_includes_config_and_timing_when_populated(self):
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(
+            runs,
+            single_model_id="haiku-4.5",
+            run_config={
+                "provider": "anthropic",
+                "model": "claude-haiku-4-5-20251001",
+                "ctx_window": 200000,
+                "max_tokens": 24000,
+                "price_in": 1.0,
+                "price_out": 5.0,
+                "sources_dir": "benchmark/sources",
+                "n_sources": 5,
+                "n_source_words": 28607,
+            },
+            run_timing={"compile_seconds": 131.4, "score_seconds": 3.2, "total_seconds": 134.6},
+        )
+        text = scorecard.render_terminal(sc)
+        # Config line (format: "Config:    provider/model   ctx=N   --max-tokens=N   prices=$X/$Y/1M-tok   sources=...")
+        assert "Config:" in text
+        assert "anthropic/claude-haiku-4-5-20251001" in text
+        assert "ctx=200000" in text
+        assert "--max-tokens=24000" in text
+        assert "prices=$1.0/$5.0/1M-tok" in text
+        assert "5 files, 28607 source_words" in text
+        # Timing line
+        assert "Timing:" in text
+        assert "compile=" in text
+        assert "score=" in text
+        assert "total=" in text
+        # 131.4s → "2m 11s" formatted
+        assert "2m 11s" in text
+
+    def test_render_skips_config_and_timing_when_empty(self):
+        """Backward-compat regression: scorecards without run_config or
+        run_timing render exactly as before #46 (no Config/Timing lines)."""
+        runs = [_runscore(model_id="haiku-4.5", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_final_scorecard(
+            runs, source_scorecard_id_by_model={"haiku-4.5": "src"},
+        )
+        text = scorecard.render_terminal(sc)
+        assert "Config:" not in text
+        assert "Timing:" not in text
+
+
+class TestFmtDuration:
+    def test_under_60s_uses_decimal_seconds(self):
+        assert scorecard.fmt_duration(0.0) == "0.0s"
+        assert scorecard.fmt_duration(12.3) == "12.3s"
+        assert scorecard.fmt_duration(59.9) == "59.9s"
+
+    def test_60s_or_more_uses_minutes_and_seconds(self):
+        assert scorecard.fmt_duration(60.0) == "1m 0s"
+        assert scorecard.fmt_duration(131.4) == "2m 11s"
+        assert scorecard.fmt_duration(3600.0) == "60m 0s"
+
+    def test_none_returns_na(self):
+        assert scorecard.fmt_duration(None) == "n/a"
