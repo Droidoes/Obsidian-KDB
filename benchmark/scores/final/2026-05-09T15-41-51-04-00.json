@@ -1,0 +1,1048 @@
+{
+  "scorecard_id": "2026-05-09T15-41-51-04-00",
+  "candidate_set": [
+    "deepseek-v4-flash:cloud",
+    "gemma4-obsidian-bench",
+    "gpt-5.4-mini",
+    "grok-4-1-fast-reasoning",
+    "haiku-4.5",
+    "qwen-flash-us",
+    "qwen3.5-flash",
+    "sonnet-4.6"
+  ],
+  "emitted_at": "2026-05-09T15:41:51-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "qwen-flash-us-2026-05-09T14-49-43_EDT",
+      "model_id": "qwen-flash-us",
+      "provider": "alibaba",
+      "model": "qwen-flash-us",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 18,
+          "denominator": 18,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 39,
+          "denominator": 39,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 4,
+          "denominator": 4,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 18,
+          "denominator": 18,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.00903085,
+          "denominator": 28607,
+          "rate": 0.00031568672003355825,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 72405,
+          "denominator": 28607,
+          "rate": 2531.023875275282,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 48,
+          "denominator": 28607,
+          "rate": 1.677911000803999,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.7142857142857143,
+      "m7_borda": 0.8571428571428571,
+      "final_score": 0.9357142857142857,
+      "ran_at": "qwen-flash-us-2026-05-09T14-49-43_EDT",
+      "source_scorecard_id": "2026-05-09T14-50-47-04-00-qwen-flash-us"
+    },
+    {
+      "run_id": "gpt-5.4-mini-2026-05-09T15-14-56_EDT",
+      "model_id": "gpt-5.4-mini",
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 144,
+          "denominator": 144,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 56,
+          "denominator": 56,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 144,
+          "denominator": 144,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.1344555,
+          "denominator": 28607,
+          "rate": 0.004700090886845877,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 90614,
+          "denominator": 28607,
+          "rate": 3167.5464047261157,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 67,
+          "denominator": 28607,
+          "rate": 2.342084105288915,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.2857142857142857,
+      "m7_borda": 0.7142857142857143,
+      "final_score": 0.85,
+      "ran_at": "gpt-5.4-mini-2026-05-09T15-14-56_EDT",
+      "source_scorecard_id": "2026-05-09T15-16-18-04-00-gpt-5.4-mini"
+    },
+    {
+      "run_id": "haiku-4.5-2026-05-09T14-23-05_EDT",
+      "model_id": "haiku-4.5",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 166,
+          "denominator": 166,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 49,
+          "denominator": 49,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 10,
+          "denominator": 10,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 162,
+          "denominator": 166,
+          "rate": 0.9759036144578314,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.219904,
+          "denominator": 28607,
+          "rate": 0.007687069598350054,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 219229,
+          "denominator": 28607,
+          "rate": 7663.473974901249,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 64,
+          "denominator": 28607,
+          "rate": 2.2372146677386655,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.14285714285714285,
+      "m7_borda": 0.42857142857142855,
+      "final_score": 0.7845094664371773,
+      "ran_at": "haiku-4.5-2026-05-09T14-23-05_EDT",
+      "source_scorecard_id": "2026-05-09T14-26-23-04-00-haiku-4.5"
+    },
+    {
+      "run_id": "gemma4-obsidian-bench-2026-05-09T11-05-14_EDT",
+      "model_id": "gemma4-obsidian-bench",
+      "provider": "ollama",
+      "model": "gemma4-obsidian-bench",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 2,
+        "denominator": 5,
+        "rate": 0.4,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 2,
+        "denominator": 4,
+        "rate": 0.5,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 159,
+          "denominator": 161,
+          "rate": 0.9875776397515528,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 47,
+          "denominator": 55,
+          "rate": 0.8545454545454545,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 4,
+          "denominator": 4,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 53,
+          "denominator": 196,
+          "rate": 0.27040816326530615,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 218107,
+          "denominator": 28607,
+          "rate": 7624.252805257454,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 63,
+          "denominator": 28607,
+          "rate": 2.202258188555249,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.9285714285714286,
+      "m7_borda": 0.5714285714285714,
+      "final_score": 0.7287632088408486,
+      "ran_at": "gemma4-obsidian-bench-2026-05-09T11-05-14_EDT",
+      "source_scorecard_id": "2026-05-09T11-08-34-04-00-gemma4-obsidian-bench"
+    },
+    {
+      "run_id": "qwen3.5-flash-2026-05-09T14-12-20_EDT",
+      "model_id": "qwen3.5-flash",
+      "provider": "alibaba",
+      "model": "qwen3.5-flash",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 72,
+          "denominator": 72,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 30,
+          "denominator": 30,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 61,
+          "denominator": 75,
+          "rate": 0.8133333333333334,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.010455645999999999,
+          "denominator": 28607,
+          "rate": 0.00036549257174817347,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 362398,
+          "denominator": 28607,
+          "rate": 12668.158143111827,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 36,
+          "denominator": 28607,
+          "rate": 1.2584332506029994,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.5714285714285714,
+      "m7_borda": 0.14285714285714285,
+      "final_score": 0.7278095238095239,
+      "ran_at": "qwen3.5-flash-2026-05-09T14-12-20_EDT",
+      "source_scorecard_id": "2026-05-09T14-17-50-04-00-qwen3.5-flash"
+    },
+    {
+      "run_id": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT",
+      "model_id": "grok-4-1-fast-reasoning",
+      "provider": "xai",
+      "model": "grok-4-1-fast-reasoning",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 82,
+          "denominator": 83,
+          "rate": 0.9879518072289156,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 29,
+          "denominator": 29,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 65,
+          "denominator": 95,
+          "rate": 0.6842105263157895,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0225109,
+          "denominator": 28607,
+          "rate": 0.0007869018072499738,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 248234,
+          "denominator": 28607,
+          "rate": 8677.386653616248,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 34,
+          "denominator": 28607,
+          "rate": 1.188520292236166,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.42857142857142855,
+      "m7_borda": 0.2857142857142857,
+      "final_score": 0.7189437449044297,
+      "ran_at": "grok-4-1-fast-reasoning-2026-05-09T00-16-44_EDT",
+      "source_scorecard_id": "2026-05-09T00-20-39-04-00-grok-4-1-fast-reasoning"
+    },
+    {
+      "run_id": "sonnet-4.6-2026-05-08T14-50-49_EDT",
+      "model_id": "sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 205,
+          "denominator": 205,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 45,
+          "denominator": 45,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 203,
+          "denominator": 205,
+          "rate": 0.9902439024390244,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.711927,
+          "denominator": 28607,
+          "rate": 0.02488646135561226,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 460942,
+          "denominator": 28607,
+          "rate": 16112.909427762435,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 55,
+          "denominator": 28607,
+          "rate": 1.9226063550879156,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.0,
+      "m7_borda": 0.0,
+      "final_score": 0.6995121951219513,
+      "ran_at": "sonnet-4.6-2026-05-08T14-50-49_EDT",
+      "source_scorecard_id": "2026-05-08T14-58-08-04-00"
+    },
+    {
+      "run_id": "deepseek-v4-flash:cloud-2026-05-09T15-41-49_EDT",
+      "model_id": "deepseek-v4-flash:cloud",
+      "provider": "ollama-cloud",
+      "model": "deepseek-v4-flash:cloud",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 0,
+        "denominator": 5,
+        "rate": 0.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 0,
+        "denominator": 5,
+        "rate": 0.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.9285714285714286,
+      "m7_borda": 1.0,
+      "final_score": 0.28928571428571426,
+      "ran_at": "deepseek-v4-flash:cloud-2026-05-09T15-41-49_EDT",
+      "source_scorecard_id": "2026-05-09T15-41-51-04-00-deepseek-v4-flash:cloud"
+    }
+  ],
+  "dropped_models": [
+    {
+      "run_id": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "model_id": "gemini-3-flash-preview",
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 1,
+          "denominator": 5,
+          "rate": 0.2,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.069545,
+          "denominator": 28607,
+          "rate": 0.0024310483448107107,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 564339,
+          "denominator": 28607,
+          "rate": 19727.304505890166,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 6,
+          "denominator": 28607,
+          "rate": 0.20973887510049988,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": null,
+      "m7_borda": null,
+      "final_score": null,
+      "ran_at": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "source_scorecard_id": "2026-05-08T23-59-23-04-00-gemini-3-flash-preview",
+      "drop_reason": "high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)"
+    }
+  ],
+  "run_config": {},
+  "run_timing": {}
+}
