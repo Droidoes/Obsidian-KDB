@@ -48,9 +48,17 @@
   },
   {
     "id": "gemma4-obsidian-bench",
-    "provider": "ollama",
+    "provider": "ollama-local",
     "model": "gemma4-obsidian-bench",
     "ctx_window": 65536,
+    "price_in": 0.0,
+    "price_out": 0.0
+  },
+  {
+    "id": "deepseek-v4-flash:cloud",
+    "provider": "ollama-cloud",
+    "model": "deepseek-v4-flash:cloud",
+    "ctx_window": 1000000,
     "price_in": 0.0,
     "price_out": 0.0
   },

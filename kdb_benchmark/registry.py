@@ -6,7 +6,7 @@ mirrors the proven pattern from
 
     Required:
       id          — stable short label (used in filenames, scorecards, CLI)
-      provider    — SDK route: anthropic | openai | gemini | xai | alibaba | ollama
+      provider    — SDK route: anthropic | openai | gemini | xai | alibaba | ollama-local | ollama-cloud
       model       — provider-native API model string
       price_in    — USD per 1M input tokens; 0.0 for local
       price_out   — USD per 1M output tokens; 0.0 for local
@@ -40,7 +40,7 @@ from kdb_benchmark.paths import MODELS_JSON
 @dataclass(frozen=True)
 class ModelEntry:
     id: str                   # stable short label used in filenames / scorecards
-    provider: str             # anthropic | openai | gemini | xai | alibaba | ollama
+    provider: str             # anthropic | openai | gemini | xai | alibaba | ollama-local | ollama-cloud
     model: str                # provider-native model ID
     price_in: float           # USD per 1M input tokens; 0.0 for local
     price_out: float          # USD per 1M output tokens; 0.0 for local

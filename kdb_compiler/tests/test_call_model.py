@@ -108,16 +108,30 @@ def test_gemini_does_not_double_prefix_models(
     assert client.chat.completions.create.call_args.kwargs["model"] == "models/gemini-2.5-flash"
 
 
-def test_ollama_dispatch_uses_local_url(
+def test_ollama_local_dispatch_uses_local_url(
     monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
 ) -> None:
     _use_settings(monkeypatch, ollama_base_url="http://localhost:11434/v1")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
     with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
-        call_model(ModelRequest(provider="ollama", model="qwen3.5-max", prompt="hi"))
+        call_model(ModelRequest(provider="ollama-local", model="qwen3.5-max", prompt="hi"))
     assert ctor.call_args.kwargs["base_url"] == "http://localhost:11434/v1"
     assert ctor.call_args.kwargs["api_key"] == "ollama"
+
+
+def test_ollama_cloud_dispatch_uses_ollama_com_endpoint(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    _use_settings(monkeypatch, ollama_api_key="ollama-cloud-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="ollama-cloud", model="deepseek-v4-flash:cloud", prompt="hi"))
+    assert ctor.call_args.kwargs["base_url"] == "https://ollama.com/v1"
+    assert ctor.call_args.kwargs["api_key"] == "ollama-cloud-test"
+    # Ollama Cloud passes the model id verbatim (including the :cloud tag).
+    assert client.chat.completions.create.call_args.kwargs["model"] == "deepseek-v4-flash:cloud"
 
 
 def test_xai_dispatch_uses_xai_endpoint(
@@ -286,6 +300,12 @@ def test_missing_qwen_us_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_settings(monkeypatch, qwen_us_api_key="")
     with pytest.raises(ModelConfigError):
         call_model(ModelRequest(provider="alibaba", model="qwen3.5-flash", prompt="hi"))
+
+
+def test_missing_ollama_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_settings(monkeypatch, ollama_api_key="")
+    with pytest.raises(ModelConfigError):
+        call_model(ModelRequest(provider="ollama-cloud", model="deepseek-v4-flash:cloud", prompt="hi"))
 
 
 def test_unknown_provider_raises() -> None:

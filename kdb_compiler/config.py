@@ -41,6 +41,7 @@ class Settings:
     gemini_api_key: str = ""
     xai_api_key: str = ""
     qwen_us_api_key: str = ""
+    ollama_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"
     llm_timeout_seconds: int = 300
 
@@ -55,6 +56,9 @@ class Settings:
             # Alibaba DashScope intl/US endpoint — same env name as the
             # youtube-comment-chat project for consistency.
             qwen_us_api_key=os.getenv("QWEN_US_API_KEY", ""),
+            # Ollama Cloud OpenAI-compat endpoint (provider=ollama-cloud).
+            # Local Ollama (provider=ollama-local) does not require a key.
+            ollama_api_key=os.getenv("OLLAMA_API_KEY", ""),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
             llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
         )

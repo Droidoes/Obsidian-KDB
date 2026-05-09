@@ -1,17 +1,18 @@
 """call_model — provider-routing proxy for LLM calls.
 
-Single sync entry point: sends a ModelRequest to one of
-{anthropic, openai, gemini, ollama} and returns a ModelResponse with
-the text, usage counts, wall-clock latency, and provider/model echo
-(resp-stats metadata per project memory).
+Single sync entry point: sends a ModelRequest to one of the supported
+providers and returns a ModelResponse with the text, usage counts,
+wall-clock latency, and provider/model echo (resp-stats metadata per
+project memory).
 
 Providers:
-    anthropic → native anthropic SDK (client.messages.create)
-    openai    → openai SDK, standard endpoint
-    gemini    → openai SDK, base_url=generativelanguage.googleapis.com/v1beta/openai/
-    xai       → openai SDK, base_url=https://api.x.ai/v1
-    alibaba   → openai SDK, base_url=https://dashscope-us.aliyuncs.com/compatible-mode/v1
-    ollama    → openai SDK, base_url=http://localhost:11434/v1
+    anthropic    → native anthropic SDK (client.messages.create)
+    openai       → openai SDK, standard endpoint
+    gemini       → openai SDK, base_url=generativelanguage.googleapis.com/v1beta/openai/
+    xai          → openai SDK, base_url=https://api.x.ai/v1
+    alibaba      → openai SDK, base_url=https://dashscope-us.aliyuncs.com/compatible-mode/v1
+    ollama-local → openai SDK, base_url=http://localhost:11434/v1 (or OLLAMA_BASE_URL)
+    ollama-cloud → openai SDK, base_url=https://ollama.com/v1 (Ollama Cloud)
 
 No streaming; batch-compile workload. SDK httpx timeout handles pre-first-byte
 hangs. Retry/backoff lives in call_model_retry.py, not here.
@@ -27,7 +28,9 @@ from openai import OpenAI
 
 from kdb_compiler.config import settings
 
-Provider = Literal["anthropic", "openai", "gemini", "xai", "alibaba", "ollama"]
+Provider = Literal[
+    "anthropic", "openai", "gemini", "xai", "alibaba", "ollama-local", "ollama-cloud"
+]
 
 
 @dataclass
@@ -92,9 +95,13 @@ def call_model(req: ModelRequest) -> ModelResponse:
             base_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1",
             api_key=settings.qwen_us_api_key,
         )
-    elif req.provider == "ollama":
+    elif req.provider == "ollama-local":
         text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req, base_url=settings.ollama_base_url, api_key="ollama"
+        )
+    elif req.provider == "ollama-cloud":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
+            req, base_url="https://ollama.com/v1", api_key=settings.ollama_api_key,
         )
     else:
         raise ModelConfigError(f"Unknown provider: {req.provider!r}")

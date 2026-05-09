@@ -127,7 +127,7 @@ def test_loader_accepts_zero_prices(tmp_path: Path) -> None:
     """Local/Ollama models legitimately price at 0.0/0.0."""
     p = tmp_path / "models.json"
     p.write_text(
-        json.dumps([_entry(id="local", provider="ollama", price_in=0.0, price_out=0.0)]),
+        json.dumps([_entry(id="local", provider="ollama-local", price_in=0.0, price_out=0.0)]),
         encoding="utf-8",
     )
     [entry] = load_registry(p)
