@@ -53,5 +53,23 @@
     "ctx_window": 65536,
     "price_in": 0.0,
     "price_out": 0.0
+  },
+  {
+    "id": "qwen-flash-us",
+    "provider": "alibaba",
+    "model": "qwen-flash-us",
+    "ctx_window": 1000000,
+    "max_output_tokens": 32768,
+    "price_in": 0.05,
+    "price_out": 0.40
+  },
+  {
+    "id": "qwen3.5-flash",
+    "provider": "alibaba",
+    "model": "qwen3.5-flash",
+    "ctx_window": 1000000,
+    "max_output_tokens": 65536,
+    "price_in": 0.029,
+    "price_out": 0.287
   }
 ]

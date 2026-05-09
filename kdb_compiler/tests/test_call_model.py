@@ -134,6 +134,20 @@ def test_xai_dispatch_uses_xai_endpoint(
     assert client.chat.completions.create.call_args.kwargs["model"] == "grok-4-1-fast-reasoning"
 
 
+def test_alibaba_dispatch_uses_dashscope_endpoint(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    _use_settings(monkeypatch, qwen_us_api_key="dash-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="alibaba", model="qwen3.5-flash", prompt="hi"))
+    assert ctor.call_args.kwargs["base_url"] == "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
+    assert ctor.call_args.kwargs["api_key"] == "dash-test"
+    # Like xAI, Alibaba's OpenAI-compat endpoint does NOT require a "models/" prefix.
+    assert client.chat.completions.create.call_args.kwargs["model"] == "qwen3.5-flash"
+
+
 # ---------- request features ----------
 
 def test_json_mode_threads_through(
@@ -268,6 +282,12 @@ def test_missing_xai_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         call_model(ModelRequest(provider="xai", model="grok-4-1-fast-reasoning", prompt="hi"))
 
 
+def test_missing_qwen_us_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_settings(monkeypatch, qwen_us_api_key="")
+    with pytest.raises(ModelConfigError):
+        call_model(ModelRequest(provider="alibaba", model="qwen3.5-flash", prompt="hi"))
+
+
 def test_unknown_provider_raises() -> None:
     with pytest.raises(ModelConfigError, match="Unknown provider"):
-        call_model(ModelRequest(provider="alibaba", model="x", prompt="hi"))  # type: ignore[arg-type]
+        call_model(ModelRequest(provider="moonshot", model="x", prompt="hi"))  # type: ignore[arg-type]
