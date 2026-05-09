@@ -7,6 +7,7 @@ they verify orchestration only — not LLM interaction.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -350,3 +351,70 @@ class TestRunBenchmarkProgressOutput:
         )
         out = capsys.readouterr().out
         assert "⚠" not in out
+
+
+# ---------------------------------------------------------------------------
+# Task #49 — live progress timer during compile_one
+# ---------------------------------------------------------------------------
+
+
+class TestRunBenchmarkLiveProgress:
+    def test_starting_line_printed_before_compile_one(
+        self, fake_corpus, fake_system_prompt, runs_root,
+        patched_compile_one_writing_records, capsys,
+    ):
+        """Task #49: every source emits a `⏳ starting...` line BEFORE
+        compile_one is invoked — gives liveness signal even when the LLM
+        call is about to take 10+ minutes."""
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        out = capsys.readouterr().out
+        # Two sources → two starting lines
+        assert out.count("⏳ starting...") == 2
+        # Starting line appears BEFORE the corresponding completion line
+        starting_idx = out.find("1/2")
+        # Find the completion line for source 1 (has "in=" / "out=")
+        completion_idx = out.find("in=  1234")
+        assert starting_idx < completion_idx
+
+    def test_periodic_ticker_emits_elapsed_lines(self, capsys):
+        """Direct unit test of `_periodic_progress_ticker` — start with a
+        tiny interval, let it tick a few times, then signal stop and
+        verify multiple `⏳ Xs elapsed` lines were printed."""
+        import threading
+        stop_event = threading.Event()
+        started_at = time.monotonic()
+        ticker = threading.Thread(
+            target=runner._periodic_progress_ticker,
+            args=("[test]   1/1  fake.md", stop_event, started_at, 0.05),
+            daemon=True,
+        )
+        ticker.start()
+        time.sleep(0.2)
+        stop_event.set()
+        ticker.join(timeout=1)
+        out = capsys.readouterr().out
+        # 0.2s @ 0.05s interval → at least 2 ticks (allowing jitter)
+        assert out.count("⏳") >= 2
+        assert "elapsed" in out
+
+    def test_periodic_ticker_emits_no_lines_when_stopped_immediately(self, capsys):
+        """If compile_one returns in less than `interval` seconds, the
+        ticker should fire zero times (Event.wait returns True before
+        the first interval elapses)."""
+        import threading
+        stop_event = threading.Event()
+        started_at = time.monotonic()
+        ticker = threading.Thread(
+            target=runner._periodic_progress_ticker,
+            args=("[test]   1/1  fake.md", stop_event, started_at, 5.0),
+            daemon=True,
+        )
+        ticker.start()
+        stop_event.set()  # stop immediately
+        ticker.join(timeout=1)
+        out = capsys.readouterr().out
+        assert "⏳ " not in out  # no elapsed lines emitted
+        assert "elapsed" not in out

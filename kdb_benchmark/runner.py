@@ -25,11 +25,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 import time
 from pathlib import Path
 
 from kdb_benchmark.paths import MODELS_JSON
 from kdb_benchmark.registry import ModelEntry, load_registry
+from kdb_benchmark.scorecard import fmt_duration
 from kdb_compiler import __version__ as _COMPILER_VERSION
 from kdb_compiler.compiler import compile_one
 from kdb_compiler.resp_stats_writer import safe_source_id
@@ -40,6 +42,31 @@ from kdb_compiler.run_context import (
     run_id_from_timestamp,
 )
 from kdb_compiler.types import CompileJob, ContextSnapshot
+
+# Task #49: how often the live progress ticker emits an "elapsed" line
+# while compile_one is in flight. 60s balances liveness signal vs noise
+# — fast API models don't see it (compile_one returns sub-60s); slow
+# Ollama models see one line per minute. Override via env var for tuning.
+_PROGRESS_INTERVAL_SECONDS = float(
+    os.environ.get("KDB_BENCHMARK_PROGRESS_INTERVAL_SECONDS", "60")
+)
+
+
+def _periodic_progress_ticker(
+    prefix: str, stop_event: threading.Event, started_at: float, interval: float,
+) -> None:
+    """Background-thread loop (Task #49). While stop_event is unset, prints
+    `<prefix>  ⏳ Xm Ys elapsed` every `interval` seconds — provides liveness
+    signal during slow LLM calls (e.g., local Ollama at 10+ min/source).
+
+    Uses Event.wait(interval) instead of sleep so the main thread can
+    interrupt the ticker as soon as compile_one returns. Best-effort
+    output — concurrent writes from the main thread may interleave, but
+    we accept that vs the complexity of terminal lock + \\r overwriting.
+    """
+    while not stop_event.wait(interval):
+        elapsed = time.monotonic() - started_at
+        print(f"{prefix}  ⏳ {fmt_duration(elapsed)} elapsed", flush=True)
 
 
 def _resolve_model_entry(model_id: str, registry_path: Path) -> ModelEntry:
@@ -178,17 +205,38 @@ def run_benchmark(
             abs_path=str(src_path.absolute()),
             context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
         )
-        compile_one(
-            job,
-            vault_root=vault_root,
-            state_root=state_root,
-            ctx=ctx,
-            provider=entry.provider,
-            model=entry.model,
-            max_tokens=max_tokens,
-            use_completion_tokens=entry.use_completion_tokens,
-            extra_body=entry.extra_body,
+
+        # Task #49: announce the source + start a background ticker that
+        # prints `⏳ Xm Ys elapsed` every 60s during compile_one. Gives
+        # liveness signal for slow Ollama compiles where the call can
+        # block for 10+ minutes.
+        progress_prefix = (
+            f"[{model_id}]   {i}/{n_sources}  {src_path.name:<35}"
         )
+        print(f"{progress_prefix}  ⏳ starting...", flush=True)
+        call_started_at = time.monotonic()
+        stop_ticker = threading.Event()
+        ticker = threading.Thread(
+            target=_periodic_progress_ticker,
+            args=(progress_prefix, stop_ticker, call_started_at, _PROGRESS_INTERVAL_SECONDS),
+            daemon=True,
+        )
+        ticker.start()
+        try:
+            compile_one(
+                job,
+                vault_root=vault_root,
+                state_root=state_root,
+                ctx=ctx,
+                provider=entry.provider,
+                model=entry.model,
+                max_tokens=max_tokens,
+                use_completion_tokens=entry.use_completion_tokens,
+                extra_body=entry.extra_body,
+            )
+        finally:
+            stop_ticker.set()
+            ticker.join(timeout=2)
 
         # Task #46: per-source progress line. Read the just-written
         # RespStatsRecord (compile_one writes in `finally`, so it exists
@@ -206,8 +254,7 @@ def run_benchmark(
         n_source_words += rec.get("source_words") or 0
         warning = f"  ⚠ stop={stop_reason}" if stop_reason in ("length", "max_tokens") else ""
         print(
-            f"[{model_id}]   {i}/{n_sources}  "
-            f"{src_path.name:<35}  "
+            f"{progress_prefix}  "
             f"{latency_ms / 1000:>5.1f}s  "
             f"in={in_tok:>6}  out={out_tok:>6}{warning}",
             flush=True,
