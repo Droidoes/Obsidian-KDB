@@ -53,32 +53,5 @@
     "ctx_window": 65536,
     "price_in": 0.0,
     "price_out": 0.0
-  },
-  {
-    "id": "qwen3.5-fast-structured",
-    "provider": "ollama",
-    "model": "qwen3.5-fast-structured",
-    "ctx_window": 49152,
-    "price_in": 0.0,
-    "price_out": 0.0,
-    "extra_body": {"think": false}
-  },
-  {
-    "id": "qwen3.5-4b-ollama-rag",
-    "provider": "ollama",
-    "model": "qwen3.5-4b-ollama-rag",
-    "ctx_window": 49152,
-    "price_in": 0.0,
-    "price_out": 0.0,
-    "extra_body": {"think": false}
-  },
-  {
-    "id": "qwen3.5-9b-64k-rag",
-    "provider": "ollama",
-    "model": "qwen3.5-9b-64k-rag",
-    "ctx_window": 65536,
-    "price_in": 0.0,
-    "price_out": 0.0,
-    "extra_body": {"think": false}
   }
 ]
