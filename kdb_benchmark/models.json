@@ -45,5 +45,13 @@
     "ctx_window": 2000000,
     "price_in": 0.2,
     "price_out": 0.5
+  },
+  {
+    "id": "gemma4-obsidian-bench",
+    "provider": "ollama",
+    "model": "gemma4-obsidian-bench",
+    "ctx_window": 65536,
+    "price_in": 0.0,
+    "price_out": 0.0
   }
 ]
