@@ -59,6 +59,7 @@
     "provider": "ollama-cloud",
     "model": "deepseek-v4-flash:cloud",
     "ctx_window": 1000000,
+    "max_output_tokens": 393200,
     "price_in": 0.14,
     "price_out": 0.28
   },
