@@ -1,0 +1,141 @@
+{
+  "scorecard_id": "2026-05-09T14-30-56-04-00-gpt-5.4-mini",
+  "candidate_set": [
+    "gpt-5.4-mini"
+  ],
+  "emitted_at": "2026-05-09T14:30:56-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "gpt-5.4-mini-2026-05-09T14-29-42_EDT",
+      "model_id": "gpt-5.4-mini",
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 151,
+          "denominator": 151,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 47,
+          "denominator": 47,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 4,
+          "denominator": 4,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 102,
+          "denominator": 151,
+          "rate": 0.6754966887417219,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.12169724999999999,
+          "denominator": 28607,
+          "rate": 0.004254107386304051,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 82229,
+          "denominator": 28607,
+          "rate": 2874.4363267731674,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 56,
+          "denominator": 28607,
+          "rate": 1.957562834271332,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.9837748344370861,
+      "ran_at": "gpt-5.4-mini-2026-05-09T14-29-42_EDT"
+    }
+  ],
+  "dropped_models": [],
+  "run_config": {
+    "max_tokens": 32768,
+    "sources_dir": "benchmark/sources",
+    "n_sources": 5,
+    "n_source_words": 28607,
+    "system_prompt_path": "/home/ftu/Obsidian/KDB/KDB-Compiler-System-Prompt.md",
+    "provider": "openai",
+    "model": "gpt-5.4-mini",
+    "ctx_window": 400000,
+    "price_in": 0.75,
+    "price_out": 4.5
+  },
+  "run_timing": {
+    "compile_seconds": 82.3,
+    "score_seconds": 0.0,
+    "total_seconds": 82.3
+  }
+}
