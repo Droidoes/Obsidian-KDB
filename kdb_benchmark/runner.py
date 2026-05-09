@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import threading
 import time
 from pathlib import Path
@@ -43,30 +44,52 @@ from kdb_compiler.run_context import (
 )
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
-# Task #49: how often the live progress ticker emits an "elapsed" line
-# while compile_one is in flight. 60s balances liveness signal vs noise
-# — fast API models don't see it (compile_one returns sub-60s); slow
-# Ollama models see one line per minute. Override via env var for tuning.
-_PROGRESS_INTERVAL_SECONDS = float(
+# Task #49 / #52: progress-ticker tuning.
+#   _TTY_INTERVAL — TTY mode: how fast the in-place \r ticker updates.
+#       1s feels like a live stopwatch; faster than 0.5s adds CPU for no
+#       perceptual gain.
+#   _NEWLINE_INTERVAL — non-TTY mode: how often new-line "elapsed" lines
+#       are emitted (logs / redirected stdout). 60s avoids spamming logs.
+# Both override via env var for tuning.
+_TTY_INTERVAL = float(os.environ.get("KDB_BENCHMARK_TTY_TICK_SECONDS", "1"))
+_NEWLINE_INTERVAL = float(
     os.environ.get("KDB_BENCHMARK_PROGRESS_INTERVAL_SECONDS", "60")
 )
 
 
-def _periodic_progress_ticker(
+def _tty_progress_ticker(
     prefix: str, stop_event: threading.Event, started_at: float, interval: float,
 ) -> None:
-    """Background-thread loop (Task #49). While stop_event is unset, prints
-    `<prefix>  ⏳ Xm Ys elapsed` every `interval` seconds — provides liveness
-    signal during slow LLM calls (e.g., local Ollama at 10+ min/source).
+    """Task #52 — TTY mode: overwrite a single line in place via `\\r` every
+    `interval` seconds (default 1s). Looks like a live stopwatch.
 
-    Uses Event.wait(interval) instead of sleep so the main thread can
-    interrupt the ticker as soon as compile_one returns. Best-effort
-    output — concurrent writes from the main thread may interleave, but
-    we accept that vs the complexity of terminal lock + \\r overwriting.
+    The caller is responsible for clearing/replacing the line after this
+    thread stops (write `\\r` + spaces + final content). Uses Event.wait
+    so the main thread can interrupt as soon as compile_one returns.
     """
     while not stop_event.wait(interval):
         elapsed = time.monotonic() - started_at
+        sys.stdout.write(
+            f"\r{prefix}  ⏳ {fmt_duration(elapsed)} elapsed   "
+        )
+        sys.stdout.flush()
+
+
+def _newline_progress_ticker(
+    prefix: str, stop_event: threading.Event, started_at: float, interval: float,
+) -> None:
+    """Task #49 — non-TTY mode: emit a new `⏳ Xm Ys elapsed` line every
+    `interval` seconds (default 60s). Robust for redirected stdout / log
+    capture / CI — no terminal-control codes."""
+    while not stop_event.wait(interval):
+        elapsed = time.monotonic() - started_at
         print(f"{prefix}  ⏳ {fmt_duration(elapsed)} elapsed", flush=True)
+
+
+# Back-compat alias retained for tests that imported the original name
+# (Task #49). The new code paths route via _tty_progress_ticker /
+# _newline_progress_ticker depending on isatty().
+_periodic_progress_ticker = _newline_progress_ticker
 
 
 def _resolve_model_entry(model_id: str, registry_path: Path) -> ModelEntry:
@@ -206,19 +229,33 @@ def run_benchmark(
             context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
         )
 
-        # Task #49: announce the source + start a background ticker that
-        # prints `⏳ Xm Ys elapsed` every 60s during compile_one. Gives
-        # liveness signal for slow Ollama compiles where the call can
-        # block for 10+ minutes.
+        # Task #49 + #52: announce the source + start a background ticker
+        # that gives liveness signal during compile_one (which can block
+        # for 10+ minutes on slow models).
+        #   TTY mode: in-place \r ticker, 1s update — looks like a live
+        #     stopwatch on a single line.
+        #   non-TTY mode: new line every 60s — robust for redirected
+        #     stdout / log capture / CI.
         progress_prefix = (
             f"[{model_id}]   {i}/{n_sources}  {src_path.name:<35}"
         )
-        print(f"{progress_prefix}  ⏳ starting...", flush=True)
+        is_tty = sys.stdout.isatty()
+        if is_tty:
+            # Initial render — no newline so the \r ticker can overwrite.
+            sys.stdout.write(f"{progress_prefix}  ⏳ 0.0s elapsed   ")
+            sys.stdout.flush()
+            ticker_target = _tty_progress_ticker
+            ticker_interval = _TTY_INTERVAL
+        else:
+            print(f"{progress_prefix}  ⏳ starting...", flush=True)
+            ticker_target = _newline_progress_ticker
+            ticker_interval = _NEWLINE_INTERVAL
+
         call_started_at = time.monotonic()
         stop_ticker = threading.Event()
         ticker = threading.Thread(
-            target=_periodic_progress_ticker,
-            args=(progress_prefix, stop_ticker, call_started_at, _PROGRESS_INTERVAL_SECONDS),
+            target=ticker_target,
+            args=(progress_prefix, stop_ticker, call_started_at, ticker_interval),
             daemon=True,
         )
         ticker.start()
@@ -237,6 +274,11 @@ def run_benchmark(
         finally:
             stop_ticker.set()
             ticker.join(timeout=2)
+            if is_tty:
+                # Clear the running-clock line so the next print starts
+                # at column 0 of a clean line.
+                sys.stdout.write("\r" + " " * 100 + "\r")
+                sys.stdout.flush()
 
         # Task #46: per-source progress line. Read the just-written
         # RespStatsRecord (compile_one writes in `finally`, so it exists

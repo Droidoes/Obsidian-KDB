@@ -418,3 +418,50 @@ class TestRunBenchmarkLiveProgress:
         out = capsys.readouterr().out
         assert "⏳ " not in out  # no elapsed lines emitted
         assert "elapsed" not in out
+
+
+class TestRunBenchmarkTtyTicker:
+    """Task #52 — TTY-aware running clock. In TTY mode the ticker uses
+    \\r to overwrite a single line (live stopwatch feel); non-TTY mode
+    keeps the per-60s newline behavior tested by TestRunBenchmarkLiveProgress."""
+
+    def test_tty_ticker_writes_carriage_returns(self, capsys):
+        """Direct unit test of `_tty_progress_ticker` — verifies it emits
+        `\\r` to overwrite the line in place rather than newlines."""
+        import threading
+        stop_event = threading.Event()
+        started_at = time.monotonic()
+        ticker = threading.Thread(
+            target=runner._tty_progress_ticker,
+            args=("[test]   1/1  fake.md", stop_event, started_at, 0.05),
+            daemon=True,
+        )
+        ticker.start()
+        time.sleep(0.2)
+        stop_event.set()
+        ticker.join(timeout=1)
+        out = capsys.readouterr().out
+        assert "\r" in out  # carriage returns for in-place updates
+        assert "⏳" in out
+        # No newlines from the ticker itself (caller terminates the line)
+        assert out.count("\n") == 0
+
+    def test_run_benchmark_uses_tty_path_when_isatty(
+        self, fake_corpus, fake_system_prompt, runs_root,
+        patched_compile_one_writing_records, monkeypatch, capsys,
+    ):
+        """End-to-end: when sys.stdout.isatty() returns True, runner
+        emits \\r in the per-source progress (vs newline-only in the
+        non-TTY path)."""
+        # Force the TTY path
+        monkeypatch.setattr("kdb_benchmark.runner.sys.stdout.isatty", lambda: True)
+        runner.run_benchmark(
+            sources_dir=fake_corpus, model_id="haiku-4.5",
+            runs_root=runs_root, system_prompt_path=fake_system_prompt,
+        )
+        out = capsys.readouterr().out
+        # TTY path uses \r for the initial render + clear sequence
+        assert "\r" in out
+        # Final stats lines still appear (with in= / out= for each source)
+        assert "in=  1234" in out
+        assert "out=   567" in out
