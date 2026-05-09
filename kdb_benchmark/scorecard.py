@@ -1,8 +1,8 @@
-"""kdb_benchmark.scorecard — Task #22 cross-model scorecard.
+"""kdb_benchmark.scorecard — Task #22 + Task #42 cross-model scorecard.
 
 Renders a list of post-Borda RunScores as:
   * JSON (sorted models, full nested measure/diagnostic detail) for
-    archival in `benchmark/scores/<scorecard_id>.json`.
+    archival.
   * Terminal-friendly table (rank | model_id | S0 | M1..M5 | M6_b | M7_b
     | FINAL | RAN_AT) plus a raw-rates footer for human magnitude
     inspection.
@@ -11,11 +11,23 @@ Round 4 DC4: every scorecard MUST emit the disclaimer that final_score is
 comparable only within this candidate set; cross-set comparisons are not
 meaningful under average-rank Borda. Raw rates remain the cross-run
 inspection surface.
+
+Task #42 layout — scores_dir is now split into two subdirectories:
+
+    benchmark/scores/runs/<scorecard_id>.json   — per-invocation only
+    benchmark/scores/final/<timestamp>.json     — versioned merged view
+
+Per-run scorecards carry only the models from this invocation; their
+filename is `<ts>-<model_id>` for single-model runs, `<ts>` otherwise.
+Final scorecards always use timestamp-only filenames; each model entry
+carries a `source_scorecard_id` field pointing at the per-run scorecard
+that produced it. Finals are versioned (never overwritten) so prior
+states remain inspectable.
 """
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -35,12 +47,19 @@ _DISCLAIMER = (
 class Scorecard:
     """Cross-model scorecard for a single emission. Holds RunScore objects
     plus metadata; renders to JSON + terminal text via to_dict() and the
-    free function `render_terminal`."""
+    free function `render_terminal`.
+
+    `source_scorecard_id_by_model` is populated only for FINAL scorecards
+    (see Task #42): each entry maps a model_id → the per-run scorecard_id
+    it originated from. For per-run scorecards this stays empty — the
+    per-run scorecard *is* the source.
+    """
     scorecard_id: str
     candidate_set: list[str]                  # sorted model_ids
     emitted_at: str                           # local ISO timestamp with offset
     disclaimer: str
     runs: list[RunScore] = field(default_factory=list)  # ordered by final_score desc
+    source_scorecard_id_by_model: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -48,32 +67,49 @@ class Scorecard:
             "candidate_set": list(self.candidate_set),
             "emitted_at": self.emitted_at,
             "disclaimer": self.disclaimer,
-            "models": [_run_summary(r) for r in self.runs],
+            "models": [
+                _run_summary(r, self.source_scorecard_id_by_model.get(r.model_id))
+                for r in self.runs
+            ],
         }
 
 
-def _run_summary(run: RunScore) -> dict:
-    """Per-model JSON entry for the scorecard."""
+def _run_summary(run: RunScore, source_scorecard_id: Optional[str]) -> dict:
+    """Per-model JSON entry for the scorecard. Adds `ran_at` (Round 4 [4])
+    and, for final scorecards, the `source_scorecard_id` pointer (Task #42)."""
     d = run.to_dict()
-    # Add ran_at field for the human-readable timestamp (Round 4 [4]).
-    # The timestamp lives in the run_id by convention; surface it
-    # explicitly so consumers don't have to parse run_id.
     d["ran_at"] = run.run_id  # full run_id includes the timestamp suffix
+    if source_scorecard_id is not None:
+        d["source_scorecard_id"] = source_scorecard_id
     return d
 
 
-def build_scorecard(runs: list[RunScore]) -> Scorecard:
-    """Assemble a Scorecard from post-Borda RunScores.
+def _format_scorecard_id(emitted_at: str, *, single_model_id: Optional[str]) -> str:
+    """Filename-safe scorecard_id. Replaces `:` from the local-ISO-with-offset
+    timestamp; appends model_id only for single-model per-run scorecards."""
+    base = emitted_at.replace(":", "-")
+    if single_model_id is not None:
+        return f"{base}-{single_model_id}"
+    return base
+
+
+def build_per_run_scorecard(
+    runs: list[RunScore],
+    *,
+    single_model_id: Optional[str] = None,
+) -> Scorecard:
+    """Per-invocation scorecard (Task #42).
+
+    Carries only the models scored in this invocation. Filename is
+    `<ts>-<model_id>` when `single_model_id` is provided (1-model runs),
+    else `<ts>`. No source_scorecard_id_by_model — the per-run scorecard
+    IS the source.
 
     Models are ordered by final_score descending (None goes last).
     """
     emitted_at = now_iso()
     candidate_set = sorted(r.model_id for r in runs)
-    scorecard_id = (
-        emitted_at.replace(":", "-")
-        + "-"
-        + "_".join(candidate_set)
-    )
+    scorecard_id = _format_scorecard_id(emitted_at, single_model_id=single_model_id)
     ordered = sorted(
         runs,
         key=lambda r: (r.final_score is None, -(r.final_score or 0.0)),
@@ -87,25 +123,102 @@ def build_scorecard(runs: list[RunScore]) -> Scorecard:
     )
 
 
-def write_scorecard(sc: Scorecard, *, scores_dir: Path) -> Path:
-    """Persist a scorecard. Writes two sibling files:
-      * `scores_dir/<scorecard_id>.json` — full structured archive
-      * `scores_dir/<scorecard_id>.txt`  — rendered terminal table for
-        eyeballing without parsing JSON
+def build_final_scorecard(
+    runs: list[RunScore],
+    *,
+    source_scorecard_id_by_model: dict[str, str],
+) -> Scorecard:
+    """Merged-view scorecard (Task #42).
 
-    Returns the JSON path. The two files are written together so they
-    never drift; consumers wanting the rendered table can `cat` the
-    sibling .txt instead of re-running the scorer.
+    `runs` is the post-Borda union across all known models (caller is
+    responsible for de-duping by model_id and re-scoring across the
+    union — see cli.py merge logic). Filename is always timestamp-only
+    so finals form a clean version history when sorted lexically.
+    `source_scorecard_id_by_model` MUST cover every model in `runs`.
     """
-    scores_dir.mkdir(parents=True, exist_ok=True)
-    out_path = scores_dir / f"{sc.scorecard_id}.json"
+    emitted_at = now_iso()
+    candidate_set = sorted(r.model_id for r in runs)
+    scorecard_id = _format_scorecard_id(emitted_at, single_model_id=None)
+    ordered = sorted(
+        runs,
+        key=lambda r: (r.final_score is None, -(r.final_score or 0.0)),
+    )
+    return Scorecard(
+        scorecard_id=scorecard_id,
+        candidate_set=candidate_set,
+        emitted_at=emitted_at,
+        disclaimer=_DISCLAIMER,
+        runs=ordered,
+        source_scorecard_id_by_model=dict(source_scorecard_id_by_model),
+    )
+
+
+# Back-compat shim — Task #22 callers and tests still use this.
+def build_scorecard(runs: list[RunScore]) -> Scorecard:
+    """Deprecated alias for build_per_run_scorecard with no single_model_id.
+    Retained so existing tests / external callers keep working; new code
+    should call build_per_run_scorecard or build_final_scorecard explicitly.
+    """
+    return build_per_run_scorecard(runs)
+
+
+def write_scorecard(
+    sc: Scorecard,
+    *,
+    scores_dir: Path,
+    subdir: Optional[str] = None,
+) -> Path:
+    """Persist a scorecard as `<scores_dir>/[<subdir>/]<scorecard_id>.json`
+    plus the rendered table at the same stem with `.txt`.
+
+    `subdir` selects between `runs/` (per-invocation) and `final/` (merged
+    versioned view). Pass `None` to write at the top level (back-compat).
+    """
+    target_dir = scores_dir if subdir is None else scores_dir / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out_path = target_dir / f"{sc.scorecard_id}.json"
     out_path.write_text(
         json.dumps(sc.to_dict(), indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    txt_path = scores_dir / f"{sc.scorecard_id}.txt"
+    txt_path = target_dir / f"{sc.scorecard_id}.txt"
     txt_path.write_text(render_terminal(sc), encoding="utf-8")
     return out_path
+
+
+def latest_final_scorecard_path(scores_dir: Path) -> Optional[Path]:
+    """Return the most-recent final scorecard JSON path, or None if no
+    finals exist yet. Sort is lexical on filename — safe because the
+    filename is the local-ISO timestamp with `:` → `-` substitution,
+    which preserves chronological order character-for-character.
+    """
+    final_dir = scores_dir / "final"
+    if not final_dir.is_dir():
+        return None
+    candidates = sorted(final_dir.glob("*.json"))
+    return candidates[-1] if candidates else None
+
+
+def load_runs_from_scorecard(
+    path: Path,
+) -> tuple[list[RunScore], dict[str, str]]:
+    """Reverse-load a scorecard JSON into (runs, source_scorecard_id_by_model).
+
+    The source map carries each model's per-run scorecard_id when the
+    scorecard JSON declares it on the entry. For bootstrap cases (entries
+    without a `source_scorecard_id` field), we fall back to the
+    scorecard's own `scorecard_id` — meaning "we don't know which per-run
+    produced this; this scorecard is the best handle we have".
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    fallback_id = data.get("scorecard_id")
+    runs: list[RunScore] = []
+    source_map: dict[str, str] = {}
+    for entry in data.get("models", []):
+        rs = RunScore.from_dict(entry)
+        runs.append(rs)
+        source_map[rs.model_id] = entry.get("source_scorecard_id") or fallback_id
+    return runs, source_map
 
 
 def render_terminal(sc: Scorecard) -> str:

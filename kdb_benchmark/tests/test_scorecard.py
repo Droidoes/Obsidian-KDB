@@ -148,3 +148,150 @@ class TestScorecardWrite:
         # And it should look like a scorecard (cheap structural sanity checks).
         assert "rank" in rendered and "FINAL" in rendered
         assert "x" in rendered and "y" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Task #42 — runs/ + final/ split, source pointers, merge primitives
+# ---------------------------------------------------------------------------
+
+class TestPerRunScorecard:
+    def test_single_model_id_appended_to_filename(self):
+        runs = [_runscore(model_id="gpt-5.4-mini", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs, single_model_id="gpt-5.4-mini")
+        assert sc.scorecard_id.endswith("-gpt-5.4-mini")
+        # The timestamp portion still uses the local-ISO-with-`:`→`-`
+        # substitution so the prefix is still chronologically sortable.
+        assert "T" in sc.scorecard_id
+
+    def test_multi_model_run_omits_model_names_from_filename(self):
+        runs = [
+            _runscore(model_id="a", final_score=0.9, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000),
+            _runscore(model_id="b", final_score=0.5, m6_borda=0.0, m7_borda=0.0, m6_rate=0.005, m7_rate=5000),
+        ]
+        sc = scorecard.build_per_run_scorecard(runs)
+        # No model id suffix — the trailing token after the timestamp
+        # offset (`-04-00`) should be empty.
+        assert "-a" not in sc.scorecard_id and "-b" not in sc.scorecard_id
+
+    def test_per_run_omits_source_scorecard_id_field(self):
+        """Per-run scorecards ARE the source — entries should not carry
+        a source_scorecard_id field."""
+        runs = [_runscore(model_id="x", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs, single_model_id="x")
+        d = sc.to_dict()
+        assert "source_scorecard_id" not in d["models"][0]
+
+
+class TestFinalScorecard:
+    def test_filename_is_timestamp_only(self):
+        runs = [_runscore(model_id="x", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_final_scorecard(
+            runs, source_scorecard_id_by_model={"x": "2026-01-01T00-00-00-04-00"},
+        )
+        # No model id suffix even when only one model is present.
+        assert "-x" not in sc.scorecard_id
+        assert sc.scorecard_id.endswith("-04-00") or sc.scorecard_id.endswith("Z")
+
+    def test_each_entry_carries_source_scorecard_id(self):
+        runs = [
+            _runscore(model_id="a", final_score=0.9, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000),
+            _runscore(model_id="b", final_score=0.5, m6_borda=0.0, m7_borda=0.0, m6_rate=0.005, m7_rate=5000),
+        ]
+        source_map = {"a": "2026-01-01T00-00-00-04-00", "b": "2026-02-01T00-00-00-04-00"}
+        sc = scorecard.build_final_scorecard(runs, source_scorecard_id_by_model=source_map)
+        d = sc.to_dict()
+        for entry in d["models"]:
+            assert entry["source_scorecard_id"] == source_map[entry["model_id"]]
+
+
+class TestWriteScorecardSubdirs:
+    def test_runs_subdir_lands_under_runs_folder(self, tmp_path):
+        runs = [_runscore(model_id="x", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_per_run_scorecard(runs, single_model_id="x")
+        out = scorecard.write_scorecard(sc, scores_dir=tmp_path, subdir="runs")
+        assert out.parent == tmp_path / "runs"
+        assert out.exists()
+        assert out.with_suffix(".txt").exists()
+
+    def test_final_subdir_lands_under_final_folder(self, tmp_path):
+        runs = [_runscore(model_id="x", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        sc = scorecard.build_final_scorecard(runs, source_scorecard_id_by_model={"x": "src"})
+        out = scorecard.write_scorecard(sc, scores_dir=tmp_path, subdir="final")
+        assert out.parent == tmp_path / "final"
+
+
+class TestLatestFinalDiscovery:
+    def test_returns_none_when_no_finals_yet(self, tmp_path):
+        assert scorecard.latest_final_scorecard_path(tmp_path) is None
+
+    def test_picks_lexically_latest_final(self, tmp_path):
+        final_dir = tmp_path / "final"
+        final_dir.mkdir(parents=True)
+        # Filenames are local-ISO with `:`→`-` so lexical sort = chronological.
+        for name in (
+            "2026-01-01T00-00-00-04-00.json",
+            "2026-05-08T14-58-08-04-00.json",
+            "2026-03-15T12-00-00-04-00.json",
+        ):
+            (final_dir / name).write_text(json.dumps({"models": []}), encoding="utf-8")
+        latest = scorecard.latest_final_scorecard_path(tmp_path)
+        assert latest is not None and latest.name == "2026-05-08T14-58-08-04-00.json"
+
+
+class TestLoadRunsFromScorecard:
+    def test_round_trip_preserves_runs_and_source_pointers(self, tmp_path):
+        runs = [
+            _runscore(model_id="a", final_score=0.9, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000),
+            _runscore(model_id="b", final_score=0.5, m6_borda=0.0, m7_borda=0.0, m6_rate=0.005, m7_rate=5000),
+        ]
+        source_map = {"a": "2026-01-01T00-00-00-04-00", "b": "2026-02-01T00-00-00-04-00"}
+        sc = scorecard.build_final_scorecard(runs, source_scorecard_id_by_model=source_map)
+        out = scorecard.write_scorecard(sc, scores_dir=tmp_path, subdir="final")
+        loaded_runs, loaded_map = scorecard.load_runs_from_scorecard(out)
+        assert {r.model_id for r in loaded_runs} == {"a", "b"}
+        assert loaded_map == source_map
+        # The reconstructed RunScore carries the same final_score the
+        # source did — caller is responsible for re-Borda before re-using.
+        rs_by_id = {r.model_id: r for r in loaded_runs}
+        assert rs_by_id["a"].final_score == 0.9
+        assert rs_by_id["b"].final_score == 0.5
+
+    def test_falls_back_to_scorecard_id_when_entries_lack_source_pointer(self, tmp_path):
+        """Bootstrap case: a final written before Task #42 won't have
+        per-entry `source_scorecard_id`; the loader should fall back to
+        the scorecard's own id so callers get a non-empty pointer."""
+        runs = [_runscore(model_id="a", final_score=0.9,
+                          m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        # Build via the per-run path so the JSON has no source_scorecard_id field.
+        sc = scorecard.build_per_run_scorecard(runs)
+        out = scorecard.write_scorecard(sc, scores_dir=tmp_path, subdir="runs")
+        _, loaded_map = scorecard.load_runs_from_scorecard(out)
+        assert loaded_map["a"] == sc.scorecard_id
+
+
+class TestRunScoreFromDict:
+    def test_round_trip_via_to_dict_from_dict(self):
+        original = _runscore(model_id="x", final_score=0.85,
+                             m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)
+        rebuilt = RunScore.from_dict(original.to_dict())
+        assert rebuilt.model_id == original.model_id
+        assert rebuilt.run_id == original.run_id
+        assert rebuilt.measures["M6"].rate == original.measures["M6"].rate
+        assert rebuilt.m6_borda == original.m6_borda
+        assert rebuilt.final_score == original.final_score
+
+    def test_tolerates_extra_keys_added_by_scorecard_layer(self):
+        """Scorecard JSON entries carry `ran_at` and `source_scorecard_id`
+        on top of RunScore's own fields — from_dict should ignore them."""
+        original = _runscore(model_id="x", final_score=0.85,
+                             m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)
+        d = original.to_dict()
+        d["ran_at"] = "anything"
+        d["source_scorecard_id"] = "src"
+        rebuilt = RunScore.from_dict(d)
+        assert rebuilt.model_id == "x"

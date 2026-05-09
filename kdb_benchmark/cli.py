@@ -1,4 +1,4 @@
-"""kdb-benchmark CLI — Tasks #30 / #31 / #22 + #33 v1 orchestrator.
+"""kdb-benchmark CLI — Tasks #30 / #31 / #22 / #33 / #42 orchestrator.
 
 Usage:
   kdb-benchmark --models haiku-4.5,sonnet-4.6 \\
@@ -6,14 +6,23 @@ Usage:
                 [--system-prompt-path PATH] \\
                 [--runs-root benchmark/runs] \\
                 [--scores-dir benchmark/scores] \\
-                [--max-tokens 32768]
+                [--max-tokens 32768] \\
+                [--no-merge]
 
 For each model_id in --models:
   1. runner.run_benchmark — compile every source (isolated state_root)
   2. scorer.score_run — derive a RunScore from the captured records
-Then once across all models:
+
+Then once across all models in this invocation:
   3. scorer.score_runs — Borda-normalize M6/M7 + compute final_score
-  4. scorecard.build_scorecard + write_scorecard — persist JSON + render table
+  4. scorecard.build_per_run_scorecard + write to <scores_dir>/runs/
+
+Then (Task #42 — unless --no-merge):
+  5. Load latest <scores_dir>/final/<ts>.json (if any)
+  6. Merge by model_id (replace where overlapping, combine new ones)
+  7. Re-Borda + re-final the merged union (cross-set semantics shift
+     when the candidate set changes)
+  8. write a NEW versioned final at <scores_dir>/final/<ts>.json
 
 Exit code: 0 on success, non-zero on user error / runtime failure.
 """
@@ -25,8 +34,17 @@ from pathlib import Path
 
 from kdb_benchmark.paths import BENCHMARK_DIR, MODELS_JSON, RUNS_DIR, SCORES_DIR, SOURCES_DIR
 from kdb_benchmark.runner import run_benchmark
-from kdb_benchmark.scorecard import build_scorecard, render_terminal, write_scorecard
-from kdb_benchmark.scorer import score_run, score_runs
+from kdb_benchmark.scorecard import (
+    build_final_scorecard,
+    build_per_run_scorecard,
+    latest_final_scorecard_path,
+    load_runs_from_scorecard,
+    render_terminal,
+    write_scorecard,
+)
+from dataclasses import replace
+
+from kdb_benchmark.scorer import RunScore, score_run, score_runs
 
 
 _DEFAULT_SYSTEM_PROMPT = Path.home() / "Obsidian" / "KDB" / "KDB-Compiler-System-Prompt.md"
@@ -61,7 +79,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--scores-dir",
         type=Path,
         default=SCORES_DIR,
-        help=f"Where the scorecard JSON is written (default: {SCORES_DIR})",
+        help=f"Where scorecards are written, split into runs/ + final/ "
+             f"(default: {SCORES_DIR})",
     )
     p.add_argument(
         "--max-tokens",
@@ -82,7 +101,64 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Emit a per-measure scoring trace to stdout (numerator, "
              "denominator, rate, weight, plus evidence for S0 / M1 / M6 / M7 / Borda).",
     )
+    p.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="Skip the cross-run final-scorecard merge step. Per-run "
+             "scorecard is still written under runs/, but final/ is left "
+             "untouched.",
+    )
     return p
+
+
+def _merge_with_prior_final(
+    new_per_run_runs: list[RunScore],
+    new_per_run_scorecard_id: str,
+    *,
+    scores_dir: Path,
+) -> tuple[list[RunScore], dict[str, str]]:
+    """Combine the new per-run RunScores with the prior final scorecard
+    (if any). Returns (merged_runs_post_borda, source_scorecard_id_by_model)
+    ready for build_final_scorecard.
+
+    Merge rule (Task #42):
+      * Union by model_id.
+      * Where a model_id appears in BOTH the prior final and the new
+        per-run, the new per-run wins (latest measurement).
+      * Borda + final_score are recomputed across the union — cross-set
+        semantics shift when the candidate set changes, so prior
+        m6_borda / m7_borda / final_score values from the loaded final
+        are discarded.
+
+    The returned source map points each model at its originating per-run
+    scorecard_id: new arrivals → `new_per_run_scorecard_id`; carried-over
+    models → whatever the prior final declared for them.
+    """
+    by_model: dict[str, RunScore] = {}
+    source_map: dict[str, str] = {}
+
+    prior_path = latest_final_scorecard_path(scores_dir)
+    if prior_path is not None:
+        prior_runs, prior_source_map = load_runs_from_scorecard(prior_path)
+        for r in prior_runs:
+            by_model[r.model_id] = r
+            source_map[r.model_id] = prior_source_map[r.model_id]
+
+    # New per-run wins on overlap.
+    for r in new_per_run_runs:
+        by_model[r.model_id] = r
+        source_map[r.model_id] = new_per_run_scorecard_id
+
+    # Strip stale Borda/final fields before re-scoring across the union —
+    # score_runs will repopulate them across the new candidate set.
+    # `replace()` keeps every other field so additions to RunScore don't
+    # silently drop here.
+    union = [
+        replace(r, m6_borda=None, m7_borda=None, final_score=None)
+        for r in by_model.values()
+    ]
+    enriched_union = score_runs(union)
+    return enriched_union, source_map
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,10 +210,28 @@ def main(argv: list[str] | None = None) -> int:
         full = per_run_sinks[run_id] + [""] + cross_run_sink
         (run_dir / "score_trace.txt").write_text("\n".join(full) + "\n", encoding="utf-8")
 
-    sc = build_scorecard(enriched)
-    out_path = write_scorecard(sc, scores_dir=args.scores_dir)
-    print(f"\nscorecard written: {out_path}\n")
-    print(render_terminal(sc))
+    # ---- Per-run scorecard (always written) ----
+    # Filename embeds model_id only when the invocation scored exactly one
+    # model — multi-model invocations stay timestamp-only so adding/
+    # removing a model later doesn't blow up the naming convention.
+    single_model_id = model_ids[0] if len(model_ids) == 1 else None
+    per_run_sc = build_per_run_scorecard(enriched, single_model_id=single_model_id)
+    per_run_path = write_scorecard(per_run_sc, scores_dir=args.scores_dir, subdir="runs")
+    print(f"\nper-run scorecard written: {per_run_path}\n")
+    print(render_terminal(per_run_sc))
+
+    # ---- Final scorecard (merge with prior, unless --no-merge) ----
+    if not args.no_merge:
+        print("merging with prior final scorecard...")
+        merged_runs, source_map = _merge_with_prior_final(
+            enriched, per_run_sc.scorecard_id, scores_dir=args.scores_dir,
+        )
+        final_sc = build_final_scorecard(
+            merged_runs, source_scorecard_id_by_model=source_map,
+        )
+        final_path = write_scorecard(final_sc, scores_dir=args.scores_dir, subdir="final")
+        print(f"\nfinal scorecard written: {final_path}\n")
+        print(render_terminal(final_sc))
 
     # --verbose: per-measure trace prints AFTER the scorecard so the table
     # stays at the top of the user's terminal when they scroll up. The

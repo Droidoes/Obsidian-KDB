@@ -109,14 +109,17 @@ class TestCLI:
             "--scores-dir", str(scores_dir),
         ])
         assert rc == 0
-        # Scorecard JSON exists
-        json_files = list(scores_dir.glob("*.json"))
-        assert len(json_files) == 1
-        data = json.loads(json_files[0].read_text())
+        # Per-run scorecard lands under runs/ (Task #42)
+        run_jsons = list((scores_dir / "runs").glob("*.json"))
+        assert len(run_jsons) == 1
+        data = json.loads(run_jsons[0].read_text())
         assert sorted(data["candidate_set"]) == ["haiku-4.5", "sonnet-4.6"]
         # Models sorted by final_score desc — haiku faster + cheaper → wins
         assert data["models"][0]["model_id"] == "haiku-4.5"
         assert data["models"][1]["model_id"] == "sonnet-4.6"
+        # Final scorecard auto-written under final/ (Task #42)
+        final_jsons = list((scores_dir / "final").glob("*.json"))
+        assert len(final_jsons) == 1
 
     def test_main_prints_terminal_table_to_stdout(
         self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys
@@ -200,3 +203,136 @@ class TestCLI:
             "--scores-dir", str(tmp_path / "scores"),
         ])
         assert rc != 0
+
+
+# ---------------------------------------------------------------------------
+# Task #42 — cross-run scorecard auto-merge
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def monotonic_now_iso(monkeypatch):
+    """now_iso() has second precision; tests that fire two CLI invocations
+    back-to-back would collide on the same timestamp and overwrite the
+    prior final scorecard. Patch the scorecard module's now_iso to return
+    a monotonically-advancing fake."""
+    counter = {"n": 0}
+
+    def _fake_now() -> str:
+        counter["n"] += 1
+        # Use distinct seconds so lexical sort (filename) preserves order.
+        return f"2026-05-08T12:00:{counter['n']:02d}-04:00"
+
+    monkeypatch.setattr("kdb_benchmark.scorecard.now_iso", _fake_now)
+
+
+class TestCLICrossRunMerge:
+    def test_no_merge_skips_final_write(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        scores_dir = tmp_path / "scores"
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+            "--no-merge",
+        ])
+        # runs/ written, final/ untouched
+        assert list((scores_dir / "runs").glob("*.json"))
+        assert not (scores_dir / "final").exists()
+
+    def test_single_model_per_run_filename_carries_model_id(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        scores_dir = tmp_path / "scores"
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+            "--no-merge",
+        ])
+        [run_json] = list((scores_dir / "runs").glob("*.json"))
+        assert run_json.stem.endswith("-haiku-4.5")
+
+    def test_subsequent_run_merges_into_new_final_keeping_prior_models(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, monotonic_now_iso
+    ):
+        """Run #1 with haiku, Run #2 with gpt — final after Run #2 must
+        carry BOTH models (combine semantics for the new model)."""
+        scores_dir = tmp_path / "scores"
+        runs_root = tmp_path / "runs"
+        # Run 1
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+        ])
+        finals_after_1 = sorted((scores_dir / "final").glob("*.json"))
+        assert len(finals_after_1) == 1
+        d1 = json.loads(finals_after_1[0].read_text())
+        assert sorted(d1["candidate_set"]) == ["haiku-4.5"]
+
+        # Run 2 — different model
+        cli.main([
+            "--models", "gpt-5.4-mini",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+        ])
+        finals_after_2 = sorted((scores_dir / "final").glob("*.json"))
+        # Versioned: prior final preserved, new final added
+        assert len(finals_after_2) == 2
+        latest = json.loads(finals_after_2[-1].read_text())
+        assert sorted(latest["candidate_set"]) == ["gpt-5.4-mini", "haiku-4.5"]
+
+    def test_subsequent_run_replaces_existing_model_in_final(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, monotonic_now_iso
+    ):
+        """Run #1 with haiku, Run #2 with haiku again — new haiku entry
+        replaces the prior one (latest measurement wins)."""
+        scores_dir = tmp_path / "scores"
+        runs_root = tmp_path / "runs"
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+        ])
+        cli.main([
+            "--models", "haiku-4.5",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(runs_root),
+            "--scores-dir", str(scores_dir),
+        ])
+        finals = sorted((scores_dir / "final").glob("*.json"))
+        latest = json.loads(finals[-1].read_text())
+        # Still just one model — replace, not duplicate
+        assert sorted(latest["candidate_set"]) == ["haiku-4.5"]
+        # Source pointer points at the latest per-run scorecard, not the first
+        run_jsons = sorted((scores_dir / "runs").glob("*.json"))
+        latest_per_run_id = run_jsons[-1].stem
+        assert latest["models"][0]["source_scorecard_id"] == latest_per_run_id
+
+    def test_final_entries_carry_source_scorecard_id(
+        self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer
+    ):
+        scores_dir = tmp_path / "scores"
+        cli.main([
+            "--models", "haiku-4.5,sonnet-4.6",
+            "--sources", str(fake_corpus),
+            "--system-prompt-path", str(fake_prompt),
+            "--runs-root", str(tmp_path / "runs"),
+            "--scores-dir", str(scores_dir),
+        ])
+        [final_json] = list((scores_dir / "final").glob("*.json"))
+        d = json.loads(final_json.read_text())
+        for entry in d["models"]:
+            assert "source_scorecard_id" in entry

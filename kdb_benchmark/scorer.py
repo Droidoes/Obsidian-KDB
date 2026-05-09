@@ -61,6 +61,18 @@ class MeasureScore:
             "weight": self.weight,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "MeasureScore":
+        """Reverse of to_dict — used when reconstructing a RunScore from a
+        prior scorecard JSON for cross-run merge (Task #42)."""
+        return cls(
+            name=d["name"],
+            numerator=d["numerator"],
+            denominator=d["denominator"],
+            rate=d["rate"],
+            weight=d["weight"],
+        )
+
 
 @dataclass(frozen=True)
 class RunScore:
@@ -101,6 +113,30 @@ class RunScore:
             "m7_borda": self.m7_borda,
             "final_score": self.final_score,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RunScore":
+        """Reverse of to_dict — reconstructs a RunScore from a prior
+        scorecard JSON entry. Tolerates extra keys (e.g. `ran_at`,
+        `source_scorecard_id` that the scorecard layer adds for archival)
+        by reading only the fields RunScore owns. Used by the merge step
+        (Task #42)."""
+        return cls(
+            run_id=d["run_id"],
+            model_id=d["model_id"],
+            provider=d["provider"],
+            model=d["model"],
+            n_attempted=d["n_attempted"],
+            s0=MeasureScore.from_dict(d["s0"]),
+            s1=MeasureScore.from_dict(d["s1"]),
+            s2=MeasureScore.from_dict(d["s2"]),
+            s3=MeasureScore.from_dict(d["s3"]),
+            measures={k: MeasureScore.from_dict(v) for k, v in d["measures"].items()},
+            diagnostics={k: MeasureScore.from_dict(v) for k, v in d["diagnostics"].items()},
+            m6_borda=d.get("m6_borda"),
+            m7_borda=d.get("m7_borda"),
+            final_score=d.get("final_score"),
+        )
 
 
 # ---------------------------------------------------------------------------
