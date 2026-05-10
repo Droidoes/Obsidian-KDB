@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .validate_compile_result import ValidationFinding
-from .validate_compiled_source_response import _body_wikilink_slugs
+from .validate_compiled_source_response import body_wikilink_slugs
 
 
 class ReconcileError(Exception):
@@ -133,7 +133,7 @@ def reconcile_body_links(parsed_json: dict) -> int:
         if not isinstance(p, dict):
             continue
         body = p.get("body")
-        new_links = sorted(_body_wikilink_slugs(body)) if isinstance(body, str) else []
+        new_links = sorted(body_wikilink_slugs(body)) if isinstance(body, str) else []
         prior = p.get("outgoing_links") or []
         prior_list = list(prior) if isinstance(prior, list) else []
         if prior_list != new_links:

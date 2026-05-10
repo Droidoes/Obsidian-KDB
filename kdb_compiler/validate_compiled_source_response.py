@@ -121,11 +121,15 @@ def _strip_code(text: str) -> str:
     return _INLINE_CODE_RE.sub("", _FENCED_CODE_RE.sub("", text))
 
 
-def _body_wikilink_slugs(body: str) -> set[str]:
+def body_wikilink_slugs(body: str) -> set[str]:
     """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]]
     tokens in `body`, after stripping code spans. Strict kebab-case
     match — out-of-pattern brackets (e.g. [[Foo Bar]]) are silently
-    ignored."""
+    ignored.
+
+    Public utility — also used by `kdb_benchmark.scorer` for M5
+    (`body_emit_set_coverage`) computation across the one-way boundary.
+    """
     return set(_WIKILINK_RE.findall(_strip_code(body)))
 
 
@@ -153,7 +157,7 @@ def body_link_check(payload: dict) -> tuple[int, int]:
         else:
             declared = set()
         body = p.get("body")
-        body_links = _body_wikilink_slugs(body) if isinstance(body, str) else set()
+        body_links = body_wikilink_slugs(body) if isinstance(body, str) else set()
         intersection += len(declared & body_links)
         union += len(declared | body_links)
     return (intersection, union)
@@ -183,7 +187,7 @@ def body_link_per_page_asymmetry(payload: dict) -> list[dict]:
         else:
             declared = set()
         body = p.get("body")
-        body_links = _body_wikilink_slugs(body) if isinstance(body, str) else set()
+        body_links = body_wikilink_slugs(body) if isinstance(body, str) else set()
         if declared == body_links:
             continue
         slug = p.get("slug")
