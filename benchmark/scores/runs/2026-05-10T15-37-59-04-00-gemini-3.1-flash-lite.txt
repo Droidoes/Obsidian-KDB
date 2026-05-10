@@ -1,0 +1,16 @@
+Scorecard: candidate_set=['gemini-3.1-flash-lite']   emitted_at=2026-05-10T15:37:59-04:00
+Config:    gemini/gemini-3.1-flash-lite   ctx=1048576   --max-tokens=32768   prices=$0.25/$1.5/1M-tok   sources=benchmark/sources (5 files, 28607 source_words)
+Timing:    compile=24.8s   score=0.0s   total=24.8s
+==============================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b  PENALTY   FINAL  RAN_AT                          
+--------------------------------------------------------------------------------------------------------------
+   1  gemini-3.1-flash-lite  1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000        -   1.000  gemini-3.1-flash-lite-2026-05-10T15-37-37_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  gemini-3.1-flash-lite  M6=$0.0012/1K-words  M7=865ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  gemini-3.1-flash-lite  0.0000                        0.0000                        1.2235                      
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.

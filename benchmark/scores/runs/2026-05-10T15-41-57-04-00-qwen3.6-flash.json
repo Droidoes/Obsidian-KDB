@@ -1,0 +1,143 @@
+{
+  "scorecard_id": "2026-05-10T15-41-57-04-00-qwen3.6-flash",
+  "candidate_set": [
+    "qwen3.6-flash"
+  ],
+  "emitted_at": "2026-05-10T15:41:57-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "qwen3.6-flash-2026-05-10T15-38-41_EDT",
+      "model_id": "qwen3.6-flash",
+      "provider": "alibaba",
+      "model": "qwen3.6-flash",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 38,
+          "denominator": 38,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 28,
+          "denominator": 28,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 26,
+          "denominator": 29,
+          "rate": 0.896551724137931,
+          "weight": 0.15
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0708365,
+          "denominator": 28607,
+          "rate": 0.002476194637676093,
+          "weight": 0.1
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 216911,
+          "denominator": 28607,
+          "rate": 7582.444856154088,
+          "weight": 0.1
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 33,
+          "denominator": 28607,
+          "rate": 1.1535638130527492,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score_pre_penalty": 0.9144827586206896,
+      "penalty": 0.0,
+      "final_score": 0.9144827586206896,
+      "ran_at": "qwen3.6-flash-2026-05-10T15-38-41_EDT"
+    }
+  ],
+  "dropped_models": [],
+  "run_config": {
+    "max_tokens": 32768,
+    "sources_dir": "benchmark/sources",
+    "n_sources": 5,
+    "n_source_words": 28607,
+    "system_prompt_path": "/home/ftu/Obsidian/KDB/KDB-Compiler-System-Prompt.md",
+    "provider": "alibaba",
+    "model": "qwen3.6-flash",
+    "ctx_window": 1000000,
+    "price_in": 0.25,
+    "price_out": 1.5
+  },
+  "run_timing": {
+    "compile_seconds": 216.99,
+    "score_seconds": 0.02,
+    "total_seconds": 217.0
+  }
+}

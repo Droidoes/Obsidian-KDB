@@ -1,0 +1,44 @@
+Scorecard: candidate_set=['deepseek-v4-flash', 'gemini-3.1-flash-lite', 'gemma4-obsidian-bench', 'gpt-5.4-mini', 'grok-4-1-fast-reasoning', 'haiku-4.5', 'qwen3.5-flash', 'qwen3.6-flash', 'sonnet-4.6']   emitted_at=2026-05-10T15:41:57-04:00
+==============================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b  PENALTY   FINAL  RAN_AT                          
+--------------------------------------------------------------------------------------------------------------
+   1  gemini-3.1-flash-lite  1.000 1.000 1.000 1.000 1.000 1.000 0.500 1.000        -   0.950  gemini-3.1-flash-lite-2026-05-10T15-37-37_EDT
+   2  gpt-5.4-mini    1.000 1.000 1.000 1.000 1.000 0.983 0.250 0.875        -   0.868  gpt-5.4-mini-2026-05-10T11-48-59_EDT
+   3  deepseek-v4-flash  1.000 0.966 1.000 1.000 1.000 1.000 0.750 0.125        -   0.824  deepseek-v4-flash-2026-05-10T12-25-40_EDT
+   4  qwen3.6-flash   0.800 1.000 1.000 1.000 0.800 0.897 0.375 0.500        -   0.802  qwen3.6-flash-2026-05-10T15-38-41_EDT
+   5  qwen3.5-flash   0.800 1.000 1.000 1.000 0.800 0.941 0.875 0.250        -   0.796  qwen3.5-flash-2026-05-10T11-57-42_EDT
+   6  sonnet-4.6      1.000 1.000 1.000 1.000 1.000 1.000 0.000 0.000        -   0.700  sonnet-4.6-2026-05-10T12-01-50_EDT
+   7  haiku-4.5       0.800 0.993 0.975 1.000 0.800 0.935 0.125 0.375        -   0.699  haiku-4.5-2026-05-10T11-53-03_EDT
+   8  grok-4-1-fast-reasoning  0.800 0.699 1.000 1.000 0.800 1.000 0.625 0.750    -0.10   0.676  grok-4-1-fast-reasoning-2026-05-10T11-50-14_EDT
+   9  gemma4-obsidian-bench  0.600 0.453 1.000 1.000 0.600 0.800 1.000 0.625    -0.55   0.134  gemma4-obsidian-bench-2026-05-10T13-24-42_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  gemini-3.1-flash-lite  M6=$0.0012/1K-words  M7=865ms/1K-words
+  gpt-5.4-mini    M6=$0.0046/1K-words  M7=2799ms/1K-words
+  deepseek-v4-flash  M6=$0.0007/1K-words  M7=9830ms/1K-words
+  qwen3.6-flash   M6=$0.0025/1K-words  M7=7582ms/1K-words
+  qwen3.5-flash   M6=$0.0004/1K-words  M7=9483ms/1K-words
+  sonnet-4.6      M6=$0.0244/1K-words  M7=16114ms/1K-words
+  haiku-4.5       M6=$0.0078/1K-words  M7=8248ms/1K-words
+  grok-4-1-fast-reasoning  M6=$0.0008/1K-words  M7=6493ms/1K-words
+  gemma4-obsidian-bench  M6=$0.0000/1K-words  M7=6769ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  gemini-3.1-flash-lite  0.0000                        0.0000                        1.2235                      
+  gpt-5.4-mini    0.0000                        0.0000                        2.2372                      
+  deepseek-v4-flash  0.0000                        0.0000                        1.4332                      
+  qwen3.6-flash   0.0000                        0.0000                        1.1536                      
+  qwen3.5-flash   0.0000                        0.0000                        1.3283                      
+  sonnet-4.6      0.0000                        0.0000                        1.8177                      
+  haiku-4.5       0.0000                        0.0000                        1.7828                      
+  grok-4-1-fast-reasoning  0.0000                        0.0000                        1.6779                      
+  gemma4-obsidian-bench  0.0000                        0.0000                        1.3633                      
+
+Dropped Models (excluded from active Borda):
+  model_id                     S0    M1    M2    M3    M4    M5  M6_raw      M7_raw      DROP_REASON
+  qwen-flash-us             1.000 1.000 1.000 1.000 1.000 0.111  $0.0003     2496ms      M5 (body_emit_set_coverage) = 0.111 in post-#60 regression scorecard (2026-05-10T12:08): declares concept_slugs but barely integrates them via cross-page wikilinks (KB-graph value degraded). The pre-#59 reading of M5=1.000 was the tautological-by-construction artifact; the new measure surfaces real model behavior. Excellent cost+latency don't compensate for this quality gap on the canonical corpus.
+  deepseek-v4-flash:cloud   1.000 1.000 1.000 1.000 1.000 1.000  $0.0007     39263ms     strictly dominated by deepseek-v4-flash via alibaba (DashScope) at identical model + identical pricing: M7=39263ms/1Kw vs alibaba's 9830ms/1Kw (~4x slower). Quality identical. 2026-05-10T12:29 cross-provider trial confirmed; keep dropped record as audit trail of the comparison.
+  gemini-3-flash-preview    0.200 1.000 1.000 0.000 0.200 1.000  $0.0024     19727ms     high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.
