@@ -345,7 +345,7 @@ def render_terminal(sc: Scorecard) -> str:
         if timing_parts:
             lines.append("Timing:    " + "   ".join(timing_parts))
 
-    lines.append("=" * 100)
+    lines.append("=" * 110)
 
     # Header
     header = (
@@ -359,11 +359,12 @@ def render_terminal(sc: Scorecard) -> str:
         f"{'M5':>5} "
         f"{'M6_b':>5} "
         f"{'M7_b':>5}  "
+        f"{'PENALTY':>7}  "
         f"{'FINAL':>6}  "
         f"{'RAN_AT':<32}"
     )
     lines.append(header)
-    lines.append("-" * 100)
+    lines.append("-" * 110)
 
     # Per-model rows
     for i, run in enumerate(sc.runs, start=1):
@@ -371,6 +372,7 @@ def render_terminal(sc: Scorecard) -> str:
         m_rates = [_fmt_rate(run.measures[k].rate) for k in ("M1", "M2", "M3", "M4", "M5")]
         m6_b = _fmt_rate(run.m6_borda)
         m7_b = _fmt_rate(run.m7_borda)
+        pen = "-" if run.penalty == 0.0 else f"-{run.penalty:.2f}"
         final = _fmt_rate(run.final_score)
         lines.append(
             f"{i:>4}  "
@@ -378,6 +380,7 @@ def render_terminal(sc: Scorecard) -> str:
             f"{s0:>5} "
             + " ".join(f"{m:>5}" for m in m_rates)
             + f" {m6_b:>5} {m7_b:>5}  "
+            + f"{pen:>7}  "
             + f"{final:>6}  "
             f"{run.run_id:<32}"
         )

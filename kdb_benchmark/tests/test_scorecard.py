@@ -22,6 +22,7 @@ def _runscore(
     m6_rate: float,
     m7_rate: float,
     ran_at: str = "2026-05-06T14-32-15_EDT",
+    penalty: float = 0.0,
 ) -> RunScore:
     return RunScore(
         run_id=f"{model_id}-{ran_at}",
@@ -49,6 +50,8 @@ def _runscore(
         },
         m6_borda=m6_borda,
         m7_borda=m7_borda,
+        final_score_pre_penalty=final_score,  # treat provided value as pre-penalty for test fixtures
+        penalty=penalty,
         final_score=final_score,
     )
 
@@ -117,6 +120,30 @@ class TestScorecardTerminalRender:
         runs = [_runscore(model_id="x", final_score=0.85, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
         text = scorecard.render_terminal(scorecard.build_scorecard(runs))
         assert "candidate" in text.lower()
+
+    def test_render_includes_penalty_column_header(self):
+        """D31 (Task #62): PENALTY column appears between M7_b and FINAL in header."""
+        runs = [_runscore(model_id="x", final_score=0.85, m6_borda=1.0, m7_borda=1.0, m6_rate=0.001, m7_rate=2000)]
+        text = scorecard.render_terminal(scorecard.build_scorecard(runs))
+        assert "PENALTY" in text
+
+    def test_render_zero_penalty_shows_dash(self):
+        """A run with penalty=0.0 renders '-' in the PENALTY column."""
+        runs = [_runscore(model_id="x", final_score=0.85, m6_borda=1.0, m7_borda=1.0,
+                          m6_rate=0.001, m7_rate=2000, penalty=0.0)]
+        text = scorecard.render_terminal(scorecard.build_scorecard(runs))
+        # The penalty column shows '-' for zero penalty
+        assert "PENALTY" in text
+        # Row should contain a dash in the penalty slot (not a deduction value)
+        lines = [l for l in text.splitlines() if "x" in l and "1.000" in l]
+        assert any("-" in l for l in lines)
+
+    def test_render_nonzero_penalty_shows_deduction(self):
+        """A run with penalty=0.40 renders '-0.40' in the PENALTY column."""
+        runs = [_runscore(model_id="x", final_score=0.534, m6_borda=1.0, m7_borda=1.0,
+                          m6_rate=0.001, m7_rate=2000, penalty=0.40)]
+        text = scorecard.render_terminal(scorecard.build_scorecard(runs))
+        assert "-0.40" in text
 
 
 class TestScorecardWrite:
@@ -328,6 +355,8 @@ def _dropped_runscore(model_id: str, *, m6_rate: float = 0.0024, m7_rate: float 
         },
         m6_borda=None,
         m7_borda=None,
+        final_score_pre_penalty=None,
+        penalty=0.0,
         final_score=None,
     )
 

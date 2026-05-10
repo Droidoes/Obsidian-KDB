@@ -78,6 +78,10 @@ class RunScore:
     rates inside `measures` are RAW ($/1K source-words, ms/1K source-words);
     Borda-normalized [0,1] versions live in `m6_borda` / `m7_borda` and
     are populated by score_runs() across the candidate set.
+
+    D31 (Task #62): `final_score_pre_penalty` is the weighted sum before the
+    outlier penalty is applied; `penalty` is the total deduction (units × 0.05);
+    `final_score` is the post-penalty value (the canonical rank-by field).
     """
     run_id: str
     model_id: str
@@ -92,7 +96,9 @@ class RunScore:
     diagnostics: dict[str, MeasureScore]   # retry_load, token_overrun_rate, pages_per_1k_source_words
     m6_borda: Optional[float]
     m7_borda: Optional[float]
-    final_score: Optional[float]
+    final_score_pre_penalty: Optional[float]   # D31: weighted sum, pre-penalty
+    penalty: float                             # D31: total deduction (units × 0.05); 0.0 if none
+    final_score: Optional[float]               # post-penalty; the canonical rank-by value
 
     def to_dict(self) -> dict:
         return {
@@ -109,6 +115,8 @@ class RunScore:
             "diagnostics": {k: v.to_dict() for k, v in self.diagnostics.items()},
             "m6_borda": self.m6_borda,
             "m7_borda": self.m7_borda,
+            "final_score_pre_penalty": self.final_score_pre_penalty,
+            "penalty": self.penalty,
             "final_score": self.final_score,
         }
 
@@ -118,7 +126,11 @@ class RunScore:
         scorecard JSON entry. Tolerates extra keys (e.g. `ran_at`,
         `source_scorecard_id` that the scorecard layer adds for archival)
         by reading only the fields RunScore owns. Used by the merge step
-        (Task #42)."""
+        (Task #42).
+
+        Backwards-compat: pre-D31 JSONs lack final_score_pre_penalty and
+        penalty; defaults to None / 0.0 respectively (D29.9 doctrine —
+        cross-generation FINAL comparison is already invalidated)."""
         return cls(
             run_id=d["run_id"],
             model_id=d["model_id"],
@@ -133,6 +145,8 @@ class RunScore:
             diagnostics={k: MeasureScore.from_dict(v) for k, v in d["diagnostics"].items()},
             m6_borda=d.get("m6_borda"),
             m7_borda=d.get("m7_borda"),
+            final_score_pre_penalty=d.get("final_score_pre_penalty"),
+            penalty=d.get("penalty", 0.0),
             final_score=d.get("final_score"),
         )
 
@@ -582,6 +596,8 @@ def score_run(
         },
         m6_borda=None,
         m7_borda=None,
+        final_score_pre_penalty=None,
+        penalty=0.0,
         final_score=None,
     )
 
@@ -785,21 +801,52 @@ def score_runs(
                 f"[verbose]   {run.model_id:<16} raw={raw_str}ms  →  borda={b_str}"
             )
 
-    enriched: list[RunScore] = []
+    # Pass 1: Borda + pre-penalty final
+    provisional: list[RunScore] = []
     for run in runs:
         m6_b = m6_scores.get(run.model_id)
         m7_b = m7_scores.get(run.model_id)
-        provisional = replace(run, m6_borda=m6_b, m7_borda=m7_b)
+        p = replace(run, m6_borda=m6_b, m7_borda=m7_b)
         try:
-            final = final_score(provisional)
+            pre = final_score(p)
         except ValueError:
-            final = None
-        enriched.append(replace(provisional, final_score=final))
+            pre = None
+        # Initialize new fields; final_score will be set in pass 3
+        p = replace(p, final_score_pre_penalty=pre, penalty=0.0, final_score=None)
+        provisional.append(p)
         if trace_sink is not None:
-            final_str = "None" if final is None else f"{final:.4f}"
+            pre_str = "None" if pre is None else f"{pre:.4f}"
             trace_sink.append(
-                f"[verbose] {run.model_id:<16} final_score={final_str}"
+                f"[verbose] {run.model_id:<16} final_score_pre_penalty={pre_str}"
             )
+
+    # Pass 2: compute outlier penalty across the candidate set (D31)
+    penalty_map = _compute_outlier_penalty(provisional)
+
+    if trace_sink is not None:
+        trace_sink.append("[verbose] outlier penalty (D31, in-scope: S0+M1..M5):")
+        for run in provisional:
+            if penalty_map.get(run.model_id, 0.0) > 0.0:
+                pen = penalty_map[run.model_id]
+                units = round(pen / 0.05)
+                trace_sink.append(
+                    f"[verbose]   {run.model_id:<16} units={units}  penalty={-pen:.2f}"
+                )
+            else:
+                trace_sink.append(
+                    f"[verbose]   {run.model_id:<16} units=0  penalty=  -"
+                )
+
+    # Pass 3: apply penalty
+    enriched: list[RunScore] = []
+    for run in provisional:
+        pen = penalty_map.get(run.model_id, 0.0)
+        if run.final_score_pre_penalty is None:
+            post = None
+        else:
+            post = max(0.0, run.final_score_pre_penalty - pen)
+        enriched.append(replace(run, penalty=pen, final_score=post))
+
     return enriched
 
 
@@ -863,6 +910,61 @@ def borda_normalize(
         model_id: (n - rank) / (n - 1)
         for model_id, rank in ranks.items()
     }
+
+
+# In-scope measures for outlier penalty (D31.5): S0 + M1..M5; M6/M7 excluded
+# (already Borda-relative).
+_PENALTY_IN_SCOPE_MEASURES = ("S0", "M1", "M2", "M3", "M4", "M5")
+
+
+def _compute_outlier_penalty(runs: list["RunScore"]) -> dict[str, float]:
+    """Per-model penalty deduction for FINAL (D31, Task #62).
+
+    For each in-scope measure (S0, M1, M2, M3, M4, M5):
+      norm           = mean(measure.rate across runs, excluding rate=None)
+      deviation_pct  = max(0, (norm - value) / norm * 100)   when value < norm and norm > 0
+      penalty_units  = floor(deviation_pct / 10)
+
+    Per-run total: Σ penalty_units across in-scope measures × 0.05.
+
+    Returns: dict mapping run.model_id → penalty deduction (always >= 0).
+
+    Properties:
+      - One-sided: only below-norm penalized (D31.2)
+      - Excludes rate=None from norm; that (run, measure) gets 0 penalty (D31.9)
+      - norm == 0 → 0 penalty for all on that measure (D31.8, avoids div-by-zero)
+      - Cumulative no cap (D31.6)
+    """
+    import math
+
+    def _rate_for(run: "RunScore", key: str) -> Optional[float]:
+        if key == "S0":
+            return run.s0.rate
+        return run.measures[key].rate
+
+    penalty_per_model: dict[str, float] = {r.model_id: 0.0 for r in runs}
+
+    for measure_key in _PENALTY_IN_SCOPE_MEASURES:
+        # Compute norm: mean of rates, excluding None
+        rates = [_rate_for(r, measure_key) for r in runs]
+        valid = [v for v in rates if v is not None]
+        if not valid:
+            continue  # all None; skip this measure entirely
+        norm = sum(valid) / len(valid)
+        if norm <= 0.0:
+            continue  # avoid div-by-zero (D31.8); also handles all-zero case
+
+        for run in runs:
+            value = _rate_for(run, measure_key)
+            if value is None:
+                continue  # this (run, measure) gets 0 penalty (D31.9)
+            if value >= norm:
+                continue  # at-or-above norm: 0 penalty (D31.2)
+            deviation_pct = (norm - value) / norm * 100.0
+            units = math.floor(deviation_pct / 10.0)
+            penalty_per_model[run.model_id] += units * 0.05
+
+    return penalty_per_model
 
 
 def final_score(run: RunScore) -> Optional[float]:

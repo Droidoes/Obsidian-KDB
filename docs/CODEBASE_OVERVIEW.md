@@ -193,10 +193,40 @@ Cost/latency raw rates differ in magnitude across models by 3× or more. Direct 
 - **M6 / M7 are Borda-normalized within the candidate set** (D28). Average-rank algorithm: best raw rate → 1.0, worst → 0.0, ties get the average rank, all-equal candidates each get 0.5.
 - **The other measures stay as raw rates** in [0,1]. They're already in a comparable scale (Jaccard, pass rates, etc.).
 - **`final_score`** is the weighted sum, with pro-rata redistribution if any measure has rate=None (model-controlled zero-denom on M1/M2/M3/M5 scores 0.0 not None, per Round 4 MF6).
+- **Outlier penalty** (D31, Task #62). After the weighted sum + pro-rata redistribution, an outlier penalty is applied: for each in-scope measure (S0 + M1–M5), models more than 10% below the candidate-set norm receive `−0.05` per 10%-band of deviation. Penalty units accumulate across measures; FINAL is floored at 0. Surfaces single-axis outliers that the weighted sum would otherwise average away. M6/M7 are excluded (already Borda-relative). See §7.6 below.
 
 Borda is candidate-set-dependent — `final_score` is comparable **only within the same scorecard's candidate set**. The user's workflow is "rank latest, pick best" (D28); cross-version comparison is not a designed-for use case. Raw rates are exposed in the scorecard footer for cross-run magnitude inspection.
 
-### 7.6 Data flow
+### 7.6 Outlier penalty (D31)
+
+The weighted sum + pro-rata redistribution produces a "balanced average" FINAL that
+treats each measure equally up to its weight. This dilutes single-axis outliers — a
+model with one catastrophic measure but five healthy ones still ranks high. The
+outlier penalty addresses this directly.
+
+**Formula.** For each model and each in-scope measure (S0, M1, M2, M3, M4, M5):
+
+  norm           = mean(measure.rate across active models, excluding rate=None)
+  deviation_pct  = max(0, (norm − value) / norm × 100)
+  penalty_units  = floor(deviation_pct / 10)
+
+Per-model total: Σ penalty_units across in-scope measures × 0.05 → penalty deduction.
+FINAL_with_penalty = max(0.0, FINAL_pre_penalty − total_penalty).
+
+**Properties.**
+- One-sided: only below-norm penalized.
+- M6/M7 excluded: already Borda-normalized; penalizing them again would double-count.
+- Cumulative, no cap: multi-axis underperformance compounds.
+- Floor at 0: FINAL ∈ [0, 1] preserved.
+
+**Visibility.** A `PENALTY` column in the rendered scorecard sits between M7_b and
+FINAL, showing the deduction (e.g. `-0.40` or `-` for zero). The pre-penalty value
+is preserved on `RunScore.final_score_pre_penalty` for audit.
+
+See `docs/task62-outlier-penalty-design.md` for the worked example and full
+locked-decision set (D31.1–D31.12).
+
+### 7.7 Data flow
 
 ```
 benchmark/sources/*.md
@@ -223,7 +253,7 @@ benchmark/runs/<run_id>/score_trace.txt  (always-on per-run + cross-run trace, -
 
 CLI: `kdb-benchmark --models <a,b,...> --sources <dir> [--verbose]`.
 
-### 7.7 Pointer to spec
+### 7.8 Pointer to spec
 
 For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorithm details, Round 4 corrections), see [`docs/task19-kpi-design.md`](task19-kpi-design.md). That doc is the historical record of design rounds 1–4 and the locked spec; this section in the North Star doc is the durable summary.
 
@@ -263,6 +293,7 @@ For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorit
 | D28 | 2026-05-04 | Average-rank Borda for cross-model normalization on M6/M7 only; `final_score` comparable only within the same candidate set (rank-latest-pick-best workflow). | Cost/latency raw magnitudes differ 3× or more across models; direct summation would dominate. Other measures stay as raw rates (already on a [0,1] scale). User workflow does not need cross-version comparability — defuses Codex's biggest critique without adding scorecard_version ceremony. See §7.5. |
 | D29 | 2026-05-10 | M5 retired body_link_jaccard (=1.000-by-construction post-#57) is replaced by `body_emit_set_coverage`: per-source `\|((⋃_p (body_wikilink_slugs(p.body) − {p.slug})) ∩ (concept_slugs ∪ article_slugs))\| / \|concept_slugs ∪ article_slugs\|`, micro-aggregated across the run. Computed in `kdb_benchmark/scorer.py` from captured `parsed_json` — no new RespStatsRecord fields (preserves one-way boundary D25). Self-links excluded to reward cross-page integration. Weight stays 5%. See `docs/task59-m5-replacement-design.md` for full design (D29.1–D29.9 sub-decisions). |
 | D30 | 2026-05-10 | M5 weight bumped 5% → 15%; M6 and M7 each bumped 15% → 10%. Total still 100%. Quality core (S0 + M1 + M4 + M5) becomes 70% of FINAL (was 55%); cost+latency become 20% (was 30%). | Post-#59/#60 regression scorecard showed M5=0.111 outlier (qwen-flash-us) couldn't be discriminated at the 5% weight level — model still topped FINAL despite barely integrating concepts via body wikilinks. Reweight reflects the user's "if other models can do it, why can't you?" stance: quality should dominate FINAL more than cost/latency. Cross-generation FINAL comparison invalidated again per D29.9 (same doctrine). See `docs/TASKS.md` → Task #61. |
+| D31 | 2026-05-10 | Outlier penalty added to FINAL composition. For each model and each in-scope measure (S0, M1, M2, M3, M4, M5), units = floor(((norm − value)/norm × 100) / 10) when value < norm; total = Σ units across measures; FINAL_post = max(0, FINAL_pre − 0.05 × total). M6/M7 excluded (Borda-relative). Surfaces single-axis outliers that the weighted sum would average away (e.g. qwen-flash-us with M5=0.111 dethroned). Cross-generation FINAL comparison invalidated again per D29.9 doctrine. See `docs/task62-outlier-penalty-design.md` (D31.1–D31.12 sub-decisions). |
 
 ---
 

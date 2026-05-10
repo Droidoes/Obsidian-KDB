@@ -40,7 +40,8 @@ def _fake_runscore(model_id: str, m6_rate: float, m7_rate: float) -> RunScore:
             "token_overrun_rate":      MeasureScore("token_overrun_rate", 0, 2, 0.0, 0.0),
             "pages_per_1k_source_words": MeasureScore("pages_per_1k_source_words", 2, 2000, 1.0, 0.0),
         },
-        m6_borda=None, m7_borda=None, final_score=None,
+        m6_borda=None, m7_borda=None,
+        final_score_pre_penalty=None, penalty=0.0, final_score=None,
     )
 
 
@@ -160,7 +161,7 @@ class TestCLI:
         assert "[verbose] fake S0 trace for haiku-4.5" in content
         # Cross-run section: Borda + final_score lines from real score_runs
         assert "score_runs: candidate_set=" in content
-        assert "final_score=" in content
+        assert "final_score_pre_penalty=" in content
 
     def test_main_verbose_flag_mirrors_trace_to_stdout(
         self, tmp_path, fake_corpus, fake_prompt, patched_runner_and_scorer, capsys

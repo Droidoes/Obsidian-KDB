@@ -930,6 +930,8 @@ def _rs(model_id: str, m6_rate: Optional[float] = None, m7_rate: Optional[float]
         diagnostics={},
         m6_borda=None,
         m7_borda=None,
+        final_score_pre_penalty=None,
+        penalty=0.0,
         final_score=None,
     )
 
@@ -996,6 +998,183 @@ class TestBordaNormalize:
         result = scorer.borda_normalize(runs, "M6", lower_is_better=False)
         assert result["A"] == 1.0
         assert result["B"] == 0.0
+
+
+# ===========================================================================
+# §8b — Outlier penalty (D31, Task #62)
+# ===========================================================================
+
+
+class TestOutlierPenalty:
+    """Per-model norm-based outlier penalty.
+
+    Formula: for each in-scope measure (S0, M1, M2, M3, M4, M5):
+      norm = mean(rate across runs, excluding None)
+      units = floor(((norm - value) / norm * 100) / 10)   when value < norm
+    Total per run = Σ units × 0.05.
+    """
+
+    def _run_with_rates(self, mid: str, **measure_rates):
+        """Build a RunScore with specified measure rates, all weights set
+        to D30 defaults (S0=0.20, M1=0.20, M2=0.05, M3=0.05, M4=0.15,
+        M5=0.15, M6=0.10, M7=0.10). Defaults to 1.0 for any unspecified
+        measure."""
+        defaults = {"S0": 1.0, "M1": 1.0, "M2": 1.0, "M3": 1.0, "M4": 1.0,
+                    "M5": 1.0, "M6": 1.0, "M7": 1.0}
+        defaults.update(measure_rates)
+        weights = {"S0": 0.20, "M1": 0.20, "M2": 0.05, "M3": 0.05,
+                   "M4": 0.15, "M5": 0.15, "M6": 0.10, "M7": 0.10}
+        return scorer.RunScore(
+            run_id=mid, model_id=mid, provider="x", model="x", n_attempted=1,
+            s0=MeasureScore("S0", 1, 1, defaults["S0"], weights["S0"]),
+            s1=MeasureScore("S1", 1, 1, 1.0, 0.0),
+            s2=MeasureScore("S2", 1, 1, 1.0, 0.0),
+            s3=MeasureScore("S3", 1, 1, 1.0, 0.0),
+            measures={
+                "M1": MeasureScore("M1", 1, 1, defaults["M1"], weights["M1"]),
+                "M2": MeasureScore("M2", 1, 1, defaults["M2"], weights["M2"]),
+                "M3": MeasureScore("M3", 1, 1, defaults["M3"], weights["M3"]),
+                "M4": MeasureScore("M4", 1, 1, defaults["M4"], weights["M4"]),
+                "M5": MeasureScore("M5", 1, 1, defaults["M5"], weights["M5"]),
+                "M6": MeasureScore("M6", 1, 1, defaults["M6"], weights["M6"]),
+                "M7": MeasureScore("M7", 1, 1, defaults["M7"], weights["M7"]),
+            },
+            diagnostics={},
+            m6_borda=None, m7_borda=None,
+            final_score_pre_penalty=None, penalty=0.0, final_score=None,
+        )
+
+    def test_no_outlier_zero_penalty(self):
+        runs = [
+            self._run_with_rates("a", M5=1.0),
+            self._run_with_rates("b", M5=0.95),
+            self._run_with_rates("c", M5=1.0),
+        ]
+        # Norm = (1.0 + 0.95 + 1.0) / 3 ≈ 0.983; b is 3.4% below → 0 units
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties == {"a": 0.0, "b": 0.0, "c": 0.0}
+
+    def test_single_axis_outlier_qwen_pattern(self):
+        # qwen-flash-us-style: M5 = 0.111 vs others ~1.0
+        runs = [
+            self._run_with_rates("qwen", M5=0.111),
+            self._run_with_rates("a", M5=1.0),
+            self._run_with_rates("b", M5=1.0),
+            self._run_with_rates("c", M5=1.0),
+        ]
+        # Norm = (0.111 + 1.0 + 1.0 + 1.0) / 4 = 0.778 (approx)
+        # qwen deviation = (0.778 - 0.111) / 0.778 = 85.7% → 8 units → 0.40
+        # a, b, c all at 1.0 (above norm) → 0 units
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties["qwen"] == pytest.approx(0.40)
+        assert penalties["a"] == 0.0
+        assert penalties["b"] == 0.0
+        assert penalties["c"] == 0.0
+
+    def test_multiple_axes_cumulative(self):
+        # One model far below norm on M3 AND M5 — units accumulate.
+        runs = [
+            self._run_with_rates("bad", M3=0.7, M5=0.5),  # below norm on both
+            self._run_with_rates("a", M3=1.0, M5=1.0),
+            self._run_with_rates("b", M3=1.0, M5=1.0),
+        ]
+        # M3 norm = (0.7 + 1.0 + 1.0) / 3 = 0.9; bad deviation = (0.9-0.7)/0.9 = 22.2% → 2 units
+        # M5 norm = (0.5 + 1.0 + 1.0) / 3 = 0.833; bad deviation = (0.833-0.5)/0.833 = 40.0% → 4 units
+        # Total: 6 units × 0.05 = 0.30
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties["bad"] == pytest.approx(0.30)
+        assert penalties["a"] == 0.0
+        assert penalties["b"] == 0.0
+
+    def test_one_sided_above_norm_no_penalty(self):
+        # A model significantly above norm on a measure: 0 penalty (one-sided).
+        runs = [
+            self._run_with_rates("high", M5=1.0),
+            self._run_with_rates("low", M5=0.6),
+        ]
+        # Norm = 0.8; "high" is 25% ABOVE norm → 0 units (one-sided)
+        # "low" deviation = (0.8 - 0.6)/0.8 = 25% → 2 units = 0.10
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties["high"] == 0.0
+        assert penalties["low"] == pytest.approx(0.10)
+
+    def test_norm_zero_no_penalty(self):
+        # All models score 0 on a measure → norm = 0 → no penalty (D31.8).
+        runs = [
+            self._run_with_rates("a", M5=0.0),
+            self._run_with_rates("b", M5=0.0),
+        ]
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties == {"a": 0.0, "b": 0.0}
+
+    def test_rate_none_excluded_from_norm(self):
+        # A model with M5 rate=None: that (run, measure) excluded from norm
+        # AND gets 0 penalty for that measure (D31.9).
+        none_run = self._run_with_rates("none", M5=1.0)
+        # Manually replace M5 rate with None using replace()
+        none_measures = dict(none_run.measures)
+        none_measures["M5"] = MeasureScore("M5", 0, 0, None, 0.15)
+        from dataclasses import replace as dc_replace
+        none_run = dc_replace(none_run, measures=none_measures)
+        runs = [
+            none_run,
+            self._run_with_rates("low", M5=0.5),
+            self._run_with_rates("high", M5=1.0),
+        ]
+        # M5 norm = mean of (0.5, 1.0) excluding None = 0.75
+        # low deviation = (0.75-0.5)/0.75 = 33.3% → 3 units = 0.15
+        # none: 0 penalty (rate=None)
+        # high: 0 penalty (above norm)
+        penalties = scorer._compute_outlier_penalty(runs)
+        assert penalties["none"] == 0.0
+        assert penalties["low"] == pytest.approx(0.15)
+        assert penalties["high"] == 0.0
+
+    def test_score_runs_integration_post_penalty(self):
+        # Full integration: score_runs() produces RunScores with
+        # final_score_pre_penalty + penalty + final_score (post-penalty)
+        # all populated correctly.
+        runs = [
+            self._run_with_rates("qwen", M5=0.111),
+            self._run_with_rates("good", M5=1.0),
+        ]
+        enriched = scorer.score_runs(runs)
+        qwen = next(r for r in enriched if r.model_id == "qwen")
+        good = next(r for r in enriched if r.model_id == "good")
+        # Both have a non-None pre-penalty FINAL (Borda was computed)
+        assert qwen.final_score_pre_penalty is not None
+        assert good.final_score_pre_penalty is not None
+        # Penalty: qwen has units > 0 on M5; good has 0
+        assert qwen.penalty > 0.0
+        assert good.penalty == 0.0
+        # Post-penalty FINAL = max(0, pre - penalty)
+        assert qwen.final_score == pytest.approx(
+            max(0.0, qwen.final_score_pre_penalty - qwen.penalty)
+        )
+        assert good.final_score == good.final_score_pre_penalty
+
+    def test_floors_final_at_zero(self):
+        # If pre-penalty is small and penalty is large, FINAL clamps to 0.
+        # Build a model where it's severely below norm on many measures
+        # vs an all-1.0 cohort, to ensure the clamp is exercised.
+        # S0=0.1 vs norm≈0.55 → dev 81.8% → 8 units
+        # M1=0.0 vs norm≈0.5 → dev 100% → 10 units
+        # M2=0.0, M3=0.0, M4=0.0, M5=0.0 each vs norm 0.5 → 10 units each
+        # Total = (8+10+10+10+10+10) × 0.05 = 2.90; pre-penalty FINAL ≈ small → clamp at 0
+        runs = [
+            self._run_with_rates(
+                "awful",
+                S0=0.1, M1=0.0, M2=0.0, M3=0.0, M4=0.0, M5=0.0,
+            ),
+            self._run_with_rates("good"),
+        ]
+        enriched = scorer.score_runs(runs)
+        awful = next(r for r in enriched if r.model_id == "awful")
+        assert awful.final_score is not None
+        assert awful.final_score >= 0.0
+        # Verify the clamp actually fired (penalty > pre-penalty would cause negative without clamp)
+        if awful.final_score_pre_penalty is not None:
+            assert awful.final_score == max(0.0, awful.final_score_pre_penalty - awful.penalty)
 
 
 # ===========================================================================
@@ -1095,6 +1274,8 @@ class TestLockedWeights:
             diagnostics={},
             m6_borda=1.0,
             m7_borda=1.0,
+            final_score_pre_penalty=None,
+            penalty=0.0,
             final_score=None,
         )
         # Expected with D30 weights:
@@ -1247,7 +1428,8 @@ class TestScoreRuns:
                 "M7": MeasureScore("M7", 0, 0, None, 0.10),
             },
             diagnostics={},
-            m6_borda=None, m7_borda=None, final_score=None,
+            m6_borda=None, m7_borda=None,
+            final_score_pre_penalty=None, penalty=0.0, final_score=None,
         )
         with pytest.raises(ValueError, match="degenerate"):
             scorer.final_score(run)
