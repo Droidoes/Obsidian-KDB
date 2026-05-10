@@ -923,9 +923,9 @@ def _rs(model_id: str, m6_rate: Optional[float] = None, m7_rate: Optional[float]
             "M2": MeasureScore("M2", 1, 1, 1.0, 0.05),
             "M3": MeasureScore("M3", 1, 1, 1.0, 0.05),
             "M4": MeasureScore("M4", 5, 5, 1.0, 0.15),
-            "M5": MeasureScore("M5", 1, 1, 1.0, 0.05),
-            "M6": MeasureScore("M6", 0.0, 1, m6_rate, 0.15),
-            "M7": MeasureScore("M7", 0,   1, m7_rate, 0.15),
+            "M5": MeasureScore("M5", 1, 1, 1.0, 0.15),
+            "M6": MeasureScore("M6", 0.0, 1, m6_rate, 0.10),
+            "M7": MeasureScore("M7", 0,   1, m7_rate, 0.10),
         },
         diagnostics={},
         m6_borda=None,
@@ -1067,6 +1067,43 @@ class TestLockedWeights:
         }, f"D30 weight drift: {weights}"
         assert sum(weights.values()) == pytest.approx(1.0)
 
+    def test_d30_weights_drive_final_score(self):
+        """Regression guard for post-#61 bug: final_score() previously had
+        a duplicate hardcoded weight table that desynced from the m5/m6/m7
+        constants. After the fix, final_score reads weights from the
+        MeasureScore objects directly. This test would have failed under
+        the bug because the FINAL would have used D27's M5=0.05 even
+        though m5() reports weight=0.15."""
+        # Build a RunScore where rates differ enough that wrong weights produce a wrong FINAL.
+        # All rates = 1.0 except M5 = 0.0; with D30 (M5=0.15) the FINAL should be 1.0 - 0.15 = 0.85;
+        # with D27 (M5=0.05) it would have been 0.95. Strong discriminator.
+        run = scorer.RunScore(
+            run_id="x", model_id="x", provider="x", model="x", n_attempted=1,
+            s0=MeasureScore("S0", 1, 1, 1.0, 0.20),
+            s1=MeasureScore("S1", 1, 1, 1.0, 0.0),
+            s2=MeasureScore("S2", 1, 1, 1.0, 0.0),
+            s3=MeasureScore("S3", 1, 1, 1.0, 0.0),
+            measures={
+                "M1": MeasureScore("M1", 1, 1, 1.0, 0.20),
+                "M2": MeasureScore("M2", 1, 1, 1.0, 0.05),
+                "M3": MeasureScore("M3", 1, 1, 1.0, 0.05),
+                "M4": MeasureScore("M4", 1, 1, 1.0, 0.15),
+                "M5": MeasureScore("M5", 0, 1, 0.0, 0.15),  # M5 = 0.0 to discriminate
+                "M6": MeasureScore("M6", 0, 1, 0.001, 0.10),
+                "M7": MeasureScore("M7", 0, 1, 1.0, 0.10),
+            },
+            diagnostics={},
+            m6_borda=1.0,
+            m7_borda=1.0,
+            final_score=None,
+        )
+        # Expected with D30 weights:
+        #   FINAL = 1.0×0.20 + 1.0×0.20 + 1.0×0.05 + 1.0×0.05 + 1.0×0.15 + 0.0×0.15 + 1.0×0.10 + 1.0×0.10
+        #         = 0.20 + 0.20 + 0.05 + 0.05 + 0.15 + 0.0 + 0.10 + 0.10
+        #         = 0.85
+        assert scorer.final_score(run) == pytest.approx(0.85), \
+            "final_score did not use D30 weights (M5=0.15) — likely the duplicate-weight-table bug returned"
+
 
 # ===========================================================================
 # §9 — score_run integration
@@ -1205,9 +1242,9 @@ class TestScoreRuns:
                 "M2": MeasureScore("M2", 0, 0, None, 0.05),
                 "M3": MeasureScore("M3", 0, 0, None, 0.05),
                 "M4": MeasureScore("M4", 0, 0, None, 0.15),
-                "M5": MeasureScore("M5", 0, 0, None, 0.05),
-                "M6": MeasureScore("M6", 0, 0, None, 0.15),
-                "M7": MeasureScore("M7", 0, 0, None, 0.15),
+                "M5": MeasureScore("M5", 0, 0, None, 0.15),
+                "M6": MeasureScore("M6", 0, 0, None, 0.10),
+                "M7": MeasureScore("M7", 0, 0, None, 0.10),
             },
             diagnostics={},
             m6_borda=None, m7_borda=None, final_score=None,

@@ -865,22 +865,26 @@ def borda_normalize(
     }
 
 
-def final_score(run: RunScore) -> float:
-    """Per § 8: weighted sum with pro-rata redistribution for None components.
+def final_score(run: RunScore) -> Optional[float]:
+    """Weighted sum of S0 + M1..M7 with pro-rata redistribution if any
+    component rate is None. Returns None for fully-degenerate runs.
 
-    Reads M6/M7 from `run.m6_borda` / `run.m7_borda` (post-Borda); reads the
-    other components' rates from `run.s0` / `run.measures`. Raises ValueError
-    if every component is None (degenerate corpus).
+    Reads M6/M7 from `run.m6_borda` / `run.m7_borda` (post-Borda); reads
+    other components' rates from `run.s0` / `run.measures`. Weights are
+    sourced from the MeasureScore objects themselves (single source of
+    truth — eliminates the duplicate-weight-table drift bug fixed
+    post-#61). Raises ValueError if every component is None (degenerate
+    corpus).
     """
     components: list[tuple[str, float, Optional[float]]] = [
-        ("S0", 0.20, run.s0.rate),
-        ("M1", 0.20, run.measures["M1"].rate),
-        ("M2", 0.05, run.measures["M2"].rate),
-        ("M3", 0.05, run.measures["M3"].rate),
-        ("M4", 0.15, run.measures["M4"].rate),
-        ("M5", 0.05, run.measures["M5"].rate),
-        ("M6", 0.15, run.m6_borda),
-        ("M7", 0.15, run.m7_borda),
+        ("S0", run.s0.weight,                run.s0.rate),
+        ("M1", run.measures["M1"].weight,    run.measures["M1"].rate),
+        ("M2", run.measures["M2"].weight,    run.measures["M2"].rate),
+        ("M3", run.measures["M3"].weight,    run.measures["M3"].rate),
+        ("M4", run.measures["M4"].weight,    run.measures["M4"].rate),
+        ("M5", run.measures["M5"].weight,    run.measures["M5"].rate),
+        ("M6", run.measures["M6"].weight,    run.m6_borda),
+        ("M7", run.measures["M7"].weight,    run.m7_borda),
     ]
     score_sum = 0.0
     present_weights = 0.0
