@@ -1,0 +1,16 @@
+Scorecard: candidate_set=['qwen3.5-flash']   emitted_at=2026-05-10T12:01:50-04:00
+Config:    alibaba/qwen3.5-flash   ctx=1000000   --max-tokens=32768   prices=$0.029/$0.287/1M-tok   sources=benchmark/sources (5 files, 28607 source_words)
+Timing:    compile=4m 31s   score=0.0s   total=4m 31s
+====================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b   FINAL  RAN_AT                          
+----------------------------------------------------------------------------------------------------
+   1  qwen3.5-flash   0.800 1.000 1.000 1.000 0.800 0.941 1.000 1.000   0.927  qwen3.5-flash-2026-05-10T11-57-42_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  qwen3.5-flash   M6=$0.0004/1K-words  M7=9483ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  qwen3.5-flash   0.0000                        0.0000                        1.3283                      
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.

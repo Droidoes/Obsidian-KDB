@@ -1,0 +1,16 @@
+Scorecard: candidate_set=['haiku-4.5']   emitted_at=2026-05-10T11:56:38-04:00
+Config:    anthropic/claude-haiku-4-5-20251001   ctx=200000   --max-tokens=32768   prices=$1.0/$5.0/1M-tok   sources=benchmark/sources (5 files, 28607 source_words)
+Timing:    compile=3m 56s   score=0.0s   total=3m 56s
+====================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b   FINAL  RAN_AT                          
+----------------------------------------------------------------------------------------------------
+   1  haiku-4.5       0.800 0.993 0.975 1.000 0.800 0.935 1.000 1.000   0.924  haiku-4.5-2026-05-10T11-53-03_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  haiku-4.5       M6=$0.0078/1K-words  M7=8248ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  haiku-4.5       0.0000                        0.0000                        1.7828                      
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.

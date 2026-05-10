@@ -1,0 +1,141 @@
+{
+  "scorecard_id": "2026-05-10T11-56-38-04-00-haiku-4.5",
+  "candidate_set": [
+    "haiku-4.5"
+  ],
+  "emitted_at": "2026-05-10T11:56:38-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "haiku-4.5-2026-05-10T11-53-03_EDT",
+      "model_id": "haiku-4.5",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 143,
+          "denominator": 144,
+          "rate": 0.9930555555555556,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 39,
+          "denominator": 40,
+          "rate": 0.975,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 7,
+          "denominator": 7,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 43,
+          "denominator": 46,
+          "rate": 0.9347826086956522,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.224129,
+          "denominator": 28607,
+          "rate": 0.00783476072289999,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 235940,
+          "denominator": 28607,
+          "rate": 8247.631698535324,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 51,
+          "denominator": 28607,
+          "rate": 1.782780438354249,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.9241002415458939,
+      "ran_at": "haiku-4.5-2026-05-10T11-53-03_EDT"
+    }
+  ],
+  "dropped_models": [],
+  "run_config": {
+    "max_tokens": 32768,
+    "sources_dir": "benchmark/sources",
+    "n_sources": 5,
+    "n_source_words": 28607,
+    "system_prompt_path": "/home/ftu/Obsidian/KDB/KDB-Compiler-System-Prompt.md",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "ctx_window": 200000,
+    "price_in": 1.0,
+    "price_out": 5.0
+  },
+  "run_timing": {
+    "compile_seconds": 236.01,
+    "score_seconds": 0.0,
+    "total_seconds": 236.02
+  }
+}

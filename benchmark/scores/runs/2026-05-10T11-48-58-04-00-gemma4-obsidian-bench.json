@@ -1,0 +1,141 @@
+{
+  "scorecard_id": "2026-05-10T11-48-58-04-00-gemma4-obsidian-bench",
+  "candidate_set": [
+    "gemma4-obsidian-bench"
+  ],
+  "emitted_at": "2026-05-10T11:48:58-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "gemma4-obsidian-bench-2026-05-10T11-45-08_EDT",
+      "model_id": "gemma4-obsidian-bench",
+      "provider": "ollama-local",
+      "model": "gemma4-obsidian-bench",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 3,
+        "denominator": 5,
+        "rate": 0.6,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 3,
+        "denominator": 4,
+        "rate": 0.75,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 29,
+          "denominator": 64,
+          "rate": 0.453125,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 32,
+          "denominator": 32,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 3,
+          "denominator": 3,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 3,
+          "denominator": 5,
+          "rate": 0.6,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 28,
+          "denominator": 35,
+          "rate": 0.8,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 253158,
+          "denominator": 28607,
+          "rate": 8849.512357115393,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 39,
+          "denominator": 28607,
+          "rate": 1.3633026881532493,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.7406250000000001,
+      "ran_at": "gemma4-obsidian-bench-2026-05-10T11-45-08_EDT"
+    }
+  ],
+  "dropped_models": [],
+  "run_config": {
+    "max_tokens": 32768,
+    "sources_dir": "benchmark/sources",
+    "n_sources": 5,
+    "n_source_words": 28607,
+    "system_prompt_path": "/home/ftu/Obsidian/KDB/KDB-Compiler-System-Prompt.md",
+    "provider": "ollama-local",
+    "model": "gemma4-obsidian-bench",
+    "ctx_window": 65536,
+    "price_in": 0.0,
+    "price_out": 0.0
+  },
+  "run_timing": {
+    "compile_seconds": 253.23,
+    "score_seconds": 0.0,
+    "total_seconds": 253.24
+  }
+}
