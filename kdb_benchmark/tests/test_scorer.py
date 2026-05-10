@@ -662,29 +662,111 @@ class TestComputeBodyEmitSetCoverage:
             assert isinstance(num, int) and isinstance(denom, int)
 
 
-# ===========================================================================
-# §6 — M5 body_link_syntax_match (weight 5%)
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# §6 — M5 body_emit_set_coverage (weight 5%)
+# ---------------------------------------------------------------------------
+
 
 class TestM5:
-    def test_m5_aggregates_body_link_counts_to_jaccard(self):
+    """M5 reads parsed_json from each parse-pass record (per §10.1: matches
+    M2/M3 _is_parse_pass gate; schema_ok not required) and aggregates
+    Σnum / Σdenom across sources."""
+
+    def _record_with_parsed(self, source_id: str, parsed_json: dict, parse_ok: bool = True):
+        """Build a fake record with parsed_json. Schema_ok left True;
+        parse-pass gate is what matters per §10.1."""
+        return fake_record(
+            source_id=source_id,
+            parse_ok=parse_ok,
+            schema_ok=True,
+            parsed_json=parsed_json,
+        )
+
+    def test_m5_aggregates_coverage_across_sources(self):
+        # Source 1: 3 of 4 declared concepts integrated → (3, 4)
+        # Source 2: 1 of 2 declared concepts integrated → (1, 2)
+        # Aggregate: (4, 6) → 0.6667
         records = [
-            fake_record(source_id="s1", body_link_intersection=2, body_link_union=4),
-            fake_record(source_id="s2", body_link_intersection=1, body_link_union=2),
+            self._record_with_parsed("s1", {
+                "concept_slugs": ["a", "b", "c", "d"],
+                "article_slugs": [],
+                "pages": [
+                    {"slug": "summary-1", "page_type": "summary", "body": "[[a]] [[b]] [[c]]"},
+                ],
+            }),
+            self._record_with_parsed("s2", {
+                "concept_slugs": ["x", "y"],
+                "article_slugs": [],
+                "pages": [
+                    {"slug": "summary-2", "page_type": "summary", "body": "[[x]]"},
+                ],
+            }),
         ]
         score = scorer.m5(records)
         assert score.name == "M5"
-        assert score.numerator == 3
-        assert score.denominator == 6
-        assert score.rate == 0.5
+        assert (score.numerator, score.denominator) == (4, 6)
+        assert abs(score.rate - (4 / 6)) < 1e-9
         assert score.weight == 0.05
 
     def test_m5_zero_denom_scores_zero(self):
-        """Round 4 MF6: model emits no declared/body wikilinks → M5 = 0.0."""
-        records = [fake_record(source_id="s1", body_link_intersection=0, body_link_union=0)]
+        """MF6: model emits empty emit-set → denominator 0 → rate = 0.0
+        (model-controlled penalty)."""
+        records = [
+            self._record_with_parsed("s1", {
+                "concept_slugs": [],
+                "article_slugs": [],
+                "pages": [{"slug": "summary-1", "page_type": "summary", "body": ""}],
+            }),
+        ]
         score = scorer.m5(records)
+        assert score.numerator == 0
         assert score.denominator == 0
         assert score.rate == 0.0
+
+    def test_m5_skips_parse_fail_records(self):
+        """§10.1: only parse-pass records contribute (matches _is_parse_pass)."""
+        records = [
+            self._record_with_parsed("s1", {
+                "concept_slugs": ["a"],
+                "article_slugs": [],
+                "pages": [{"slug": "summary-1", "page_type": "summary", "body": "[[a]]"}],
+            }),
+            # Parse-fail record: contributes nothing, regardless of parsed_json.
+            fake_record(source_id="s2", parse_ok=False, schema_ok=False, parsed_json={
+                "concept_slugs": ["spurious"],
+                "article_slugs": [],
+                "pages": [],
+            }),
+        ]
+        score = scorer.m5(records)
+        # Only s1's (1, 1) contributes.
+        assert (score.numerator, score.denominator) == (1, 1)
+
+    def test_m5_includes_parse_pass_schema_fail_records(self):
+        """§10.1: schema_ok NOT required. A parse-pass / schema-fail record
+        is still scored (matches M2/M3 behavior at scorer.py:256)."""
+        records = [
+            self._record_with_parsed("s1", {
+                "concept_slugs": ["a"],
+                "article_slugs": [],
+                "pages": [{"slug": "summary-1", "page_type": "summary", "body": "[[a]]"}],
+            }, parse_ok=True),
+        ]
+        # Override schema_ok to False on the second record.
+        bad_schema = fake_record(
+            source_id="s2",
+            parse_ok=True,
+            schema_ok=False,
+            parsed_json={
+                "concept_slugs": ["b"],
+                "article_slugs": [],
+                "pages": [{"slug": "summary-2", "page_type": "summary", "body": "[[b]]"}],
+            },
+        )
+        records.append(bad_schema)
+        score = scorer.m5(records)
+        # Both contribute: (1+1, 1+1) = (2, 2).
+        assert (score.numerator, score.denominator) == (2, 2)
 
 
 # ===========================================================================
@@ -1093,52 +1175,44 @@ class TestScoreRuns:
             scorer.final_score(run)
 
 
-# ===========================================================================
-# §9b — verbose trace M5 per-page asymmetry block (Task #39)
-# ===========================================================================
-
-def _record_with_pages(
-    *,
-    source_id: str,
-    pages: list[dict],
-    body_link_intersection: int,
-    body_link_union: int,
-):
-    """Build a record whose parsed_json carries the supplied pages and whose
-    persisted body_link_* counters can be set independently — so a test can
-    drive M5 rate < 1.0 from the aggregate while controlling per-page detail."""
-    return fake_record(
-        source_id=source_id,
-        provider="anthropic",
-        model="claude-haiku-4-5-20251001",
-        run_id="haiku-test",
-        pages=pages,
-        body_link_intersection=body_link_intersection,
-        body_link_union=body_link_union,
-    )
+# ---------------------------------------------------------------------------
+# §9b — verbose trace M5 coverage detail (Task #59)
+# ---------------------------------------------------------------------------
 
 
-class TestVerboseTraceM5Asymmetry:
-    def _aligned_page(self):
-        return {
-            "slug": "summary-foo", "page_type": "summary", "title": "Foo",
-            "body": "[[a]] and [[b]]", "outgoing_links": ["a", "b"],
-            "supports_page_existence": ["s1"], "status": "active", "confidence": "high",
-        }
+class TestVerboseTraceM5Coverage:
+    """Per-source coverage detail under the M5 line (replaces the retired
+    per-page asymmetry block). When M5 < 1.0, the trace lists which sources
+    had un-integrated declared slugs and which slugs are missing from bodies.
+    Tests use the canonical score_run(tmp_path, ..., trace_sink=...) entry
+    point with records written to disk via _write_records()."""
 
-    def _asymmetric_page(self):
-        # Mirrors the haiku 2026-05-08 slip: declared 3, body 2 → declared-only=[c]
-        return {
-            "slug": "summary-foo", "page_type": "summary", "title": "Foo",
-            "body": "[[a]] and [[b]]", "outgoing_links": ["a", "b", "c"],
-            "supports_page_existence": ["s1"], "status": "active", "confidence": "high",
-        }
+    def _record_with_parsed(
+        self,
+        source_id: str,
+        *,
+        concept_slugs: list[str],
+        article_slugs: list[str],
+        pages: list[dict],
+    ) -> dict:
+        return fake_record(
+            source_id=source_id,
+            parse_ok=True,
+            schema_ok=True,
+            parsed_json={
+                "concept_slugs": concept_slugs,
+                "article_slugs": article_slugs,
+                "pages": pages,
+            },
+        )
 
     def test_trace_omits_m5_block_when_perfect(self, tmp_path):
-        """M5 = 1.0 (rate exactly 1) → no per-page asymmetry block in trace."""
-        rec = _record_with_pages(
-            source_id="s1", pages=[self._aligned_page()],
-            body_link_intersection=2, body_link_union=2,
+        """M5 = 1.0 → no per-source coverage block in the trace."""
+        rec = self._record_with_parsed(
+            "s1",
+            concept_slugs=["a"],
+            article_slugs=[],
+            pages=[{"slug": "summary-1", "page_type": "summary", "body": "[[a]]"}],
         )
         _write_records(tmp_path, "haiku-test", [rec])
         sink: list[str] = []
@@ -1147,36 +1221,64 @@ class TestVerboseTraceM5Asymmetry:
         )
         assert run.measures["M5"].rate == 1.0
         joined = "\n".join(sink)
-        assert "per-page M5 asymmetry" not in joined
+        assert "per-source M5 coverage" not in joined
 
-    def test_trace_emits_m5_block_when_asymmetric(self, tmp_path):
-        """M5 < 1.0 → block present, names the offending page + slug."""
-        rec = _record_with_pages(
-            source_id="s1", pages=[self._asymmetric_page()],
-            body_link_intersection=2, body_link_union=3,
+    def test_trace_emits_m5_block_when_partial_coverage(self, tmp_path):
+        """M5 < 1.0 → block names each below-100%-coverage source with its
+        missing (declared but un-integrated) slugs in sorted order."""
+        rec = self._record_with_parsed(
+            "src-foo",
+            concept_slugs=["alpha", "beta", "gamma"],
+            article_slugs=[],
+            pages=[{"slug": "summary-1", "page_type": "summary", "body": "[[alpha]]"}],
         )
         _write_records(tmp_path, "haiku-test", [rec])
         sink: list[str] = []
         run = scorer.score_run(
             tmp_path, "haiku-test", "haiku-4.5", trace_sink=sink,
         )
-        assert run.measures["M5"].rate == pytest.approx(2 / 3)
+        assert run.measures["M5"].rate == pytest.approx(1 / 3)
         joined = "\n".join(sink)
-        assert "per-page M5 asymmetry:" in joined
-        assert "s1 → page summary-foo" in joined
-        assert "declared-only" in joined and "['c']" in joined
-        assert "body-only" in joined and "[]" in joined
+        assert "per-source M5 coverage:" in joined
+        assert "src-foo" in joined
+        # Missing slugs sorted: beta, gamma.
+        assert "['beta', 'gamma']" in joined
 
-    def test_trace_omits_m5_block_when_no_link_activity(self, tmp_path):
-        """When the union is 0 (no link activity), M5 rate is 0.0 per
-        Round 4 MF6. The trigger (rate<1.0) fires, but the helper finds
-        nothing — so no header and no entries land in the sink."""
-        rec = _record_with_pages(
-            source_id="s1", pages=[self._aligned_page()],
-            body_link_intersection=0, body_link_union=0,
+    def test_trace_reflects_self_link_exclusion(self, tmp_path):
+        """A page linking to its own slug doesn't count; trace lists that
+        slug as missing."""
+        rec = self._record_with_parsed(
+            "src-bar",
+            concept_slugs=["alpha", "beta"],
+            article_slugs=[],
+            pages=[
+                {"slug": "alpha", "page_type": "concept", "body": "I am [[alpha]]"},
+                {"slug": "summary-1", "page_type": "summary", "body": "[[beta]]"},
+            ],
         )
-        rec["parsed_json"]["pages"][0]["outgoing_links"] = []
-        rec["parsed_json"]["pages"][0]["body"] = "no links."
+        _write_records(tmp_path, "haiku-test", [rec])
+        sink: list[str] = []
+        run = scorer.score_run(
+            tmp_path, "haiku-test", "haiku-4.5", trace_sink=sink,
+        )
+        # Self-link excluded: only beta integrated → 1/2.
+        assert run.measures["M5"].numerator == 1
+        assert run.measures["M5"].denominator == 2
+        joined = "\n".join(sink)
+        assert "per-source M5 coverage:" in joined
+        assert "src-bar" in joined
+        # alpha is missing because its only reference was a self-link.
+        assert "['alpha']" in joined
+
+    def test_trace_omits_block_when_zero_denom(self, tmp_path):
+        """Empty emit-set → rate=0.0 (MF6) but every source has d=0; the
+        helper finds nothing to report → no header, no body."""
+        rec = self._record_with_parsed(
+            "s1",
+            concept_slugs=[],
+            article_slugs=[],
+            pages=[{"slug": "summary-1", "page_type": "summary", "body": "no links"}],
+        )
         _write_records(tmp_path, "haiku-test", [rec])
         sink: list[str] = []
         run = scorer.score_run(
@@ -1184,6 +1286,6 @@ class TestVerboseTraceM5Asymmetry:
         )
         assert run.measures["M5"].rate == 0.0
         joined = "\n".join(sink)
-        assert "per-page M5 asymmetry" not in joined
+        assert "per-source M5 coverage" not in joined
 
 

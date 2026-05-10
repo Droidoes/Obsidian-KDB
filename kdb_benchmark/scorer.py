@@ -29,9 +29,7 @@ from kdb_compiler.validate_compile_result import (
     check_compiled_source,
     check_compiled_source_findings,
 )
-from kdb_compiler.validate_compiled_source_response import (
-    body_link_per_page_asymmetry,
-)
+from kdb_compiler.validate_compiled_source_response import body_wikilink_slugs
 
 
 # ---------------------------------------------------------------------------
@@ -325,8 +323,6 @@ def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
       * non-string page slug → no self-link subtraction for that page
       * any malformed nested value → silently absorbed
     """
-    from kdb_compiler.validate_compiled_source_response import body_wikilink_slugs
-
     def _slugs(field) -> set[str]:
         if not isinstance(field, list):
             return set()
@@ -369,16 +365,32 @@ def m4(records: list[dict]) -> MeasureScore:
 
 
 def m5(records: list[dict]) -> MeasureScore:
-    """M5 — body_link_syntax_match Jaccard (weight 5%, Output Integrity).
+    """M5 — body_emit_set_coverage (weight 5%, Output Integrity).
 
-    Per § 6: Σ body_link_intersection / Σ body_link_union. Both fields
-    always-on per Task #28; default 0 on parse failure → failed sources
-    contribute (0, 0). Round 4 MF6: zero-denom → 0.0 (model-controlled).
+    Per §7.3 + Task #59 design: per-source coverage of declared
+    `concept_slugs ∪ article_slugs` by body wikilinks across other pages
+    (self-links excluded). Micro-aggregated:
+
+      Σ |⋃_p (body_wikilink_slugs(p.body) − {p.slug})| ∩ declared_emit_set
+      ────────────────────────────────────────────────────────────────────
+      Σ |declared_emit_set|
+
+    over parse-pass records (matches M2/M3 `_is_parse_pass` gate; §10.1).
+    Round 4 MF6: zero-denom → 0.0 (model-controlled penalty).
     """
-    num = sum(int(r.get("body_link_intersection", 0)) for r in records)
-    denom = sum(int(r.get("body_link_union", 0)) for r in records)
-    rate = (num / denom) if denom else 0.0
-    return MeasureScore(name="M5", numerator=num, denominator=denom, rate=rate, weight=0.05)
+    num_total = 0
+    denom_total = 0
+    for r in records:
+        if not _is_parse_pass(r):
+            continue
+        pj = r.get("parsed_json")
+        if not isinstance(pj, dict):
+            continue
+        n, d = _compute_body_emit_set_coverage(pj)
+        num_total += n
+        denom_total += d
+    rate = (num_total / denom_total) if denom_total else 0.0
+    return MeasureScore(name="M5", numerator=num_total, denominator=denom_total, rate=rate, weight=0.05)
 
 
 def m6(records: list[dict], *, price_in: float, price_out: float) -> MeasureScore:
@@ -578,7 +590,7 @@ _MEASURE_LABELS: dict[str, str] = {
     "M2": "concept_slugs_jaccard",
     "M3": "article_slugs_jaccard",
     "M4": "semantic_pass_rate",
-    "M5": "body_link_jaccard",
+    "M5": "body_emit_set_coverage",
     "M6": "cost_per_1k_source_words",
     "M7": "latency_per_1k_source_words",
 }
@@ -639,29 +651,55 @@ def _s0_per_source_lines(records: list[dict]) -> list[str]:
     return lines
 
 
-def _m5_per_page_asymmetry_lines(records: list[dict]) -> list[str]:
-    """Per-page asymmetry detail under the M5 line, emitted only when M5
-    rate < 1.0 (Task #39). Iterates records, calls validator helper on
-    each parsed_json, renders one block per asymmetric page. Returns
-    empty list (caller emits nothing — not even a header) when no
-    asymmetric pages are found."""
+def _m5_per_source_coverage_lines(records: list[dict]) -> list[str]:
+    """Per-source coverage detail under the M5 line, emitted only when M5
+    rate < 1.0 (Task #59, replaces the retired per-page asymmetry helper).
+
+    For each parse-pass record with denom > 0 and num < denom, list the
+    source_id, the integrated count vs declared count, and the sorted set
+    of declared emit-set slugs that did NOT appear as body wikilinks in
+    any other page. Self-links are already excluded inside
+    _compute_body_emit_set_coverage. Returns empty list (caller emits
+    nothing — not even a header) when no source falls below 100%.
+    """
     body: list[str] = []
     for r in records:
+        if not _is_parse_pass(r):
+            continue
         parsed = r.get("parsed_json")
         if not isinstance(parsed, dict):
             continue
+        n, d = _compute_body_emit_set_coverage(parsed)
+        if d == 0 or n == d:
+            continue
+
+        def _slugs(field) -> set[str]:
+            if not isinstance(field, list):
+                return set()
+            return {s for s in field if isinstance(s, str)}
+
+        declared = _slugs(parsed.get("concept_slugs")) | _slugs(parsed.get("article_slugs"))
+        body_emit_links: set[str] = set()
+        pages = parsed.get("pages")
+        if isinstance(pages, list):
+            for p in pages:
+                if not isinstance(p, dict):
+                    continue
+                page_body = p.get("body")
+                if not isinstance(page_body, str):
+                    continue
+                page_links = body_wikilink_slugs(page_body)
+                page_slug = p.get("slug")
+                if isinstance(page_slug, str):
+                    page_links = page_links - {page_slug}
+                body_emit_links |= page_links
+        missing = sorted(declared - body_emit_links)
         sid = r.get("source_id", "<unknown>")
-        for entry in body_link_per_page_asymmetry(parsed):
-            body.append(f"[verbose]     {sid} → page {entry['page_slug']}")
-            body.append(
-                f"[verbose]       declared-only (in outgoing_links, missing from body): {entry['declared_only']}"
-            )
-            body.append(
-                f"[verbose]       body-only (in body, missing from outgoing_links): {entry['body_only']}"
-            )
+        body.append(f"[verbose]     {sid}: {n}/{d} integrated, missing: {missing}")
+
     if not body:
         return []
-    return ["[verbose]   per-page M5 asymmetry:"] + body
+    return ["[verbose]   per-source M5 coverage:"] + body
 
 
 def _emit_verbose_trace(records: list[dict], rs: RunScore, sink: list[str]) -> None:
@@ -691,7 +729,7 @@ def _emit_verbose_trace(records: list[dict], rs: RunScore, sink: list[str]) -> N
             }
             sink.append(f"[verbose]   └─ target_set: {len(target)} unique slugs")
         elif key == "M5" and ms.rate is not None and ms.rate < 1.0:
-            sink.extend(_m5_per_page_asymmetry_lines(records))
+            sink.extend(_m5_per_source_coverage_lines(records))
         elif key == "M6":
             sink.append(
                 f"[verbose]   └─ ${ms.numerator:.4f} cost / {ms.denominator} source-words"
