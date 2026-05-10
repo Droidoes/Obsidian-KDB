@@ -379,7 +379,7 @@ def m4(records: list[dict]) -> MeasureScore:
 
 
 def m5(records: list[dict]) -> MeasureScore:
-    """M5 — body_emit_set_coverage (weight 5%, Output Integrity).
+    """M5 — body_emit_set_coverage (weight 15%, Output Integrity).
 
     Per §7.3 + Task #59 design: per-source coverage of declared
     `concept_slugs ∪ article_slugs` by body wikilinks across other pages
@@ -404,11 +404,11 @@ def m5(records: list[dict]) -> MeasureScore:
         num_total += n
         denom_total += d
     rate = (num_total / denom_total) if denom_total else 0.0
-    return MeasureScore(name="M5", numerator=num_total, denominator=denom_total, rate=rate, weight=0.05)
+    return MeasureScore(name="M5", numerator=num_total, denominator=denom_total, rate=rate, weight=0.15)
 
 
 def m6(records: list[dict], *, price_in: float, price_out: float) -> MeasureScore:
-    """M6 — cost_per_1k_source_words (weight 15%, Production Cost; raw $).
+    """M6 — cost_per_1k_source_words (weight 10%, Production Cost; raw $).
 
     Per § 6: cost_usd_i = (input_tokens × price_in + output_tokens × price_out) / 1_000_000.
     Aggregated over records with source_words > 0 (Round 4 MF1: parse-fail
@@ -428,11 +428,11 @@ def m6(records: list[dict], *, price_in: float, price_out: float) -> MeasureScor
         num   += cost
         denom += sw
     rate = (num / denom) * 1000 if denom else None
-    return MeasureScore(name="M6", numerator=num, denominator=denom, rate=rate, weight=0.15)
+    return MeasureScore(name="M6", numerator=num, denominator=denom, rate=rate, weight=0.10)
 
 
 def m7(records: list[dict]) -> MeasureScore:
-    """M7 — latency_per_1k_source_words (weight 15%, Production Cost; raw ms).
+    """M7 — latency_per_1k_source_words (weight 10%, Production Cost; raw ms).
 
     rate = (Σ latency_ms / Σ source_words) × 1000 over records where
     source_words > 0. Round 4 MF6: zero-denom → None (corpus-controlled).
@@ -446,7 +446,7 @@ def m7(records: list[dict]) -> MeasureScore:
         num   += int(r.get("latency_ms", 0))
         denom += sw
     rate = (num / denom) * 1000 if denom else None
-    return MeasureScore(name="M7", numerator=num, denominator=denom, rate=rate, weight=0.15)
+    return MeasureScore(name="M7", numerator=num, denominator=denom, rate=rate, weight=0.10)
 
 
 def retry_load(records: list[dict]) -> MeasureScore:

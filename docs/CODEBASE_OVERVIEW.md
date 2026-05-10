@@ -171,17 +171,18 @@ The scorer reads dict-shaped `RespStatsRecord` JSONs the compiler writes during 
 
 **Diagnostic-only telemetry (no weight, tracked for inspection):** `retry_load`, `token_overrun_rate`, `pages_per_1k_source_words`.
 
-### 7.4 Locked weights (D27, Round 3)
+### 7.4 Locked weights (D30, supersedes D27 for M5/M6/M7)
 
 | Bucket | Weight | Members |
 |---|---|---|
 | Pipeline gate | **20%** | S0 |
-| Quality core | **30%** | M1 (20%) + M5 (5%) + M4 (15% — split between Quality and Output Integrity but lives in Quality core for total) |
+| Quality core | **50%** | M1 (20%) + M4 (15%) + M5 (15%) |
 | Slug-page pairing | **10%** | M2 (5%) + M3 (5%) |
-| Output integrity | (folded into Quality core via M4 + M5) | — |
-| Cost | **15%** | M6 |
-| Latency | **15%** | M7 |
-| **Total** | **100%** | (S0 20 + M1 20 + M2 5 + M3 5 + M4 15 + M5 5 + M6 15 + M7 15) |
+| Cost | **10%** | M6 |
+| Latency | **10%** | M7 |
+| **Total** | **100%** | (S0 20 + M1 20 + M2 5 + M3 5 + M4 15 + M5 15 + M6 10 + M7 10) |
+
+D30 (2026-05-10) supersedes D27's M5/M6/M7 weights. M5 was 5% under D27 when it measured body_link_jaccard (tautological-by-construction post-#57 reconciler); after Task #59 swapped M5 to body_emit_set_coverage (a real body-content measure), the 5% weight was too low — qwen-flash-us topped the post-#60 regression scorecard despite M5=0.111. M5 now equals M4 in weight; M6/M7 each lose 5% to fund the bump. Quality core grows 30% → 50% of FINAL.
 
 Source-words denominator on M6/M7 (vs. per-page or per-token): closes the page-spam exploit Codex review surfaced; corpus-controlled, model-independent, tokenizer-independent.
 
@@ -261,6 +262,7 @@ For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorit
 | D27 | 2026-05-04 | Locked benchmark weights: S0=20, M1=20, M2=5, M3=5, M4=15, M5=5, M6=15, M7=15 (sums to 100). Source-words denominator on M6/M7. | Round 3 closure after Codex hostile review surfaced page-spam exploit on per-page denominators. Per-1K-source-words is corpus-controlled, model-independent, tokenizer-independent — least-bad denominator without ground truth. See §7.3 / §7.4. |
 | D28 | 2026-05-04 | Average-rank Borda for cross-model normalization on M6/M7 only; `final_score` comparable only within the same candidate set (rank-latest-pick-best workflow). | Cost/latency raw magnitudes differ 3× or more across models; direct summation would dominate. Other measures stay as raw rates (already on a [0,1] scale). User workflow does not need cross-version comparability — defuses Codex's biggest critique without adding scorecard_version ceremony. See §7.5. |
 | D29 | 2026-05-10 | M5 retired body_link_jaccard (=1.000-by-construction post-#57) is replaced by `body_emit_set_coverage`: per-source `\|((⋃_p (body_wikilink_slugs(p.body) − {p.slug})) ∩ (concept_slugs ∪ article_slugs))\| / \|concept_slugs ∪ article_slugs\|`, micro-aggregated across the run. Computed in `kdb_benchmark/scorer.py` from captured `parsed_json` — no new RespStatsRecord fields (preserves one-way boundary D25). Self-links excluded to reward cross-page integration. Weight stays 5%. See `docs/task59-m5-replacement-design.md` for full design (D29.1–D29.9 sub-decisions). |
+| D30 | 2026-05-10 | M5 weight bumped 5% → 15%; M6 and M7 each bumped 15% → 10%. Total still 100%. Quality core (S0 + M1 + M4 + M5) becomes 70% of FINAL (was 55%); cost+latency become 20% (was 30%). | Post-#59/#60 regression scorecard showed M5=0.111 outlier (qwen-flash-us) couldn't be discriminated at the 5% weight level — model still topped FINAL despite barely integrating concepts via body wikilinks. Reweight reflects the user's "if other models can do it, why can't you?" stance: quality should dominate FINAL more than cost/latency. Cross-generation FINAL comparison invalidated again per D29.9 (same doctrine). See `docs/TASKS.md` → Task #61. |
 
 ---
 

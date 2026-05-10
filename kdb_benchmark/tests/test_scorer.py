@@ -659,7 +659,7 @@ class TestComputeBodyEmitSetCoverage:
 
 
 # ---------------------------------------------------------------------------
-# §6 — M5 body_emit_set_coverage (weight 5%)
+# §6 — M5 body_emit_set_coverage (weight 15%)
 # ---------------------------------------------------------------------------
 
 
@@ -702,7 +702,7 @@ class TestM5:
         assert score.name == "M5"
         assert (score.numerator, score.denominator) == (4, 6)
         assert abs(score.rate - (4 / 6)) < 1e-9
-        assert score.weight == 0.05
+        assert score.weight == 0.15
 
     def test_m5_zero_denom_scores_zero(self):
         """MF6: model emits empty emit-set → denominator 0 → rate = 0.0
@@ -766,7 +766,7 @@ class TestM5:
 
 
 # ===========================================================================
-# §6 — M6 cost_per_1k_source_words (weight 15%, raw $ rate, lower-is-better)
+# §6 — M6 cost_per_1k_source_words (weight 10%, raw $ rate, lower-is-better)
 # ===========================================================================
 
 class TestM6:
@@ -783,7 +783,7 @@ class TestM6:
         assert score.name == "M6"
         assert score.denominator == 1000
         assert score.rate == pytest.approx(0.002)
-        assert score.weight == 0.15
+        assert score.weight == 0.10
 
     def test_m6_includes_parse_failed_when_source_words_positive(self):
         """Round 4 MF1: failed calls bill cost; gate is source_words > 0,
@@ -824,7 +824,7 @@ class TestM6:
 
 
 # ===========================================================================
-# §6 — M7 latency_per_1k_source_words (weight 15%)
+# §6 — M7 latency_per_1k_source_words (weight 10%)
 # ===========================================================================
 
 class TestM7:
@@ -837,7 +837,7 @@ class TestM7:
         assert score.name == "M7"
         # (Σ 5000 / Σ 2000) × 1000 = 2500 ms / 1K source-words
         assert score.rate == 2500.0
-        assert score.weight == 0.15
+        assert score.weight == 0.10
 
     def test_m7_zero_denom_returns_none(self):
         records = [fake_record(source_id="empty", source_words=0)]
@@ -1022,6 +1022,51 @@ class TestFinalScore:
         )
         final = scorer.final_score(run)
         assert final == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# §8a — Locked weights assertion (D30, Task #61)
+# ---------------------------------------------------------------------------
+
+
+class TestLockedWeights:
+    """Per D30 (2026-05-10): the FINAL-score weights are locked. Any
+    accidental edit to a weight constant would change FINAL scores
+    silently. This test asserts the canonical D30 weights and that they
+    sum to 1.0."""
+
+    def test_d30_weights_locked(self):
+        # Use minimal records to instantiate each measure and read its weight.
+        # parse-pass + schema-pass record so all measures compute.
+        records = [fake_record(source_id="s1", parsed_json={
+            "concept_slugs": [],
+            "article_slugs": [],
+            "pages": [],
+        })]
+
+        weights = {
+            "S0": scorer.s0(records).weight,
+            "M1": scorer.m1(records).weight,
+            "M2": scorer.m2(records).weight,
+            "M3": scorer.m3(records).weight,
+            "M4": scorer.m4(records).weight,
+            "M5": scorer.m5(records).weight,
+            "M6": scorer.m6(records, price_in=0.0, price_out=0.0).weight,
+            "M7": scorer.m7(records).weight,
+        }
+
+        assert weights == {
+            "S0": 0.20,
+            "M1": 0.20,
+            "M2": 0.05,
+            "M3": 0.05,
+            "M4": 0.15,
+            "M5": 0.15,
+            "M6": 0.10,
+            "M7": 0.10,
+        }, f"D30 weight drift: {weights}"
+        assert sum(weights.values()) == pytest.approx(1.0)
+
 
 # ===========================================================================
 # §9 — score_run integration
