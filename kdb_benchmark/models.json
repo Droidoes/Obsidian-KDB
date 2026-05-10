@@ -93,5 +93,14 @@
     "max_output_tokens": 393216,
     "price_in": 0.14,
     "price_out": 0.28
+  },
+  {
+    "id": "gemini-3.1-flash-lite",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite",
+    "ctx_window": 1048576,
+    "max_output_tokens": 65536,
+    "price_in": 0.25,
+    "price_out": 1.50
   }
 ]
