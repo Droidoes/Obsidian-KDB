@@ -1,0 +1,1278 @@
+{
+  "scorecard_id": "2026-05-10T13-55-02-04-00",
+  "candidate_set": [
+    "deepseek-v4-flash",
+    "gemini-3.1-flash-lite",
+    "gemma4-obsidian-bench",
+    "gpt-5.4-mini",
+    "grok-4-1-fast-reasoning",
+    "haiku-4.5",
+    "qwen3.5-flash",
+    "sonnet-4.6"
+  ],
+  "emitted_at": "2026-05-10T13:55:02-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "gemini-3.1-flash-lite-2026-05-10T13-54-37_EDT",
+      "model_id": "gemini-3.1-flash-lite",
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 75,
+          "denominator": 75,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 29,
+          "denominator": 30,
+          "rate": 0.9666666666666667,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 3,
+          "denominator": 3,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 32,
+          "denominator": 32,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0350805,
+          "denominator": 28607,
+          "rate": 0.0012262907679938479,
+          "weight": 0.1
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 27755,
+          "denominator": 28607,
+          "rate": 970.217079735729,
+          "weight": 0.1
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 38,
+          "denominator": 28607,
+          "rate": 1.3283462089698326,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.42857142857142855,
+      "m7_borda": 1.0,
+      "final_score": 0.9411904761904761,
+      "ran_at": "gemini-3.1-flash-lite-2026-05-10T13-54-37_EDT",
+      "source_scorecard_id": "2026-05-10T13-55-02-04-00-gemini-3.1-flash-lite"
+    },
+    {
+      "run_id": "gpt-5.4-mini-2026-05-10T11-48-59_EDT",
+      "model_id": "gpt-5.4-mini",
+      "provider": "openai",
+      "model": "gpt-5.4-mini",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 129,
+          "denominator": 129,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 53,
+          "denominator": 53,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 58,
+          "denominator": 59,
+          "rate": 0.9830508474576272,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.132309,
+          "denominator": 28607,
+          "rate": 0.004625056804278674,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 80060,
+          "denominator": 28607,
+          "rate": 2798.615723424337,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 64,
+          "denominator": 28607,
+          "rate": 2.2372146677386655,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.2857142857142857,
+      "m7_borda": 0.8571428571428571,
+      "final_score": 0.8705811138014528,
+      "ran_at": "gpt-5.4-mini-2026-05-10T11-48-59_EDT",
+      "source_scorecard_id": "2026-05-10T11-50-13-04-00-gpt-5.4-mini"
+    },
+    {
+      "run_id": "deepseek-v4-flash-2026-05-10T12-25-40_EDT",
+      "model_id": "deepseek-v4-flash",
+      "provider": "alibaba",
+      "model": "deepseek-v4-flash",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 112,
+          "denominator": 116,
+          "rate": 0.9655172413793104,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 33,
+          "denominator": 33,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 3,
+          "denominator": 3,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 36,
+          "denominator": 36,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0186921,
+          "denominator": 28607,
+          "rate": 0.0006534100045443422,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 281198,
+          "denominator": 28607,
+          "rate": 9829.692033418394,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 41,
+          "denominator": 28607,
+          "rate": 1.4332156465200825,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.7142857142857143,
+      "m7_borda": 0.14285714285714285,
+      "final_score": 0.8216748768472907,
+      "ran_at": "deepseek-v4-flash-2026-05-10T12-25-40_EDT",
+      "source_scorecard_id": "2026-05-10T12-29-58-04-00-deepseek-v4-flash"
+    },
+    {
+      "run_id": "qwen3.5-flash-2026-05-10T11-57-42_EDT",
+      "model_id": "qwen3.5-flash",
+      "provider": "alibaba",
+      "model": "qwen3.5-flash",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 60,
+          "denominator": 60,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 33,
+          "denominator": 33,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 32,
+          "denominator": 34,
+          "rate": 0.9411764705882353,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.011794902,
+          "denominator": 28607,
+          "rate": 0.0004123082462334393,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 271278,
+          "denominator": 28607,
+          "rate": 9482.9237599189,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 38,
+          "denominator": 28607,
+          "rate": 1.3283462089698326,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.8571428571428571,
+      "m7_borda": 0.2857142857142857,
+      "final_score": 0.7984873949579833,
+      "ran_at": "qwen3.5-flash-2026-05-10T11-57-42_EDT",
+      "source_scorecard_id": "2026-05-10T12-01-50-04-00-qwen3.5-flash"
+    },
+    {
+      "run_id": "grok-4-1-fast-reasoning-2026-05-10T11-50-14_EDT",
+      "model_id": "grok-4-1-fast-reasoning",
+      "provider": "xai",
+      "model": "grok-4-1-fast-reasoning",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 95,
+          "denominator": 136,
+          "rate": 0.6985294117647058,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 42,
+          "denominator": 42,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 1,
+          "denominator": 1,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 43,
+          "denominator": 43,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0230159,
+          "denominator": 28607,
+          "rate": 0.0008045548292375991,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 185746,
+          "denominator": 28607,
+          "rate": 6493.0261824029085,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 48,
+          "denominator": 28607,
+          "rate": 1.677911000803999,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.5714285714285714,
+      "m7_borda": 0.7142857142857143,
+      "final_score": 0.7625630252100841,
+      "ran_at": "grok-4-1-fast-reasoning-2026-05-10T11-50-14_EDT",
+      "source_scorecard_id": "2026-05-10T11-53-02-04-00-grok-4-1-fast-reasoning"
+    },
+    {
+      "run_id": "haiku-4.5-2026-05-10T11-53-03_EDT",
+      "model_id": "haiku-4.5",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 143,
+          "denominator": 144,
+          "rate": 0.9930555555555556,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 39,
+          "denominator": 40,
+          "rate": 0.975,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 7,
+          "denominator": 7,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 43,
+          "denominator": 46,
+          "rate": 0.9347826086956522,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.224129,
+          "denominator": 28607,
+          "rate": 0.00783476072289999,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 235940,
+          "denominator": 28607,
+          "rate": 8247.631698535324,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 51,
+          "denominator": 28607,
+          "rate": 1.782780438354249,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.14285714285714285,
+      "m7_borda": 0.42857142857142855,
+      "final_score": 0.7098145272601796,
+      "ran_at": "haiku-4.5-2026-05-10T11-53-03_EDT",
+      "source_scorecard_id": "2026-05-10T11-56-38-04-00-haiku-4.5"
+    },
+    {
+      "run_id": "sonnet-4.6-2026-05-10T12-01-50_EDT",
+      "model_id": "sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-6",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 196,
+          "denominator": 196,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 42,
+          "denominator": 42,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 47,
+          "denominator": 47,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.6970919999999999,
+          "denominator": 28607,
+          "rate": 0.024367881986926274,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 460977,
+          "denominator": 28607,
+          "rate": 16114.132904533853,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 52,
+          "denominator": 28607,
+          "rate": 1.8177369175376656,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 0.0,
+      "m7_borda": 0.0,
+      "final_score": 0.7000000000000001,
+      "ran_at": "sonnet-4.6-2026-05-10T12-01-50_EDT",
+      "source_scorecard_id": "2026-05-10T12-08-50-04-00-sonnet-4.6"
+    },
+    {
+      "run_id": "gemma4-obsidian-bench-2026-05-10T13-24-42_EDT",
+      "model_id": "gemma4-obsidian-bench",
+      "provider": "ollama-local",
+      "model": "gemma4-obsidian-bench",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 3,
+        "denominator": 5,
+        "rate": 0.6,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 4,
+        "denominator": 5,
+        "rate": 0.8,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 3,
+        "denominator": 4,
+        "rate": 0.75,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 29,
+          "denominator": 64,
+          "rate": 0.453125,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 32,
+          "denominator": 32,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 3,
+          "denominator": 3,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 3,
+          "denominator": 5,
+          "rate": 0.6,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 28,
+          "denominator": 35,
+          "rate": 0.8,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0,
+          "denominator": 28607,
+          "rate": 0.0,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 193647,
+          "denominator": 28607,
+          "rate": 6769.217324431083,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 39,
+          "denominator": 28607,
+          "rate": 1.3633026881532493,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 0.5714285714285714,
+      "final_score": 0.6763392857142858,
+      "ran_at": "gemma4-obsidian-bench-2026-05-10T13-24-42_EDT",
+      "source_scorecard_id": "2026-05-10T13-27-38-04-00-gemma4-obsidian-bench"
+    }
+  ],
+  "dropped_models": [
+    {
+      "run_id": "qwen-flash-us-2026-05-10T11-56-39_EDT",
+      "model_id": "qwen-flash-us",
+      "provider": "alibaba",
+      "model": "qwen-flash-us",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 40,
+          "denominator": 40,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 5,
+          "denominator": 45,
+          "rate": 0.1111111111111111,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0089067,
+          "denominator": 28607,
+          "rate": 0.00031134687314293707,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 71399,
+          "denominator": 28607,
+          "rate": 2495.857657216765,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 50,
+          "denominator": 28607,
+          "rate": 1.7478239591708322,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": null,
+      "m7_borda": null,
+      "final_score": null,
+      "ran_at": "qwen-flash-us-2026-05-10T11-56-39_EDT",
+      "source_scorecard_id": "2026-05-10T11-57-41-04-00-qwen-flash-us",
+      "drop_reason": "M5 (body_emit_set_coverage) = 0.111 in post-#60 regression scorecard (2026-05-10T12:08): declares concept_slugs but barely integrates them via cross-page wikilinks (KB-graph value degraded). The pre-#59 reading of M5=1.000 was the tautological-by-construction artifact; the new measure surfaces real model behavior. Excellent cost+latency don't compensate for this quality gap on the canonical corpus."
+    },
+    {
+      "run_id": "deepseek-v4-flash:cloud-2026-05-10T11-28-06_EDT",
+      "model_id": "deepseek-v4-flash:cloud",
+      "provider": "ollama-cloud",
+      "model": "deepseek-v4-flash:cloud",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 141,
+          "denominator": 141,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 36,
+          "denominator": 36,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 4,
+          "denominator": 4,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 40,
+          "denominator": 40,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.020170220000000003,
+          "denominator": 28607,
+          "rate": 0.0007050798755549342,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 1123197,
+          "denominator": 28607,
+          "rate": 39263.01254937603,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 45,
+          "denominator": 28607,
+          "rate": 1.573041563253749,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": null,
+      "m7_borda": null,
+      "final_score": null,
+      "ran_at": "deepseek-v4-flash:cloud-2026-05-10T11-28-06_EDT",
+      "source_scorecard_id": "2026-05-10T11-45-07-04-00-deepseek-v4-flash:cloud",
+      "drop_reason": "strictly dominated by deepseek-v4-flash via alibaba (DashScope) at identical model + identical pricing: M7=39263ms/1Kw vs alibaba's 9830ms/1Kw (~4x slower). Quality identical. 2026-05-10T12:29 cross-provider trial confirmed; keep dropped record as audit trail of the comparison."
+    },
+    {
+      "run_id": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "model_id": "gemini-3-flash-preview",
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 1,
+        "denominator": 5,
+        "rate": 0.2,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 0,
+          "denominator": 0,
+          "rate": 0.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 1,
+          "denominator": 5,
+          "rate": 0.2,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 9,
+          "denominator": 9,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.069545,
+          "denominator": 28607,
+          "rate": 0.0024310483448107107,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 564339,
+          "denominator": 28607,
+          "rate": 19727.304505890166,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 6,
+          "denominator": 28607,
+          "rate": 0.20973887510049988,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": null,
+      "m7_borda": null,
+      "final_score": null,
+      "ran_at": "gemini-3-flash-preview-2026-05-08T23-50-27_EDT",
+      "source_scorecard_id": "2026-05-08T23-59-23-04-00-gemini-3-flash-preview",
+      "drop_reason": "high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)"
+    }
+  ],
+  "run_config": {},
+  "run_timing": {}
+}
