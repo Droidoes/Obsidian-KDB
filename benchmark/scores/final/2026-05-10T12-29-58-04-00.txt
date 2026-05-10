@@ -1,0 +1,42 @@
+Scorecard: candidate_set=['deepseek-v4-flash', 'deepseek-v4-flash:cloud', 'gemma4-obsidian-bench', 'gpt-5.4-mini', 'grok-4-1-fast-reasoning', 'haiku-4.5', 'qwen-flash-us', 'qwen3.5-flash', 'sonnet-4.6']   emitted_at=2026-05-10T12:29:58-04:00
+====================================================================================================
+rank  model_id           S0    M1    M2    M3    M4    M5  M6_b  M7_b   FINAL  RAN_AT                          
+----------------------------------------------------------------------------------------------------
+   1  qwen-flash-us   1.000 1.000 1.000 1.000 1.000 0.111 0.875 1.000   0.937  qwen-flash-us-2026-05-10T11-56-39_EDT
+   2  gpt-5.4-mini    1.000 1.000 1.000 1.000 1.000 0.983 0.250 0.875   0.868  gpt-5.4-mini-2026-05-10T11-48-59_EDT
+   3  deepseek-v4-flash  1.000 0.966 1.000 1.000 1.000 1.000 0.625 0.250   0.824  deepseek-v4-flash-2026-05-10T12-25-40_EDT
+   4  qwen3.5-flash   0.800 1.000 1.000 1.000 0.800 0.941 0.750 0.375   0.796  qwen3.5-flash-2026-05-10T11-57-42_EDT
+   5  deepseek-v4-flash:cloud  1.000 1.000 1.000 1.000 1.000 1.000 0.500 0.000   0.775  deepseek-v4-flash:cloud-2026-05-10T11-28-06_EDT
+   6  grok-4-1-fast-reasoning  0.800 0.699 1.000 1.000 0.800 1.000 0.375 0.750   0.738  grok-4-1-fast-reasoning-2026-05-10T11-50-14_EDT
+   7  haiku-4.5       0.800 0.993 0.975 1.000 0.800 0.935 0.125 0.625   0.737  haiku-4.5-2026-05-10T11-53-03_EDT
+   8  sonnet-4.6      1.000 1.000 1.000 1.000 1.000 1.000 0.000 0.125   0.719  sonnet-4.6-2026-05-10T12-01-50_EDT
+   9  gemma4-obsidian-bench  0.600 0.453 1.000 1.000 0.600 0.800 1.000 0.500   0.666  gemma4-obsidian-bench-2026-05-10T11-45-08_EDT
+
+Raw rates (cross-set comparison NOT meaningful — see disclaimer):
+  qwen-flash-us   M6=$0.0003/1K-words  M7=2496ms/1K-words
+  gpt-5.4-mini    M6=$0.0046/1K-words  M7=2799ms/1K-words
+  deepseek-v4-flash  M6=$0.0007/1K-words  M7=9830ms/1K-words
+  qwen3.5-flash   M6=$0.0004/1K-words  M7=9483ms/1K-words
+  deepseek-v4-flash:cloud  M6=$0.0007/1K-words  M7=39263ms/1K-words
+  grok-4-1-fast-reasoning  M6=$0.0008/1K-words  M7=6493ms/1K-words
+  haiku-4.5       M6=$0.0078/1K-words  M7=8248ms/1K-words
+  sonnet-4.6      M6=$0.0244/1K-words  M7=16114ms/1K-words
+  gemma4-obsidian-bench  M6=$0.0000/1K-words  M7=8850ms/1K-words
+
+Diagnostics (unweighted):
+  model_id        retry_load                    token_overrun_rate            pages_per_1k_source_words   
+  qwen-flash-us   0.0000                        0.0000                        1.7478                      
+  gpt-5.4-mini    0.0000                        0.0000                        2.2372                      
+  deepseek-v4-flash  0.0000                        0.0000                        1.4332                      
+  qwen3.5-flash   0.0000                        0.0000                        1.3283                      
+  deepseek-v4-flash:cloud  0.0000                        0.0000                        1.5730                      
+  grok-4-1-fast-reasoning  0.0000                        0.0000                        1.6779                      
+  haiku-4.5       0.0000                        0.0000                        1.7828                      
+  sonnet-4.6      0.0000                        0.0000                        1.8177                      
+  gemma4-obsidian-bench  0.0000                        0.0000                        1.3633                      
+
+Dropped Models (excluded from active Borda):
+  model_id                     S0    M1    M2    M3    M4    M5  M6_raw      M7_raw      DROP_REASON
+  gemini-3-flash-preview    0.200 1.000 1.000 0.000 0.200 1.000  $0.0024     19727ms     high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)
+
+⚠ final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.

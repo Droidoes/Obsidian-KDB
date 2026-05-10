@@ -1,0 +1,141 @@
+{
+  "scorecard_id": "2026-05-10T12-29-58-04-00-deepseek-v4-flash",
+  "candidate_set": [
+    "deepseek-v4-flash"
+  ],
+  "emitted_at": "2026-05-10T12:29:58-04:00",
+  "disclaimer": "final_score is comparable ONLY WITHIN this candidate set (average-rank Borda — adding/removing a candidate shifts the ranks of others). Use the raw $/ms rates below for cross-run magnitude inspection.",
+  "models": [
+    {
+      "run_id": "deepseek-v4-flash-2026-05-10T12-25-40_EDT",
+      "model_id": "deepseek-v4-flash",
+      "provider": "alibaba",
+      "model": "deepseek-v4-flash",
+      "n_attempted": 5,
+      "s0": {
+        "name": "S0",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.2
+      },
+      "s1": {
+        "name": "S1",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s2": {
+        "name": "S2",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "s3": {
+        "name": "S3",
+        "numerator": 5,
+        "denominator": 5,
+        "rate": 1.0,
+        "weight": 0.0
+      },
+      "measures": {
+        "M1": {
+          "name": "M1",
+          "numerator": 112,
+          "denominator": 116,
+          "rate": 0.9655172413793104,
+          "weight": 0.2
+        },
+        "M2": {
+          "name": "M2",
+          "numerator": 33,
+          "denominator": 33,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M3": {
+          "name": "M3",
+          "numerator": 3,
+          "denominator": 3,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M4": {
+          "name": "M4",
+          "numerator": 5,
+          "denominator": 5,
+          "rate": 1.0,
+          "weight": 0.15
+        },
+        "M5": {
+          "name": "M5",
+          "numerator": 36,
+          "denominator": 36,
+          "rate": 1.0,
+          "weight": 0.05
+        },
+        "M6": {
+          "name": "M6",
+          "numerator": 0.0186921,
+          "denominator": 28607,
+          "rate": 0.0006534100045443422,
+          "weight": 0.15
+        },
+        "M7": {
+          "name": "M7",
+          "numerator": 281198,
+          "denominator": 28607,
+          "rate": 9829.692033418394,
+          "weight": 0.15
+        }
+      },
+      "diagnostics": {
+        "retry_load": {
+          "name": "retry_load",
+          "numerator": 0,
+          "denominator": 10,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "token_overrun_rate": {
+          "name": "token_overrun_rate",
+          "numerator": 0,
+          "denominator": 5,
+          "rate": 0.0,
+          "weight": 0.0
+        },
+        "pages_per_1k_source_words": {
+          "name": "pages_per_1k_source_words",
+          "numerator": 41,
+          "denominator": 28607,
+          "rate": 1.4332156465200825,
+          "weight": 0.0
+        }
+      },
+      "m6_borda": 1.0,
+      "m7_borda": 1.0,
+      "final_score": 0.9931034482758622,
+      "ran_at": "deepseek-v4-flash-2026-05-10T12-25-40_EDT"
+    }
+  ],
+  "dropped_models": [],
+  "run_config": {
+    "max_tokens": 32768,
+    "sources_dir": "benchmark/sources",
+    "n_sources": 5,
+    "n_source_words": 28607,
+    "system_prompt_path": "/home/ftu/Obsidian/KDB/KDB-Compiler-System-Prompt.md",
+    "provider": "alibaba",
+    "model": "deepseek-v4-flash",
+    "ctx_window": 1050000,
+    "price_in": 0.14,
+    "price_out": 0.28
+  },
+  "run_timing": {
+    "compile_seconds": 281.27,
+    "score_seconds": 0.0,
+    "total_seconds": 281.27
+  }
+}
