@@ -1170,11 +1170,12 @@ class TestOutlierPenalty:
         ]
         enriched = scorer.score_runs(runs)
         awful = next(r for r in enriched if r.model_id == "awful")
-        assert awful.final_score is not None
-        assert awful.final_score >= 0.0
-        # Verify the clamp actually fired (penalty > pre-penalty would cause negative without clamp)
-        if awful.final_score_pre_penalty is not None:
-            assert awful.final_score == max(0.0, awful.final_score_pre_penalty - awful.penalty)
+        # Direct clamp assertion: penalty (~2.90) exceeds pre-penalty FINAL by
+        # a wide margin → without max(0.0, ...) the post-penalty value would go
+        # negative. If the clamp ever regresses, this assertion fires immediately.
+        assert awful.final_score_pre_penalty is not None
+        assert awful.penalty > awful.final_score_pre_penalty
+        assert awful.final_score == 0.0
 
 
 # ===========================================================================

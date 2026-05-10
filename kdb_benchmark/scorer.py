@@ -18,6 +18,7 @@ parsed_json=None.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
@@ -935,8 +936,6 @@ def _compute_outlier_penalty(runs: list["RunScore"]) -> dict[str, float]:
       - norm == 0 → 0 penalty for all on that measure (D31.8, avoids div-by-zero)
       - Cumulative no cap (D31.6)
     """
-    import math
-
     def _rate_for(run: "RunScore", key: str) -> Optional[float]:
         if key == "S0":
             return run.s0.rate
