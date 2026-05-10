@@ -61,7 +61,9 @@
     "ctx_window": 1000000,
     "max_output_tokens": 393200,
     "price_in": 0.14,
-    "price_out": 0.28
+    "price_out": 0.28,
+    "dropped": true,
+    "dropped_reason": "strictly dominated by deepseek-v4-flash via alibaba (DashScope) at identical model + identical pricing: M7=39263ms/1Kw vs alibaba's 9830ms/1Kw (~4x slower). Quality identical. 2026-05-10T12:29 cross-provider trial confirmed; keep dropped record as audit trail of the comparison."
   },
   {
     "id": "qwen-flash-us",
@@ -70,7 +72,9 @@
     "ctx_window": 1000000,
     "max_output_tokens": 32768,
     "price_in": 0.05,
-    "price_out": 0.40
+    "price_out": 0.40,
+    "dropped": true,
+    "dropped_reason": "M5 (body_emit_set_coverage) = 0.111 in post-#60 regression scorecard (2026-05-10T12:08): declares concept_slugs but barely integrates them via cross-page wikilinks (KB-graph value degraded). The pre-#59 reading of M5=1.000 was the tautological-by-construction artifact; the new measure surfaces real model behavior. Excellent cost+latency don't compensate for this quality gap on the canonical corpus."
   },
   {
     "id": "qwen3.5-flash",
