@@ -348,8 +348,6 @@ class RespStatsRecord:
     stop_reason: Optional[str] = None
     token_overrun: bool = False
     source_words: int = 0
-    body_link_intersection: int = 0
-    body_link_union: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)

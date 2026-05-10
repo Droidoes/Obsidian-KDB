@@ -81,8 +81,6 @@ def fake_record(
     output_tokens: int = 300,
     latency_ms: int = 1000,
     attempts: int = 1,
-    body_link_intersection: int = 0,
-    body_link_union: int = 0,
     token_overrun: bool = False,
     stop_reason: str | None = "end_turn",
     summary_slug: str = "x",
@@ -130,8 +128,6 @@ def fake_record(
         "stop_reason": stop_reason,
         "token_overrun": token_overrun,
         "source_words": source_words,
-        "body_link_intersection": body_link_intersection,
-        "body_link_union": body_link_union,
     }
 
 

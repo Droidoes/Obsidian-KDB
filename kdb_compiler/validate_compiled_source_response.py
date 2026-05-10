@@ -97,15 +97,6 @@ def semantic_check(payload: dict, *, source_name: str) -> list[str]:
     return errors
 
 
-# ---------- M5 body-link counts (Task #28) ----------
-#
-# The schema description for `outgoing_links` already states "Must appear
-# in body as [[slug]]". M5 turns that contract from documentation into
-# measurable telemetry by emitting per-source intersection / union counts
-# of (declared outgoing_links) vs (slugs found in body wikilinks).
-# The benchmark scorer divides at score time for symmetric Jaccard;
-# this validator does not compute the ratio.
-
 _SLUG_RE = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _WIKILINK_RE = re.compile(
     rf"(?<!\\)\[\[({_SLUG_RE})(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]"
@@ -131,72 +122,6 @@ def body_wikilink_slugs(body: str) -> set[str]:
     (`body_emit_set_coverage`) computation across the one-way boundary.
     """
     return set(_WIKILINK_RE.findall(_strip_code(body)))
-
-
-def body_link_check(payload: dict) -> tuple[int, int]:
-    """Symmetric body-vs-declared link check (Task #19 M5).
-
-    For each page, declared = set(page.outgoing_links), body = slugs in
-    [[…]] tokens (code-stripped). Returns (Σ|D_p ∩ B_p|, Σ|D_p ∪ B_p|)
-    across all pages — the scorer divides at score time for symmetric
-    Jaccard.
-
-    Tolerant — never raises. Malformed payload (missing/non-dict pages,
-    non-list outgoing_links, non-string body) contributes (0, 0)."""
-    pages = payload.get("pages") or []
-    if not isinstance(pages, list):
-        return (0, 0)
-    intersection = 0
-    union = 0
-    for p in pages:
-        if not isinstance(p, dict):
-            continue
-        declared_raw = p.get("outgoing_links") or []
-        if isinstance(declared_raw, list):
-            declared = {s for s in declared_raw if isinstance(s, str)}
-        else:
-            declared = set()
-        body = p.get("body")
-        body_links = body_wikilink_slugs(body) if isinstance(body, str) else set()
-        intersection += len(declared & body_links)
-        union += len(declared | body_links)
-    return (intersection, union)
-
-
-def body_link_per_page_asymmetry(payload: dict) -> list[dict]:
-    """Per-page asymmetry detail for M5 verbose trace (Task #39).
-
-    Returns one dict per page where `declared != body`, in `pages[]` order,
-    with keys: `page_slug`, `declared_only` (slugs in outgoing_links missing
-    from body), `body_only` (slugs in body missing from outgoing_links).
-    `declared_only` / `body_only` are sorted lists for stable output.
-    Aligned pages (declared == body) are omitted. Pages without a string
-    slug are reported as `page_slug=None`.
-
-    Same payload-tolerance contract as body_link_check — never raises."""
-    pages = payload.get("pages") or []
-    if not isinstance(pages, list):
-        return []
-    out: list[dict] = []
-    for p in pages:
-        if not isinstance(p, dict):
-            continue
-        declared_raw = p.get("outgoing_links") or []
-        if isinstance(declared_raw, list):
-            declared = {s for s in declared_raw if isinstance(s, str)}
-        else:
-            declared = set()
-        body = p.get("body")
-        body_links = body_wikilink_slugs(body) if isinstance(body, str) else set()
-        if declared == body_links:
-            continue
-        slug = p.get("slug")
-        out.append({
-            "page_slug": slug if isinstance(slug, str) else None,
-            "declared_only": sorted(declared - body_links),
-            "body_only": sorted(body_links - declared),
-        })
-    return out
 
 
 def _build_parser() -> argparse.ArgumentParser:
