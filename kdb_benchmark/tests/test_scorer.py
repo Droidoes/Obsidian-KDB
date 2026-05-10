@@ -508,6 +508,160 @@ class TestM4:
         assert score.weight == 0.15
 
 
+# ---------------------------------------------------------------------------
+# §6a — _compute_body_emit_set_coverage helper (per-source numerator/denominator)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeBodyEmitSetCoverage:
+    """The pure helper that computes (num, denom) for one source's parsed_json.
+    Per spec §2.2 + §10.2: micro-aggregated, self-links excluded, malformed
+    inputs coerced silently (never raises)."""
+
+    def test_happy_path_three_of_four_concepts_in_other_bodies(self):
+        # 4 declared concepts + 0 articles; 3 appear in other-page bodies.
+        # Self-links (alpha referenced in alpha's own body) excluded.
+        parsed = {
+            "concept_slugs": ["alpha", "beta", "gamma", "delta"],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "alpha", "page_type": "concept", "body": "see [[alpha]] and [[beta]]"},
+                {"slug": "beta", "page_type": "concept", "body": "[[gamma]]"},
+                {"slug": "gamma", "page_type": "concept", "body": "no links"},
+                {"slug": "summary-foo", "page_type": "summary", "body": "[[delta]]"},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # body_emit_links across other-pages: {beta} from alpha-body (self-link [[alpha]] excluded),
+        # {gamma} from beta-body, {} from gamma-body, {delta} from summary-foo-body.
+        # Union: {beta, gamma, delta}. Intersected with declared {alpha, beta, gamma, delta} = 3.
+        assert (num, denom) == (3, 4)
+
+    def test_emit_set_unions_concept_and_article_slugs(self):
+        parsed = {
+            "concept_slugs": ["c1"],
+            "article_slugs": ["a1"],
+            "pages": [
+                {"slug": "summary-x", "page_type": "summary", "body": "[[c1]] and [[a1]]"},
+                {"slug": "c1", "page_type": "concept", "body": ""},
+                {"slug": "a1", "page_type": "article", "body": ""},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (2, 2)
+
+    def test_self_link_excluded(self):
+        # Single concept; only reference is in its own body → self-link excluded → num=0.
+        parsed = {
+            "concept_slugs": ["alpha"],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "alpha", "page_type": "concept", "body": "I am [[alpha]]"},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (0, 1)
+
+    def test_spurious_wikilink_outside_emit_set_does_not_count(self):
+        parsed = {
+            "concept_slugs": ["alpha"],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "summary-x", "page_type": "summary", "body": "[[alpha]] [[unknown]]"},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # [[unknown]] is not in declared emit-set, doesn't count toward numerator.
+        assert (num, denom) == (1, 1)
+
+    def test_empty_emit_set_returns_zero_zero(self):
+        parsed = {
+            "concept_slugs": [],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "summary-x", "page_type": "summary", "body": "[[anything]]"},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (0, 0)
+
+    def test_missing_concept_and_article_keys_returns_zero_zero(self):
+        parsed = {"pages": [{"slug": "x", "page_type": "summary", "body": "[[anything]]"}]}
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (0, 0)
+
+    def test_non_list_concept_slugs_coerced_to_empty(self):
+        # Round 4 CW2 convention: non-list slug fields coerce to empty
+        # (avoid set("foo") char-slug trap).
+        parsed = {
+            "concept_slugs": "alpha",  # string, not list
+            "article_slugs": [],
+            "pages": [{"slug": "x", "page_type": "summary", "body": "[[alpha]]"}],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (0, 0)
+
+    def test_non_string_slug_member_dropped(self):
+        parsed = {
+            "concept_slugs": ["alpha", 42, None, "beta"],
+            "article_slugs": [],
+            "pages": [{"slug": "x", "page_type": "summary", "body": "[[alpha]] [[beta]]"}],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # Emit set = {alpha, beta} after dropping non-strings.
+        assert (num, denom) == (2, 2)
+
+    def test_non_string_body_yields_no_links(self):
+        parsed = {
+            "concept_slugs": ["alpha"],
+            "article_slugs": [],
+            "pages": [{"slug": "x", "page_type": "summary", "body": None}],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        assert (num, denom) == (0, 1)
+
+    def test_non_string_page_slug_skips_self_link_subtraction(self):
+        # Page with non-string slug → no self-link subtraction for that page,
+        # but body wikilinks still contribute to the union.
+        parsed = {
+            "concept_slugs": ["alpha"],
+            "article_slugs": [],
+            "pages": [{"slug": 42, "page_type": "concept", "body": "[[alpha]]"}],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # No self-link subtraction (slug isn't a string), so [[alpha]] counts.
+        assert (num, denom) == (1, 1)
+
+    def test_pages_not_a_list_returns_zero_emit_set_size(self):
+        parsed = {
+            "concept_slugs": ["alpha"],
+            "article_slugs": ["beta"],
+            "pages": "not-a-list",
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # Emit set still has size 2 (declared); no pages → no body links → num=0.
+        assert (num, denom) == (0, 2)
+
+    def test_same_slug_in_multiple_bodies_counted_once_set_semantics(self):
+        parsed = {
+            "concept_slugs": ["alpha", "beta"],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "x", "page_type": "summary", "body": "[[alpha]]"},
+                {"slug": "y", "page_type": "summary", "body": "[[alpha]] [[beta]]"},
+            ],
+        }
+        num, denom = scorer._compute_body_emit_set_coverage(parsed)
+        # Union of body-emit-links across pages: {alpha, beta}.
+        assert (num, denom) == (2, 2)
+
+    def test_helper_never_raises_on_garbage(self):
+        # Garbage at every layer.
+        for parsed in [{}, {"pages": None}, {"concept_slugs": None, "article_slugs": None}]:
+            num, denom = scorer._compute_body_emit_set_coverage(parsed)
+            assert isinstance(num, int) and isinstance(denom, int)
+
+
 # ===========================================================================
 # §6 — M5 body_link_syntax_match (weight 5%)
 # ===========================================================================

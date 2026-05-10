@@ -305,6 +305,57 @@ def s3(records: list[dict]) -> MeasureScore:
     return MeasureScore(name="S3", numerator=n_clean, denominator=n_parse, rate=rate, weight=0.0)
 
 
+def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
+    """Per-source `(numerator, denominator)` for M5 body_emit_set_coverage.
+
+    numerator   = |⋃_p (body_wikilink_slugs(p.body) − {p.slug})| ∩ declared_emit_set
+    denominator = |declared_emit_set|
+
+    where declared_emit_set = set(concept_slugs) ∪ set(article_slugs).
+
+    Self-links excluded per page (Codex 2026-05-10 review): a page that
+    references its own slug isn't "integrating" the concept — it's a
+    tautology. Subtraction rewards cross-page integration only.
+
+    Tolerant — never raises (per §10.2 plan-stage clarifications):
+      * concept_slugs / article_slugs non-list → empty set
+      * non-string slug members → dropped
+      * pages non-list → no body links contribute
+      * non-string body → page contributes zero links
+      * non-string page slug → no self-link subtraction for that page
+      * any malformed nested value → silently absorbed
+    """
+    from kdb_compiler.validate_compiled_source_response import body_wikilink_slugs
+
+    def _slugs(field) -> set[str]:
+        if not isinstance(field, list):
+            return set()
+        return {s for s in field if isinstance(s, str)}
+
+    declared = _slugs(parsed_json.get("concept_slugs")) | _slugs(parsed_json.get("article_slugs"))
+    denom = len(declared)
+
+    pages = parsed_json.get("pages")
+    if not isinstance(pages, list):
+        return (0, denom)
+
+    body_emit_links: set[str] = set()
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        body = p.get("body")
+        if not isinstance(body, str):
+            continue
+        page_slug = p.get("slug")
+        page_links = body_wikilink_slugs(body)
+        if isinstance(page_slug, str):
+            page_links = page_links - {page_slug}
+        body_emit_links |= page_links
+
+    num = len(body_emit_links & declared)
+    return (num, denom)
+
+
 def m4(records: list[dict]) -> MeasureScore:
     """M4 — semantic_pass_rate (weight 15%, Output Integrity).
 
