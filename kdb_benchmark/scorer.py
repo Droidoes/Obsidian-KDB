@@ -303,25 +303,23 @@ def s3(records: list[dict]) -> MeasureScore:
     return MeasureScore(name="S3", numerator=n_clean, denominator=n_parse, rate=rate, weight=0.0)
 
 
-def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
-    """Per-source `(numerator, denominator)` for M5 body_emit_set_coverage.
+def _emit_set_components(parsed_json: dict) -> tuple[set[str], set[str]]:
+    """Per-source `(declared_emit_set, body_emit_links)` for M5
+    computations.
 
-    numerator   = |⋃_p (body_wikilink_slugs(p.body) − {p.slug})| ∩ declared_emit_set
-    denominator = |declared_emit_set|
+      declared_emit_set = set(concept_slugs) ∪ set(article_slugs)
+      body_emit_links   = ⋃_p (body_wikilink_slugs(p.body) − {p.slug})
 
-    where declared_emit_set = set(concept_slugs) ∪ set(article_slugs).
+    Self-links excluded per page (Task #59 D29.7 + Codex review). The
+    body_emit_links set is the union across pages with each page's own
+    slug subtracted from its body-wikilink contribution before the union.
 
-    Self-links excluded per page (Codex 2026-05-10 review): a page that
-    references its own slug isn't "integrating" the concept — it's a
-    tautology. Subtraction rewards cross-page integration only.
-
-    Tolerant — never raises (per §10.2 plan-stage clarifications):
+    Tolerant — never raises (per Task #59 §10.2 conventions):
       * concept_slugs / article_slugs non-list → empty set
       * non-string slug members → dropped
       * pages non-list → no body links contribute
       * non-string body → page contributes zero links
       * non-string page slug → no self-link subtraction for that page
-      * any malformed nested value → silently absorbed
     """
     def _slugs(field) -> set[str]:
         if not isinstance(field, list):
@@ -329,13 +327,12 @@ def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
         return {s for s in field if isinstance(s, str)}
 
     declared = _slugs(parsed_json.get("concept_slugs")) | _slugs(parsed_json.get("article_slugs"))
-    denom = len(declared)
-
-    pages = parsed_json.get("pages")
-    if not isinstance(pages, list):
-        return (0, denom)
 
     body_emit_links: set[str] = set()
+    pages = parsed_json.get("pages")
+    if not isinstance(pages, list):
+        return (declared, body_emit_links)
+
     for p in pages:
         if not isinstance(p, dict):
             continue
@@ -348,8 +345,25 @@ def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
             page_links = page_links - {page_slug}
         body_emit_links |= page_links
 
-    num = len(body_emit_links & declared)
-    return (num, denom)
+    return (declared, body_emit_links)
+
+
+def _compute_body_emit_set_coverage(parsed_json: dict) -> tuple[int, int]:
+    """Per-source `(numerator, denominator)` for M5 body_emit_set_coverage.
+
+    numerator   = |⋃_p (body_wikilink_slugs(p.body) − {p.slug})| ∩ declared_emit_set
+    denominator = |declared_emit_set|
+
+    where declared_emit_set = set(concept_slugs) ∪ set(article_slugs).
+
+    Self-links excluded per page (Codex 2026-05-10 review): a page that
+    references its own slug isn't "integrating" the concept — it's a
+    tautology. Subtraction rewards cross-page integration only.
+
+    Set extraction delegated to `_emit_set_components`.
+    """
+    declared, body_emit_links = _emit_set_components(parsed_json)
+    return (len(body_emit_links & declared), len(declared))
 
 
 def m4(records: list[dict]) -> MeasureScore:
@@ -658,9 +672,9 @@ def _m5_per_source_coverage_lines(records: list[dict]) -> list[str]:
     For each parse-pass record with denom > 0 and num < denom, list the
     source_id, the integrated count vs declared count, and the sorted set
     of declared emit-set slugs that did NOT appear as body wikilinks in
-    any other page. Self-links are already excluded inside
-    _compute_body_emit_set_coverage. Returns empty list (caller emits
-    nothing — not even a header) when no source falls below 100%.
+    any other page. Self-links are already excluded by
+    `_emit_set_components`. Returns empty list (caller emits nothing —
+    not even a header) when no source falls below 100%.
     """
     body: list[str] = []
     for r in records:
@@ -669,30 +683,11 @@ def _m5_per_source_coverage_lines(records: list[dict]) -> list[str]:
         parsed = r.get("parsed_json")
         if not isinstance(parsed, dict):
             continue
-        n, d = _compute_body_emit_set_coverage(parsed)
+        declared, body_emit_links = _emit_set_components(parsed)
+        n = len(body_emit_links & declared)
+        d = len(declared)
         if d == 0 or n == d:
             continue
-
-        def _slugs(field) -> set[str]:
-            if not isinstance(field, list):
-                return set()
-            return {s for s in field if isinstance(s, str)}
-
-        declared = _slugs(parsed.get("concept_slugs")) | _slugs(parsed.get("article_slugs"))
-        body_emit_links: set[str] = set()
-        pages = parsed.get("pages")
-        if isinstance(pages, list):
-            for p in pages:
-                if not isinstance(p, dict):
-                    continue
-                page_body = p.get("body")
-                if not isinstance(page_body, str):
-                    continue
-                page_links = body_wikilink_slugs(page_body)
-                page_slug = p.get("slug")
-                if isinstance(page_slug, str):
-                    page_links = page_links - {page_slug}
-                body_emit_links |= page_links
         missing = sorted(declared - body_emit_links)
         sid = r.get("source_id", "<unknown>")
         body.append(f"[verbose]     {sid}: {n}/{d} integrated, missing: {missing}")
