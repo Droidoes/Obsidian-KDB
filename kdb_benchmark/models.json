@@ -80,5 +80,14 @@
     "max_output_tokens": 65536,
     "price_in": 0.029,
     "price_out": 0.287
+  },
+  {
+    "id": "deepseek-v4-flash",
+    "provider": "alibaba",
+    "model": "deepseek-v4-flash",
+    "ctx_window": 1050000,
+    "max_output_tokens": 393216,
+    "price_in": 0.14,
+    "price_out": 0.28
   }
 ]
