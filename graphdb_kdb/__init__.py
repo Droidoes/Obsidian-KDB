@@ -12,6 +12,7 @@ from pathlib import Path
 
 from graphdb_kdb.graphdb import GraphDB, GraphDBSchemaError
 from graphdb_kdb.ingestor import apply_compile_result
+from graphdb_kdb.rebuilder import RebuildResult, RunOutcome, rebuild
 from graphdb_kdb.schema import SCHEMA_VERSION
 from graphdb_kdb.types import Entity, Source, SyncResult
 from graphdb_kdb.verifier import Divergence, VerifyResult
@@ -24,8 +25,11 @@ __all__ = [
     "SyncResult",
     "VerifyResult",
     "Divergence",
+    "RebuildResult",
+    "RunOutcome",
     "SCHEMA_VERSION",
     "apply_compile_result",
+    "rebuild",
     "default_graph_path",
 ]
 

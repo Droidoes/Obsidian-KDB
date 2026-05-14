@@ -5,8 +5,7 @@ Subcommands added incrementally per the #63.x plan.
 #63.3 — neighbors, incoming, path, stats, cypher
 #63.4 — pagerank, communities, structural-holes, orphans, subgraph-by-source
 #63.5 — verify
-#63.5 — verify
-#63.6 — rebuild, sync
+#63.6 — rebuild (with --backfill-baton one-shot migration)
 #63.9 — snapshot
 """
 from __future__ import annotations
@@ -236,6 +235,104 @@ def cmd_subgraph_by_source(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rebuild(args: argparse.Namespace) -> int:
+    """Drop all Kuzu tables and replay eligible runs in chronological order
+    (D-S2 whole-DB rebuild; D-B1 adapter-driven).
+
+    `--backfill-baton` one-shot migration: synthesize a RunDescriptor pointing
+    at `state/{compile_result,last_scan}.json` baton files using
+    `manifest.runs.last_successful_run_id` as the synthetic run_id. Idempotent:
+    if a sidecar already exists at `state/runs/<run_id>/`, the backfill is
+    silently skipped.
+    """
+    from graphdb_kdb.adapters.base import RunDescriptor
+    from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+    from graphdb_kdb.rebuilder import rebuild
+
+    graph_dir = _resolve_graph_dir(args)
+    if not args.vault_root:
+        print(
+            "rebuild requires --vault-root <path>.",
+            file=sys.stderr,
+        )
+        return 2
+    state_root = Path(args.vault_root) / "KDB" / "state"
+    journals_dir = state_root / "runs"
+    if not journals_dir.is_dir():
+        print(
+            f"runs directory not found: {journals_dir}",
+            file=sys.stderr,
+        )
+        return 2
+
+    extra: list[RunDescriptor] = []
+    if args.backfill_baton:
+        baton_cr = state_root / "compile_result.json"
+        baton_scan = state_root / "last_scan.json"
+        manifest_path = state_root / "manifest.json"
+        if not (baton_cr.is_file() and baton_scan.is_file() and manifest_path.is_file()):
+            print(
+                "--backfill-baton: missing baton/manifest files at "
+                f"{state_root}; skipping baton step.",
+                file=sys.stderr,
+            )
+        else:
+            with manifest_path.open() as f:
+                manifest = json.load(f)
+            last_run_id = (manifest.get("runs") or {}).get("last_successful_run_id")
+            if not last_run_id:
+                print(
+                    "--backfill-baton: manifest has no runs.last_successful_run_id; "
+                    "skipping baton step.",
+                    file=sys.stderr,
+                )
+            else:
+                sidecar_dir = journals_dir / last_run_id
+                if (sidecar_dir / "compile_result.json").is_file():
+                    print(
+                        f"--backfill-baton: sidecar already exists for {last_run_id}; "
+                        "skipping (idempotent).",
+                        file=sys.stderr,
+                    )
+                else:
+                    extra.append(RunDescriptor(
+                        run_id=last_run_id,
+                        sort_key="0000-pre-63-backfill",  # sorts first chronologically
+                        journal_path=None,
+                        payload_paths=(baton_cr, baton_scan),
+                    ))
+
+    adapter = ObsidianRunsAdapter()
+    result = rebuild(
+        graph_dir=graph_dir,
+        adapter=adapter,
+        journals_dir=journals_dir,
+        confirm=not args.yes,
+        extra_descriptors=extra or None,
+    )
+
+    if args.json:
+        _print_json({
+            "ok": result.ok,
+            "replayed": result.replayed,
+            "skipped": result.skipped,
+            "failed": result.failed,
+            "outcomes": [dataclasses.asdict(o) for o in result.outcomes],
+        })
+        return 0 if result.ok else 1
+
+    print(f"  replayed: {result.replayed}")
+    print(f"  skipped:  {result.skipped}")
+    print(f"  failed:   {result.failed}")
+    if result.skipped or result.failed:
+        for o in result.outcomes:
+            if o.state == "skipped":
+                print(f"    [skip] {o.run_id}  reason={o.skip_reason}")
+            elif o.state == "failed":
+                print(f"    [FAIL] {o.run_id}  {o.error}")
+    return 0 if result.ok else 1
+
+
 def cmd_cypher(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     params: dict[str, Any] = {}
@@ -323,13 +420,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_v.add_argument(
         "--vault-root", default=None,
-        help="Vault root (manifest read from <root>/state/manifest.json).",
+        help="Vault root (manifest read from <root>/KDB/state/manifest.json).",
     )
     p_v.add_argument(
         "--manifest", default=None,
         help="Explicit manifest.json path (overrides --vault-root).",
     )
     p_v.add_argument("--json", action="store_true", help="JSON output.")
+
+    p_rb = sub.add_parser(
+        "rebuild",
+        help="Drop all Kuzu tables and replay eligible runs from state/runs/ "
+             "(D-S2 whole-DB rebuild). Use --backfill-baton on first run to "
+             "import the pre-#63 baton.",
+    )
+    p_rb.add_argument(
+        "--vault-root", required=True,
+        help="Vault root (runs read from <root>/KDB/state/runs/).",
+    )
+    p_rb.add_argument(
+        "--producer", default="obsidian", choices=("obsidian",),
+        help="Adapter to use (only 'obsidian' shipped for v1; D-S2 + D-B1).",
+    )
+    p_rb.add_argument(
+        "--backfill-baton", action="store_true",
+        help="One-shot migration: replay state/{compile_result,last_scan}.json "
+             "baton as the latest pre-#63 run. Idempotent — skipped if the "
+             "corresponding sidecar already exists.",
+    )
+    p_rb.add_argument(
+        "--yes", action="store_true",
+        help="Skip the interactive whole-DB-drop warning.",
+    )
+    p_rb.add_argument("--json", action="store_true", help="JSON output.")
 
     return p
 
@@ -347,6 +470,7 @@ _DISPATCH = {
     "orphans": cmd_orphans,
     "subgraph-by-source": cmd_subgraph_by_source,
     "verify": cmd_verify,
+    "rebuild": cmd_rebuild,
 }
 
 
