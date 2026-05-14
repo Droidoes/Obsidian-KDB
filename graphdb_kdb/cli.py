@@ -171,7 +171,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if args.manifest:
         manifest_path = Path(args.manifest)
     elif args.vault_root:
-        manifest_path = Path(args.vault_root) / "state" / "manifest.json"
+        manifest_path = Path(args.vault_root) / "KDB" / "state" / "manifest.json"
     else:
         print(
             "verify requires --vault-root <path> (manifest at <root>/state/manifest.json) "
