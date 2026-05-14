@@ -183,3 +183,41 @@ class GraphDB:
             compile_count=int(row[11]) if row[11] is not None else 0,
             last_run_id=row[12], moved_to=row[13],
         )
+
+    # ---- read API (#63.3) — delegates to queries module ----
+
+    def neighbors(self, slug: str, *, direction: str = "out", depth: int = 1) -> list[Page]:
+        from graphdb_kdb import queries
+        return queries.neighbors(self.conn, slug, direction=direction, depth=depth)
+
+    def incoming_links(self, slug: str) -> list[Page]:
+        from graphdb_kdb import queries
+        return queries.incoming_links(self.conn, slug)
+
+    def outgoing_links(self, slug: str) -> list[Page]:
+        from graphdb_kdb import queries
+        return queries.outgoing_links(self.conn, slug)
+
+    def shortest_path(self, from_slug: str, to_slug: str, *, max_hops: int = 10) -> list[str] | None:
+        from graphdb_kdb import queries
+        return queries.shortest_path(self.conn, from_slug, to_slug, max_hops=max_hops)
+
+    def pages_for_source(self, source_id: str) -> list[Page]:
+        from graphdb_kdb import queries
+        return queries.pages_for_source(self.conn, source_id)
+
+    def sources_for_page(self, slug: str) -> list[Source]:
+        from graphdb_kdb import queries
+        return queries.sources_for_page(self.conn, slug)
+
+    def subgraph_by_source(self, source_id: str) -> dict:
+        from graphdb_kdb import queries
+        return queries.subgraph_by_source(self.conn, source_id)
+
+    def orphan_pages(self) -> list[Page]:
+        from graphdb_kdb import queries
+        return queries.orphan_pages(self.conn)
+
+    def cypher(self, query: str, params: dict | None = None) -> list[dict]:
+        from graphdb_kdb import queries
+        return queries.cypher(self.conn, query, params)
