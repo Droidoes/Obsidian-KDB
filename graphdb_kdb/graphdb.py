@@ -16,6 +16,7 @@ from graphdb_kdb.schema import (
     SCHEMA_META_DDL,
     SCHEMA_VERSION,
 )
+from graphdb_kdb.types import Page, Source, SyncResult
 
 
 class GraphDBSchemaError(RuntimeError):
@@ -122,3 +123,63 @@ class GraphDB:
             "links_to": count("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(*)"),
             "supports": count("MATCH ()-[r:SUPPORTS]->() RETURN COUNT(*)"),
         }
+
+    # ---- ingestion (#63.2) ----
+
+    def apply_compile_result(
+        self,
+        cr: dict,
+        scan_dict: dict,
+        run_id: str,
+        *,
+        now: str | None = None,
+    ) -> SyncResult:
+        """Apply one compile run's deltas. Atomic per run. Delegates to ingestor."""
+        from graphdb_kdb.ingestor import apply_compile_result as _apply
+        return _apply(cr, scan_dict, run_id, conn=self.conn, now=now)
+
+    # ---- minimal read API (full set lands in #63.3) ----
+
+    def get_page(self, slug: str) -> Page | None:
+        """Return the Page node for a slug, or None if absent."""
+        r = self.conn.execute(
+            """
+            MATCH (p:Page {slug: $slug})
+            RETURN p.slug, p.title, p.page_type, p.status, p.confidence,
+                   p.created_at, p.updated_at, p.first_run_id, p.last_run_id
+            """,
+            {"slug": slug},
+        )
+        if not r.has_next():
+            return None
+        row = r.get_next()
+        return Page(
+            slug=row[0], title=row[1], page_type=row[2], status=row[3],
+            confidence=row[4], created_at=row[5], updated_at=row[6],
+            first_run_id=row[7], last_run_id=row[8],
+        )
+
+    def get_source(self, source_id: str) -> Source | None:
+        """Return the Source node for a source_id, or None if absent."""
+        r = self.conn.execute(
+            """
+            MATCH (s:Source {source_id: $sid})
+            RETURN s.source_id, s.source_type, s.canonical_path, s.status,
+                   s.file_type, s.hash, s.size_bytes, s.first_seen_at,
+                   s.last_seen_at, s.last_compiled_at, s.compile_state,
+                   s.compile_count, s.last_run_id, s.moved_to
+            """,
+            {"sid": source_id},
+        )
+        if not r.has_next():
+            return None
+        row = r.get_next()
+        return Source(
+            source_id=row[0], source_type=row[1], canonical_path=row[2],
+            status=row[3], file_type=row[4], hash=row[5],
+            size_bytes=int(row[6]) if row[6] is not None else 0,
+            first_seen_at=row[7], last_seen_at=row[8], last_compiled_at=row[9],
+            compile_state=row[10],
+            compile_count=int(row[11]) if row[11] is not None else 0,
+            last_run_id=row[12], moved_to=row[13],
+        )

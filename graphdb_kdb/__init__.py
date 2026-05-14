@@ -11,15 +11,18 @@ import os
 from pathlib import Path
 
 from graphdb_kdb.graphdb import GraphDB, GraphDBSchemaError
+from graphdb_kdb.ingestor import apply_compile_result
 from graphdb_kdb.schema import SCHEMA_VERSION
-from graphdb_kdb.types import Page, Source
+from graphdb_kdb.types import Page, Source, SyncResult
 
 __all__ = [
     "GraphDB",
     "GraphDBSchemaError",
     "Page",
     "Source",
+    "SyncResult",
     "SCHEMA_VERSION",
+    "apply_compile_result",
     "default_graph_path",
 ]
 
