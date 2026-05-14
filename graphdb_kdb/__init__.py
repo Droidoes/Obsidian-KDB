@@ -14,6 +14,7 @@ from graphdb_kdb.graphdb import GraphDB, GraphDBSchemaError
 from graphdb_kdb.ingestor import apply_compile_result
 from graphdb_kdb.schema import SCHEMA_VERSION
 from graphdb_kdb.types import Page, Source, SyncResult
+from graphdb_kdb.verifier import Divergence, VerifyResult
 
 __all__ = [
     "GraphDB",
@@ -21,6 +22,8 @@ __all__ = [
     "Page",
     "Source",
     "SyncResult",
+    "VerifyResult",
+    "Divergence",
     "SCHEMA_VERSION",
     "apply_compile_result",
     "default_graph_path",

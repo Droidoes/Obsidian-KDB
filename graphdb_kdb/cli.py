@@ -5,6 +5,7 @@ Subcommands added incrementally per the #63.x plan.
 #63.3 — neighbors, incoming, path, stats, cypher
 #63.4 — pagerank, communities, structural-holes, orphans, subgraph-by-source
 #63.5 — verify
+#63.5 — verify
 #63.6 — rebuild, sync
 #63.9 — snapshot
 """
@@ -166,6 +167,51 @@ def cmd_orphans(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    if args.manifest:
+        manifest_path = Path(args.manifest)
+    elif args.vault_root:
+        manifest_path = Path(args.vault_root) / "state" / "manifest.json"
+    else:
+        print(
+            "verify requires --vault-root <path> (manifest at <root>/state/manifest.json) "
+            "or --manifest <path>.",
+            file=sys.stderr,
+        )
+        return 2
+    if not manifest_path.is_file():
+        print(f"manifest not found: {manifest_path}", file=sys.stderr)
+        return 2
+    with GraphDB(graph_dir) as gdb:
+        result = gdb.verify_against_manifest(manifest_path)
+    if args.json:
+        _print_json({
+            "ok": result.ok,
+            "counts": result.counts,
+            "divergences": [dataclasses.asdict(d) for d in result.divergences],
+        })
+        return 0 if result.ok else 1
+    if result.ok:
+        print("ok — graph and manifest agree")
+        for k, v in result.counts.items():
+            print(f"  {k:<22} {v}")
+        return 0
+    print(f"DIVERGENCE — {len(result.divergences)} issue(s)")
+    for k, v in result.counts.items():
+        print(f"  {k:<22} {v}")
+    print()
+    for d in result.divergences:
+        if d.kind == "attribute_mismatch":
+            print(
+                f"  [{d.kind}] {d.entity}={d.key} field={d.field} "
+                f"manifest={d.manifest_value!r} kuzu={d.kuzu_value!r}"
+            )
+        else:
+            print(f"  [{d.kind}] {d.entity}={d.key}")
+    return 1
+
+
 def cmd_subgraph_by_source(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     with GraphDB(graph_dir) as gdb:
@@ -271,6 +317,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_sg.add_argument("source_id", metavar="SOURCE_ID")
     p_sg.add_argument("--json", action="store_true", help="JSON output.")
 
+    p_v = sub.add_parser(
+        "verify",
+        help="Diff Kuzu state vs manifest.json. Exit 0 = perfect; 1 = divergence.",
+    )
+    p_v.add_argument(
+        "--vault-root", default=None,
+        help="Vault root (manifest read from <root>/state/manifest.json).",
+    )
+    p_v.add_argument(
+        "--manifest", default=None,
+        help="Explicit manifest.json path (overrides --vault-root).",
+    )
+    p_v.add_argument("--json", action="store_true", help="JSON output.")
+
     return p
 
 
@@ -286,6 +346,7 @@ _DISPATCH = {
     "structural-holes": cmd_structural_holes,
     "orphans": cmd_orphans,
     "subgraph-by-source": cmd_subgraph_by_source,
+    "verify": cmd_verify,
 }
 
 
