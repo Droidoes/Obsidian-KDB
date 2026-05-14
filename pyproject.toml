@@ -11,6 +11,9 @@ dependencies = [
     "anthropic>=0.40",
     "openai>=1.40",
     "python-dotenv>=1.0",
+    "kuzu>=0.11",
+    "networkx>=3.0",
+    "python-louvain>=0.16",
 ]
 
 [project.optional-dependencies]
@@ -27,13 +30,14 @@ kdb-compile-sources   = "kdb_compiler.compiler:main"
 kdb-compile           = "kdb_compiler.kdb_compile:main"
 kdb-replay            = "kdb_compiler.response_replay:main"
 kdb-benchmark         = "kdb_benchmark.cli:main"
+graphdb-kdb           = "graphdb_kdb.cli:main"
 
 [build-system]
 requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_compiler*", "kdb_benchmark*"]
+include = ["kdb_compiler*", "kdb_benchmark*", "graphdb_kdb*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
 
 [tool.setuptools.package-data]
@@ -41,6 +45,6 @@ kdb_compiler  = ["schemas/*.json"]
 kdb_benchmark = ["models.json"]
 
 [tool.pytest.ini_options]
-testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests"]
+testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "graphdb_kdb/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q"
