@@ -259,7 +259,140 @@ For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorit
 
 ---
 
-## 8. Decisions Ledger
+## 8. GraphDB-KDB Layer (Kuzu-backed knowledge graph)
+
+The reframe locked on 2026-05-10 (paradigm doc: `docs/New-GraphDB-Paradigm.md`): **KDB is a raw-text → knowledge-graph compiler**, not a wiki-page compiler with a graph as a byproduct. Wiki pages and `manifest.json` are *renderings* of the graph; the graph is the architectural primitive that downstream tooling (search, knowledge-hole detection, EXISTING CONTEXT seed selection, adaptive learning paths) consumes.
+
+The bet is **explicit edges beat implicit similarity** — vector RAG flattens ontology into cosine distance; the graph preserves the explicit edges paid to construct. See memory note `feedback_graph_over_vector_for_kdb`.
+
+### 8.1 Package layout & boundary
+
+```
+graphdb_kdb/                                ← producer-agnostic ontology layer
+├── schema.py                               # Kuzu DDL (Entity / Source / LINKS_TO / SUPPORTS)
+├── types.py                                # Entity, Source dataclasses; SyncResult, RebuildResult
+├── graphdb.py                              # GraphDB connection manager + idempotent schema bootstrap
+├── ingestor.py                             # apply_compile_result — atomic per-run mutations
+├── queries.py                              # neighbors, paths, provenance reads
+├── analytics.py                            # PageRank, Louvain, structural holes (hybrid via NetworkX)
+├── verifier.py                             # verify_against_manifest — overlap audit
+├── rebuilder.py                            # rebuild() — generic chronological replay (D-B1)
+├── adapters/
+│   ├── base.py                             # ProducerAdapter Protocol; RunDescriptor / EligibilityResult
+│   └── obsidian_runs.py                    # Obsidian-KDB adapter (reference impl)
+└── cli.py                                  # graphdb-kdb CLI dispatcher
+```
+
+**One-way import boundary** (D34 + D-B1, mirrors D25 for kdb_benchmark): `graphdb_kdb/` has **zero imports from `kdb_compiler`**. Producer-specific knowledge lives inside `adapters/obsidian_runs.py` and is expressed as JSON parsing of producer artifacts — never as Python imports of producer types. A grep invariant on `from kdb_compiler\|import kdb_compiler` inside `graphdb_kdb/` returns nothing.
+
+**Physical separation** (D35): the Kuzu *data* directory lives at `~/Droidoes/GraphDB-KDB/` (sibling to `Obsidian-KDB/`, not OneDrive-synced — avoids binary-file corruption). The Python package code lives at `graphdb_kdb/` inside `Obsidian-KDB/` today; the extraction arc to a standalone repo `~/Droidoes/GraphDB-KDB-package/` is documented in `docs/graphdb-kdb-extraction-roadmap.md`.
+
+### 8.2 Schema (Kuzu DDL)
+
+```cypher
+CREATE NODE TABLE Entity (
+    slug          STRING PRIMARY KEY,    -- producer-emitted identifier; bare per D-S1 grandfather for Obsidian
+    title         STRING,
+    page_type     STRING,                -- summary | concept | article  (values still Obsidian-flavored, per D-A2 deferred)
+    status        STRING,                -- active | stale | archived | orphan_candidate
+    confidence    STRING,                -- low | medium | high
+    created_at    STRING,                -- ISO with local offset (no UTC normalization per feedback_local_time_everywhere)
+    updated_at    STRING,
+    first_run_id  STRING,
+    last_run_id   STRING
+);
+
+CREATE NODE TABLE Source (
+    source_id          STRING PRIMARY KEY,
+    source_type        STRING,           -- discriminator (multi-source-ready per D32-tempered); "obsidian-kdb-raw" for v1
+    canonical_path     STRING,
+    status             STRING,           -- active | moved | deleted | error
+    file_type          STRING,
+    hash               STRING,
+    size_bytes         INT64,
+    first_seen_at      STRING,
+    last_seen_at       STRING,
+    last_ingested_at   STRING,           -- renamed from last_compiled_at per D-A2 (graph-side ingestion concept)
+    ingest_state       STRING,           -- renamed from compile_state per D-A2
+    ingest_count       INT64,            -- renamed from compile_count per D-A2
+    last_run_id        STRING,
+    moved_to           STRING
+);
+
+CREATE REL TABLE LINKS_TO ( FROM Entity TO Entity, run_id STRING, created_at STRING );
+CREATE REL TABLE SUPPORTS ( FROM Source TO Entity, role STRING, hash_at_time STRING, run_id STRING, created_at STRING );
+```
+
+**Naming history**: `Entity` was originally `Page` (renamed per D-A1 2026-05-14); `ingest_*` fields were originally `compile_*` (renamed per D-A2). Producer payloads (`compile_result.json`) retain the older names — the Obsidian adapter translates. The verifier's `_SOURCE_DIRECT_FIELDS` tuples are the alias bridge: `("compile_state", "ingest_state")` etc.
+
+### 8.3 Pipeline integration — Stage 9 via adapter (D-S0)
+
+`kdb-compile`'s 9-stage pipeline ends with **Stage 9 `graph_sync`**:
+
+```
+Stages 1–8 (existing): scan → validate scan → compile → validate compile_result →
+                       reconcile → build manifest → apply pages → persist state
+
+Stage 9 graph_sync (per D38 non-fatal):
+  9a. Archive sidecar: atomic-copy state/{compile_result,last_scan}.json
+      → state/runs/<run_id>/{compile_result,last_scan}.json
+  9b. Live sync: graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter()
+      .sync_current_run(cr, scan_dict, run_id)
+```
+
+Two architectural properties of the wiring:
+
+1. **`kdb_compile.py` imports ONLY `ObsidianRunsAdapter`** (D-S0). Never `GraphDB`, never `apply_compile_result` directly. The adapter is the single producer→graph entry point — same code path as `graphdb-kdb rebuild` uses.
+2. **Sidecar archival runs *before* the live sync.** If the sync fails (D38 non-fatal: warning + journal entry; overall run still success=true), the sidecar still exists — so `graphdb-kdb rebuild` is a real recovery path.
+
+### 8.4 Replay / rebuild path (D39 — the independence proof)
+
+`graphdb-kdb rebuild --vault-root <P>` drops all Kuzu tables and replays the eligible subset of `state/runs/*.json` chronologically:
+
+- **Eligibility filter** (D39): `success=true AND dry_run=false AND payload_present`. Payload = per-run sidecar at `state/runs/<run_id>/{compile_result,last_scan}.json`. Adapters declare which producer journal `schema_version` they support (D-S3) — version mismatches return structured skip reasons (`'unsupported_version'`), not silent corruption.
+- **B-lite split** (D-B1): `rebuilder.py` is producer-agnostic (drop-all + chronological iterate + per-run try/except); the adapter (`adapters/obsidian_runs.py`) supplies discover_runs / is_eligible / load_payload / apply. No producer-specific code in the core.
+- **Blast radius v1** (D-S2, L8): whole-DB drop only; producer-scoped rebuild deferred until producer #2 ships. CLI prints a warning before the drop unless `--yes`.
+- **Baton-backfill** (one-shot, opt-in via `--backfill-baton`): synthesizes a `RunDescriptor` pointing at `state/{compile_result,last_scan}.json` baton files using `manifest.runs.last_successful_run_id` as the synthetic run_id; sorts before all real runs (`sort_key="0000-pre-63-backfill"`); idempotent — silently skipped if a sidecar already exists at `state/runs/<run_id>/`. The one-time migration entry for the latest pre-#63 run, per #63.0 outcome (d) — the other 9 pre-#63 runs are unrecoverable.
+
+Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap; `graphdb-kdb rebuild` regenerates either store from the post-#63 run history.
+
+### 8.5 Pointers to companion docs
+
+The blueprint + companion docs are the durable architecture record. This section is the navigation summary.
+
+| Doc | Scope |
+|---|---|
+| [`docs/task-graphdb-kdb-blueprint.md`](task-graphdb-kdb-blueprint.md) | Locked decisions D32–D40 + D-A1/A2/B1/S0–S3; schema DDL; ingestion algorithm; rebuild semantics; #63.1–#63.9 sub-task ledger |
+| [`docs/New-GraphDB-Paradigm.md`](New-GraphDB-Paradigm.md) | Conversational record of the 2026-05-10 reframe (graph-is-the-system); scope distinction GraphDB-KDB vs future `kdb-graph` |
+| [`docs/graphdb-kdb-producer-contract.md`](graphdb-kdb-producer-contract.md) | Formal contract for what GraphDB-KDB expects from any producer (mutation payload + scan + run journal + sidecar archive); adapter interface |
+| [`docs/graphdb-kdb-extraction-roadmap.md`](graphdb-kdb-extraction-roadmap.md) | 5-stage path from monorepo to standalone PyPI package; invariants PR1–PR10; anti-patterns |
+| [`docs/manifest-succession-arc.md`](manifest-succession-arc.md) | M0–M4 transition arc: manifest.json from swiss-knife (source meta + ontology) to source-meta-only ledger; EXISTING CONTEXT switches to GraphDB at M1 |
+| [`docs/task63-phase3-implementation-blueprint.md`](task63-phase3-implementation-blueprint.md) | Implementation plan for #63.5b + #63.6 + #63.7-pre (the three sub-tasks landed 2026-05-14) |
+
+### 8.6 CLI surface (current)
+
+```
+graphdb-kdb init                                        # create Kuzu dir + schema
+graphdb-kdb stats [--json]                              # node/edge counts by type
+graphdb-kdb neighbors <slug> [--depth N] [--direction]  # BFS expansion
+graphdb-kdb incoming <slug>                             # sugar for neighbors --direction in
+graphdb-kdb path <from> <to> [--max-hops N]             # shortest directed path
+graphdb-kdb cypher "<query>" [--params <json>]          # ad-hoc Cypher escape hatch
+graphdb-kdb pagerank [--top N]                          # NetworkX-backed PageRank
+graphdb-kdb communities                                 # Louvain community assignments
+graphdb-kdb structural-holes                            # inter-community bridge counts
+graphdb-kdb orphans                                     # list orphan-candidate entities
+graphdb-kdb subgraph-by-source <source_id>              # source's induced subgraph
+graphdb-kdb verify --vault-root <P>                     # diff Kuzu vs manifest.json
+graphdb-kdb rebuild --vault-root <P> [--backfill-baton] # drop + replay (D-S2 whole-DB)
+                  [--yes] [--json]
+```
+
+`--graph-dir <path>` overrides the Kuzu data directory (default: `$KDB_GRAPH_PATH` or `~/Droidoes/GraphDB-KDB/`).
+
+---
+
+## 9. Decisions Ledger
 
 | # | Date | Decision | Rationale |
 |---|---|---|---|
@@ -294,10 +427,26 @@ For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorit
 | D29 | 2026-05-10 | M5 retired body_link_jaccard (=1.000-by-construction post-#57) is replaced by `body_emit_set_coverage`: per-source `\|((⋃_p (body_wikilink_slugs(p.body) − {p.slug})) ∩ (concept_slugs ∪ article_slugs))\| / \|concept_slugs ∪ article_slugs\|`, micro-aggregated across the run. Computed in `kdb_benchmark/scorer.py` from captured `parsed_json` — no new RespStatsRecord fields (preserves one-way boundary D25). Self-links excluded to reward cross-page integration. Weight stays 5%. See `docs/task59-m5-replacement-design.md` for full design (D29.1–D29.9 sub-decisions). |
 | D30 | 2026-05-10 | M5 weight bumped 5% → 15%; M6 and M7 each bumped 15% → 10%. Total still 100%. Quality core (S0 + M1 + M4 + M5) becomes 70% of FINAL (was 55%); cost+latency become 20% (was 30%). | Post-#59/#60 regression scorecard showed M5=0.111 outlier (qwen-flash-us) couldn't be discriminated at the 5% weight level — model still topped FINAL despite barely integrating concepts via body wikilinks. Reweight reflects the user's "if other models can do it, why can't you?" stance: quality should dominate FINAL more than cost/latency. Cross-generation FINAL comparison invalidated again per D29.9 (same doctrine). See `docs/TASKS.md` → Task #61. |
 | D31 | 2026-05-10 | Outlier penalty added to FINAL composition. For each model and each in-scope measure (S0, M1, M2, M3, M4, M5), units = floor(((norm − value)/norm × 100) / 10) when value < norm; total = Σ units across measures; FINAL_post = max(0, FINAL_pre − 0.05 × total). M6/M7 excluded (Borda-relative). Surfaces single-axis outliers that the weighted sum would average away (e.g. qwen-flash-us with M5=0.111 dethroned). Cross-generation FINAL comparison invalidated again per D29.9 doctrine. See `docs/task62-outlier-penalty-design.md` (D31.1–D31.12 sub-decisions). |
+| D32 | 2026-05-13 | **GraphDB-KDB is a multi-source raw-text → knowledge-graph compiler at the storage layer**; the schema admits `Source.source_type` as a discriminator and is source-agnostic. The ingestion API (`apply_compile_result`) is Obsidian-flavored for v1 (D32-tempered per Codex Round 1 v2 review). Graph is the architectural primitive; manifest.json + wiki markdown + future visualizations are *renderings*. | Differentiating bet: explicit edges beat implicit similarity. Vector RAG flattens ontology into cosine distance; the graph preserves what we paid to build. Storage-layer multi-source readiness is cheap to bake in; ingestion-layer abstraction without a second producer would be speculative. |
+| D33 | 2026-05-13 | Storage = Kuzu 0.11.3 (embedded graph DB, Cypher dialect, multi-language bindings, MIT). | Purpose-built for embedded graph; file-based (no daemon), portable, industry-standard Cypher. NetworkX+JSONL is Python-only; SQLite-with-graph-schema forces consumers to reimplement traversal. |
+| D34 | 2026-05-13 | Independence-by-shared-upstream: `manifest_update.py` and `graphdb_kdb.ingestor` each consume `compile_result + last_scan + run_id` independently. Neither reads or writes the other's store. | Ablation: delete `manifest.json` → GraphDB still queryable; delete `GraphDB-KDB/` → manifest still works. Both regenerable from `state/runs/<run_id>.json` history. Real independence by structural construction. |
+| D35 | 2026-05-13 | Kuzu *data* directory location: `~/Droidoes/GraphDB-KDB/` (sibling to Obsidian-KDB; not OneDrive-synced). Override via `KDB_GRAPH_PATH` env var. | Physical separation mirrors logical separation. Avoids OneDrive corruption on Kuzu binary catalog files. Backup = recovery-via-rebuild (D39); belt-and-suspenders via `graphdb-kdb snapshot` (#63.9). |
+| D36 | 2026-05-13 | Naming triad: Python module `graphdb_kdb`, Kuzu directory `GraphDB-KDB/`, CLI command `graphdb-kdb`. `kdb-graph` is **reserved** for a future Obsidian-graph-view utility — out of #63 scope. | Avoid conflating the multi-source ontology layer with a (future) Obsidian-specific rendering tool. Memory: `project_graphdb_kdb_vs_kdb_graph_distinction`. |
+| D37 | 2026-05-13 (renamed D-A1 2026-05-14) | Schema: `Entity` and `Source` node tables; `LINKS_TO` (Entity→Entity), `SUPPORTS` (Source→Entity) rel tables. Originally `Page` node-table; renamed to `Entity` per D-A1 to remove the Obsidian-isms from the storage-layer vocabulary. | Provenance is first-class graph data, not a sidecar. `Entity` reads as abstract identity (vs `Page` which presumed wiki-page rendering) — better positioning for multi-source future. |
+| D38 | 2026-05-13 | Pipeline integration: Stage 9 `graph_sync` runs AFTER Stage 8 (manifest write); failure is **non-fatal** — emits warning + journal entry, but overall compile run still returns success. | Honors D34 independence: a failed graph write must not roll back a successful manifest write. Recovery via `graphdb-kdb rebuild`. |
+| D39 | 2026-05-13 | Rebuild path: `graphdb-kdb rebuild` drops all Kuzu tables and replays the **eligible** subset of `state/runs/*.json` chronologically. **Eligibility:** `success=true AND dry_run=false AND payload_present` (payload = sidecar archive at `state/runs/<run_id>/{compile_result,last_scan}.json` per #63.0 outcome). Independence proof: Kuzu regenerable without ever reading `manifest.json`, prospectively from #63 forward. | If GraphDB drifts from compile-history truth, regenerate from compile-history truth. Pre-#63 historical runs are unrecoverable except for the latest baton state — see §8.4 baton-backfill. |
+| D40 | 2026-05-13 | Hybrid analytics: Kuzu Cypher fetches topology (edge lists, node attrs); NetworkX + python-louvain computes PageRank, Louvain communities, structural-holes. | Kuzu lacks native PageRank/Louvain; implementing iteratively in Cypher is awkward. At 10⁴-node ceiling the hybrid cost is sub-second per algorithm. |
+| D-A1 | 2026-05-14 (Round 1 Codex) | Schema rename: `Page → Entity` node-table label. | `Node` would collide with Kuzu's NODE keyword + universal graph-theory term. `Entity` signals abstract identity. Free upgrade while schema is empty/small. |
+| D-A2 | 2026-05-14 (Round 1 Codex) | Source field renames: `compile_state → ingest_state`, `compile_count → ingest_count`, `last_compiled_at → last_ingested_at`. Page enum values (page_type/status/confidence) retained — *values* are Obsidian-flavored; renaming names without revisiting values is cosmetic. | Pipeline-specific field NAMES become pipeline-neutral now. Pipeline-specific VALUES wait for producer #2 to inform the right abstraction. Verifier carries an alias map bridging the manifest side (still `compile_*`) and graph side. |
+| D-B1 | 2026-05-14 (Round 1 Codex) | Rebuilder is **B-lite (adapter split)**: thin generic core in `graphdb_kdb/rebuilder.py` (drop+recreate, chronological iter, error reporting) + producer-specific logic in `graphdb_kdb/adapters/obsidian_runs.py`. Rule: `graphdb_kdb/` MUST NOT `import kdb_compiler.*`. Public function name `rebuild_from_obsidian_runs(...)`. | Pure-C (core imports producer types) would silently weaken D34 independence. B-lite preserves it by structure, not convention. Cost: ≤200 LOC adapter; verified by grep invariant. |
+| D-S0 | 2026-05-14 (Round 2 Codex) | **Stage 9 routes through the Obsidian adapter**, not direct core call. `kdb_compile.py` Stage 9 calls `graphdb_kdb.adapters.obsidian_runs.sync_current_run(cr, scan, run_id)`. Single producer→graph entry point for both live sync and replay. | Makes Doc C's "producer never calls core directly" rule literal, not aspirational. Single code path = one place to debug/test/evolve. Closes OQ-E9 in extraction roadmap. |
+| D-S1 | 2026-05-14 (Round 2 Codex) | **Multi-producer entity-id namespacing**: Obsidian grandfathered as bare slugs (implicit `obsidian:` namespace); all future producers MUST use explicit `<source_type>:<entity_id>` prefix. Adapter declares `entity_id_namespace: ClassVar[str \| None]`. | Retroactive migration of existing entities is destructive without operational benefit; grandfathering is cheaper. Cross-producer queries filter via `Source.source_type`, not slug prefix parsing. |
+| D-S2 | 2026-05-14 (Round 2 Codex) | **Rebuild blast radius v1**: `graphdb-kdb rebuild` always drops the whole DB regardless of `--producer` flag. Producer-scoped rebuild deferred until producer #2 ships AND the team agrees the scoped semantics (tracked as L8 + blueprint TR-3). CLI prints warning before drop. | At v1 single-producer the simple correct semantics. Deferring lets the right scoped-rebuild rules be informed by real co-tenancy needs. |
+| D-S3 | 2026-05-14 (Round 2 Codex) | Adapter declares `supported_journal_versions: ClassVar[list[str]]`. Mismatched versions return structured skip reason `'unsupported_version'` rather than silent corruption. | Producer journals evolve (Obsidian is at `2.0` today). Versioning discipline must be in place before Stage 1 of package extraction, not Stage 4. |
 
 ---
 
-## 9. Open Questions
+## 10. Open Questions
 
 | # | Question | Status | Plan |
 |---|---|---|---|
@@ -312,7 +461,7 @@ For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorit
 
 ---
 
-## 10. Roadmap
+## 11. Roadmap
 
 ### M0 — Scaffolding (commit `796848b`) ✅
 - [x] Vault scaffold: `~/Obsidian/KDB/{raw, wiki/{summaries, concepts, articles}, state/runs, KDB-Compiler-System-Prompt.md}`
@@ -341,6 +490,14 @@ Scanner, manifest updater, validators, call_model + retry, end-to-end dry run al
 - Headline scorecard 2026-05-08 baseline established (haiku-4.5 vs sonnet-4.6)
 - See `docs/TASKS.md` for the 30+ tasks closed across this milestone
 
+### M3 — GraphDB-KDB Layer (#63) ✅ (sub-tasks #63.0 through #63.7-pre)
+Task #63 — refoundation as raw-text → knowledge-graph compiler. Supersedes #26 + #27. See §8.
+- **Architecture deliberation:** D32–D40 locked through 3 rounds of Codex review. D-A1/A2/B1/S0/S1/S2/S3 locked through 3 more rounds during Phase 3 implementation.
+- **Companion docs:** blueprint, paradigm record, producer contract, extraction roadmap, manifest succession arc, Phase 3 implementation blueprint (see §8.5).
+- **Sub-tasks shipped:** #63.0 replay-contract verification; #63.1 schema + skeleton; #63.2 ingestion; #63.3 read query API; #63.4 hybrid analytics; #63.5 verifier; #63.5b rename pass (Page→Entity, compile_*→ingest_*); #63.6 B-lite rebuilder + Obsidian adapter; #63.7-pre Stage 9 wiring via adapter + sidecar archival.
+- **Test surface:** 96 graphdb_kdb tests + 6 Stage-9 integration tests in kdb_compiler/tests/.
+- **Remaining in #63:** #63.7 (full Stage 9 integration with live runs on canonical corpus); #63.8 (this section); #63.9 (snapshot/export).
+
 ### M3+ (deferred)
 - [ ] Track 2 (`llm-linker`) — separate sub-project
 - [ ] News Clippings ingestion channel (from Google Sheet)
@@ -352,7 +509,7 @@ Scanner, manifest updater, validators, call_model + retry, end-to-end dry run al
 
 ---
 
-## 11. External References
+## 12. External References
 
 Consulted AI artifacts (stored in `~/Obsidian/Projects/Obsidian-KDB/`):
 - `Karpathy LLM Knowledge Base in Obsidian - Grok.md` — original design + lean v1 statefulness
