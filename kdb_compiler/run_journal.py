@@ -47,6 +47,7 @@ STAGE_NAMES: tuple[str, ...] = (
     "build manifest update",
     "apply pages",
     "persist state",
+    "graph_sync",  # #63.7-pre — Stage 9: GraphDB-KDB sync via Obsidian adapter (D-S0)
 )
 
 

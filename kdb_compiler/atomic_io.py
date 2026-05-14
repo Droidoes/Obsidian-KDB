@@ -64,6 +64,17 @@ def atomic_write_json(path: Path | str, obj: Any, *, indent: int = 2, sort_keys:
     atomic_write_text(path, text)
 
 
+def atomic_copy(src: Path | str, dst: Path | str) -> None:
+    """Atomic copy: read src bytes → atomic_write_bytes(dst).
+
+    Used by #63.7-pre's sidecar archival to copy `state/{compile_result,
+    last_scan}.json` into `state/runs/<run_id>/` while preserving the
+    write-then-rename atomicity guarantee.
+    """
+    data = Path(src).read_bytes()
+    atomic_write_bytes(dst, data)
+
+
 def main() -> None:  # pragma: no cover
     raise SystemExit("atomic_io is a library module; not meant to be run directly.")
 

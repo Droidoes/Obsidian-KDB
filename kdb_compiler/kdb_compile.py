@@ -464,6 +464,57 @@ def compile(
         skipped_manifest_write_reason=skipped_reason,
     )
 
+    # ----- [9] graph_sync -----
+    # D-S0: route through Obsidian adapter; no direct GraphDB/apply_compile_result
+    # import in this file. D38: non-fatal — graph_sync errors emit a warning +
+    # journal entry, but the overall compile run still returns success.
+    #
+    # Two sub-steps inside Stage 9: (a) archive per-run sidecar of the current
+    # baton (compile_result.json + last_scan.json) under state/runs/<run_id>/
+    # so future `graphdb-kdb rebuild` can replay this run; (b) live-sync the
+    # in-memory payload into the graph. Archival happens first so that even
+    # if the live sync fails, the sidecar exists for the rebuild recovery path.
+    _stage_open(9)
+    if dry_run:
+        _stage_close(9, ok=True, note="skipped (dry-run)")
+    else:
+        sidecar_archived = False
+        sync_payload: dict[str, Any] = {}
+        try:
+            sidecar_dir = state_root / "runs" / run_id
+            sidecar_dir.mkdir(parents=True, exist_ok=True)
+            atomic_io.atomic_copy(
+                state_root / "compile_result.json",
+                sidecar_dir / "compile_result.json",
+            )
+            atomic_io.atomic_copy(
+                state_root / "last_scan.json",
+                sidecar_dir / "last_scan.json",
+            )
+            sidecar_archived = True
+
+            from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+            adapter = ObsidianRunsAdapter()
+            sync_result = adapter.sync_current_run(cr or {}, scan_dict, run_id)
+            sync_payload = {
+                "entities_upserted":   sync_result.entities_upserted,
+                "edges_upserted":      sync_result.edges_upserted,
+                "sources_upserted":    sync_result.sources_upserted,
+                "supports_upserted":   sync_result.supports_upserted,
+                "orphans_detected":    len(sync_result.orphans_detected),
+                "sidecar_archived":    sidecar_archived,
+                "sidecar_path":        sidecar_dir.as_posix(),
+            }
+            _stage_close(9, ok=True, **sync_payload)
+        except Exception as exc:
+            note = f"{type(exc).__name__}: {exc}"
+            _stage_close(
+                9, ok=False, note=note,
+                sidecar_archived=sidecar_archived,
+                recovery_hint=f"run: graphdb-kdb rebuild --vault-root {vault_root}",
+            )
+            # NO call to _fail(); per D38 the overall run remains successful.
+
     _finalize_and_write(
         success=True,
         manifest_written=manifest_written,

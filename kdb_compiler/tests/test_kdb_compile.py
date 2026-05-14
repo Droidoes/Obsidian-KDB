@@ -537,6 +537,7 @@ _EXPECTED_STAGES = (
     "scan", "validate scan", "compile",
     "validate compile_result", "reconcile compile_result",
     "build manifest update", "apply pages", "persist state",
+    "graph_sync",  # #63.7-pre — Stage 9
 )
 _STAGE_COUNT = len(_EXPECTED_STAGES)
 
@@ -550,8 +551,9 @@ def _capture_progress() -> tuple[list[tuple[str, dict]], "object"]:
 
 
 def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
-    """All eight stage_start/stage_done pairs arrive in the correct sequence
-    for a happy-path wet run with monotonic indices and names from _STAGES."""
+    """All nine stage_start/stage_done pairs arrive in the correct sequence
+    for a happy-path wet run with monotonic indices and names from _STAGES.
+    Stage 9 (graph_sync) added by #63.7-pre."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -942,7 +944,7 @@ def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
 
 def test_stage_names_public_contract() -> None:
     """STAGE_NAMES is the source of truth for stage ordering — downstream
-    tools depend on it. Pin the exact 8 entries."""
+    tools depend on it. Pin the exact 9 entries (Stage 9 added by #63.7-pre)."""
     from kdb_compiler.run_journal import STAGE_NAMES
     assert STAGE_NAMES == (
         "scan",
@@ -953,15 +955,18 @@ def test_stage_names_public_contract() -> None:
         "build manifest update",
         "apply pages",
         "persist state",
+        "graph_sync",
     )
 
 
-def test_full_journal_contains_all_eight_stages_with_folded_payloads(
+def test_full_journal_contains_all_stages_with_folded_payloads(
     tmp_path: Path,
 ) -> None:
-    """Happy-path wet run: the journal has stage entries 1..8, and
+    """Happy-path wet run: the journal has stage entries 1..9, and
     finalize()'s index-based payload folding lands the manifest deltas on
-    stage 6 (not stage 5) and the apply pages_written on stage 7 (not 6)."""
+    stage 6 (not stage 5) and the apply pages_written on stage 7 (not 6).
+    Stage 9 (graph_sync) added by #63.7-pre — non-fatal per D38; expected
+    to land in the journal regardless of outcome."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -972,7 +977,7 @@ def test_full_journal_contains_all_eight_stages_with_folded_payloads(
 
     journal = _load_journal(state, ctx.run_id)
     indices = [s["index"] for s in journal["stages"]]
-    assert indices == [1, 2, 3, 4, 5, 6, 7, 8]
+    assert indices == [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     by_idx = {s["index"]: s for s in journal["stages"]}
 
@@ -1027,3 +1032,182 @@ def test_pairing_omission_repair_flows_through_to_disk_wet_run(
     # Stage 7 pages_written matches.
     written = by_idx[7]["pages_written"]
     assert "KDB/wiki/concepts/mencius.md" in written
+
+
+# ---------------------------------------------------------------------------
+# Stage 9 (graph_sync) — #63.7-pre
+# ---------------------------------------------------------------------------
+
+def test_stage9_lands_in_journal_with_sync_payload(tmp_path: Path) -> None:
+    """Wet run: Stage 9 succeeds and carries sync-result counts in the
+    journal entry. D-S0 — wired via Obsidian adapter, not direct GraphDB."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+
+    # Isolate Kuzu DB to a temp location so the live ~/Droidoes/GraphDB-KDB/
+    # isn't touched by tests.
+    import os
+    os.environ["KDB_GRAPH_PATH"] = str(tmp_path / "graph")
+    try:
+        result = compile(vault, run_ctx=ctx)
+    finally:
+        del os.environ["KDB_GRAPH_PATH"]
+
+    assert result.success is True
+    journal = _load_journal(state, ctx.run_id)
+    by_idx = {s["index"]: s for s in journal["stages"]}
+    assert 9 in by_idx
+    stage9 = by_idx[9]
+    assert stage9["ok"] is True
+    assert stage9["entities_upserted"] >= 1
+    assert stage9["sources_upserted"] >= 1
+    assert stage9["sidecar_archived"] is True
+    assert stage9["sidecar_path"].endswith(f"/runs/{ctx.run_id}")
+
+
+def test_stage9_non_fatal_on_adapter_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the adapter's sync_current_run raises, Stage 9 closes with ok=False
+    but the overall run still returns success=True (D38 non-fatal)."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+
+    import os
+    os.environ["KDB_GRAPH_PATH"] = str(tmp_path / "graph")
+
+    def boom(self, mutation, scan, run_id, graph_dir=None):
+        raise RuntimeError("simulated graph_sync failure")
+    monkeypatch.setattr(
+        "graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter.sync_current_run",
+        boom,
+    )
+
+    try:
+        result = compile(vault, run_ctx=ctx)
+    finally:
+        del os.environ["KDB_GRAPH_PATH"]
+
+    # Overall run succeeded despite Stage 9 failing.
+    assert result.success is True
+    assert result.manifest_written is True
+    journal = _load_journal(state, ctx.run_id)
+    assert journal["success"] is True
+    by_idx = {s["index"]: s for s in journal["stages"]}
+    stage9 = by_idx[9]
+    assert stage9["ok"] is False
+    assert "simulated graph_sync failure" in stage9["note"]
+    assert "graphdb-kdb rebuild" in stage9["recovery_hint"]
+    # Sidecar archival ran BEFORE the adapter call → it succeeded.
+    assert stage9["sidecar_archived"] is True
+
+
+def test_sidecar_archival_is_byte_identical(tmp_path: Path) -> None:
+    """Post-run, sidecar files at state/runs/<run_id>/{compile_result,
+    last_scan}.json are byte-identical to the baton at state/."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+
+    import os
+    os.environ["KDB_GRAPH_PATH"] = str(tmp_path / "graph")
+    try:
+        result = compile(vault, run_ctx=ctx)
+    finally:
+        del os.environ["KDB_GRAPH_PATH"]
+    assert result.success is True
+
+    baton_cr = (state / "compile_result.json").read_bytes()
+    baton_scan = (state / "last_scan.json").read_bytes()
+    sidecar_cr = (state / "runs" / ctx.run_id / "compile_result.json").read_bytes()
+    sidecar_scan = (state / "runs" / ctx.run_id / "last_scan.json").read_bytes()
+    assert sidecar_cr == baton_cr
+    assert sidecar_scan == baton_scan
+
+
+def test_stage9_dry_run_is_no_op(tmp_path: Path) -> None:
+    """Dry-run skips Stage 9 — closes with ok=True and a 'skipped (dry-run)'
+    note. Sidecar dir is NOT created."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault, dry_run=True)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+    assert result.dry_run is True
+
+    journal = _load_journal(state, ctx.run_id)
+    by_idx = {s["index"]: s for s in journal["stages"]}
+    stage9 = by_idx[9]
+    assert stage9["ok"] is True
+    assert stage9["note"] == "skipped (dry-run)"
+    # No sidecar dir created under dry-run.
+    assert not (state / "runs" / ctx.run_id).exists() or \
+           not (state / "runs" / ctx.run_id / "compile_result.json").exists()
+
+
+def test_kdb_compile_does_not_import_graphdb_core() -> None:
+    """Invariant: kdb_compile.py wires Stage 9 via the Obsidian adapter only
+    (D-S0). It must NOT import `graphdb_kdb.GraphDB` or
+    `graphdb_kdb.ingestor.apply_compile_result` directly — those are
+    encapsulated by the adapter per the producer-contract."""
+    src = Path(__file__).parent.parent / "kdb_compile.py"
+    text = src.read_text(encoding="utf-8")
+    assert "from graphdb_kdb import GraphDB" not in text
+    assert "from graphdb_kdb.graphdb import GraphDB" not in text
+    assert "from graphdb_kdb.ingestor import apply_compile_result" not in text
+    # The one allowed graphdb_kdb import — the adapter.
+    assert "from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter" in text
+
+
+def test_rebuild_after_compile_reproduces_graph(tmp_path: Path) -> None:
+    """End-to-end: a successful compile syncs into Kuzu via Stage 9; then
+    `graphdb-kdb rebuild` replays from the sidecar archive and produces a
+    structurally-equivalent graph. The independence-via-replay proof (D39)
+    on a real compile artifact."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+
+    import os
+    graph_dir = tmp_path / "graph"
+    os.environ["KDB_GRAPH_PATH"] = str(graph_dir)
+    try:
+        result = compile(vault, run_ctx=ctx)
+        assert result.success is True
+
+        from graphdb_kdb.graphdb import GraphDB
+        with GraphDB(graph_dir) as gdb:
+            after_sync = gdb.stats()
+            after_sync_entity = gdb.get_entity("summary-paper")
+
+        # Rebuild from sidecar.
+        from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+        from graphdb_kdb.rebuilder import rebuild
+        rebuild_dir = tmp_path / "graph-replay"
+        result_rb = rebuild(
+            graph_dir=rebuild_dir,
+            adapter=ObsidianRunsAdapter(),
+            journals_dir=state / "runs",
+            confirm=False,
+        )
+        assert result_rb.replayed == 1
+        assert result_rb.failed == 0
+
+        with GraphDB(rebuild_dir) as gdb:
+            after_replay = gdb.stats()
+            after_replay_entity = gdb.get_entity("summary-paper")
+    finally:
+        del os.environ["KDB_GRAPH_PATH"]
+
+    assert after_sync == after_replay
+    assert after_sync_entity is not None
+    assert after_replay_entity is not None
+    assert after_sync_entity.slug == after_replay_entity.slug == "summary-paper"
