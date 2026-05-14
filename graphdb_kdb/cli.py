@@ -3,7 +3,7 @@
 Subcommands added incrementally per the #63.x plan.
 #63.1 — init
 #63.3 — neighbors, incoming, path, stats, cypher
-#63.4 — pagerank, communities, orphans (analytics)
+#63.4 — pagerank, communities, structural-holes, orphans, subgraph-by-source
 #63.5 — verify
 #63.6 — rebuild, sync
 #63.9 — snapshot
@@ -101,6 +101,95 @@ def cmd_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pagerank(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        ranked = gdb.pagerank(top_n=args.top)
+    if args.json:
+        _print_json([{"slug": s, "score": sc} for s, sc in ranked])
+    else:
+        if not ranked:
+            print("(empty graph)")
+        for slug, score in ranked:
+            print(f"  {score:0.6f}  {slug}")
+    return 0
+
+
+def cmd_communities(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        membership = gdb.communities()
+    if args.json:
+        _print_json(membership)
+        return 0
+    if not membership:
+        print("(empty graph)")
+        return 0
+    # Plain output: group by community id for readability.
+    by_comm: dict[int, list[str]] = {}
+    for slug, cid in membership.items():
+        by_comm.setdefault(cid, []).append(slug)
+    for cid in sorted(by_comm):
+        print(f"community {cid} ({len(by_comm[cid])}):")
+        for slug in sorted(by_comm[cid]):
+            print(f"  {slug}")
+    return 0
+
+
+def cmd_structural_holes(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        holes = gdb.structural_holes()
+    if args.json:
+        _print_json([{"comm_a": a, "comm_b": b, "n_bridges": n} for a, b, n in holes])
+        return 0
+    if not holes:
+        print("(no inter-community bridges)")
+        return 0
+    for a, b, n in holes:
+        print(f"  comm {a:<4} <-> comm {b:<4}  bridges={n}")
+    return 0
+
+
+def cmd_orphans(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        pages = gdb.orphan_pages()
+    if args.json:
+        _print_json([dataclasses.asdict(p) for p in pages])
+        return 0
+    if not pages:
+        print("(no orphan-candidate pages)")
+        return 0
+    for p in pages:
+        print(f"  {p.slug:<40} {p.page_type:<10} last_run_id={p.last_run_id}")
+    return 0
+
+
+def cmd_subgraph_by_source(args: argparse.Namespace) -> int:
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        sg = gdb.subgraph_by_source(args.source_id)
+    if args.json:
+        _print_json({
+            "nodes": [dataclasses.asdict(p) for p in sg["nodes"]],
+            "edges": sg["edges"],
+        })
+        return 0
+    nodes = sg["nodes"]
+    edges = sg["edges"]
+    if not nodes:
+        print(f"(source {args.source_id!r} not found or has no supported pages)")
+        return 0
+    print(f"nodes ({len(nodes)}):")
+    for p in nodes:
+        print(f"  {p.slug:<40} {p.page_type:<10} {p.title}")
+    print(f"edges ({len(edges)}):")
+    for e in edges:
+        print(f"  {e['from']:<40} -> {e['to']}")
+    return 0
+
+
 def cmd_cypher(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     params: dict[str, Any] = {}
@@ -159,6 +248,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_c.add_argument("--params", default=None, help="JSON dict of query parameters.")
     p_c.add_argument("--json", action="store_true", help="JSON output.")
 
+    p_pr = sub.add_parser("pagerank", help="PageRank-ranked pages (NetworkX-backed).")
+    p_pr.add_argument("--top", type=int, default=None, help="Truncate to top-N (default: all).")
+    p_pr.add_argument("--json", action="store_true", help="JSON output.")
+
+    p_com = sub.add_parser("communities", help="Louvain community assignments.")
+    p_com.add_argument("--json", action="store_true", help="JSON output.")
+
+    p_sh = sub.add_parser(
+        "structural-holes",
+        help="Inter-community bridge counts (sparsest first).",
+    )
+    p_sh.add_argument("--json", action="store_true", help="JSON output.")
+
+    p_o = sub.add_parser("orphans", help="List orphan-candidate pages.")
+    p_o.add_argument("--json", action="store_true", help="JSON output.")
+
+    p_sg = sub.add_parser(
+        "subgraph-by-source",
+        help="Export a source's induced (nodes, edges) subgraph.",
+    )
+    p_sg.add_argument("source_id", metavar="SOURCE_ID")
+    p_sg.add_argument("--json", action="store_true", help="JSON output.")
+
     return p
 
 
@@ -169,6 +281,11 @@ _DISPATCH = {
     "incoming": cmd_incoming,
     "path": cmd_path,
     "cypher": cmd_cypher,
+    "pagerank": cmd_pagerank,
+    "communities": cmd_communities,
+    "structural-holes": cmd_structural_holes,
+    "orphans": cmd_orphans,
+    "subgraph-by-source": cmd_subgraph_by_source,
 }
 
 

@@ -221,3 +221,17 @@ class GraphDB:
     def cypher(self, query: str, params: dict | None = None) -> list[dict]:
         from graphdb_kdb import queries
         return queries.cypher(self.conn, query, params)
+
+    # ---- analytics API (#63.4) — hybrid via NetworkX/python-louvain ----
+
+    def pagerank(self, *, top_n: int | None = None) -> list[tuple[str, float]]:
+        from graphdb_kdb import analytics
+        return analytics.pagerank(self.conn, top_n=top_n)
+
+    def communities(self, *, algorithm: str = "louvain") -> dict[str, int]:
+        from graphdb_kdb import analytics
+        return analytics.communities(self.conn, algorithm=algorithm)
+
+    def structural_holes(self) -> list[tuple[int, int, int]]:
+        from graphdb_kdb import analytics
+        return analytics.structural_holes(self.conn)
