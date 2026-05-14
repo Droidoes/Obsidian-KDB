@@ -32,15 +32,15 @@ def test_single_page_upsert(graph_dir):
     scan = make_scan([make_scan_entry("KDB/raw/a.md")])
     with GraphDB(graph_dir) as gdb:
         res = gdb.apply_compile_result(cr, scan, "run-1")
-        page = gdb.get_page("alpha")
+        page = gdb.get_entity("alpha")
         stats = gdb.stats()
-    assert res.pages_upserted == 1
+    assert res.entities_upserted == 1
     assert res.sources_upserted == 1
     assert page is not None
     assert page.slug == "alpha"
     assert page.first_run_id == "run-1"
     assert page.last_run_id == "run-1"
-    assert stats["pages"] == 1
+    assert stats["entities"] == 1
     assert stats["sources"] == 1
 
 
@@ -51,8 +51,8 @@ def test_multi_page_upsert(graph_dir):
     with GraphDB(graph_dir) as gdb:
         res = gdb.apply_compile_result(cr, scan, "run-1")
         stats = gdb.stats()
-    assert res.pages_upserted == 3
-    assert stats["pages"] == 3
+    assert res.entities_upserted == 3
+    assert stats["entities"] == 3
 
 
 # ---------- 2. outgoing edges replace (add / remove / change) ----------
@@ -132,7 +132,7 @@ def test_outgoing_edges_replace_change(graph_dir):
         gdb.apply_compile_result(cr2, scan, "run-2")
         # Verify a→b is gone; a→c and a→d exist.
         r = gdb.conn.execute(
-            "MATCH (a:Page {slug: 'a'})-[:LINKS_TO]->(t) RETURN t.slug ORDER BY t.slug"
+            "MATCH (a:Entity {slug: 'a'})-[:LINKS_TO]->(t) RETURN t.slug ORDER BY t.slug"
         )
         targets = []
         while r.has_next():
@@ -269,7 +269,7 @@ def test_deleted_reconcile_marks_source(graph_dir):
         gdb.apply_compile_result(cr2, scan2, "run-2")
         s = gdb.get_source(sid)
         # SUPPORTS edges dropped, so zeta should be orphaned
-        r = gdb.conn.execute("MATCH (p:Page {slug: 'zeta'}) RETURN p.status")
+        r = gdb.conn.execute("MATCH (p:Entity {slug: 'zeta'}) RETURN p.status")
         zeta_status = r.get_next()[0] if r.has_next() else None
     assert s is not None
     assert s.status == "deleted"
@@ -291,7 +291,7 @@ def test_orphan_detection_flags_page_with_no_supports(graph_dir):
     cr2 = make_compile_result([make_compiled_source(src, [make_page("a")])])
     with GraphDB(graph_dir) as gdb:
         res = gdb.apply_compile_result(cr2, scan, "run-2")
-        page_b = gdb.get_page("b")
+        page_b = gdb.get_entity("b")
     assert "b" in res.orphans_detected
     assert page_b is not None
     assert page_b.status == "orphan_candidate"
@@ -311,13 +311,13 @@ def test_orphan_revival_on_resupport(graph_dir):
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
             scan, "r2",
         )
-        assert gdb.get_page("b").status == "orphan_candidate"
+        assert gdb.get_entity("b").status == "orphan_candidate"
 
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
             scan, "r3",
         )
-        b = gdb.get_page("b")
+        b = gdb.get_entity("b")
     assert b.status == "active"
 
 
@@ -332,10 +332,10 @@ def test_transaction_rollback_on_bad_input(graph_dir, monkeypatch):
         gdb.apply_compile_result(cr_seed, scan_seed, "run-seed")
         seed_stats = gdb.stats()
 
-    # Patch _upsert_page to raise mid-Phase-3.
+    # Patch _upsert_entity to raise mid-Phase-3.
     def boom(*args, **kwargs):
         raise RuntimeError("simulated mid-ingest failure")
-    monkeypatch.setattr(ingestor, "_upsert_page", boom)
+    monkeypatch.setattr(ingestor, "_upsert_entity", boom)
 
     src2 = "KDB/raw/b.md"
     cr_fail = make_compile_result([make_compiled_source(src2, [make_page("beta")])])
@@ -380,9 +380,9 @@ def test_multiple_sources_in_one_run(graph_dir):
         res = gdb.apply_compile_result(cr, scan, "run-1")
         stats = gdb.stats()
     assert res.sources_upserted == 2
-    assert res.pages_upserted == 3
+    assert res.entities_upserted == 3
     assert res.supports_upserted == 3
-    assert stats == {"pages": 3, "sources": 2, "links_to": 0, "supports": 3}
+    assert stats == {"entities": 3, "sources": 2, "links_to": 0, "supports": 3}
 
 
 # ---------- 10. timestamp offset round-trip (Codex C3) ----------
@@ -399,22 +399,22 @@ def test_timestamp_offset_roundtrip(graph_dir):
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(cr, scan, "run-1", now=iso)
-        page = gdb.get_page("alpha")
+        page = gdb.get_entity("alpha")
         source = gdb.get_source(src)
     assert page.created_at == iso
     assert page.updated_at == iso
     assert source.first_seen_at == iso
-    assert source.last_compiled_at == iso
+    assert source.last_ingested_at == iso
 
 
 # ---------- 11. Phase 1 does NOT mutate compile-state (Codex v2 NEW M1) ----------
 
-def test_phase1_does_not_mutate_compile_state(graph_dir):
-    """Scan-only run does NOT update last_compiled_at / compile_state / compile_count.
+def test_phase1_does_not_mutate_ingest_state(graph_dir):
+    """Scan-only run does NOT update last_ingested_at / ingest_state / ingest_count.
 
     Codex v2 NEW MATERIAL #1: pre-fix, _upsert_source_from_scan set
-    last_compiled_at during scan refresh, making unchanged sources look
-    freshly compiled. The Phase 1/Phase 3 split fixes this.
+    last_ingested_at (then-named last_compiled_at) during scan refresh,
+    making unchanged sources look freshly compiled. The Phase 1/Phase 3 split fixes this.
     """
     src = "KDB/raw/a.md"
     t1 = "2026-05-13T10:00:00-04:00"
@@ -428,9 +428,9 @@ def test_phase1_does_not_mutate_compile_state(graph_dir):
             "run-1", now=t1,
         )
         s1 = gdb.get_source(src)
-    assert s1.compile_count == 1
-    assert s1.compile_state == "compiled"
-    assert s1.last_compiled_at == t1
+    assert s1.ingest_count == 1
+    assert s1.ingest_state == "compiled"
+    assert s1.last_ingested_at == t1
 
     # Scan-only run (no compiled_sources). Phase 1 fires; Phase 3 does NOT.
     with GraphDB(graph_dir) as gdb:
@@ -441,9 +441,9 @@ def test_phase1_does_not_mutate_compile_state(graph_dir):
         )
         s2 = gdb.get_source(src)
     # Compile-state fields are UNCHANGED.
-    assert s2.compile_count == 1
-    assert s2.compile_state == "compiled"
-    assert s2.last_compiled_at == t1  # still the original compile timestamp
+    assert s2.ingest_count == 1
+    assert s2.ingest_state == "compiled"
+    assert s2.last_ingested_at == t1  # still the original compile timestamp
     # Scan-derived fields ARE refreshed.
     assert s2.hash == "sha256:v2"
     assert s2.last_seen_at == t2

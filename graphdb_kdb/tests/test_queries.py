@@ -2,8 +2,8 @@
 
 Covers the public read primitives surfaced via GraphDB methods:
 neighbors / incoming_links / outgoing_links / shortest_path /
-pages_for_source / sources_for_page / subgraph_by_source /
-orphan_pages / cypher.
+entities_for_source / sources_for_entity / subgraph_by_source /
+orphan_entities / cypher.
 """
 from __future__ import annotations
 
@@ -196,23 +196,23 @@ def test_shortest_path_rejects_zero_max_hops(graph_dir):
             gdb.shortest_path("a", "b", max_hops=0)
 
 
-# ---------- 4. pages_for_source / sources_for_page ----------
+# ---------- 4. entities_for_source / sources_for_entity ----------
 
-def test_pages_for_source(graph_dir):
+def test_entities_for_source(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
-        pages = gdb.pages_for_source("KDB/raw/s.md")
+        pages = gdb.entities_for_source("KDB/raw/s.md")
     assert sorted(p.slug for p in pages) == ["a", "b", "c", "d"]
 
 
 def test_pages_for_unknown_source_is_empty(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
-        pages = gdb.pages_for_source("KDB/raw/missing.md")
+        pages = gdb.entities_for_source("KDB/raw/missing.md")
     assert pages == []
 
 
-def test_sources_for_page(graph_dir):
+def test_sources_for_entity(graph_dir):
     """Same page supported by two different sources yields both sources."""
     with GraphDB(graph_dir) as gdb:
         cs1 = make_compiled_source("KDB/raw/s1.md", [make_page("shared")])
@@ -223,7 +223,7 @@ def test_sources_for_page(graph_dir):
             make_scan_entry("KDB/raw/s2.md"),
         ])
         gdb.apply_compile_result(cr, scan, "run-1")
-        sources = gdb.sources_for_page("shared")
+        sources = gdb.sources_for_entity("shared")
     assert sorted(s.source_id for s in sources) == ["KDB/raw/s1.md", "KDB/raw/s2.md"]
 
 
@@ -249,9 +249,9 @@ def test_subgraph_by_unknown_source_is_empty(graph_dir):
     assert sg == {"nodes": [], "edges": []}
 
 
-# ---------- 6. orphan_pages ----------
+# ---------- 6. orphan_entities ----------
 
-def test_orphan_pages_listing(graph_dir):
+def test_orphan_entities_listing(graph_dir):
     """Pages flagged orphan_candidate at ingestion are returned here."""
     src = "KDB/raw/s.md"
     scan = make_scan([make_scan_entry(src)])
@@ -265,14 +265,14 @@ def test_orphan_pages_listing(graph_dir):
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
             scan, "r2",
         )
-        orphans = gdb.orphan_pages()
+        orphans = gdb.orphan_entities()
     assert [p.slug for p in orphans] == ["b"]
 
 
-def test_orphan_pages_empty_when_none(graph_dir):
+def test_orphan_entities_empty_when_none(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
-        orphans = gdb.orphan_pages()
+        orphans = gdb.orphan_entities()
     assert orphans == []
 
 
@@ -282,7 +282,7 @@ def test_cypher_returns_list_of_dicts(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
         rows = gdb.cypher(
-            "MATCH (p:Page) RETURN p.slug AS slug ORDER BY p.slug"
+            "MATCH (p:Entity) RETURN p.slug AS slug ORDER BY p.slug"
         )
     assert rows == [{"slug": "a"}, {"slug": "b"}, {"slug": "c"}, {"slug": "d"}]
 
@@ -291,7 +291,7 @@ def test_cypher_with_params(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
         rows = gdb.cypher(
-            "MATCH (p:Page {slug: $slug}) RETURN p.slug AS slug",
+            "MATCH (p:Entity {slug: $slug}) RETURN p.slug AS slug",
             {"slug": "c"},
         )
     assert rows == [{"slug": "c"}]
@@ -300,5 +300,5 @@ def test_cypher_with_params(graph_dir):
 def test_cypher_empty_result(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
-        rows = gdb.cypher("MATCH (p:Page {slug: 'ghost'}) RETURN p.slug")
+        rows = gdb.cypher("MATCH (p:Entity {slug: 'ghost'}) RETURN p.slug")
     assert rows == []

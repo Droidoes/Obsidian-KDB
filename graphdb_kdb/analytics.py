@@ -21,15 +21,15 @@ _LOUVAIN_RANDOM_STATE = 42  # reproducibility for tests + cross-session stabilit
 # ---------- topology loaders ----------
 
 def _to_digraph(conn: kuzu.Connection) -> nx.DiGraph:
-    """Load (Page, LINKS_TO) topology as a directed graph.
+    """Load (Entity, LINKS_TO) topology as a directed graph.
 
     Self-loops are skipped (no semantic meaning here and they distort PageRank).
     """
     g = nx.DiGraph()
-    r = conn.execute("MATCH (p:Page) RETURN p.slug")
+    r = conn.execute("MATCH (e:Entity) RETURN e.slug")
     while r.has_next():
         g.add_node(r.get_next()[0])
-    r = conn.execute("MATCH (a:Page)-[:LINKS_TO]->(b:Page) RETURN a.slug, b.slug")
+    r = conn.execute("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug")
     while r.has_next():
         row = r.get_next()
         a, b = row[0], row[1]
@@ -39,16 +39,16 @@ def _to_digraph(conn: kuzu.Connection) -> nx.DiGraph:
 
 
 def _to_undirected(conn: kuzu.Connection) -> nx.Graph:
-    """Undirected projection of (Page, LINKS_TO) for Louvain.
+    """Undirected projection of (Entity, LINKS_TO) for Louvain.
 
     Louvain modularity is defined on undirected graphs; we project by
     treating reciprocal edges as a single undirected edge.
     """
     g = nx.Graph()
-    r = conn.execute("MATCH (p:Page) RETURN p.slug")
+    r = conn.execute("MATCH (e:Entity) RETURN e.slug")
     while r.has_next():
         g.add_node(r.get_next()[0])
-    r = conn.execute("MATCH (a:Page)-[:LINKS_TO]->(b:Page) RETURN a.slug, b.slug")
+    r = conn.execute("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug")
     while r.has_next():
         row = r.get_next()
         a, b = row[0], row[1]
@@ -88,7 +88,7 @@ def communities(
     *,
     algorithm: str = "louvain",
 ) -> dict[str, int]:
-    """Community assignment per Page slug.
+    """Community assignment per Entity slug.
 
     Currently supports only Louvain (python-louvain). Returns a dict
     mapping slug → community_id (small ints). Empty graph → `{}`.

@@ -16,25 +16,25 @@ from typing import Any
 
 import kuzu
 
-from graphdb_kdb.types import Page, Source
+from graphdb_kdb.types import Entity, Source
 
 
-_PAGE_RETURN_COLS = (
-    "p.slug, p.title, p.page_type, p.status, p.confidence, "
-    "p.created_at, p.updated_at, p.first_run_id, p.last_run_id"
+_ENTITY_RETURN_COLS = (
+    "e.slug, e.title, e.page_type, e.status, e.confidence, "
+    "e.created_at, e.updated_at, e.first_run_id, e.last_run_id"
 )
 _SOURCE_RETURN_COLS = (
     "s.source_id, s.source_type, s.canonical_path, s.status, s.file_type, "
     "s.hash, s.size_bytes, s.first_seen_at, s.last_seen_at, "
-    "s.last_compiled_at, s.compile_state, s.compile_count, "
+    "s.last_ingested_at, s.ingest_state, s.ingest_count, "
     "s.last_run_id, s.moved_to"
 )
 
 
 # ---------- row -> dataclass helpers ----------
 
-def _row_to_page(row: list[Any]) -> Page:
-    return Page(
+def _row_to_entity(row: list[Any]) -> Entity:
+    return Entity(
         slug=row[0], title=row[1], page_type=row[2], status=row[3],
         confidence=row[4], created_at=row[5], updated_at=row[6],
         first_run_id=row[7], last_run_id=row[8],
@@ -46,17 +46,17 @@ def _row_to_source(row: list[Any]) -> Source:
         source_id=row[0], source_type=row[1], canonical_path=row[2],
         status=row[3], file_type=row[4], hash=row[5],
         size_bytes=int(row[6]) if row[6] is not None else 0,
-        first_seen_at=row[7], last_seen_at=row[8], last_compiled_at=row[9],
-        compile_state=row[10],
-        compile_count=int(row[11]) if row[11] is not None else 0,
+        first_seen_at=row[7], last_seen_at=row[8], last_ingested_at=row[9],
+        ingest_state=row[10],
+        ingest_count=int(row[11]) if row[11] is not None else 0,
         last_run_id=row[12], moved_to=row[13],
     )
 
 
-def _drain_pages(result) -> list[Page]:
-    out: list[Page] = []
+def _drain_entities(result) -> list[Entity]:
+    out: list[Entity] = []
     while result.has_next():
-        out.append(_row_to_page(result.get_next()))
+        out.append(_row_to_entity(result.get_next()))
     return out
 
 
@@ -75,8 +75,8 @@ def neighbors(
     *,
     direction: str = "out",
     depth: int = 1,
-) -> list[Page]:
-    """BFS expansion from `slug`. Returns distinct neighbor Pages
+) -> list[Entity]:
+    """BFS expansion from `slug`. Returns distinct neighbor Entities
     (excluding the start node).
 
     direction: 'out' (outgoing), 'in' (incoming), or 'both'.
@@ -89,27 +89,27 @@ def neighbors(
         raise ValueError(f"depth must be >= 1; got {depth}")
 
     if direction == "out":
-        pattern = f"(a:Page {{slug: $slug}})-[:LINKS_TO*1..{depth}]->(p:Page)"
+        pattern = f"(a:Entity {{slug: $slug}})-[:LINKS_TO*1..{depth}]->(e:Entity)"
     elif direction == "in":
-        pattern = f"(a:Page {{slug: $slug}})<-[:LINKS_TO*1..{depth}]-(p:Page)"
+        pattern = f"(a:Entity {{slug: $slug}})<-[:LINKS_TO*1..{depth}]-(e:Entity)"
     else:  # both
-        pattern = f"(a:Page {{slug: $slug}})-[:LINKS_TO*1..{depth}]-(p:Page)"
+        pattern = f"(a:Entity {{slug: $slug}})-[:LINKS_TO*1..{depth}]-(e:Entity)"
 
     query = f"""
     MATCH {pattern}
-    WHERE p.slug <> $slug
-    RETURN DISTINCT {_PAGE_RETURN_COLS}
-    ORDER BY p.slug
+    WHERE e.slug <> $slug
+    RETURN DISTINCT {_ENTITY_RETURN_COLS}
+    ORDER BY e.slug
     """
-    return _drain_pages(conn.execute(query, {"slug": slug}))
+    return _drain_entities(conn.execute(query, {"slug": slug}))
 
 
-def incoming_links(conn: kuzu.Connection, slug: str) -> list[Page]:
+def incoming_links(conn: kuzu.Connection, slug: str) -> list[Entity]:
     """Convenience: depth-1 incoming-direction neighbors."""
     return neighbors(conn, slug, direction="in", depth=1)
 
 
-def outgoing_links(conn: kuzu.Connection, slug: str) -> list[Page]:
+def outgoing_links(conn: kuzu.Connection, slug: str) -> list[Entity]:
     """Convenience: depth-1 outgoing-direction neighbors."""
     return neighbors(conn, slug, direction="out", depth=1)
 
@@ -134,14 +134,14 @@ def shortest_path(
     if from_slug == to_slug:
         # Kuzu's *1..N requires at least one hop; handle the degenerate case.
         r = conn.execute(
-            "MATCH (a:Page {slug: $slug}) RETURN a.slug LIMIT 1",
+            "MATCH (a:Entity {slug: $slug}) RETURN a.slug LIMIT 1",
             {"slug": from_slug},
         )
         return [from_slug] if r.has_next() else None
 
     query = f"""
-    MATCH p = (a:Page {{slug: $from_}})-[:LINKS_TO* SHORTEST 1..{max_hops}]->(b:Page {{slug: $to_}})
-    RETURN nodes(p)
+    MATCH path = (a:Entity {{slug: $from_}})-[:LINKS_TO* SHORTEST 1..{max_hops}]->(b:Entity {{slug: $to_}})
+    RETURN nodes(path)
     """
     r = conn.execute(query, {"from_": from_slug, "to_": to_slug})
     if not r.has_next():
@@ -152,21 +152,21 @@ def shortest_path(
 
 # ---------- source / page provenance queries ----------
 
-def pages_for_source(conn: kuzu.Connection, source_id: str) -> list[Page]:
-    """All Pages a Source currently supports (current-state — historical
+def entities_for_source(conn: kuzu.Connection, source_id: str) -> list[Entity]:
+    """All Entities a Source currently supports (current-state — historical
     SUPPORTS edges are not in v1 per Codex v2 NEW M2)."""
     query = f"""
-    MATCH (s:Source {{source_id: $sid}})-[:SUPPORTS]->(p:Page)
-    RETURN DISTINCT {_PAGE_RETURN_COLS}
-    ORDER BY p.slug
+    MATCH (s:Source {{source_id: $sid}})-[:SUPPORTS]->(e:Entity)
+    RETURN DISTINCT {_ENTITY_RETURN_COLS}
+    ORDER BY e.slug
     """
-    return _drain_pages(conn.execute(query, {"sid": source_id}))
+    return _drain_entities(conn.execute(query, {"sid": source_id}))
 
 
-def sources_for_page(conn: kuzu.Connection, slug: str) -> list[Source]:
-    """All Sources currently supporting a Page."""
+def sources_for_entity(conn: kuzu.Connection, slug: str) -> list[Source]:
+    """All Sources currently supporting an Entity."""
     query = f"""
-    MATCH (s:Source)-[:SUPPORTS]->(p:Page {{slug: $slug}})
+    MATCH (s:Source)-[:SUPPORTS]->(e:Entity {{slug: $slug}})
     RETURN DISTINCT {_SOURCE_RETURN_COLS}
     ORDER BY s.source_id
     """
@@ -174,18 +174,18 @@ def sources_for_page(conn: kuzu.Connection, slug: str) -> list[Source]:
 
 
 def subgraph_by_source(conn: kuzu.Connection, source_id: str) -> dict[str, Any]:
-    """Subgraph induced by one source's supported pages.
+    """Subgraph induced by one source's supported entities.
 
-    Returns `{"nodes": [Page, ...], "edges": [{"from", "to", "run_id", "created_at"}, ...]}`.
-    Edges are LINKS_TO edges between Pages both supported by this source.
+    Returns `{"nodes": [Entity, ...], "edges": [{"from", "to", "run_id", "created_at"}, ...]}`.
+    Edges are LINKS_TO edges between Entities both supported by this source.
     """
-    pages = pages_for_source(conn, source_id)
-    if not pages:
+    entities = entities_for_source(conn, source_id)
+    if not entities:
         return {"nodes": [], "edges": []}
-    slugs = [p.slug for p in pages]
+    slugs = [e.slug for e in entities]
     r = conn.execute(
         """
-        MATCH (a:Page)-[r:LINKS_TO]->(b:Page)
+        MATCH (a:Entity)-[r:LINKS_TO]->(b:Entity)
         WHERE list_contains($slugs, a.slug) AND list_contains($slugs, b.slug)
         RETURN a.slug, b.slug, r.run_id, r.created_at
         ORDER BY a.slug, b.slug
@@ -201,22 +201,22 @@ def subgraph_by_source(conn: kuzu.Connection, source_id: str) -> dict[str, Any]:
             "run_id": row[2],
             "created_at": row[3],
         })
-    return {"nodes": pages, "edges": edges}
+    return {"nodes": entities, "edges": edges}
 
 
 # ---------- orphan listing ----------
 
-def orphan_pages(conn: kuzu.Connection) -> list[Page]:
-    """Pages currently flagged orphan_candidate (zero SUPPORTS at last ingest).
+def orphan_entities(conn: kuzu.Connection) -> list[Entity]:
+    """Entities currently flagged orphan_candidate (zero SUPPORTS at last ingest).
 
     The flag itself is set during ingestion (Phase 4); this is the read view.
     """
     query = f"""
-    MATCH (p:Page) WHERE p.status = 'orphan_candidate'
-    RETURN {_PAGE_RETURN_COLS}
-    ORDER BY p.slug
+    MATCH (e:Entity) WHERE e.status = 'orphan_candidate'
+    RETURN {_ENTITY_RETURN_COLS}
+    ORDER BY e.slug
     """
-    return _drain_pages(conn.execute(query))
+    return _drain_entities(conn.execute(query))
 
 
 # ---------- ad-hoc Cypher escape hatch ----------

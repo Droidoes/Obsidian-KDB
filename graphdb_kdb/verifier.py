@@ -17,10 +17,19 @@ UTC-`Z` and local-offset strings; the graph uses local-offset only
 produce false positives on format drift, not real state divergence.
 
 Tracked attribute set:
-  - Page:   page_type, last_run_id, confidence, status (mapped from
+  - Entity: page_type, last_run_id, confidence, status (mapped from
             manifest's `orphan_candidate` bool)
-  - Source: status, compile_state, compile_count, hash, file_type,
+  - Source: status, ingest_state, ingest_count, hash, file_type,
             size_bytes, last_run_id
+
+Naming bridge (D-A1 + D-A2, 2026-05-14): the graph side renamed
+`Page → Entity` and `compile_state/count/last_compiled_at →
+ingest_state/count/last_ingested_at`. The manifest side retains
+producer-side names (`pages.*`, `compile_state`, etc.) because
+`manifest_update.py` is the producer's writer. The field-alias
+tuples below (_PAGE_DIRECT_FIELDS, _SOURCE_DIRECT_FIELDS) map
+(manifest_field_name, graph_field_name) explicitly so the verifier
+bridges the two name spaces without false-positive divergences.
 """
 from __future__ import annotations
 
@@ -53,8 +62,9 @@ class VerifyResult:
 
 # ---------- attribute maps ----------
 
-# Manifest page field -> graph Page field. None means the manifest field is
-# transformed before comparison (see _page_attr_mismatches).
+# (manifest_field_name, graph_field_name) pairs. Identical names = no rename;
+# divergent names bridge producer-side terminology to graph-side terminology
+# (D-A1 + D-A2 — see module docstring).
 _PAGE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("page_type", "page_type"),
     ("last_run_id", "last_run_id"),
@@ -63,8 +73,8 @@ _PAGE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 
 _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("status", "status"),
-    ("compile_state", "compile_state"),
-    ("compile_count", "compile_count"),
+    ("compile_state", "ingest_state"),       # D-A2: graph-side renamed
+    ("compile_count", "ingest_count"),       # D-A2: graph-side renamed
     ("hash", "hash"),
     ("file_type", "file_type"),
     ("size_bytes", "size_bytes"),
@@ -74,12 +84,13 @@ _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 
 # ---------- graph state loaders ----------
 
-def _graph_pages(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+def _graph_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+    """Return entities keyed by slug, with graph-side field names."""
     r = conn.execute(
         """
-        MATCH (p:Page)
-        RETURN p.slug, p.page_type, p.status, p.confidence,
-               p.last_run_id
+        MATCH (e:Entity)
+        RETURN e.slug, e.page_type, e.status, e.confidence,
+               e.last_run_id
         """
     )
     out: dict[str, dict[str, Any]] = {}
@@ -96,10 +107,11 @@ def _graph_pages(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
 
 
 def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+    """Return sources keyed by source_id, with graph-side field names (ingest_*)."""
     r = conn.execute(
         """
         MATCH (s:Source)
-        RETURN s.source_id, s.status, s.compile_state, s.compile_count,
+        RETURN s.source_id, s.status, s.ingest_state, s.ingest_count,
                s.hash, s.file_type, s.size_bytes, s.last_run_id
         """
     )
@@ -109,8 +121,8 @@ def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
         out[row[0]] = {
             "source_id": row[0],
             "status": row[1],
-            "compile_state": row[2],
-            "compile_count": int(row[3]) if row[3] is not None else 0,
+            "ingest_state": row[2],
+            "ingest_count": int(row[3]) if row[3] is not None else 0,
             "hash": row[4],
             "file_type": row[5],
             "size_bytes": int(row[6]) if row[6] is not None else 0,
@@ -120,7 +132,7 @@ def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
 
 
 def _graph_links(conn: kuzu.Connection) -> set[tuple[str, str]]:
-    r = conn.execute("MATCH (a:Page)-[:LINKS_TO]->(b:Page) RETURN a.slug, b.slug")
+    r = conn.execute("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug")
     out: set[tuple[str, str]] = set()
     while r.has_next():
         row = r.get_next()
@@ -130,7 +142,7 @@ def _graph_links(conn: kuzu.Connection) -> set[tuple[str, str]]:
 
 def _graph_supports(conn: kuzu.Connection) -> set[tuple[str, str]]:
     r = conn.execute(
-        "MATCH (s:Source)-[:SUPPORTS]->(p:Page) RETURN s.source_id, p.slug"
+        "MATCH (s:Source)-[:SUPPORTS]->(e:Entity) RETURN s.source_id, e.slug"
     )
     out: set[tuple[str, str]] = set()
     while r.has_next():
@@ -144,7 +156,9 @@ def _graph_supports(conn: kuzu.Connection) -> set[tuple[str, str]]:
 def _manifest_pages(manifest: dict) -> dict[str, dict[str, Any]]:
     """Project manifest pages dict to {slug: tracked-attrs-dict}.
 
-    `orphan_candidate: bool` is mapped to the graph's `status` enum.
+    Keys here use manifest's producer-side names (page_type, status from
+    orphan_candidate bool, etc.) — _diff_attrs() bridges to graph-side
+    via the (manifest_field, graph_field) tuples.
     """
     out: dict[str, dict[str, Any]] = {}
     for page in (manifest.get("pages") or {}).values():
@@ -296,7 +310,7 @@ def verify(conn: kuzu.Connection, manifest: dict) -> VerifyResult:
     m_links = _manifest_links(manifest)
     m_supports = _manifest_supports(manifest)
 
-    k_pages = _graph_pages(conn)
+    k_pages = _graph_entities(conn)
     k_sources = _graph_sources(conn)
     k_links = _graph_links(conn)
     k_supports = _graph_supports(conn)

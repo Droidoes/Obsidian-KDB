@@ -16,7 +16,7 @@ from graphdb_kdb.schema import (
     SCHEMA_META_DDL,
     SCHEMA_VERSION,
 )
-from graphdb_kdb.types import Page, Source, SyncResult
+from graphdb_kdb.types import Entity, Source, SyncResult
 
 
 class GraphDBSchemaError(RuntimeError):
@@ -118,7 +118,7 @@ class GraphDB:
                 return int(r.get_next()[0])
             return 0
         return {
-            "pages":    count("MATCH (p:Page) RETURN COUNT(*)"),
+            "entities": count("MATCH (e:Entity) RETURN COUNT(*)"),
             "sources":  count("MATCH (s:Source) RETURN COUNT(*)"),
             "links_to": count("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(*)"),
             "supports": count("MATCH ()-[r:SUPPORTS]->() RETURN COUNT(*)"),
@@ -140,20 +140,20 @@ class GraphDB:
 
     # ---- minimal read API (full set lands in #63.3) ----
 
-    def get_page(self, slug: str) -> Page | None:
-        """Return the Page node for a slug, or None if absent."""
+    def get_entity(self, slug: str) -> Entity | None:
+        """Return the Entity node for a slug, or None if absent."""
         r = self.conn.execute(
             """
-            MATCH (p:Page {slug: $slug})
-            RETURN p.slug, p.title, p.page_type, p.status, p.confidence,
-                   p.created_at, p.updated_at, p.first_run_id, p.last_run_id
+            MATCH (e:Entity {slug: $slug})
+            RETURN e.slug, e.title, e.page_type, e.status, e.confidence,
+                   e.created_at, e.updated_at, e.first_run_id, e.last_run_id
             """,
             {"slug": slug},
         )
         if not r.has_next():
             return None
         row = r.get_next()
-        return Page(
+        return Entity(
             slug=row[0], title=row[1], page_type=row[2], status=row[3],
             confidence=row[4], created_at=row[5], updated_at=row[6],
             first_run_id=row[7], last_run_id=row[8],
@@ -166,8 +166,8 @@ class GraphDB:
             MATCH (s:Source {source_id: $sid})
             RETURN s.source_id, s.source_type, s.canonical_path, s.status,
                    s.file_type, s.hash, s.size_bytes, s.first_seen_at,
-                   s.last_seen_at, s.last_compiled_at, s.compile_state,
-                   s.compile_count, s.last_run_id, s.moved_to
+                   s.last_seen_at, s.last_ingested_at, s.ingest_state,
+                   s.ingest_count, s.last_run_id, s.moved_to
             """,
             {"sid": source_id},
         )
@@ -178,23 +178,23 @@ class GraphDB:
             source_id=row[0], source_type=row[1], canonical_path=row[2],
             status=row[3], file_type=row[4], hash=row[5],
             size_bytes=int(row[6]) if row[6] is not None else 0,
-            first_seen_at=row[7], last_seen_at=row[8], last_compiled_at=row[9],
-            compile_state=row[10],
-            compile_count=int(row[11]) if row[11] is not None else 0,
+            first_seen_at=row[7], last_seen_at=row[8], last_ingested_at=row[9],
+            ingest_state=row[10],
+            ingest_count=int(row[11]) if row[11] is not None else 0,
             last_run_id=row[12], moved_to=row[13],
         )
 
     # ---- read API (#63.3) — delegates to queries module ----
 
-    def neighbors(self, slug: str, *, direction: str = "out", depth: int = 1) -> list[Page]:
+    def neighbors(self, slug: str, *, direction: str = "out", depth: int = 1) -> list[Entity]:
         from graphdb_kdb import queries
         return queries.neighbors(self.conn, slug, direction=direction, depth=depth)
 
-    def incoming_links(self, slug: str) -> list[Page]:
+    def incoming_links(self, slug: str) -> list[Entity]:
         from graphdb_kdb import queries
         return queries.incoming_links(self.conn, slug)
 
-    def outgoing_links(self, slug: str) -> list[Page]:
+    def outgoing_links(self, slug: str) -> list[Entity]:
         from graphdb_kdb import queries
         return queries.outgoing_links(self.conn, slug)
 
@@ -202,21 +202,21 @@ class GraphDB:
         from graphdb_kdb import queries
         return queries.shortest_path(self.conn, from_slug, to_slug, max_hops=max_hops)
 
-    def pages_for_source(self, source_id: str) -> list[Page]:
+    def entities_for_source(self, source_id: str) -> list[Entity]:
         from graphdb_kdb import queries
-        return queries.pages_for_source(self.conn, source_id)
+        return queries.entities_for_source(self.conn, source_id)
 
-    def sources_for_page(self, slug: str) -> list[Source]:
+    def sources_for_entity(self, slug: str) -> list[Source]:
         from graphdb_kdb import queries
-        return queries.sources_for_page(self.conn, slug)
+        return queries.sources_for_entity(self.conn, slug)
 
     def subgraph_by_source(self, source_id: str) -> dict:
         from graphdb_kdb import queries
         return queries.subgraph_by_source(self.conn, source_id)
 
-    def orphan_pages(self) -> list[Page]:
+    def orphan_entities(self) -> list[Entity]:
         from graphdb_kdb import queries
-        return queries.orphan_pages(self.conn)
+        return queries.orphan_entities(self.conn)
 
     def cypher(self, query: str, params: dict | None = None) -> list[dict]:
         from graphdb_kdb import queries

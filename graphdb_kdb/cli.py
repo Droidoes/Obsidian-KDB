@@ -63,28 +63,28 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def cmd_neighbors(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     with GraphDB(graph_dir) as gdb:
-        pages = gdb.neighbors(args.slug, direction=args.direction, depth=args.depth)
+        entities = gdb.neighbors(args.slug, direction=args.direction, depth=args.depth)
     if args.json:
-        _print_json([dataclasses.asdict(p) for p in pages])
+        _print_json([dataclasses.asdict(e) for e in entities])
     else:
-        if not pages:
+        if not entities:
             print(f"(no neighbors of {args.slug!r} via direction={args.direction} depth={args.depth})")
-        for p in pages:
-            print(f"  {p.slug:<40} {p.page_type:<10} {p.title}")
+        for e in entities:
+            print(f"  {e.slug:<40} {e.page_type:<10} {e.title}")
     return 0
 
 
 def cmd_incoming(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     with GraphDB(graph_dir) as gdb:
-        pages = gdb.incoming_links(args.slug)
+        entities = gdb.incoming_links(args.slug)
     if args.json:
-        _print_json([dataclasses.asdict(p) for p in pages])
+        _print_json([dataclasses.asdict(e) for e in entities])
     else:
-        if not pages:
+        if not entities:
             print(f"(no incoming links to {args.slug!r})")
-        for p in pages:
-            print(f"  {p.slug:<40} {p.page_type:<10} {p.title}")
+        for e in entities:
+            print(f"  {e.slug:<40} {e.page_type:<10} {e.title}")
     return 0
 
 
@@ -155,15 +155,15 @@ def cmd_structural_holes(args: argparse.Namespace) -> int:
 def cmd_orphans(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     with GraphDB(graph_dir) as gdb:
-        pages = gdb.orphan_pages()
+        entities = gdb.orphan_entities()
     if args.json:
-        _print_json([dataclasses.asdict(p) for p in pages])
+        _print_json([dataclasses.asdict(e) for e in entities])
         return 0
-    if not pages:
-        print("(no orphan-candidate pages)")
+    if not entities:
+        print("(no orphan-candidate entities)")
         return 0
-    for p in pages:
-        print(f"  {p.slug:<40} {p.page_type:<10} last_run_id={p.last_run_id}")
+    for e in entities:
+        print(f"  {e.slug:<40} {e.page_type:<10} last_run_id={e.last_run_id}")
     return 0
 
 
@@ -225,14 +225,14 @@ def cmd_subgraph_by_source(args: argparse.Namespace) -> int:
     nodes = sg["nodes"]
     edges = sg["edges"]
     if not nodes:
-        print(f"(source {args.source_id!r} not found or has no supported pages)")
+        print(f"(source {args.source_id!r} not found or has no supported entities)")
         return 0
     print(f"nodes ({len(nodes)}):")
-    for p in nodes:
-        print(f"  {p.slug:<40} {p.page_type:<10} {p.title}")
+    for n in nodes:
+        print(f"  {n.slug:<40} {n.page_type:<10} {n.title}")
     print(f"edges ({len(edges)}):")
-    for e in edges:
-        print(f"  {e['from']:<40} -> {e['to']}")
+    for ed in edges:
+        print(f"  {ed['from']:<40} -> {ed['to']}")
     return 0
 
 
@@ -270,7 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats = sub.add_parser("stats", help="Print node/edge counts.")
     p_stats.add_argument("--json", action="store_true", help="JSON output.")
 
-    p_n = sub.add_parser("neighbors", help="BFS expansion from a page slug.")
+    p_n = sub.add_parser("neighbors", help="BFS expansion from an entity slug.")
     p_n.add_argument("slug")
     p_n.add_argument("--depth", type=int, default=1, help="Max hops (default 1).")
     p_n.add_argument(
@@ -283,7 +283,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_i.add_argument("slug")
     p_i.add_argument("--json", action="store_true", help="JSON output.")
 
-    p_path = sub.add_parser("path", help="Shortest directed path between two pages.")
+    p_path = sub.add_parser("path", help="Shortest directed path between two entities.")
     p_path.add_argument("from_slug", metavar="FROM_SLUG")
     p_path.add_argument("to_slug", metavar="TO_SLUG")
     p_path.add_argument("--max-hops", type=int, default=10, help="Max search depth (default 10).")
@@ -294,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_c.add_argument("--params", default=None, help="JSON dict of query parameters.")
     p_c.add_argument("--json", action="store_true", help="JSON output.")
 
-    p_pr = sub.add_parser("pagerank", help="PageRank-ranked pages (NetworkX-backed).")
+    p_pr = sub.add_parser("pagerank", help="PageRank-ranked entities (NetworkX-backed).")
     p_pr.add_argument("--top", type=int, default=None, help="Truncate to top-N (default: all).")
     p_pr.add_argument("--json", action="store_true", help="JSON output.")
 
@@ -307,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_sh.add_argument("--json", action="store_true", help="JSON output.")
 
-    p_o = sub.add_parser("orphans", help="List orphan-candidate pages.")
+    p_o = sub.add_parser("orphans", help="List orphan-candidate entities.")
     p_o.add_argument("--json", action="store_true", help="JSON output.")
 
     p_sg = sub.add_parser(

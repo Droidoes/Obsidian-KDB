@@ -35,7 +35,7 @@ This task builds the GraphDB as a first-class data subsystem with three load-bea
 | **D34** | Independence-by-shared-upstream: `manifest_update.py` and `graphdb_kdb.ingestor` each consume `compile_result + last_scan + run_id` independently. Neither reads or writes the other's store. | Real independence (per the ablation test): delete `manifest.json` → GraphDB still works; delete `GraphDB-KDB/` → manifest still works. Both regenerable from `state/runs/<run_id>.json` history (which carries the compile_results). |
 | **D35** | GraphDB physical location: `~/Droidoes/GraphDB-KDB/` — sibling to the `Obsidian-KDB` project under the active projects root. Cross-project read/write access is the design intent; default path overridable via `KDB_GRAPH_PATH` env var. | Physical separation mirrors the logical separation — GraphDB-KDB is a peer subsystem, not a child of Obsidian-KDB. Avoids OneDrive sync corruption on Kuzu binary files entirely (Droidoes is not OneDrive-synced). Backup story: derived state is *recoverable*, not backed up directly — `graphdb-kdb rebuild` regenerates from `~/Obsidian/KDB/state/runs/*.json` (which IS OneDrive-backed). Belt-and-suspenders via `graphdb-kdb snapshot` (#63.9) exports JSONL to the vault. |
 | **D36** | Naming triad: Python module `graphdb_kdb`, Kuzu directory `GraphDB-KDB/`, CLI command `graphdb-kdb`. The name `kdb-graph` is **reserved** for a future Obsidian-graph-view utility (downstream consumer of GraphDB-KDB; out of #63 scope). | CLI name matches the brand and the ontology-layer scope, not the narrower Obsidian-KDB project family. `graphdb-kdb` operates on the cross-source ontology; `kdb-graph` (future) would produce Obsidian-specific outputs from it. Python module uses underscores because identifiers can't contain hyphens. |
-| **D37** | Schema includes `Page` and `Source` as node types; `LINKS_TO` (Page→Page) and `SUPPORTS` (Source→Page) as relationship types. Provenance is first-class graph data, not a sidecar. | Source-attribution queries ("show me everything compiled from Karpathy's attention paper", "which sources support concept X?") become natural graph traversals. Splitting sources into a separate store would mean re-introducing the manifest-style "two files that must agree." |
+| **D37** | Schema includes `Entity` and `Source` as node types; `LINKS_TO` (Entity→Entity) and `SUPPORTS` (Source→Entity) as relationship types. Provenance is first-class graph data, not a sidecar. *(Originally `Page` node-table; renamed to `Entity` per D-A1 2026-05-14.)* | Source-attribution queries ("show me everything compiled from Karpathy's attention paper", "which sources support concept X?") become natural graph traversals. Splitting sources into a separate store would mean re-introducing the manifest-style "two files that must agree." |
 | **D38** | Pipeline integration: new **Stage 9 (`graph_sync`)** in `kdb_compile.py`, runs AFTER Stage 8 (manifest write) succeeds. Failure is **non-fatal**: graph_sync errors emit a warning + journal entry, but the overall compile run still returns success. | Honors D34 independence: a failed graph write must not roll back a successful manifest write. Recovery is via `graphdb-kdb rebuild`. |
 | **D39** | Rebuild path: `graphdb-kdb rebuild` drops all Kuzu tables and replays the **eligible** subset of `state/runs/<run_id>.json` in chronological order. **Eligibility filter:** `success=true AND dry_run=false AND payload_present` (where payload = `compile_result` + `last_scan`, present as sidecar archive at `state/runs/<run_id>/compile_result.json` + `state/runs/<run_id>/last_scan.json` — per #63.0 outcome, not embedded inline in the journal). Dry-run journals are deliberate fictions; failed runs may carry partial/invalid payloads. This **proves** independence — Kuzu can be regenerated without ever reading `manifest.json`, **for all post-#63 runs**. Pre-#63 historical runs are unrecoverable except for the latest baton state — see §13.1 Q3 for the recorded #63.0 outcome. | If GraphDB drifts from compile-history truth, regenerate from compile-history truth. Filter excludes only deliberately-not-real runs (dry-run) and runs that didn't reach a valid compile_result (failed). In practice `success=true` already encompasses manifest-write success today (Stage 8 must complete for the journal to mark `success=true`), so the absence of an explicit `manifest_written` gate is **not** asking the rebuilder to replay manifest-failed runs — it avoids creating a hard dependency on a manifest-specific field name, preserving option-value if Stage 8/9 are later decoupled (per L7's deferred work). Sharpened per Codex v3 nuance. |
 | **D40** | Advanced analytics (PageRank, community detection, betweenness centrality) use a **hybrid** strategy: Kuzu Cypher fetches topology (edge lists, node attributes); NetworkX/python-louvain computes the algorithm; results materialized back into Kuzu as node properties when desired. | Kuzu doesn't ship native PageRank or Louvain. Implementing these in Cypher (iterative random walks) is awkward; calling out to mature Python libs is cleaner. At our scale (10⁴ nodes ceiling), the hybrid cost is sub-second per algorithm. |
@@ -88,7 +88,7 @@ Lives in `graphdb_kdb/schema.py` as Python string constants; applied at first co
 
 ```cypher
 -- Node tables
-CREATE NODE TABLE Page (
+CREATE NODE TABLE Entity (
     slug          STRING PRIMARY KEY,
     title         STRING,
     page_type     STRING,        -- summary | concept | article
@@ -110,22 +110,22 @@ CREATE NODE TABLE Source (
     size_bytes         INT64,
     first_seen_at      STRING,
     last_seen_at       STRING,
-    last_compiled_at   STRING,             -- empty string if never compiled
-    compile_state      STRING,                -- compiled | recompiled | moved_source | error | metadata_only
-    compile_count      INT64,
+    last_ingested_at   STRING,             -- empty string if never ingested (per D-A2 rename of last_compiled_at)
+    ingest_state       STRING,                -- compiled | recompiled | moved_source | error | metadata_only (per D-A2 rename of compile_state)
+    ingest_count       INT64,                  -- per D-A2 rename of compile_count
     last_run_id        STRING,
     moved_to           STRING                 -- only meaningful when status=moved
 );
 
 -- Relationship tables
 CREATE REL TABLE LINKS_TO (
-    FROM Page TO Page,
+    FROM Entity TO Entity,
     run_id      STRING,        -- run that emitted this edge
     created_at  STRING
 );
 
 CREATE REL TABLE SUPPORTS (
-    FROM Source TO Page,
+    FROM Source TO Entity,
     role          STRING,      -- primary | supporting (v1; historical-role deferred — history belongs in run_journal, not live graph)
     hash_at_time  STRING,      -- source hash when this support was emitted
     run_id        STRING,
@@ -135,11 +135,11 @@ CREATE REL TABLE SUPPORTS (
 
 **Design notes:**
 
-- `LINKS_TO` is **stored uni-directionally** (Page→Page following `outgoing_links`). Backward traversal ("who links to me?") is a Cypher pattern `MATCH (s)-[:LINKS_TO]->(t {slug: $slug})` — no materialized inverse index needed.
-- `Page.created_at` / `Page.first_run_id` are set on first INSERT and **never overwritten** on subsequent updates. `updated_at` / `last_run_id` bump every run that touches the page.
+- `LINKS_TO` is **stored uni-directionally** (Entity→Entity following `outgoing_links`). Backward traversal ("who links to me?") is a Cypher pattern `MATCH (s)-[:LINKS_TO]->(t {slug: $slug})` — no materialized inverse index needed.
+- `Entity.created_at` / `Entity.first_run_id` are set on first INSERT and **never overwritten** on subsequent updates. `updated_at` / `last_run_id` bump every run that touches the entity.
 - `Source.status='moved'` keeps the original `source_id` as PK; `moved_to` points at the new id; a separate `Source` row exists for the destination. (Kuzu doesn't permit changing a primary key in place.)
 - `Source.source_type` is the multi-source discriminator. v1 emits only `"obsidian-kdb-raw"`. Future source-types (`"arxiv"`, `"youtube-transcript"`, etc.) plug in without schema change; query patterns like `MATCH (s:Source) WHERE s.source_type='arxiv' RETURN ...` work uniformly across source kinds.
-- `Page.body` is intentionally absent — bodies live in the markdown files (D8 boundary). The GraphDB stores semantic graph state, not file content.
+- `Entity.body` is intentionally absent — bodies live in the markdown files (D8 boundary). The GraphDB stores semantic graph state, not file content.
 - **Timestamps are `STRING`, not Kuzu native `TIMESTAMP`.** Stored as `datetime.now().astimezone().isoformat()` (e.g., `2026-05-13T20:30:00-04:00`). Preserves the system-local offset per project rule `feedback_local_time_everywhere`. Kuzu's native `TIMESTAMP` type normalizes to UTC internally and would lose the offset on round-trip; the project's existing `manifest.json` and `run_journal` already use ISO-with-offset strings. Round-trip preservation is verified by a dedicated test in `test_ingestion.py`.
 
 ---
@@ -175,17 +175,17 @@ def apply_compile_result(
         # --- Phase 3: ingest compiled_sources ---
         for cs in cr["compiled_sources"]:
             for page in cs["pages"]:
-                _upsert_page(conn, page, run_id, now)
+                _upsert_entity(conn, page, run_id, now)
                 _replace_outgoing_links(conn, page, run_id, now)
             _replace_supports_for_source(conn, cs, run_id, now)  # atomic per-source: drop prior SUPPORTS, then recreate
-            _update_source_compile_state(conn, cs, run_id, now)
+            _update_source_ingest_state(conn, cs, run_id, now)
 
         # --- Phase 4: orphan-candidate detection ---
-        # A Page has zero remaining SUPPORTS edges → mark orphan_candidate
+        # An Entity has zero remaining SUPPORTS edges → mark orphan_candidate
         orphans = _detect_and_mark_orphans(conn, run_id, now)
 
     return SyncResult(
-        pages_upserted=...,
+        entities_upserted=...,
         edges_upserted=...,
         sources_upserted=...,
         orphans_detected=orphans,
@@ -197,7 +197,7 @@ def apply_compile_result(
 
 - **Upsert page**:
   ```cypher
-  MERGE (p:Page {slug: $slug})
+  MERGE (p:Entity {slug: $slug})
   ON CREATE SET p.created_at=$ts, p.first_run_id=$run_id
   SET p.title=$title, p.page_type=$type, p.status=$status,
       p.confidence=$conf, p.updated_at=$ts, p.last_run_id=$run_id
@@ -205,34 +205,34 @@ def apply_compile_result(
 
 - **Replace outgoing edges (idempotent per-page)**:
   ```cypher
-  MATCH (a:Page {slug: $slug})-[r:LINKS_TO]->()
+  MATCH (a:Entity {slug: $slug})-[r:LINKS_TO]->()
   DELETE r;
 
   -- Then for each target_slug in outgoing_links:
-  MATCH (a:Page {slug: $slug})
-  MATCH (b:Page {slug: $target})
+  MATCH (a:Entity {slug: $slug})
+  MATCH (b:Entity {slug: $target})
   CREATE (a)-[:LINKS_TO {run_id: $run_id, created_at: $ts}]->(b)
   ```
-  (If `target_slug` doesn't yet exist as a Page node, the `CREATE` is skipped — a dangling outgoing_link is a validator-catch upstream, not the ingestor's job.)
+  (If `target_slug` doesn't yet exist as an Entity node, the `CREATE` is skipped — a dangling outgoing_link is a validator-catch upstream, not the ingestor's job.)
 
 - **Upsert source — Phase 1 (scan refresh; does NOT touch compile-state fields)**:
   ```cypher
   MERGE (s:Source {source_id: $sid})
   ON CREATE SET s.first_seen_at=$ts, s.source_type=$source_type,
-                s.compile_count=0, s.last_compiled_at=''
+                s.ingest_count=0, s.last_ingested_at=''
   SET s.canonical_path=$path, s.hash=$hash, s.size_bytes=$size,
       s.file_type=$ftype, s.status='active',
       s.last_seen_at=$ts, s.last_run_id=$run_id
   ```
-  Phase 1 refreshes scan-derived metadata only. `last_compiled_at`, `compile_state`, `compile_count` are intentionally **not** mutated here — they belong to Phase 3 and would otherwise misrepresent unchanged or metadata-only sources as freshly compiled (Codex v2 NEW MATERIAL #1). `ON CREATE` seeds them with neutral defaults.
+  Phase 1 refreshes scan-derived metadata only. `last_ingested_at`, `ingest_state`, `ingest_count` are intentionally **not** mutated here — they belong to Phase 3 and would otherwise misrepresent unchanged or metadata-only sources as freshly ingested (Codex v2 NEW MATERIAL #1). `ON CREATE` seeds them with neutral defaults.
 
 - **Update source compile-state — Phase 3 (fires only for sources in `cr.compiled_sources`)**:
   ```cypher
   MATCH (s:Source {source_id: $sid})
-  SET s.last_compiled_at=$ts, s.compile_state=$state,
-      s.compile_count = s.compile_count + 1, s.last_run_id=$run_id
+  SET s.last_ingested_at=$ts, s.ingest_state=$state,
+      s.ingest_count = s.ingest_count + 1, s.last_run_id=$run_id
   ```
-  Increments `compile_count` and writes compile-state fields only for sources that produced a `compile_result` entry. Combined with Phase 1, this means every Source row has accurate scan-time `last_seen_at` AND a separate compile-time `last_compiled_at`.
+  Increments `ingest_count` and writes ingest-state fields only for sources that produced a `compile_result` entry. Combined with Phase 1, this means every Source row has accurate scan-time `last_seen_at` AND a separate ingest-time `last_ingested_at`.
 
 - **Replace SUPPORTS for a source** (atomic per-source; symmetric to `_replace_outgoing_links`):
   ```cypher
@@ -242,7 +242,7 @@ def apply_compile_result(
 
   -- 2. Recreate one SUPPORTS edge per page in the current compiled_source entry:
   MATCH (s:Source {source_id: $sid})
-  MATCH (p:Page {slug: $slug})
+  MATCH (p:Entity {slug: $slug})
   CREATE (s)-[:SUPPORTS {role: $role, hash_at_time: $hash, run_id: $run_id, created_at: $ts}]->(p)
   ```
   Pages the source no longer supports lose their SUPPORTS edge in step 1; if no other source supports them, Phase 4 orphan detection correctly flags them. This fixes a class of bug where stale SUPPORTS edges would persist after a source recompile drops a page (Codex review CRITICAL #2).
@@ -250,7 +250,7 @@ def apply_compile_result(
 - **MOVED reconciliation** — transfer active SUPPORTS to destination, mark old source as historical:
   ```cypher
   -- 1. Transfer SUPPORTS edges from old source to new source
-  MATCH (old:Source {source_id: $old_sid})-[r:SUPPORTS]->(p:Page)
+  MATCH (old:Source {source_id: $old_sid})-[r:SUPPORTS]->(p:Entity)
   WITH old, p, r.role AS role, r.hash_at_time AS hash, r.run_id AS rid, r.created_at AS cts
   DELETE r
   WITH old, p, role, hash, rid, cts
@@ -266,7 +266,7 @@ def apply_compile_result(
 
 - **Orphan detection**:
   ```cypher
-  MATCH (p:Page)
+  MATCH (p:Entity)
   WHERE NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
     AND p.status <> 'orphan_candidate'
   SET p.status='orphan_candidate', p.last_run_id=$run_id, p.updated_at=$ts
@@ -285,16 +285,16 @@ def apply_compile_result(
 |---|---|---|
 | `__init__(graph_dir, *, read_only=False)` | — | Opens (or creates) the Kuzu database at `graph_dir`. |
 | `apply_compile_result(cr, scan, run_id)` | `SyncResult` | Full ingest of one run (delegates to `ingestor`). |
-| `get_page(slug)` | `Page \| None` | Lookup one node. |
+| `get_entity(slug)` | `Entity \| None` | Lookup one node. |
 | `get_source(source_id)` | `Source \| None` | Lookup one source. |
-| `neighbors(slug, *, direction='out', depth=1)` | `list[Page]` | BFS expansion; `direction ∈ {out, in, both}`. |
-| `incoming_links(slug)` | `list[Page]` | Sugar for `neighbors(slug, direction='in', depth=1)`. |
-| `outgoing_links(slug)` | `list[Page]` | Sugar for `neighbors(slug, direction='out', depth=1)`. |
+| `neighbors(slug, *, direction='out', depth=1)` | `list[Entity]` | BFS expansion; `direction ∈ {out, in, both}`. |
+| `incoming_links(slug)` | `list[Entity]` | Sugar for `neighbors(slug, direction='in', depth=1)`. |
+| `outgoing_links(slug)` | `list[Entity]` | Sugar for `neighbors(slug, direction='out', depth=1)`. |
 | `shortest_path(from_slug, to_slug, *, max_hops=10)` | `list[str] \| None` | Path of slugs, or `None` if unreachable. |
-| `pages_for_source(source_id)` | `list[Page]` | All pages a source supports. |
-| `sources_for_page(slug)` | `list[Source]` | All sources supporting a page. |
+| `entities_for_source(source_id)` | `list[Entity]` | All entities a source supports. |
+| `sources_for_entity(slug)` | `list[Source]` | All sources supporting an entity. |
 | `subgraph_by_source(source_id)` | `dict {nodes, edges}` | Subgraph induced by one source's supported pages. |
-| `orphan_pages()` | `list[Page]` | Pages with `status='orphan_candidate'`. |
+| `orphan_entities()` | `list[Entity]` | Entities with `status='orphan_candidate'`. |
 | `pagerank(*, top_n=None)` | `list[(slug, score)]` | NetworkX-backed (hybrid per D40). |
 | `communities(*, algorithm='louvain')` | `dict[slug, community_id]` | NetworkX/python-louvain backed. |
 | `structural_holes()` | `list[(comm_a, comm_b, n_bridges)]` | Pairs of communities with few inter-edges; surfaces "knowledge-hole" candidates. |
@@ -341,7 +341,7 @@ try:
         sync_result = graph.apply_compile_result(cr, scan_dict, run_id)
     _stage_close(
         9, ok=True,
-        pages_upserted=sync_result.pages_upserted,
+        entities_upserted=sync_result.entities_upserted,
         edges_upserted=sync_result.edges_upserted,
         sources_upserted=sync_result.sources_upserted,
         orphans_detected=len(sync_result.orphans_detected),
@@ -392,7 +392,7 @@ This subcommand is also the migration entry point for the canonical corpus: the 
 
 ```
 graphdb_kdb/
-├── __init__.py              # exports GraphDB, SyncResult, Page, Source
+├── __init__.py              # exports GraphDB, SyncResult, Entity, Source
 ├── __main__.py              # python -m graphdb_kdb dispatches to cli.main
 ├── schema.py                # NODE_TABLE_DDL, REL_TABLE_DDL, SCHEMA_VERSION
 ├── graphdb.py               # GraphDB class: connection mgmt, context manager,
@@ -403,7 +403,7 @@ graphdb_kdb/
 ├── verifier.py              # verify_against_manifest + DiffReport
 ├── rebuilder.py             # rebuild_from_runs + run-journal iteration
 ├── cli.py                   # graphdb-kdb subcommands; argparse routing
-├── types.py                 # Page, Source dataclasses; SyncResult, VerifyResult
+├── types.py                 # Entity, Source dataclasses; SyncResult, VerifyResult
 └── tests/
     ├── __init__.py
     ├── conftest.py          # shared fixtures: synthetic compile_result, scan
@@ -452,8 +452,8 @@ graphdb_kdb = []  # no static assets (schema is Python constants)
 | File | Tests | Coverage |
 |---|---|---|
 | `test_schema.py` | ~4 | Table creation idempotent; schema version stored; reopen preserves schema. |
-| `test_ingestion.py` | ~17 | Single-page upsert; multi-page upsert; outgoing edges replace (add, remove, change); SUPPORTS upsert; **SUPPORTS replacement (stale support cleared when a source recompile drops a page)**; **MOVED source transfers active SUPPORTS to destination**; source upsert; MOVED reconcile; DELETED reconcile; orphan detection; orphan revival on re-support; transaction rollback on bad input; idempotent re-apply of same run; multiple sources in one run; **timestamp offset round-trip (local ISO string preserved through write + read)**; **Phase 1 (scan refresh) does NOT mutate `last_compiled_at` / `compile_state` / `compile_count` — only Phase 3 does (Codex v2 NEW M1)**; **MOVED reconciliation writes only fields defined on the Source schema (no `updated_at`; uses `last_seen_at`)**. |
-| `test_queries.py` | ~14 | get_page (hit/miss); get_source; neighbors at depths 1/2/3, directions out/in/both; incoming_links convenience; shortest_path success + unreachable; pages_for_source; sources_for_page; subgraph_by_source structure; orphan_pages; pagerank correctness on a known small graph; communities correctness on a known small graph; structural_holes; cypher escape hatch; stats. |
+| `test_ingestion.py` | ~17 | Single-entity upsert; multi-entity upsert; outgoing edges replace (add, remove, change); SUPPORTS upsert; **SUPPORTS replacement (stale support cleared when a source recompile drops an entity)**; **MOVED source transfers active SUPPORTS to destination**; source upsert; MOVED reconcile; DELETED reconcile; orphan detection; orphan revival on re-support; transaction rollback on bad input; idempotent re-apply of same run; multiple sources in one run; **timestamp offset round-trip (local ISO string preserved through write + read)**; **Phase 1 (scan refresh) does NOT mutate `last_ingested_at` / `ingest_state` / `ingest_count` — only Phase 3 does (Codex v2 NEW M1, per D-A2 rename)**; **MOVED reconciliation writes only fields defined on the Source schema (no `updated_at`; uses `last_seen_at`)**. |
+| `test_queries.py` | ~14 | get_entity (hit/miss); get_source; neighbors at depths 1/2/3, directions out/in/both; incoming_links convenience; shortest_path success + unreachable; entities_for_source; sources_for_entity; subgraph_by_source structure; orphan_entities; pagerank correctness on a known small graph; communities correctness on a known small graph; structural_holes; cypher escape hatch; stats. |
 | `test_verifier.py` | ~6 | Perfect agreement; missing-in-kuzu detected; missing-in-manifest detected; attribute mismatch detected; verifies sources too, not just pages; exit codes + JSON output. |
 | `test_rebuilder.py` | ~7 | Empty Kuzu + 0 runs → no-op; replay of 1 run; replay of N runs; replay preserves orphan transitions over time; replay output matches live-ingestion output for identical inputs; **rebuild fails clearly when a journal lacks the replay payload (post-#63.0 fallback path)**; **replay-eligibility filter: dry-run journals and failed runs are excluded; only `success=true AND dry_run=false AND payload_present` runs are replayed (Codex v2 C1)**. |
 | `test_cli.py` | ~10 | Each subcommand: argparse routing; JSON output; non-zero exit on missing args. Mocked Kuzu in unit tests; integration tests in `tests/integration/` with real Kuzu. |
@@ -547,7 +547,7 @@ Decisions made during #63 design that imply downstream work beyond the #63.1–#
 
 | ID | Item | Triggered by | When to address |
 |---|---|---|---|
-| **TR-1** | After D-A1 rename pass executes (`Page → Entity`), this blueprint's §4 schema DDL + §6 API surface + §7 Stage 9 skeleton + §10 test count descriptions + §11 sub-task wording all need a mechanical update sweep. The current text still says "Page" throughout. | D-A1 | Bundle into the rename-pass sub-task (proposed #63.5b) — execute blueprint sweep as part of that work. |
+| **TR-1** | ~~Blueprint sweep after D-A1 rename pass executes.~~ **COMPLETED 2026-05-14 as part of #63.5b commit.** §4 DDL, §5 ingestion Cypher, §6 API surface, §7 Stage 9 skeleton, §10 test descriptions all updated to Entity/ingest_* naming. Historical "Page" mentions retained in D37 and D-A1 rationale rows (documenting the rename itself). | D-A1 | n/a |
 | **TR-2** | Post-M3 (manifest succession arc, when manifest no longer carries `pages`/`orphans`/`stats`), `graphdb-kdb verify_against_manifest` becomes useless for the ontology dimension. Replacement audit path: **replay-to-temp-DB + structural equality compare**. New CLI subcommand or `--mode replay` flag on `graphdb-kdb verify`. | M3 of manifest succession arc | When M2/M3 work begins; details specified in `docs/manifest-succession-arc.md` §6. |
 | **TR-3** | Producer-scoped rebuild semantics (per L8) — when producer #2 actually arrives, design the scoped-delete + scoped-replay rules. Likely: `MATCH (s:Source {source_type:$producer}) DETACH DELETE s; MATCH (e:Entity) WHERE NOT EXISTS{(:Source)-[:SUPPORTS]->(e)} DELETE e; then replay only that producer's runs`. | Producer #2 | Producer #2 design phase. |
 

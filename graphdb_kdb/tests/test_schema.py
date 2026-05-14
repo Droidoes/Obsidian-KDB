@@ -17,7 +17,7 @@ def test_schema_constants_exist():
     assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 2
     assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 2
     node_text = " ".join(schema.NODE_TABLE_DDL)
-    assert "CREATE NODE TABLE Page" in node_text
+    assert "CREATE NODE TABLE Entity" in node_text
     assert "CREATE NODE TABLE Source" in node_text
     rel_text = " ".join(schema.REL_TABLE_DDL)
     assert "CREATE REL TABLE LINKS_TO" in rel_text
@@ -34,7 +34,7 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert stats == {"pages": 0, "sources": 0, "links_to": 0, "supports": 0}
+    assert stats == {"entities": 0, "sources": 0, "links_to": 0, "supports": 0}
 
 
 def test_graphdb_init_is_idempotent(graph_dir):
@@ -45,7 +45,7 @@ def test_graphdb_init_is_idempotent(graph_dir):
         v2 = gdb.schema_version()
         stats = gdb.stats()
     assert v1 == v2 == schema.SCHEMA_VERSION
-    assert stats == {"pages": 0, "sources": 0, "links_to": 0, "supports": 0}
+    assert stats == {"entities": 0, "sources": 0, "links_to": 0, "supports": 0}
 
 
 def test_default_graph_path_default(monkeypatch):

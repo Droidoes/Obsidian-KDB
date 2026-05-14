@@ -1,8 +1,8 @@
 """GraphDB-KDB: Kuzu-backed multi-source knowledge-graph ontology layer.
 
-Design surface: docs/task-graphdb-kdb-blueprint.md (D32-D40).
+Design surface: docs/task-graphdb-kdb-blueprint.md (D32-D40 + D-A1/A2/B1/S0-S3).
 Module shape: schema.py (DDL), graphdb.py (connection + bootstrap),
-types.py (Page/Source dataclasses), cli.py (graphdb-kdb subcommands).
+types.py (Entity/Source dataclasses), cli.py (graphdb-kdb subcommands).
 Ingestion / queries / analytics / verify / rebuild land in later sub-tasks.
 """
 from __future__ import annotations
@@ -13,13 +13,13 @@ from pathlib import Path
 from graphdb_kdb.graphdb import GraphDB, GraphDBSchemaError
 from graphdb_kdb.ingestor import apply_compile_result
 from graphdb_kdb.schema import SCHEMA_VERSION
-from graphdb_kdb.types import Page, Source, SyncResult
+from graphdb_kdb.types import Entity, Source, SyncResult
 from graphdb_kdb.verifier import Divergence, VerifyResult
 
 __all__ = [
     "GraphDB",
     "GraphDBSchemaError",
-    "Page",
+    "Entity",
     "Source",
     "SyncResult",
     "VerifyResult",
