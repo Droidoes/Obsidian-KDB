@@ -43,6 +43,31 @@ _DEFAULT_PROVIDER = "anthropic"
 _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 _DEFAULT_MAX_TOKENS = 32768
 
+# Shared model registry — same models.json kdb-benchmark uses. The registry
+# is the canonical list of (provider, model, knobs) tuples; kdb-compile
+# resolves `--model <id>` against it to avoid copy-paste mismatches.
+_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "kdb_benchmark" / "models.json"
+_DEFAULT_MODEL_ID = "haiku-4.5"
+
+
+def _load_model_entry(model_id: str, registry_path: Path) -> dict:
+    """Look up `model_id` in the shared models.json registry. Fail-fast on
+    unknown id or `dropped: true` entries (matches kdb-benchmark's behavior
+    so the two tools refuse the same models for the same reasons)."""
+    try:
+        data = json.loads(Path(registry_path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ValueError(f"models registry not found: {registry_path}")
+    by_id = {entry["id"]: entry for entry in data if isinstance(entry, dict) and "id" in entry}
+    if model_id not in by_id:
+        available = ", ".join(sorted(eid for eid, e in by_id.items() if not e.get("dropped")))
+        raise ValueError(f"unknown --model '{model_id}'. Active models: {available}")
+    entry = by_id[model_id]
+    if entry.get("dropped"):
+        reason = entry.get("dropped_reason", "")
+        raise ValueError(f"model '{model_id}' is marked dropped in registry: {reason}")
+    return entry
+
 
 @dataclass
 class CompileRunResult:
@@ -75,6 +100,11 @@ def compile(
     dry_run: bool = False,
     run_ctx: RunContext | None = None,
     progress: Callable[..., None] | None = None,
+    provider: str = _DEFAULT_PROVIDER,
+    model: str = _DEFAULT_MODEL,
+    max_tokens: int = _DEFAULT_MAX_TOKENS,
+    use_completion_tokens: bool = False,
+    extra_body: dict | None = None,
 ) -> CompileRunResult:
     vault_root = Path(vault_root).resolve()
     kdb_root = vault_root / "KDB"
@@ -88,9 +118,9 @@ def compile(
 
     builder = RunJournalBuilder(
         ctx,
-        provider=_DEFAULT_PROVIDER,
-        model=_DEFAULT_MODEL,
-        max_tokens=_DEFAULT_MAX_TOKENS,
+        provider=provider,
+        model=model,
+        max_tokens=max_tokens,
         state_root=state_root,
         resp_stats_capture_full=(
             os.environ.get("KDB_RESP_STATS_CAPTURE_FULL") == "1"
@@ -273,6 +303,11 @@ def compile(
                 state_root=state_root,
                 scan=scan_dict,
                 ctx=ctx,
+                provider=provider,
+                model=model,
+                max_tokens=max_tokens,
+                use_completion_tokens=use_completion_tokens,
+                extra_body=extra_body,
                 write=not dry_run,
                 progress=progress,
                 source_stats_sink=builder.record_source,
@@ -560,6 +595,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--vault-root", required=True, help="Absolute path to Obsidian vault root")
     p.add_argument("--dry-run", action="store_true", help="Scan and validate but write nothing")
+    p.add_argument(
+        "--model",
+        default=_DEFAULT_MODEL_ID,
+        help=f"Model id from kdb_benchmark/models.json registry "
+             f"(default: {_DEFAULT_MODEL_ID}). Examples: haiku-4.5, sonnet-4.6, "
+             f"qwen3.5-flash, gpt-5.4-mini",
+    )
+    p.add_argument(
+        "--max-tokens",
+        type=int,
+        default=_DEFAULT_MAX_TOKENS,
+        help=f"max_tokens passed to the model call (default: {_DEFAULT_MAX_TOKENS})",
+    )
+    p.add_argument(
+        "--registry-path",
+        type=Path,
+        default=_REGISTRY_PATH,
+        help=f"Path to models.json registry (default: {_REGISTRY_PATH})",
+    )
     return p
 
 
@@ -670,6 +724,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kdb_compile: error — no KDB/ directory under {vault_root}", file=sys.stderr)
         return 1
 
+    try:
+        entry = _load_model_entry(args.model, args.registry_path)
+    except ValueError as exc:
+        print(f"kdb_compile: error — {exc}", file=sys.stderr)
+        return 2
+
     # Print the header BEFORE calling compile() so the user sees the run
     # has started even during the (potentially multi-minute) LLM pass.
     # started_at is local; the header also names the TZ abbreviation.
@@ -680,9 +740,24 @@ def main(argv: list[str] | None = None) -> int:
         f"kdb_compile: run_id={ctx.run_id}  ({tz_name}){suffix}",
         flush=True,
     )
+    print(
+        f"  model    : {args.model}  ({entry['provider']}/{entry['model']})  "
+        f"max_tokens={args.max_tokens}",
+        flush=True,
+    )
 
     progress = _make_stdout_progress()
-    result = compile(vault_root, dry_run=args.dry_run, run_ctx=ctx, progress=progress)
+    result = compile(
+        vault_root,
+        dry_run=args.dry_run,
+        run_ctx=ctx,
+        progress=progress,
+        provider=entry["provider"],
+        model=entry["model"],
+        max_tokens=args.max_tokens,
+        use_completion_tokens=entry.get("use_completion_tokens", False),
+        extra_body=entry.get("extra_body"),
+    )
 
     compile_ok = "✓" if result.sources_failed == 0 else "✗"
     print(

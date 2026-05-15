@@ -375,6 +375,8 @@ def run_compile(
     provider: str = "anthropic",
     model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 32768,
+    use_completion_tokens: bool = False,
+    extra_body: dict | None = None,
     write: bool = True,
     progress: Callable[..., None] | None = None,
     source_stats_sink: Callable[[dict], None] | None = None,
@@ -444,6 +446,8 @@ def run_compile(
             provider=provider,
             model=model,
             max_tokens=max_tokens,
+            use_completion_tokens=use_completion_tokens,
+            extra_body=extra_body,
             stats_record_sink=_capture,
         )
         latency_ms = int((time.monotonic() - t0) * 1000)
