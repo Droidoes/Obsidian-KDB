@@ -51,7 +51,11 @@ def main(argv: list[str] | None = None) -> int:
 
     state_root = Path(args.vault_root).resolve() / "KDB" / "state"
     manifest_path = state_root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR  cannot read manifest {manifest_path}: {exc}")
+        return 1
 
     now = datetime.now().astimezone().isoformat()
     run_id = f"task64-migration-{datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}"
@@ -69,7 +73,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"skip   {source_id} — no sidecar ({last_run_id})")
             continue
 
-        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        try:
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"ERROR  cannot read sidecar {sidecar_path}: {exc}")
+            return 1
         emitted = _emitted_keys_from_sidecar(sidecar, source_id)
         if emitted is None:
             print(f"skip   {source_id} — not in sidecar {last_run_id}")
@@ -78,7 +86,8 @@ def main(argv: list[str] | None = None) -> int:
         # Q1 guard: sidecar emitted set must match the manifest bookkeeping.
         outputs_touched = set(rec.get("outputs_touched", []))
         if emitted != outputs_touched:
-            print(f"ERROR  {source_id}: sidecar emitted set != outputs_touched")
+            print(f"ERROR  {source_id}: sidecar emitted set != outputs_touched "
+                  f"(sidecar run_id={last_run_id})")
             print(f"  only in sidecar : {sorted(emitted - outputs_touched)}")
             print(f"  only in manifest: {sorted(outputs_touched - emitted)}")
             return 1
