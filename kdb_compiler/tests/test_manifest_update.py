@@ -784,3 +784,113 @@ def test_supersede_shared_page_keeps_other_source() -> None:
     assert [r["source_id"] for r in page["source_refs"]] == ["KDB/raw/y.md"]
     # Support is non-empty → no orphan entry seeded.
     assert m["orphans"] == {}
+
+
+def test_recompile_supersedes_pre37_summary_slug() -> None:
+    # Run 1: pre-#37 — summary slug WITHOUT the `summary-` prefix.
+    ctx1 = _ctx(run_id="r1", started_at="2026-04-19T01:00:00Z")
+    m = manifest_update.ensure_manifest_shape({}, ctx=ctx1)
+    scan1 = _scan(run_id="r1", files=[_file("KDB/raw/p.md", "NEW")],
+                  to_compile=["KDB/raw/p.md"])
+    apply_scan_reconciliation(m, scan1, ctx1)
+    cr1 = _compile("r1", compiled_sources=[_cs(
+        "KDB/raw/p.md", "buffett-interview",
+        pages=[_page("buffett-interview", "summary", "Buffett")],
+    )])
+    apply_compile_result(m, cr1, scan1, ctx1)
+    assert m["pages"]["KDB/wiki/summaries/buffett-interview.md"]["status"] == "active"
+
+    # Run 2: post-#37 — same source, summary slug WITH the prefix.
+    ctx2 = _ctx(run_id="r2", started_at="2026-05-15T02:00:00Z")
+    scan2 = _scan(run_id="r2",
+                  files=[_file("KDB/raw/p.md", "CHANGED", h=H2, prev_hash=H1, prev_mtime=1.0)],
+                  to_compile=["KDB/raw/p.md"])
+    apply_scan_reconciliation(m, scan2, ctx2)
+    cr2 = _compile("r2", compiled_sources=[_cs(
+        "KDB/raw/p.md", "summary-buffett-interview",
+        pages=[_page("summary-buffett-interview", "summary", "Buffett")],
+    )])
+    apply_compile_result(m, cr2, scan2, ctx2)
+
+    old = m["pages"]["KDB/wiki/summaries/buffett-interview.md"]
+    new = m["pages"]["KDB/wiki/summaries/summary-buffett-interview.md"]
+    assert old["status"] == "orphan_candidate"
+    assert old["orphan_candidate"] is True
+    assert old["supports_page_existence"] == []
+    assert "KDB/wiki/summaries/buffett-interview.md" in m["orphans"]
+    assert m["orphans"]["KDB/wiki/summaries/buffett-interview.md"][
+        "previous_supporting_sources"] == ["KDB/raw/p.md"]
+    assert new["status"] == "active"
+
+
+def test_recompile_omitted_article_orphaned_shared_concept_survives() -> None:
+    # Run 1: source A emits summary + article + concept.
+    ctx1 = _ctx(run_id="r1", started_at="2026-04-19T01:00:00Z")
+    m = manifest_update.ensure_manifest_shape({}, ctx=ctx1)
+    scan1 = _scan(run_id="r1", files=[_file("KDB/raw/a.md", "NEW")],
+                  to_compile=["KDB/raw/a.md"])
+    apply_scan_reconciliation(m, scan1, ctx1)
+    cr1 = _compile("r1", compiled_sources=[_cs(
+        "KDB/raw/a.md", "summary-a",
+        pages=[
+            _page("summary-a", "summary"),
+            _page("a-article", "article"),
+            _page("shared-concept", "concept"),
+        ],
+        concept_slugs=["shared-concept"], article_slugs=["a-article"],
+    )])
+    apply_compile_result(m, cr1, scan1, ctx1)
+    # Source B also emits shared-concept (second supporter).
+    ctx1b = _ctx(run_id="r1b", started_at="2026-04-19T01:30:00Z")
+    scan1b = _scan(run_id="r1b", files=[_file("KDB/raw/b.md", "NEW", h=H3)],
+                   to_compile=["KDB/raw/b.md"])
+    apply_scan_reconciliation(m, scan1b, ctx1b)
+    cr1b = _compile("r1b", compiled_sources=[_cs(
+        "KDB/raw/b.md", "summary-b",
+        pages=[_page("summary-b", "summary"), _page("shared-concept", "concept")],
+        concept_slugs=["shared-concept"],
+    )])
+    apply_compile_result(m, cr1b, scan1b, ctx1b)
+
+    # Run 2: recompile A — summary only (drops article + concept).
+    ctx2 = _ctx(run_id="r2", started_at="2026-05-15T02:00:00Z")
+    scan2 = _scan(run_id="r2",
+                  files=[_file("KDB/raw/a.md", "CHANGED", h=H2, prev_hash=H1, prev_mtime=1.0)],
+                  to_compile=["KDB/raw/a.md"])
+    apply_scan_reconciliation(m, scan2, ctx2)
+    cr2 = _compile("r2", compiled_sources=[_cs(
+        "KDB/raw/a.md", "summary-a",
+        pages=[_page("summary-a", "summary")],
+    )])
+    apply_compile_result(m, cr2, scan2, ctx2)
+
+    # Omitted article — solely supported by A → orphaned.
+    assert m["pages"]["KDB/wiki/articles/a-article.md"]["status"] == "orphan_candidate"
+    # Shared concept — still supported by B → stays active.
+    shared = m["pages"]["KDB/wiki/concepts/shared-concept.md"]
+    assert shared["status"] == "active"
+    assert shared["supports_page_existence"] == ["KDB/raw/b.md"]
+
+
+def test_recompile_supersession_is_idempotent() -> None:
+    ctx1 = _ctx(run_id="r1", started_at="2026-04-19T01:00:00Z")
+    m = manifest_update.ensure_manifest_shape({}, ctx=ctx1)
+    scan1 = _scan(run_id="r1", files=[_file("KDB/raw/p.md", "NEW")],
+                  to_compile=["KDB/raw/p.md"])
+    apply_scan_reconciliation(m, scan1, ctx1)
+    cr1 = _compile("r1", compiled_sources=[_cs(
+        "KDB/raw/p.md", "summary-p", pages=[_page("summary-p", "summary")])])
+    apply_compile_result(m, cr1, scan1, ctx1)
+
+    # Re-apply the same emitted set — nothing should orphan or thrash.
+    ctx2 = _ctx(run_id="r2", started_at="2026-05-15T02:00:00Z")
+    scan2 = _scan(run_id="r2",
+                  files=[_file("KDB/raw/p.md", "CHANGED", h=H2, prev_hash=H1, prev_mtime=1.0)],
+                  to_compile=["KDB/raw/p.md"])
+    apply_scan_reconciliation(m, scan2, ctx2)
+    cr2 = _compile("r2", compiled_sources=[_cs(
+        "KDB/raw/p.md", "summary-p", pages=[_page("summary-p", "summary")])])
+    apply_compile_result(m, cr2, scan2, ctx2)
+
+    assert m["pages"]["KDB/wiki/summaries/summary-p.md"]["status"] == "active"
+    assert m["orphans"] == {}

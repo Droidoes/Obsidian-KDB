@@ -516,6 +516,14 @@ def apply_compile_result(manifest: dict, compile_result: dict, last_scan: dict,
             "compiler_version": ctx.compiler_version,
             "schema_version_used": ctx.schema_version,
         }
+        # Task #64 (D41): drop this source's support from prior pages the
+        # current run no longer emits. touched_keys is the complete emitted
+        # page set for this source. The orphan pass below flags any page
+        # left with empty supports_page_existence.
+        _supersede_omitted_pages(
+            manifest, source_id, set(touched_keys),
+            started_at=ctx.started_at, run_id=ctx.run_id,
+        )
 
     # Error-mark sources that should have compiled but didn't.
     missing = expected - present
