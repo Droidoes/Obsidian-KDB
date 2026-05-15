@@ -333,6 +333,68 @@ def cmd_rebuild(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """#63.9: export the graph to JSONL+manifest under
+    `<vault_root>/KDB/state/graph-snapshots/<ts>/` (or `--out`).
+
+    Belt-and-suspenders backup per D35. Primary recovery remains
+    `graphdb-kdb rebuild`; this artifact is a diffable plain-text
+    safety net for "journals AND Kuzu both lost" scenarios.
+    """
+    from graphdb_kdb.snapshot import (
+        default_snapshot_dirname,
+        snapshot,
+        update_latest_pointer,
+    )
+
+    graph_dir = _resolve_graph_dir(args)
+    if args.out:
+        out_dir = Path(args.out).resolve()
+        snapshots_root = out_dir.parent
+        snapshot_dir_name = out_dir.name
+    elif args.vault_root:
+        snapshots_root = (
+            Path(args.vault_root) / "KDB" / "state" / "graph-snapshots"
+        )
+        snapshot_dir_name = default_snapshot_dirname()
+        out_dir = snapshots_root / snapshot_dir_name
+    else:
+        print(
+            "snapshot requires --vault-root <path> or --out <dir>.",
+            file=sys.stderr,
+        )
+        return 2
+
+    try:
+        result = snapshot(graph_dir, out_dir)
+    except FileExistsError as exc:
+        print(f"snapshot: {exc}", file=sys.stderr)
+        return 1
+
+    latest_path = update_latest_pointer(
+        snapshots_root, snapshot_dir_name, result.schema_version
+    )
+
+    if args.json:
+        _print_json({
+            "out_dir": str(result.out_dir),
+            "latest": str(latest_path),
+            "emitted_at": result.emitted_at,
+            "schema_version": result.schema_version,
+            "counts": result.counts,
+        })
+    else:
+        print(f"snapshot written: {result.out_dir}")
+        print(f"  emitted_at: {result.emitted_at}")
+        print(f"  schema_version: {result.schema_version}")
+        print(f"  counts: entities={result.counts['entities']}  "
+              f"sources={result.counts['sources']}  "
+              f"links_to={result.counts['links_to']}  "
+              f"supports={result.counts['supports']}")
+        print(f"  latest pointer: {latest_path}")
+    return 0
+
+
 def cmd_cypher(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     params: dict[str, Any] = {}
@@ -454,6 +516,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rb.add_argument("--json", action="store_true", help="JSON output.")
 
+    p_snap = sub.add_parser(
+        "snapshot",
+        help="#63.9: export graph state to JSONL+manifest under "
+             "<vault_root>/KDB/state/graph-snapshots/<ts>/ (or --out). "
+             "Belt-and-suspenders backup per D35 — diffable, OneDrive-safe.",
+    )
+    p_snap.add_argument(
+        "--vault-root", default=None,
+        help="Vault root (snapshot lands under <root>/KDB/state/graph-snapshots/<ts>/).",
+    )
+    p_snap.add_argument(
+        "--out", default=None,
+        help="Explicit snapshot directory (overrides --vault-root).",
+    )
+    p_snap.add_argument("--json", action="store_true", help="JSON output.")
+
     return p
 
 
@@ -471,6 +549,7 @@ _DISPATCH = {
     "subgraph-by-source": cmd_subgraph_by_source,
     "verify": cmd_verify,
     "rebuild": cmd_rebuild,
+    "snapshot": cmd_snapshot,
 }
 
 

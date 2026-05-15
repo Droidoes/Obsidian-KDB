@@ -277,6 +277,7 @@ graphdb_kdb/                                ← producer-agnostic ontology layer
 ├── analytics.py                            # PageRank, Louvain, structural holes (hybrid via NetworkX)
 ├── verifier.py                             # verify_against_manifest — overlap audit
 ├── rebuilder.py                            # rebuild() — generic chronological replay (D-B1)
+├── snapshot.py                             # snapshot() — JSONL+manifest+schema.cypher export (#63.9)
 ├── adapters/
 │   ├── base.py                             # ProducerAdapter Protocol; RunDescriptor / EligibilityResult
 │   └── obsidian_runs.py                    # Obsidian-KDB adapter (reference impl)
@@ -493,14 +494,14 @@ Scanner, manifest updater, validators, call_model + retry, end-to-end dry run al
 - Headline scorecard 2026-05-08 baseline established (haiku-4.5 vs sonnet-4.6)
 - See `docs/TASKS.md` for the 30+ tasks closed across this milestone
 
-### M3 — GraphDB-KDB Layer (#63) ✅ (sub-tasks #63.0 through #63.7 + #63.8)
+### M3 — GraphDB-KDB Layer (#63) ✅ DONE — sub-tasks #63.0 through #63.9
 Task #63 — refoundation as raw-text → knowledge-graph compiler. Supersedes #26 + #27. See §8.
-- **Architecture deliberation:** D32–D40 locked through 3 rounds of Codex review. D-A1/A2/B1/S0–S3 locked through 3 more rounds during Phase 3 implementation. D-S4/S5/S6 locked through #63.7 live validation (A1→A4 on real vault).
-- **Companion docs:** blueprint, paradigm record, producer contract, extraction roadmap, manifest succession arc, Phase 3 implementation blueprint (see §8.5).
-- **Sub-tasks shipped:** #63.0 replay-contract verification; #63.1 schema + skeleton; #63.2 ingestion; #63.3 read query API; #63.4 hybrid analytics; #63.5 verifier; #63.5b rename pass (Page→Entity, compile_*→ingest_*); #63.6 B-lite rebuilder + Obsidian adapter; #63.7-pre Stage 9 wiring via adapter + sidecar archival; #63.7 live integration validation (4 scenarios × 3 providers); #63.8 docs (this section).
-- **#63.7 live validation arc (2026-05-14):** A1 no-op scan → Stage 9 archives sidecar, 0 entities upserted; A2 haiku-4.5 recompile of EP1 → 1 page (summary only); A3 gemini-3.1-flash-lite recompile of Howard-Marks → 7 pages + 10 edges (new default validated); A4 deepseek-v4-flash recompile of Buffett → JSON gate fail, D38 non-fatal contract held (graph not corrupted). Surfaced bugs fixed inline: D-S4 (`last_run_id` Phase 1 semantic), D-S5 (`KDB_GRAPH_PATH` test isolation). New feature: D-S6 (`--model` flag with shared registry). Deferred follow-ups: `raw_response_text=None` capture bug in alibaba extract-failure path (separate from #63.7 scope); deepseek-v4-flash single-trial latency + JSON-gate observation (Task #5 territory, insufficient data to drop).
-- **Test surface:** 96 graphdb_kdb tests + 6 Stage-9 integration tests in kdb_compiler/tests/ (540 total kdb-relevant tests after #63.7).
-- **Remaining in #63:** #63.9 (snapshot/export).
+- **Architecture deliberation:** D32–D40 locked through 3 rounds of Codex review. D-A1/A2/B1/S0–S3 locked through 3 more rounds during Phase 3 implementation. D-S4/S5/S6 locked through #63.7 live validation (A1→A4 on real vault). Snapshot artifact design (#63.9) Codex-reviewed in 1 round; upgraded "JSONL dump" → "self-verifying JSONL + manifest + schema evidence" pre-implementation.
+- **Companion docs:** blueprint, paradigm record, producer contract, extraction roadmap, manifest succession arc, Phase 3 implementation blueprint, snapshot Codex prompt (see §8.5).
+- **Sub-tasks shipped:** #63.0 replay-contract verification; #63.1 schema + skeleton; #63.2 ingestion; #63.3 read query API; #63.4 hybrid analytics; #63.5 verifier; #63.5b rename pass (Page→Entity, compile_*→ingest_*); #63.6 B-lite rebuilder + Obsidian adapter; #63.7-pre Stage 9 wiring via adapter + sidecar archival; #63.7 live integration validation (4 scenarios × 3 providers); #63.8 docs (this section); #63.9 snapshot/export — JSONL+manifest+schema.cypher with per-file sha256 row counts; CLI subcommand `graphdb-kdb snapshot`; `latest.json` pointer sidecar.
+- **#63.7 live validation arc (2026-05-14):** A1 no-op scan → Stage 9 archives sidecar, 0 entities upserted; A2 haiku-4.5 recompile of EP1 → 1 page (summary only); A3 gemini-3.1-flash-lite recompile of Howard-Marks → 7 pages + 10 edges (new default validated); A4 deepseek-v4-flash recompile of Buffett → JSON gate fail, D38 non-fatal contract held (graph not corrupted). Surfaced bugs fixed inline: D-S4 (`last_run_id` Phase 1 semantic), D-S5 (`KDB_GRAPH_PATH` test isolation). New feature: D-S6 (`--model` flag with shared registry). Deferred follow-ups: `raw_response_text=None` capture bug in alibaba extract-failure path (separate from #63.7 scope); deepseek-v4-flash single-trial regression observation parked for ~2026-05-18 retest.
+- **3-tier recovery story now complete:** (1) Kuzu corrupted → `graphdb-kdb rebuild` from journals; (2) journals + Kuzu both lost → restore from snapshot (load-snapshot is a future v2 — write-only is the #63.9 scope cut); (3) all three lost → re-run `kdb-compile` on the live vault.
+- **Test surface:** 106 graphdb_kdb tests (96 pre-#63.9 + 10 snapshot tests) + 6 Stage-9 integration tests in kdb_compiler/tests/ (550 total kdb-relevant tests).
 
 ### M3+ (deferred)
 - [ ] Track 2 (`llm-linker`) — separate sub-project
