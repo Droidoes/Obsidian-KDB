@@ -92,7 +92,9 @@
     "ctx_window": 1050000,
     "max_output_tokens": 393216,
     "price_in": 0.14,
-    "price_out": 0.28
+    "price_out": 0.28,
+    "dropped": true,
+    "dropped_reason": "Alibaba Model Studio docs flag deepseek-v4-flash as NOT supporting structured output (Codex check, 2026-05-15) — see https://www.alibabacloud.com/help/en/model-studio/text-generation-model. This is a capability gap, not a transient regression: it explains the 6/6 JSON-gate failures on 2026-05-14 (character-level JSON malformation, leaked </think> tags) and the #63.7-A4 live-compile failure on the Buffett source. The same-day qwen3.6-flash control passing 5/5 had already isolated the fault to this model rather than Alibaba routing/auth. RE-ADD CONDITION: re-check the URL above; if deepseek-v4-flash is later flagged as supporting \"structured output\", restore it to the active pool."
   },
   {
     "id": "gemini-3.1-flash-lite",
