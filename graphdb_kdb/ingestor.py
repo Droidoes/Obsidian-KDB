@@ -102,13 +102,21 @@ def _upsert_source_from_scan(
     result: SyncResult,
 ) -> None:
     """Phase 1: scan-refresh only. Does NOT touch ingest-state fields
-    (last_ingested_at, ingest_state, ingest_count) — those are Phase 3's
-    job per Codex v2 NEW M1. `ON CREATE` seeds ingest-state defaults so
-    later Phase 3 increments work cleanly.
+    (last_ingested_at, ingest_state, ingest_count, last_run_id) — those
+    are Phase 3's job per Codex v2 NEW M1. `ON CREATE` seeds ingest-state
+    defaults (including last_run_id='') so later Phase 3 increments work
+    cleanly.
 
     Naming note: producer's payload uses 'compile_state/count/last_compiled_at';
     graph-side renames to 'ingest_*' per D-A2. Reads stay producer-side; writes
     use graph-side names.
+
+    last_run_id invariant (#63.7 fix 2026-05-14): graph's `last_run_id`
+    must mirror manifest's `last_run_id`, which is bumped only on
+    Phase-3-equivalent compile events — NOT on every scan. Bumping it
+    here would cause spurious `attribute_mismatch` divergences for any
+    run that scans a source without compiling it (verified empirically
+    in #63.7-A1).
     """
     source_id = entry.get("path") or entry.get("source_id")
     if not source_id:
@@ -118,10 +126,10 @@ def _upsert_source_from_scan(
         MERGE (s:Source {source_id: $sid})
         ON CREATE SET s.first_seen_at=$ts, s.source_type=$stype,
                       s.ingest_count=0, s.last_ingested_at='',
-                      s.ingest_state='', s.moved_to=''
+                      s.ingest_state='', s.last_run_id='', s.moved_to=''
         SET s.canonical_path=$path, s.hash=$hash, s.size_bytes=$size,
             s.file_type=$ftype, s.status='active',
-            s.last_seen_at=$ts, s.last_run_id=$run_id
+            s.last_seen_at=$ts
         """,
         {
             "sid": source_id,
@@ -131,7 +139,6 @@ def _upsert_source_from_scan(
             "hash": entry.get("current_hash", entry.get("hash", "")),
             "size": int(entry.get("size_bytes", 0)),
             "ftype": entry.get("file_type", "markdown"),
-            "run_id": run_id,
         },
     )
     result.sources_upserted += 1
