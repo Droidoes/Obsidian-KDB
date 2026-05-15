@@ -894,3 +894,34 @@ def test_recompile_supersession_is_idempotent() -> None:
 
     assert m["pages"]["KDB/wiki/summaries/summary-p.md"]["status"] == "active"
     assert m["orphans"] == {}
+
+
+def test_invariant_allows_empty_source_refs_on_orphan_candidate() -> None:
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    m["pages"]["KDB/wiki/summaries/orphaned.md"] = {
+        "page_id": "KDB/wiki/summaries/orphaned.md", "slug": "orphaned",
+        "page_type": "summary", "status": "orphan_candidate", "title": "O",
+        "source_refs": [], "supports_page_existence": [],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": True,
+    }
+    m["orphans"]["KDB/wiki/summaries/orphaned.md"] = {
+        "page_id": "KDB/wiki/summaries/orphaned.md",
+        "flagged_at": "t", "reason": "superseded", "previous_supporting_sources": [],
+        "recommended_action": "review_manually", "last_run_id": "r",
+    }
+    # Must NOT raise.
+    assert_manifest_invariants(m)
+
+
+def test_invariant_still_rejects_empty_source_refs_on_active() -> None:
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    m["pages"]["KDB/wiki/summaries/bad.md"] = {
+        "page_id": "KDB/wiki/summaries/bad.md", "slug": "bad",
+        "page_type": "summary", "status": "active", "title": "B",
+        "source_refs": [], "supports_page_existence": [],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": False,
+    }
+    with pytest.raises(ManifestInvariantError, match="empty source_refs"):
+        assert_manifest_invariants(m)

@@ -612,8 +612,14 @@ def assert_manifest_invariants(manifest: dict) -> None:
 
     for key, page in manifest.get("pages", {}).items():
         refs = page.get("source_refs", [])
-        if len(refs) < 1:
-            raise ManifestInvariantError(f"page {key} has empty source_refs")
+        # Task #64 (D43): orphan_candidate pages may have empty source_refs —
+        # supersession strips them; provenance is preserved in
+        # orphans[].previous_supporting_sources. Active pages still require
+        # a non-empty source_refs (this also covers the DELETED-source path).
+        if len(refs) < 1 and page.get("status") != "orphan_candidate":
+            raise ManifestInvariantError(
+                f"page {key} (status={page.get('status')!r}) has empty source_refs"
+            )
         for ref in refs:
             sid = ref.get("source_id")
             if sid not in known_sources and sid not in known_tombstones:
