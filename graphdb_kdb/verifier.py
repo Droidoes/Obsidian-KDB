@@ -65,6 +65,15 @@ class VerifyResult:
 # (manifest_field_name, graph_field_name) pairs. Identical names = no rename;
 # divergent names bridge producer-side terminology to graph-side terminology
 # (D-A1 + D-A2 — see module docstring).
+#
+# Known prospective-from-#63 drift (#63.7 validation 2026-05-14):
+#   `compile_count` (manifest, cumulative all-time) vs `ingest_count` (graph,
+#   post-#63 only) WILL diverge for any source that existed pre-#63. Manifest's
+#   counter has been ticking since vault inception; graph's counter starts at
+#   the first post-#63 ingestion. The verifier reports the mismatch honestly
+#   — this is expected per D39 prospective claim, not a bug. (Locked as
+#   Option A in 2026-05-14 #63.7 deliberation: report-and-document rather
+#   than mask via semantic-equivalence comparison.)
 _PAGE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("page_type", "page_type"),
     ("last_run_id", "last_run_id"),
@@ -74,7 +83,7 @@ _PAGE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("status", "status"),
     ("compile_state", "ingest_state"),       # D-A2: graph-side renamed
-    ("compile_count", "ingest_count"),       # D-A2: graph-side renamed
+    ("compile_count", "ingest_count"),       # D-A2: graph-side renamed; pre-#63 drift expected
     ("hash", "hash"),
     ("file_type", "file_type"),
     ("size_bytes", "size_bytes"),
