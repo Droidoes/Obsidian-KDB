@@ -699,3 +699,88 @@ def test_cli_runid_mismatch_exits_two(tmp_path: Path) -> None:
     _write_state(tmp_path, _scan(run_id="rA"), _compile("rB"))
     r = _run_cli(["--state-root", str(tmp_path)])
     assert r.returncode == 2
+
+
+# ---------- Task #64: supersession ----------
+
+def test_supersede_omitted_pages_removes_source_and_seeds_orphan() -> None:
+    from kdb_compiler.manifest_update import _supersede_omitted_pages
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    # Page solely supported by source X, which the new run no longer emits.
+    m["pages"]["KDB/wiki/summaries/old.md"] = {
+        "page_id": "KDB/wiki/summaries/old.md", "slug": "old",
+        "page_type": "summary", "status": "active", "title": "Old",
+        "source_refs": [{"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"}],
+        "supports_page_existence": ["KDB/raw/x.md"],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": False,
+    }
+    affected = _supersede_omitted_pages(
+        m, "KDB/raw/x.md", emitted_keys={"KDB/wiki/summaries/summary-x.md"},
+        started_at="2026-05-15T09:00:00-04:00", run_id="r-test",
+    )
+    page = m["pages"]["KDB/wiki/summaries/old.md"]
+    assert affected == ["KDB/wiki/summaries/old.md"]
+    assert page["supports_page_existence"] == []
+    assert page["source_refs"] == []
+    orphan = m["orphans"]["KDB/wiki/summaries/old.md"]
+    assert orphan["previous_supporting_sources"] == ["KDB/raw/x.md"]
+    assert orphan["reason"].startswith("superseded")
+
+
+def test_supersede_skips_emitted_and_unrelated_pages() -> None:
+    from kdb_compiler.manifest_update import _supersede_omitted_pages
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    # Emitted page — must be left alone even though X supports it.
+    m["pages"]["KDB/wiki/summaries/summary-x.md"] = {
+        "page_id": "KDB/wiki/summaries/summary-x.md", "slug": "summary-x",
+        "page_type": "summary", "status": "active", "title": "X",
+        "source_refs": [{"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"}],
+        "supports_page_existence": ["KDB/raw/x.md"],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": False,
+    }
+    # Unrelated page — supported by Y, not X.
+    m["pages"]["KDB/wiki/concepts/y.md"] = {
+        "page_id": "KDB/wiki/concepts/y.md", "slug": "y",
+        "page_type": "concept", "status": "active", "title": "Y",
+        "source_refs": [{"source_id": "KDB/raw/y.md", "hash": H2, "role": "supporting"}],
+        "supports_page_existence": ["KDB/raw/y.md"],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": False,
+    }
+    affected = _supersede_omitted_pages(
+        m, "KDB/raw/x.md", emitted_keys={"KDB/wiki/summaries/summary-x.md"},
+        started_at="2026-05-15T09:00:00-04:00", run_id="r-test",
+    )
+    assert affected == []
+    assert m["pages"]["KDB/wiki/summaries/summary-x.md"]["supports_page_existence"] == ["KDB/raw/x.md"]
+    assert m["pages"]["KDB/wiki/concepts/y.md"]["supports_page_existence"] == ["KDB/raw/y.md"]
+    assert m["orphans"] == {}
+
+
+def test_supersede_shared_page_keeps_other_source() -> None:
+    from kdb_compiler.manifest_update import _supersede_omitted_pages
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    # Concept supported by BOTH X and Y; X no longer emits it, Y still does.
+    m["pages"]["KDB/wiki/concepts/shared.md"] = {
+        "page_id": "KDB/wiki/concepts/shared.md", "slug": "shared",
+        "page_type": "concept", "status": "active", "title": "Shared",
+        "source_refs": [
+            {"source_id": "KDB/raw/x.md", "hash": H1, "role": "supporting"},
+            {"source_id": "KDB/raw/y.md", "hash": H2, "role": "supporting"},
+        ],
+        "supports_page_existence": ["KDB/raw/x.md", "KDB/raw/y.md"],
+        "outgoing_links": [], "incoming_links_known": [],
+        "confidence": "medium", "orphan_candidate": False,
+    }
+    affected = _supersede_omitted_pages(
+        m, "KDB/raw/x.md", emitted_keys=set(),
+        started_at="2026-05-15T09:00:00-04:00", run_id="r-test",
+    )
+    page = m["pages"]["KDB/wiki/concepts/shared.md"]
+    assert affected == ["KDB/wiki/concepts/shared.md"]
+    assert page["supports_page_existence"] == ["KDB/raw/y.md"]
+    assert [r["source_id"] for r in page["source_refs"]] == ["KDB/raw/y.md"]
+    # Support is non-empty → no orphan entry seeded.
+    assert m["orphans"] == {}

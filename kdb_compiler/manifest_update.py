@@ -243,6 +243,46 @@ def _rekey_source_in_pages(manifest: dict, *, old_id: str, new_id: str) -> None:
         ]
 
 
+def _supersede_omitted_pages(
+    manifest: dict, source_id: str, emitted_keys: set[str],
+    *, started_at: str, run_id: str,
+) -> list[str]:
+    """Drop source_id from supports_page_existence + source_refs of every
+    page the source previously supported but did NOT emit this run.
+
+    The diff-form of graphdb_kdb's _replace_supports_for_source (drop-all-
+    then-recreate). When a removal empties a page's support, seed its
+    orphans[] entry so the orphan pass that runs next preserves the
+    previous_supporting_sources provenance via setdefault.
+
+    Returns the sorted list of affected page_keys.
+    """
+    affected: list[str] = []
+    for page_key, page in manifest["pages"].items():
+        if page_key in emitted_keys:
+            continue
+        support = page.get("supports_page_existence", [])
+        if source_id not in support:
+            continue
+        prior_support = list(support)
+        page["supports_page_existence"] = [s for s in support if s != source_id]
+        page["source_refs"] = [
+            r for r in page.get("source_refs", [])
+            if r.get("source_id") != source_id
+        ]
+        affected.append(page_key)
+        if not page["supports_page_existence"]:
+            manifest.setdefault("orphans", {}).setdefault(page_key, {
+                "page_id": page_key,
+                "flagged_at": started_at,
+                "reason": "superseded — source no longer emits this page",
+                "previous_supporting_sources": prior_support,
+                "recommended_action": "review_manually",
+                "last_run_id": run_id,
+            })
+    return sorted(affected)
+
+
 def apply_scan_reconciliation(manifest: dict, last_scan: dict, ctx: RunContext) -> dict:
     """Apply NEW/CHANGED/UNCHANGED/MOVED files + DELETED reconcile ops to sources{}."""
     sources: dict = manifest["sources"]
