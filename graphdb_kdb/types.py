@@ -17,6 +17,7 @@ class SyncResult:
     edges_upserted: int = 0       # LINKS_TO edges present after replacement (Phase 3)
     sources_upserted: int = 0     # Source MERGE ops in Phase 1 (scan refresh)
     supports_upserted: int = 0    # SUPPORTS edges present after replacement (Phase 3)
+    entities_deleted: int = 0     # Entity DETACH DELETE ops in apply_cleanup (#68)
     orphans_detected: list[str] = field(default_factory=list)  # newly orphan_candidate slugs
 
 

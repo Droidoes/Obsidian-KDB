@@ -138,6 +138,11 @@ class GraphDB:
         from graphdb_kdb.ingestor import apply_compile_result as _apply
         return _apply(cr, scan_dict, run_id, conn=self.conn, now=now)
 
+    def apply_cleanup(self, retraction: dict, run_id: str) -> SyncResult:
+        """Retract entities a cleanup run removed. Delegates to ingestor (#68)."""
+        from graphdb_kdb.ingestor import apply_cleanup as _apply
+        return _apply(retraction, run_id, conn=self.conn)
+
     # ---- minimal read API (full set lands in #63.3) ----
 
     def get_entity(self, slug: str) -> Entity | None:

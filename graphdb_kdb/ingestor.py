@@ -435,3 +435,56 @@ def _detect_and_mark_orphans(
         )
 
     return new_orphans
+
+
+# ---------- Cleanup retraction (#68) ----------
+
+def apply_cleanup(
+    retraction: dict,
+    run_id: str,
+    *,
+    conn: kuzu.Connection,
+) -> SyncResult:
+    """Retract entities a `kdb-clean orphans` run removed (#68).
+
+    DETACH DELETEs the Entity node — and its LINKS_TO + SUPPORTS edges — for
+    every slug in `retraction['retracted_slugs']`, and ONLY those slugs.
+    `retracted_slugs` is the slug-safe key set computed by `reap_orphans`
+    (reaped slugs no surviving active page provides); the full `reaped` page
+    list in the retraction payload is audit-only and is NOT used for deletion.
+
+    Atomic per run, mirroring apply_compile_result's transaction handling.
+
+    Args:
+        retraction: retraction payload dict (`retracted_slugs`, `reaped`, ...).
+        run_id: cleanup run id string.
+        conn: open kuzu.Connection.
+
+    Returns:
+        SyncResult with `entities_deleted` set to the count of nodes actually
+        removed (a retracted slug already absent from the graph is a no-op).
+    """
+    result = SyncResult(run_id=run_id)
+
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        for slug in retraction.get("retracted_slugs", []):
+            r = conn.execute(
+                "MATCH (e:Entity {slug: $slug}) RETURN COUNT(e)", {"slug": slug}
+            )
+            existed = r.has_next() and int(r.get_next()[0]) > 0
+            if existed:
+                conn.execute(
+                    "MATCH (e:Entity {slug: $slug}) DETACH DELETE e",
+                    {"slug": slug},
+                )
+                result.entities_deleted += 1
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+
+    return result
