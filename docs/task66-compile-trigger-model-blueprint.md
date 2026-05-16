@@ -1,6 +1,6 @@
 # Task #66 — Compile-Trigger Model: Remove the `error_retry` Kludge
 
-Status: **open** — awaiting Proceed gate. Codex-reviewed (1 round, 2026-05-16).
+Status: **DONE** (2026-05-16). Codex-reviewed (1 round) → Proceed → implemented TDD (6 commits `160220e`→`0ca91db`, suite 504 green) → Opus final-review **APPROVED** → live migration applied (`task66-migration-2026-05-16T08-14-40`). The `error_retry` kludge is **removed**; compile eligibility is now the single honest comparison `current_hash != last_compiled_hash`, and the manifest can no longer be hand-edited to force a recompile. See D46 in `docs/CODEBASE_OVERVIEW.md` and the #66 row in `docs/TASKS.md`.
 
 ---
 
