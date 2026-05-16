@@ -43,7 +43,7 @@ from kdb_compiler import (
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
-from kdb_compiler.reconcile import reconcile_body_links
+from kdb_compiler.reconcile import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext, now_iso
 from kdb_compiler.types import (
@@ -288,6 +288,13 @@ def compile_one(
 
         # --- body-link reconciliation ---
         reconcile_body_links(state["parsed_json"])
+
+        # --- slug-list reconciliation (Task #65 / D45) ---
+        # Rebuild concept_slugs/article_slugs from pages[].page_type so the
+        # pairing-inconsistency class (commission/omission/type_mismatch)
+        # cannot reach downstream validation. Pages-win, mirroring the
+        # body-wins reconcile_body_links above.
+        reconcile_slug_lists(state["parsed_json"])
 
         # --- success: enrich LLM payload with runner-injected source-id-space ---
         # Task #41: LLM emits slug-space + source_name only; runner injects

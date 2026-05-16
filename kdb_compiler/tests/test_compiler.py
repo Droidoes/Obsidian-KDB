@@ -224,6 +224,63 @@ def test_compile_one_threads_compile_meta_from_model_response(
     assert meta.error is None
 
 
+def test_compile_one_reconciles_mis_filed_slug_lists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """compile_one applies reconcile_slug_lists (Task #65 / D45): concept_slugs
+    and article_slugs are rebuilt from pages[].page_type, so a slug the model
+    mis-filed is corrected before the payload reaches downstream validation."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    response = {
+        "source_name": Path(SOURCE_A).name,
+        "summary_slug": "summary-foo",
+        # 'article-y' is an article page but the model mis-filed its slug
+        # into concept_slugs; article_slugs was left empty.
+        "concept_slugs": ["concept-x", "article-y"],
+        "article_slugs": [],
+        "pages": [
+            {"slug": "summary-foo", "page_type": "summary", "title": "S",
+             "body": "Body.", "status": "active", "outgoing_links": [],
+             "confidence": "medium"},
+            {"slug": "concept-x", "page_type": "concept", "title": "C",
+             "body": "Body.", "status": "active", "outgoing_links": [],
+             "confidence": "medium"},
+            {"slug": "article-y", "page_type": "article", "title": "A",
+             "body": "Body.", "status": "active", "outgoing_links": [],
+             "confidence": "medium"},
+        ],
+        "log_entries": [],
+        "warnings": [],
+    }
+    mr = ModelResponse(
+        text=json.dumps(response), input_tokens=100, output_tokens=50,
+        latency_ms=123, model="claude-opus-4-7", provider="anthropic", attempts=1,
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: mr}),
+    )
+
+    cs, _, _, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert err is None, err
+    assert cs is not None
+    assert cs.concept_slugs == ["concept-x"]
+    assert cs.article_slugs == ["article-y"]
+
+
 # ---------- compile_one: failure paths (all write exactly one resp-stats record) ----------
 
 def test_compile_one_source_read_failure_writes_resp_stats_record(
