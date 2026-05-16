@@ -189,6 +189,9 @@ def _seed_source_record(file_entry: dict, ctx: RunContext) -> dict:
         "last_run_id": ctx.run_id,
         "compile_state": "metadata_only" if file_entry.get("is_binary") else "compiled",
         "compile_count": 0,
+        "last_compiled_hash": (
+            file_entry["current_hash"] if file_entry.get("is_binary") else None
+        ),
         "summary_page": None,
         "outputs_created": [],
         "outputs_touched": [],
@@ -315,6 +318,10 @@ def apply_scan_reconciliation(manifest: dict, last_scan: dict, ctx: RunContext) 
             rec["status"] = "active"
             rec["last_seen_at"] = ctx.started_at
             rec["last_run_id"] = ctx.run_id
+            # Task #66 (Q6): a binary has no LLM compile step — recording its
+            # changed metadata IS its successful processing.
+            if fe.get("is_binary"):
+                rec["last_compiled_hash"] = fe["current_hash"]
 
         elif action == "UNCHANGED":
             rec = sources.get(path)
@@ -489,7 +496,8 @@ def apply_compile_result(manifest: dict, compile_result: dict, last_scan: dict,
                 "size_bytes": None, "first_seen_at": ctx.started_at,
                 "last_seen_at": ctx.started_at, "last_compiled_at": None,
                 "last_run_id": ctx.run_id, "compile_state": "compiled",
-                "compile_count": 0, "summary_page": None, "outputs_created": [],
+                "compile_count": 0, "last_compiled_hash": source_hash,
+                "summary_page": None, "outputs_created": [],
                 "outputs_touched": [], "concept_ids": [],
                 "link_operations": {"links_added": 0, "links_removed": 0, "backlink_edits": 0},
                 "provenance": {}, "previous_versions": [],
@@ -500,6 +508,8 @@ def apply_compile_result(manifest: dict, compile_result: dict, last_scan: dict,
         rec["compile_count"] = int(rec.get("compile_count", 0)) + 1
         rec["last_compiled_at"] = ctx.started_at
         rec["last_run_id"] = ctx.run_id
+        # Task #66 (D46): record the hash that was just successfully compiled.
+        rec["last_compiled_hash"] = source_hash
         rec["summary_page"] = summary_key
         rec["outputs_created"] = sorted(set(created_keys))
         rec["outputs_touched"] = sorted(set(touched_keys))

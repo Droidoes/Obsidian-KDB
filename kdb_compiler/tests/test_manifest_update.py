@@ -925,3 +925,98 @@ def test_invariant_still_rejects_empty_source_refs_on_active() -> None:
     }
     with pytest.raises(ManifestInvariantError, match="empty source_refs"):
         assert_manifest_invariants(m)
+
+
+# ---------- Task #66: last_compiled_hash ----------
+
+def _manifest_with_source(path: str, *, hash: str, last_compiled_hash,
+                           is_binary: bool = False) -> dict:
+    """Return a minimal manifest with one seeded source record."""
+    m = manifest_update.ensure_manifest_shape({}, ctx=_ctx())
+    file_type = "binary" if is_binary else "markdown"
+    m["sources"][path] = {
+        "source_id": path, "canonical_path": path, "status": "active",
+        "file_type": file_type, "hash": hash, "mtime": 1.0, "size_bytes": 5,
+        "first_seen_at": "x", "last_seen_at": "x", "last_compiled_at": None,
+        "last_run_id": "prev-run",
+        "compile_state": "metadata_only" if is_binary else "compiled",
+        "compile_count": 0, "last_compiled_hash": last_compiled_hash,
+        "summary_page": None, "outputs_created": [], "outputs_touched": [],
+        "concept_ids": [], "link_operations": {"links_added": 0, "links_removed": 0, "backlink_edits": 0},
+        "provenance": {}, "previous_versions": [],
+    }
+    return m
+
+
+def _last_scan(*, to_compile: list[str], current_hash: str) -> dict:
+    """Return a minimal last_scan dict with one to_compile entry."""
+    files = [{"path": p, "action": "NEW", "current_hash": current_hash,
+              "current_mtime": 1.0, "size_bytes": 5, "file_type": "markdown",
+              "is_binary": False, "compiled_hash": None}
+             for p in to_compile]
+    return _scan(files=files, to_compile=to_compile)
+
+
+def _compile_result_for(source_id: str) -> dict:
+    """Return a compile_result with a successful compiled_sources entry."""
+    return _compile(compiled_sources=[_cs(
+        source_id, "summary-a",
+        pages=[_page("summary-a", "summary", "A")],
+    )])
+
+
+def _compile_result_empty() -> dict:
+    """Return a compile_result with no compiled_sources (simulates error)."""
+    return _compile(compiled_sources=[])
+
+
+def test_seed_record_has_last_compiled_hash_none_for_markdown():
+    from kdb_compiler.manifest_update import _seed_source_record
+    fe = {"path": "KDB/raw/a.md", "current_hash": "sha256:" + "a" * 64,
+          "current_mtime": 1.0, "size_bytes": 5, "file_type": "markdown",
+          "is_binary": False}
+    rec = _seed_source_record(fe, _ctx())
+    assert rec["last_compiled_hash"] is None
+
+
+def test_seed_record_sets_last_compiled_hash_for_binary():
+    from kdb_compiler.manifest_update import _seed_source_record
+    h = "sha256:" + "b" * 64
+    fe = {"path": "KDB/raw/x.png", "current_hash": h, "current_mtime": 1.0,
+          "size_bytes": 5, "file_type": "binary", "is_binary": True}
+    rec = _seed_source_record(fe, _ctx())
+    assert rec["last_compiled_hash"] == h          # Q6: metadata recording IS processing
+
+
+def test_apply_compile_result_advances_last_compiled_hash():
+    manifest = _manifest_with_source("KDB/raw/a.md", hash="sha256:" + "a" * 64,
+                                     last_compiled_hash=None)
+    last_scan = _last_scan(to_compile=["KDB/raw/a.md"], current_hash="sha256:" + "a" * 64)
+    cr = _compile_result_for("KDB/raw/a.md")
+    apply_compile_result(manifest, cr, last_scan, _ctx())
+    assert manifest["sources"]["KDB/raw/a.md"]["last_compiled_hash"] == "sha256:" + "a" * 64
+
+
+def test_error_marked_source_does_not_advance_last_compiled_hash():
+    manifest = _manifest_with_source("KDB/raw/a.md", hash="sha256:" + "a" * 64,
+                                     last_compiled_hash=None)
+    last_scan = _last_scan(to_compile=["KDB/raw/a.md"], current_hash="sha256:" + "a" * 64)
+    cr = _compile_result_empty()                      # no compiled_sources
+    apply_compile_result(manifest, cr, last_scan, _ctx())
+    rec = manifest["sources"]["KDB/raw/a.md"]
+    assert rec["compile_state"] == "error"
+    assert rec["last_compiled_hash"] is None          # not advanced -> eligible next scan
+
+
+def test_changed_binary_advances_last_compiled_hash_in_scan_reconciliation():
+    h_old, h_new = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    manifest = _manifest_with_source("KDB/raw/x.png", hash=h_old,
+                                     last_compiled_hash=h_old, is_binary=True)
+    last_scan = {"files": [{"path": "KDB/raw/x.png", "action": "CHANGED",
+                            "current_hash": h_new, "current_mtime": 2.0,
+                            "size_bytes": 9, "file_type": "binary",
+                            "is_binary": True, "compiled_hash": h_old,
+                            "previous_hash": h_old, "previous_mtime": 1.0}],
+                 "to_reconcile": []}
+    apply_scan_reconciliation(manifest, last_scan, _ctx())
+    assert manifest["sources"]["KDB/raw/x.png"]["last_compiled_hash"] == h_new
