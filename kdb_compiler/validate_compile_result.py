@@ -86,9 +86,11 @@ HARD_ZERO_FINDING_TYPES: frozenset[str] = frozenset({
     "duplicate_slug",
     "summary_slug_missing",
     "summary_slug_wrong_type",
-    "pairing_type_mismatch",
     "reserved_slug",
 })
+# Task #65 / D45: `pairing_type_mismatch` is no longer hard-zero — it is
+# reconcilable (measure severity); `reconcile_slug_lists()` rebuilds the
+# slug lists from the authoritative `pages[].page_type`.
 
 
 # -------------------------------------------------------------------------
@@ -198,11 +200,14 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
                     slug=slug,
                 ))
             elif pt != expected:
-                # Slug matches a page, but page's page_type is wrong — NOT
-                # reconcilable (no principled way to pick a winner). Stays gate.
-                result.gate_errors.append(ValidationFinding(
+                # Slug matches a page, but the page's page_type disagrees.
+                # The page object is authoritative (Task #65 / D45):
+                # reconcile_slug_lists() rebuilds the slug lists from
+                # pages[], and the pairing_type_mismatch reconcile rule is
+                # the finding-driven safety net. Measure, not gate.
+                result.measure_findings.append(ValidationFinding(
                     type="pairing_type_mismatch",
-                    severity="gate",
+                    severity="measure",
                     detail=f"[{loc}.{field_name}[{j}]] {slug!r} is page_type={pt!r}, expected {expected!r}",
                     source_id=source_id,
                     page_type=pt,

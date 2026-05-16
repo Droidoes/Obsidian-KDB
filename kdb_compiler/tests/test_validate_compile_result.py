@@ -106,8 +106,10 @@ def test_concept_slug_points_to_wrong_type() -> None:
     result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
     errors = _details(result)
     assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
-    # pairing_type_mismatch is GATE — unreconcilable.
-    assert any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
+    # pairing_type_mismatch is a measure finding (Task #65 / D45) — the page
+    # object is authoritative; reconcile_slug_lists() heals it.
+    assert any(f.type == "pairing_type_mismatch" for f in result.measure_findings)
+    assert not any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
 
 
 def test_article_slug_missing_from_pages() -> None:
@@ -280,13 +282,17 @@ def test_pairing_mismatches_do_not_gate_the_run() -> None:
     assert types == {"pairing_commission", "pairing_omission"}
 
 
-def test_pairing_type_mismatch_stays_gate() -> None:
-    """pairing_type_mismatch is unreconcilable — must block the run."""
+def test_pairing_type_mismatch_is_measure_not_gate() -> None:
+    """pairing_type_mismatch is reconcilable (Task #65 / D45) — measure
+    severity, does not block the run. The page object is authoritative;
+    reconcile_slug_lists() rebuilds the slug lists from pages[]."""
     # 'summary-foo' is the default summary page slug; listing it in concept_slugs
-    # points at the summary page → page_type mismatch → gate finding.
+    # points at the summary page → page_type mismatch.
     result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
-    assert not result.is_valid
-    assert any(f.type == "pairing_type_mismatch" and f.severity == "gate" for f in result.gate_errors)
+    assert result.is_valid
+    assert any(f.type == "pairing_type_mismatch" and f.severity == "measure"
+               for f in result.measure_findings)
+    assert not any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
 
 
 # ---------- CLI smoke ----------
@@ -321,17 +327,27 @@ def test_cli_missing_file_exits_two(tmp_path: Path) -> None:
 # ---------- HARD_ZERO_FINDING_TYPES + check_compiled_source (Round 4 CW1) ----------
 
 def test_hard_zero_finding_types_set() -> None:
-    """The 5 hard-zero finding types are exactly the gate-severity types
+    """The hard-zero finding types are exactly the gate-severity types
     emitted by `_check_source` (excluding `schema_violation`, which is
     emitted by the top-level `validate()` against the aggregate schema).
-    Stable contract for the benchmark scorer's S3 derivation."""
+    Stable contract for the benchmark scorer's hard-zero derivation.
+    `pairing_type_mismatch` left this set in Task #65 / D45 — it is now
+    reconcilable (measure severity), so it no longer hard-zeros a model."""
     assert vcr.HARD_ZERO_FINDING_TYPES == frozenset({
         "duplicate_slug",
         "summary_slug_missing",
         "summary_slug_wrong_type",
-        "pairing_type_mismatch",
         "reserved_slug",
     })
+
+
+def test_check_compiled_source_excludes_pairing_type_mismatch() -> None:
+    """pairing_type_mismatch is measure-severity (Task #65 / D45) — the
+    hard-zero wrapper must not surface it."""
+    src = _src(concept_slugs=["summary-foo"])  # summary page slug mis-filed as concept
+    findings = vcr.check_compiled_source(src)
+    assert "pairing_type_mismatch" not in findings
+    assert findings == [], findings
 
 
 def test_check_compiled_source_clean_returns_empty_list() -> None:
