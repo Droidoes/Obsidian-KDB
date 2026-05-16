@@ -142,6 +142,47 @@ def reconcile_body_links(parsed_json: dict) -> int:
     return n_changed
 
 
+def reconcile_slug_lists(parsed_json: dict) -> int:
+    """Pages-win normalization: `concept_slugs` and `article_slugs` are
+    rebuilt from the slugs of `pages[]` entries whose `page_type` is
+    'concept' / 'article' respectively (sorted, deduplicated). Makes the
+    slug lists consistent with `pages[]` by construction — after this,
+    pairing_commission / pairing_omission / pairing_type_mismatch cannot
+    arise: the page object is authoritative (Task #65 / D45, extending
+    Task #57's body-wins doctrine from `outgoing_links` to the slug lists).
+    Returns the count of slug-list fields actually changed (0, 1, or 2).
+
+    Mutates parsed_json in place. Tolerant: missing/non-list `pages` → 0
+    (no mutation); non-dict page entry → skipped; non-string slug → skipped.
+    """
+    pages = parsed_json.get("pages")
+    if not isinstance(pages, list):
+        return 0
+    concepts: set[str] = set()
+    articles: set[str] = set()
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        slug = p.get("slug")
+        if not isinstance(slug, str):
+            continue
+        pt = p.get("page_type")
+        if pt == "concept":
+            concepts.add(slug)
+        elif pt == "article":
+            articles.add(slug)
+    new_concepts = sorted(concepts)
+    new_articles = sorted(articles)
+    n_changed = 0
+    if (parsed_json.get("concept_slugs") or []) != new_concepts:
+        n_changed += 1
+    if (parsed_json.get("article_slugs") or []) != new_articles:
+        n_changed += 1
+    parsed_json["concept_slugs"] = new_concepts
+    parsed_json["article_slugs"] = new_articles
+    return n_changed
+
+
 def reconcile(cr: dict, findings: list[ValidationFinding]) -> list[ReconcileAction]:
     """Apply registered rules for each finding. Mutates cr in place."""
     sources_by_id = {

@@ -402,3 +402,107 @@ class TestReconcileBodyLinks:
         }
         reconcile.reconcile_body_links(parsed)
         assert parsed["pages"][0]["outgoing_links"] == ["a", "b"]
+
+
+# ---------- reconcile_slug_lists (Task #65) ----------
+
+class TestReconcileSlugLists:
+    def test_rebuilds_lists_from_page_types(self) -> None:
+        parsed = {
+            "concept_slugs": [],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "summary-foo", "page_type": "summary"},
+                {"slug": "concept-a", "page_type": "concept"},
+                {"slug": "concept-b", "page_type": "concept"},
+                {"slug": "article-x", "page_type": "article"},
+            ],
+        }
+        n = reconcile.reconcile_slug_lists(parsed)
+        assert n == 2
+        assert parsed["concept_slugs"] == ["concept-a", "concept-b"]
+        assert parsed["article_slugs"] == ["article-x"]
+
+    def test_moves_mis_filed_slug(self) -> None:
+        # EP1 case: an article-typed page whose slug the model wrongly
+        # filed into concept_slugs (Task #65 motivating defect).
+        parsed = {
+            "concept_slugs": ["ethnic-integration-in-china", "real-concept"],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "real-concept", "page_type": "concept"},
+                {"slug": "ethnic-integration-in-china", "page_type": "article"},
+            ],
+        }
+        reconcile.reconcile_slug_lists(parsed)
+        assert parsed["concept_slugs"] == ["real-concept"]
+        assert parsed["article_slugs"] == ["ethnic-integration-in-china"]
+
+    def test_aligned_lists_unchanged(self) -> None:
+        parsed = {
+            "concept_slugs": ["c1"],
+            "article_slugs": ["a1"],
+            "pages": [
+                {"slug": "c1", "page_type": "concept"},
+                {"slug": "a1", "page_type": "article"},
+            ],
+        }
+        n = reconcile.reconcile_slug_lists(parsed)
+        assert n == 0
+        assert parsed["concept_slugs"] == ["c1"]
+        assert parsed["article_slugs"] == ["a1"]
+
+    def test_summary_slug_in_neither_list(self) -> None:
+        parsed = {
+            "concept_slugs": ["summary-foo"],
+            "article_slugs": [],
+            "pages": [{"slug": "summary-foo", "page_type": "summary"}],
+        }
+        reconcile.reconcile_slug_lists(parsed)
+        assert parsed["concept_slugs"] == []
+        assert parsed["article_slugs"] == []
+
+    def test_output_sorted_and_deduped(self) -> None:
+        parsed = {
+            "concept_slugs": [],
+            "article_slugs": [],
+            "pages": [
+                {"slug": "zeta", "page_type": "concept"},
+                {"slug": "alpha", "page_type": "concept"},
+                {"slug": "zeta", "page_type": "concept"},
+            ],
+        }
+        reconcile.reconcile_slug_lists(parsed)
+        assert parsed["concept_slugs"] == ["alpha", "zeta"]
+
+    def test_idempotent_on_second_pass(self) -> None:
+        parsed = {
+            "concept_slugs": ["wrong"],
+            "article_slugs": [],
+            "pages": [{"slug": "c", "page_type": "concept"}],
+        }
+        n1 = reconcile.reconcile_slug_lists(parsed)
+        snapshot_c = list(parsed["concept_slugs"])
+        snapshot_a = list(parsed["article_slugs"])
+        n2 = reconcile.reconcile_slug_lists(parsed)
+        assert n1 == 1
+        assert n2 == 0
+        assert parsed["concept_slugs"] == snapshot_c
+        assert parsed["article_slugs"] == snapshot_a
+
+    def test_tolerant_missing_pages(self) -> None:
+        parsed: dict = {}
+        assert reconcile.reconcile_slug_lists(parsed) == 0
+        assert parsed == {}  # missing pages → no mutation
+
+    def test_tolerant_non_list_pages(self) -> None:
+        assert reconcile.reconcile_slug_lists({"pages": "oops"}) == 0
+
+    def test_tolerant_non_dict_page_entry(self) -> None:
+        parsed = {
+            "concept_slugs": [],
+            "article_slugs": [],
+            "pages": ["not a dict", {"slug": "c", "page_type": "concept"}],
+        }
+        reconcile.reconcile_slug_lists(parsed)
+        assert parsed["concept_slugs"] == ["c"]
