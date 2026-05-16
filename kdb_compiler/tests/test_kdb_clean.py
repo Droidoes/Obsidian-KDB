@@ -113,6 +113,38 @@ def test_reap_no_orphans_is_noop():
     assert active in manifest["pages"]
 
 
+def test_reap_retracted_slugs_lists_fully_removed_slugs():
+    o1 = "KDB/wiki/concepts/o1.md"
+    o2 = "KDB/wiki/concepts/o2.md"
+    manifest = _manifest(
+        pages={
+            o1: _page("orphan_candidate", "o1"),
+            o2: _page("orphan_candidate", "o2"),
+        },
+        orphans={o1: {}, o2: {}},
+    )
+    report = reap_orphans(manifest)
+    assert report["retracted_slugs"] == ["o1", "o2"]
+
+
+def test_reap_retracted_slugs_excludes_slug_surviving_under_another_type():
+    # slug-safe (manifest side): 'foo' survives as an active article, so
+    # reaping the orphaned 'foo' concept must NOT retract slug 'foo'.
+    art = "KDB/wiki/articles/foo.md"
+    con = "KDB/wiki/concepts/foo.md"
+    solo = "KDB/wiki/concepts/solo.md"
+    manifest = _manifest(
+        pages={
+            art: _page("active", "foo", page_type="article"),
+            con: _page("orphan_candidate", "foo", page_type="concept"),
+            solo: _page("orphan_candidate", "solo"),
+        },
+        orphans={con: {}, solo: {}},
+    )
+    report = reap_orphans(manifest)
+    assert report["retracted_slugs"] == ["solo"]
+
+
 def test_main_orphans_dry_run_reads_manifest_without_mutating(tmp_path):
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)

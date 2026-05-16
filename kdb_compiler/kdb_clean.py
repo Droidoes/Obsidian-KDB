@@ -57,8 +57,9 @@ def reap_orphans(manifest: dict) -> dict:
     and orphans{}. Returns a report dict.
 
     report = {
-      "reaped":     [{"page_id", "slug", "page_type"}, ...],  # sorted by page_id
-      "dead_links": [{"from_page", "to_slug"}, ...],          # active -> reaped
+      "reaped":          [{"page_id", "slug", "page_type"}, ...],  # sorted by page_id
+      "dead_links":      [{"from_page", "to_slug"}, ...],          # active -> reaped
+      "retracted_slugs": [slug, ...],  # reaped slugs no surviving page provides
     }
     """
     pages = manifest.get("pages", {})
@@ -89,6 +90,11 @@ def reap_orphans(manifest: dict) -> dict:
         if link in reaped_slugs and link not in surviving_slugs
     ]
 
+    # retracted_slugs: reaped slugs that NO surviving page provides — the
+    # slug-safe deletion key set for the graph (a slug still carried by a
+    # surviving active page must not be retracted). #68.
+    retracted_slugs = sorted(reaped_slugs - surviving_slugs)
+
     for pid in reaped_ids:
         pages.pop(pid, None)
         orphans.pop(pid, None)
@@ -96,6 +102,7 @@ def reap_orphans(manifest: dict) -> dict:
     return {
         "reaped": sorted(reaped, key=lambda r: r["page_id"]),
         "dead_links": sorted(dead_links, key=lambda d: (d["from_page"], d["to_slug"])),
+        "retracted_slugs": retracted_slugs,
     }
 
 
