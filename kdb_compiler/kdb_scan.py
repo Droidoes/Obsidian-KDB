@@ -200,7 +200,7 @@ def load_manifest_sources(manifest_abs: Path) -> dict[str, dict]:
             "size_bytes": rec.get("size_bytes"),
             "file_type": rec.get("file_type"),
             "is_binary": rec.get("is_binary"),
-            "compile_state": rec.get("compile_state"),
+            "last_compiled_hash": rec.get("last_compiled_hash"),
         }
     return out
 
@@ -226,9 +226,9 @@ def classify(
         prev_hash = prev.get("hash")
         prev_mtime = prev.get("mtime")
         if prev_hash == cur.hash:
-            files.append(_entry_from(cur, "UNCHANGED", prev_hash, prev_mtime, None))
+            files.append(_entry_from(cur, "UNCHANGED", prev_hash, prev_mtime, prev.get("last_compiled_hash")))
         else:
-            files.append(_entry_from(cur, "CHANGED", prev_hash, prev_mtime, None))
+            files.append(_entry_from(cur, "CHANGED", prev_hash, prev_mtime, prev.get("last_compiled_hash")))
 
     # Phase C — rename pass on disjoint sets: match by hash
     current_only = current_paths - prior_paths
@@ -258,7 +258,7 @@ def classify(
         files.append(_entry_from(
             cur, "MOVED",
             prev.get("hash"), prev.get("mtime"),
-            None,
+            prev.get("last_compiled_hash"),
             previous_path=old_path,
         ))
         ops.append(ReconcileOp(
@@ -325,25 +325,12 @@ def build_scan_result(
     errors: list[ErrorEntry],
     skipped_symlinks: list[SkippedSymlinkEntry],
     settings: SettingsSnapshot,
-    prior_sources: dict[str, dict] | None = None,
 ) -> ScanResult:
-    # NEW/CHANGED are always eligible; UNCHANGED files whose manifest
-    # entry recorded compile_state=="error" are retried on this run
-    # (otherwise they'd be stuck in error state forever, since their hash
-    # is unchanged).
-    prior_sources = prior_sources or {}
-    error_retry = {
-        e.path for e in files
-        if e.action == "UNCHANGED"
-        and prior_sources.get(e.path, {}).get("compile_state") == "error"
-    }
-    to_compile = sorted(
-        {e.path for e in files if e.action in ("NEW", "CHANGED")} | error_retry
-    )
-    to_skip = sorted(
-        e.path for e in files
-        if e.action == "UNCHANGED" and e.path not in error_retry
-    )
+    # Task #66 (D46): compile eligibility is one honest comparison.
+    # A file compiles iff its current content hash differs from the hash
+    # last successfully compiled. compile_state plays no part.
+    to_compile = sorted(e.path for e in files if e.current_hash != e.compiled_hash)
+    to_skip = sorted(e.path for e in files if e.current_hash == e.compiled_hash)
 
     counts = {"NEW": 0, "CHANGED": 0, "UNCHANGED": 0, "MOVED": 0}
     for e in files:
@@ -412,7 +399,6 @@ def scan(
         errors=errors,
         skipped_symlinks=skipped_symlinks,
         settings=settings,
-        prior_sources=prior,
     )
     if write:
         write_scan_result(result, out_path)

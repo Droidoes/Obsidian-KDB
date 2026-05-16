@@ -252,14 +252,21 @@ def test_scan_end_to_end_mix(tmp_path: Path) -> None:
         return "sha256:" + hashlib.sha256(s.encode()).hexdigest()
 
     _write_manifest(state, {
+        # last_compiled_hash == current hash -> skip (content already compiled)
         "KDB/raw/unchanged.md": {"hash": h("stable content"), "mtime": 1.0, "size_bytes": 1,
-                                 "file_type": "markdown", "is_binary": False},
+                                 "file_type": "markdown", "is_binary": False,
+                                 "last_compiled_hash": h("stable content")},
+        # last_compiled_hash == old hash; current content differs -> compile
         "KDB/raw/changed.md":   {"hash": h("original content"), "mtime": 1.0, "size_bytes": 1,
-                                 "file_type": "markdown", "is_binary": False},
+                                 "file_type": "markdown", "is_binary": False,
+                                 "last_compiled_hash": h("original content")},
+        # moved: last_compiled_hash == renamed body hash -> skip after move
         "KDB/raw/moved-old.md": {"hash": h("renamed body"), "mtime": 1.0, "size_bytes": 1,
-                                 "file_type": "markdown", "is_binary": False},
+                                 "file_type": "markdown", "is_binary": False,
+                                 "last_compiled_hash": h("renamed body")},
         "KDB/raw/gone.md":      {"hash": h("tombstoned"), "mtime": 1.0, "size_bytes": 1,
-                                 "file_type": "markdown", "is_binary": False},
+                                 "file_type": "markdown", "is_binary": False,
+                                 "last_compiled_hash": h("tombstoned")},
     })
 
     result = scan(vault, write=False)
@@ -276,47 +283,10 @@ def test_scan_end_to_end_mix(tmp_path: Path) -> None:
     assert op_types == ["DELETED", "MOVED"]
 
     assert sorted(result.to_compile) == ["KDB/raw/changed.md", "KDB/raw/new.md"]
-    assert result.to_skip == ["KDB/raw/unchanged.md"]
+    assert sorted(result.to_skip) == ["KDB/raw/moved-new.md", "KDB/raw/unchanged.md"]
 
     s = result.summary
     assert (s.new, s.changed, s.unchanged, s.moved, s.deleted) == (1, 1, 1, 1, 1)
-
-
-def test_scan_retries_errored_sources_unchanged_hash(tmp_path: Path) -> None:
-    """A source whose hash is unchanged but whose manifest entry records
-    compile_state='error' must be re-included in to_compile so it gets
-    another chance — otherwise it's stuck forever."""
-    vault, raw, state = _make_vault(tmp_path)
-
-    import hashlib
-    def h(s: str) -> str:
-        return "sha256:" + hashlib.sha256(s.encode()).hexdigest()
-
-    _write(raw / "ok.md", "happy body")
-    _write(raw / "errored.md", "truncated body")
-
-    _write_manifest(state, {
-        "KDB/raw/ok.md": {
-            "hash": h("happy body"), "mtime": 1.0, "size_bytes": 1,
-            "file_type": "markdown", "is_binary": False,
-            "compile_state": "compiled",
-        },
-        "KDB/raw/errored.md": {
-            "hash": h("truncated body"), "mtime": 1.0, "size_bytes": 1,
-            "file_type": "markdown", "is_binary": False,
-            "compile_state": "error",
-        },
-    })
-
-    result = scan(vault, write=False)
-    by_path = {f.path: f for f in result.files}
-
-    # Both files are UNCHANGED on disk (hashes match).
-    assert by_path["KDB/raw/ok.md"].action == "UNCHANGED"
-    assert by_path["KDB/raw/errored.md"].action == "UNCHANGED"
-    # But only the errored one is rescheduled for compile.
-    assert result.to_compile == ["KDB/raw/errored.md"]
-    assert result.to_skip == ["KDB/raw/ok.md"]
 
 
 def test_scan_entry_to_dict_always_includes_compiled_hash():
@@ -357,3 +327,86 @@ def test_cli_requires_vault_root(capsys: pytest.CaptureFixture) -> None:
     with pytest.raises(SystemExit) as exc_info:
         main([])
     assert exc_info.value.code != 0
+
+
+# ---------- Task #66: hash-based compile eligibility ----------
+
+def _sha256_text(text: str) -> str:
+    import hashlib
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _src_rec(*, hash, last_compiled_hash, compile_state="compiled"):
+    return {
+        "hash": hash, "mtime": 0.0, "size_bytes": 1,
+        "file_type": "markdown", "is_binary": False,
+        "compile_state": compile_state, "last_compiled_hash": last_compiled_hash,
+    }
+
+
+def test_unchanged_already_compiled_is_skipped(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    _write(raw / "a.md", "hello")
+    h = _sha256_text("hello")
+    _write_manifest(state, {"KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=h)})
+    res = scan(vault, write=False)
+    assert res.to_skip == ["KDB/raw/a.md"]
+    assert res.to_compile == []
+
+
+def test_unchanged_not_yet_compiled_is_compiled(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    _write(raw / "a.md", "hello")
+    h = _sha256_text("hello")
+    _write_manifest(state, {"KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=None)})
+    res = scan(vault, write=False)
+    assert res.to_compile == ["KDB/raw/a.md"]
+    assert res.to_skip == []
+
+
+def test_changed_with_a_prior_compiled_hash_is_compiled(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    _write(raw / "a.md", "new content")
+    old = _sha256_text("old content")
+    _write_manifest(state, {"KDB/raw/a.md": _src_rec(hash=old, last_compiled_hash=old)})
+    res = scan(vault, write=False)
+    assert res.to_compile == ["KDB/raw/a.md"]
+    entry = next(e for e in res.files if e.path == "KDB/raw/a.md")
+    assert entry.action == "CHANGED"
+    assert entry.compiled_hash == old
+
+
+def test_new_file_is_compiled(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    _write(raw / "a.md", "hello")
+    _write_manifest(state, {})
+    res = scan(vault, write=False)
+    assert res.to_compile == ["KDB/raw/a.md"]
+    entry = next(e for e in res.files if e.path == "KDB/raw/a.md")
+    assert entry.compiled_hash is None
+
+
+def test_error_state_does_not_force_recompile(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    _write(raw / "a.md", "hello")
+    h = _sha256_text("hello")
+    _write_manifest(state, {
+        "KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=h, compile_state="error"),
+    })
+    res = scan(vault, write=False)
+    assert res.to_skip == ["KDB/raw/a.md"]
+    assert res.to_compile == []
+
+
+def test_moved_with_compiled_content_is_skipped(tmp_path: Path) -> None:
+    vault, raw, state = _make_vault(tmp_path)
+    sub = raw / "sub"
+    sub.mkdir(parents=True, exist_ok=True)
+    _write(sub / "b.md", "hello")
+    h = _sha256_text("hello")
+    _write_manifest(state, {"KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=h)})
+    res = scan(vault, write=False)
+    moved = next(e for e in res.files if e.action == "MOVED")
+    assert moved.compiled_hash == h
+    assert res.to_skip == ["KDB/raw/sub/b.md"]
+    assert res.to_compile == []
