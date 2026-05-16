@@ -112,6 +112,40 @@ def _fix_pairing_omission(src: dict, finding: ValidationFinding) -> ReconcileAct
     )
 
 
+@register_rule("pairing_type_mismatch")
+def _fix_pairing_type_mismatch(src: dict, finding: ValidationFinding) -> ReconcileAction:
+    """Slug filed in concept_slugs/article_slugs whose page has a different
+    page_type. The page object is authoritative (Task #65 / D45) — remove
+    the slug from the list(s) it does not belong in. The matching
+    pairing_omission finding (if present) adds it to the correct list.
+
+    `reconcile_slug_lists()` is the primary, compile-time fix; this
+    finding-driven rule is the validation-stage safety net for any payload
+    that reached the validator un-reconciled (and satisfies the contract
+    that every measure-severity finding type has a reconcile rule)."""
+    correct_field = {"concept": "concept_slugs", "article": "article_slugs"}.get(
+        finding.page_type
+    )
+    removed_from: list[str] = []
+    for field in ("concept_slugs", "article_slugs"):
+        if field == correct_field:
+            continue
+        current = src.get(field) or []
+        if finding.slug in current:
+            src[field] = [s for s in current if s != finding.slug]
+            removed_from.append(field)
+    if removed_from:
+        detail = (f"removed {finding.slug!r} from {', '.join(removed_from)} "
+                  f"(page is {finding.page_type})")
+    else:
+        detail = f"{finding.slug!r} already absent from mis-filed list(s) (idempotent)"
+    return ReconcileAction(
+        finding_type="pairing_type_mismatch",
+        source_id=finding.source_id,
+        detail=detail,
+    )
+
+
 # -------------------------------------------------------------------------
 # Dispatch
 # -------------------------------------------------------------------------

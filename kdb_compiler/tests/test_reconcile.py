@@ -38,6 +38,7 @@ def _cr(*sources: dict) -> dict:
 def test_registry_contains_pairing_rules() -> None:
     assert "pairing_commission" in reconcile.registered_types()
     assert "pairing_omission" in reconcile.registered_types()
+    assert "pairing_type_mismatch" in reconcile.registered_types()
 
 
 # ---------- basic dispatch ----------
@@ -244,6 +245,68 @@ def test_reconcile_does_not_touch_other_sources() -> None:
     reconcile.reconcile(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == []
     assert cr["compiled_sources"][1]["concept_slugs"] == ["untouched"]
+
+
+# ---------- pairing_type_mismatch (Task #65 — remove slug from wrong list) ----------
+
+def test_fix_pairing_type_mismatch_article_page() -> None:
+    # An article-typed page whose slug was mis-filed into concept_slugs.
+    cr = _cr(_src(
+        concept_slugs=["ethnic-integration-in-china", "real-concept"],
+        pages=[
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "ethnic-integration-in-china", "page_type": "article", "title": "E", "body": "z"},
+        ],
+    ))
+    f = ValidationFinding(
+        type="pairing_type_mismatch",
+        severity="measure",
+        detail="x",
+        source_id=SRC_ID,
+        page_type="article",
+        slug="ethnic-integration-in-china",
+    )
+    actions = reconcile.reconcile(cr, [f])
+    assert cr["compiled_sources"][0]["concept_slugs"] == ["real-concept"]
+    assert len(actions) == 1
+    assert actions[0].finding_type == "pairing_type_mismatch"
+    assert "removed 'ethnic-integration-in-china'" in actions[0].detail
+
+
+def test_fix_pairing_type_mismatch_concept_page() -> None:
+    # A concept-typed page whose slug was mis-filed into article_slugs.
+    cr = _cr(_src(
+        article_slugs=["mencius"],
+        pages=[
+            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
+            {"slug": "mencius", "page_type": "concept", "title": "M", "body": "z"},
+        ],
+    ))
+    f = ValidationFinding(
+        type="pairing_type_mismatch",
+        severity="measure",
+        detail="x",
+        source_id=SRC_ID,
+        page_type="concept",
+        slug="mencius",
+    )
+    reconcile.reconcile(cr, [f])
+    assert cr["compiled_sources"][0]["article_slugs"] == []
+
+
+def test_fix_pairing_type_mismatch_idempotent() -> None:
+    cr = _cr(_src(concept_slugs=["real-concept"]))
+    f = ValidationFinding(
+        type="pairing_type_mismatch",
+        severity="measure",
+        detail="x",
+        source_id=SRC_ID,
+        page_type="article",
+        slug="already-gone",
+    )
+    actions = reconcile.reconcile(cr, [f])
+    assert cr["compiled_sources"][0]["concept_slugs"] == ["real-concept"]
+    assert "already absent" in actions[0].detail
 
 
 # ---------- reconcile_body_links (Task #57) ----------
