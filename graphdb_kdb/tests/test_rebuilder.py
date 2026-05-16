@@ -586,3 +586,19 @@ def test_obsidian_adapter_apply_raises_on_unknown_event_type(graph_dir):
     with GraphDB(graph_dir) as gdb:
         with pytest.raises(ValueError, match="unsupported event_type"):
             adapter.apply({"event_type": "bogus"}, {}, "run-x", gdb.conn)
+
+
+def test_sync_cleanup_run_deletes_entity_in_graph(graph_dir):
+    # seed an entity via the compile path, then retract it via the cleanup
+    # live-sync entry point — both must hit the same graph_dir.
+    cr = make_compile_result([
+        make_compiled_source("KDB/raw/s.md", [make_page("alpha")])
+    ])
+    scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+    adapter = ObsidianRunsAdapter()
+    adapter.sync_current_run(cr, scan, "run-1", graph_dir)
+    retraction = {"event_type": "cleanup", "retracted_slugs": ["alpha"]}
+    res = adapter.sync_cleanup_run(retraction, "clean-1", graph_dir)
+    assert res.entities_deleted == 1
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.get_entity("alpha") is None

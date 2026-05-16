@@ -204,3 +204,22 @@ class ObsidianRunsAdapter:
         resolved = graph_dir if graph_dir is not None else default_graph_path()
         with GraphDB(resolved) as gdb:
             return self.apply(mutation, scan, run_id, gdb.conn)
+
+    def sync_cleanup_run(
+        self,
+        retraction: dict,
+        run_id: str,
+        graph_dir: Path | None = None,
+    ) -> SyncResult:
+        """Live-sync a cleanup run into the graph (#68).
+
+        `sync_current_run`'s signature is locked by Stage 9 (D-S0) and has no
+        slot for a scan-less retraction payload — cleanup gets its own entry
+        point. `kdb-clean orphans --apply` calls this; `apply()` routes the
+        retraction (event_type='cleanup') to `apply_cleanup`."""
+        from graphdb_kdb import default_graph_path
+        from graphdb_kdb.graphdb import GraphDB
+
+        resolved = graph_dir if graph_dir is not None else default_graph_path()
+        with GraphDB(resolved) as gdb:
+            return self.apply(retraction, {}, run_id, gdb.conn)
