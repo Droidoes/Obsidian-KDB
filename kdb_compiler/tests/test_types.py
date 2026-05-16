@@ -27,6 +27,7 @@ def test_scan_entry_new_to_dict_omits_previous_fields() -> None:
         size_bytes=123,
         file_type="markdown",
         is_binary=False,
+        compiled_hash=None,
     )
     d = e.to_dict()
     assert d["path"] == "KDB/raw/foo.md" and d["action"] == "NEW"
@@ -42,6 +43,7 @@ def test_scan_entry_changed_includes_previous_fields() -> None:
         size_bytes=1,
         file_type="markdown",
         is_binary=False,
+        compiled_hash="sha256:" + "b" * 64,
         previous_hash="sha256:" + "b" * 64,
         previous_mtime=1.0,
     )
@@ -60,6 +62,7 @@ def test_scan_entry_moved_includes_previous_path() -> None:
         size_bytes=1,
         file_type="markdown",
         is_binary=False,
+        compiled_hash="sha256:" + "a" * 64,
         previous_hash="sha256:" + "a" * 64,
         previous_mtime=1.0,
         previous_path="KDB/raw/old-loc.md",
@@ -159,7 +162,7 @@ def test_scan_result_serializes_children() -> None:
     sr.files = [ScanEntry(
         path="KDB/raw/a.md", action="NEW",
         current_hash="sha256:" + "a" * 64, current_mtime=1.0, size_bytes=1,
-        file_type="markdown", is_binary=False,
+        file_type="markdown", is_binary=False, compiled_hash=None,
     )]
     sr.to_reconcile = [ReconcileOp(type="DELETED", path="KDB/raw/b.md")]
     sr.skipped_symlinks = [SkippedSymlinkEntry(path="KDB/raw/c.md", link_target="../elsewhere.md")]

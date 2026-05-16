@@ -28,6 +28,7 @@
       "size_bytes": 200,
       "file_type": "markdown",
       "is_binary": false,
+      "compiled_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "previous_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "previous_mtime": 1699000000.0
     },
@@ -39,6 +40,7 @@
       "size_bytes": 300,
       "file_type": "markdown",
       "is_binary": false,
+      "compiled_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
       "previous_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
       "previous_mtime": 1699000300.0,
       "previous_path": "KDB/raw/moved-old.md"
@@ -50,7 +52,8 @@
       "current_mtime": 1700000400.0,
       "size_bytes": 400,
       "file_type": "markdown",
-      "is_binary": false
+      "is_binary": false,
+      "compiled_hash": null
     },
     {
       "path": "KDB/raw/unchanged.md",
@@ -60,6 +63,7 @@
       "size_bytes": 500,
       "file_type": "markdown",
       "is_binary": false,
+      "compiled_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "previous_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
       "previous_mtime": 1700000500.0
     }

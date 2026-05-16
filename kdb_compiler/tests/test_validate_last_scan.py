@@ -48,6 +48,7 @@ def _entry(path: str, action: str, **overrides) -> dict:
         "size_bytes": 100,
         "file_type": "markdown",
         "is_binary": False,
+        "compiled_hash": overrides.pop("compiled_hash", None),  # required-but-nullable (Q3)
     }
     if action in ("CHANGED", "UNCHANGED"):
         base["previous_hash"] = overrides.pop("previous_hash", H2)
@@ -111,6 +112,11 @@ def _payload(
         "errors": errors or [],
         "skipped_symlinks": skipped_symlinks or [],
     }
+
+
+def _minimal_valid_scan() -> dict:
+    """Minimal schema-valid payload: single NEW file, auto-sorted to_compile."""
+    return _payload(files=[_entry("KDB/raw/a.md", "NEW")])
 
 
 # ---------- happy path ----------
@@ -181,6 +187,13 @@ def test_unknown_action_rejected() -> None:
     p = _payload(files=[bad])
     errors = vls.validate(p)
     assert errors  # schema enum rejects this
+
+
+def test_scan_entry_without_compiled_hash_is_rejected() -> None:
+    payload = _minimal_valid_scan()
+    del payload["files"][0]["compiled_hash"]
+    errors = vls.validate(payload)
+    assert any("compiled_hash" in e for e in errors)
 
 
 # ---------- semantic-layer violations ----------

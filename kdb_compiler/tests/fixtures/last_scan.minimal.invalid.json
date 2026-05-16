@@ -27,7 +27,8 @@
       "current_mtime": 1700000100.0,
       "size_bytes": 100,
       "file_type": "markdown",
-      "is_binary": false
+      "is_binary": false,
+      "compiled_hash": null
     },
     {
       "path": "KDB/raw/dup.md",
@@ -36,7 +37,8 @@
       "current_mtime": 1700000100.0,
       "size_bytes": 100,
       "file_type": "markdown",
-      "is_binary": false
+      "is_binary": false,
+      "compiled_hash": null
     },
     {
       "path": "KDB/raw/missing-prev.md",
@@ -45,7 +47,8 @@
       "current_mtime": 1700000200.0,
       "size_bytes": 200,
       "file_type": "markdown",
-      "is_binary": false
+      "is_binary": false,
+      "compiled_hash": null
     },
     {
       "path": "KDB/raw/overlap.md",
@@ -55,6 +58,7 @@
       "size_bytes": 300,
       "file_type": "markdown",
       "is_binary": false,
+      "compiled_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
       "previous_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
       "previous_mtime": 1700000300.0
     }

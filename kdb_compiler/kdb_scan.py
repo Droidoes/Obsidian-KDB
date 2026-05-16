@@ -226,9 +226,9 @@ def classify(
         prev_hash = prev.get("hash")
         prev_mtime = prev.get("mtime")
         if prev_hash == cur.hash:
-            files.append(_entry_from(cur, "UNCHANGED", prev_hash, prev_mtime))
+            files.append(_entry_from(cur, "UNCHANGED", prev_hash, prev_mtime, None))
         else:
-            files.append(_entry_from(cur, "CHANGED", prev_hash, prev_mtime))
+            files.append(_entry_from(cur, "CHANGED", prev_hash, prev_mtime, None))
 
     # Phase C — rename pass on disjoint sets: match by hash
     current_only = current_paths - prior_paths
@@ -258,6 +258,7 @@ def classify(
         files.append(_entry_from(
             cur, "MOVED",
             prev.get("hash"), prev.get("mtime"),
+            None,
             previous_path=old_path,
         ))
         ops.append(ReconcileOp(
@@ -267,7 +268,7 @@ def classify(
     # Phase D — leftovers
     for new_path in sorted(current_only - matched_current):
         cur = current_by_path[new_path]
-        files.append(_entry_from(cur, "NEW", None, None))
+        files.append(_entry_from(cur, "NEW", None, None, None))
 
     for old_path in sorted(prior_only - matched_prior):
         prev = prior[old_path]
@@ -288,6 +289,7 @@ def _entry_from(
     action: str,
     prev_hash: Any,
     prev_mtime: Any,
+    compiled_hash: str | None,
     *,
     previous_path: str | None = None,
 ) -> ScanEntry:
@@ -299,6 +301,7 @@ def _entry_from(
         size_bytes=cur.size_bytes,
         file_type=cur.file_type,
         is_binary=cur.is_binary,
+        compiled_hash=compiled_hash if isinstance(compiled_hash, str) else None,
         previous_hash=prev_hash if isinstance(prev_hash, str) else None,
         previous_mtime=float(prev_mtime) if isinstance(prev_mtime, (int, float)) else None,
         previous_path=previous_path,

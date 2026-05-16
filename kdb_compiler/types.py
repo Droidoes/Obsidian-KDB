@@ -37,6 +37,7 @@ class ScanEntry:
     size_bytes: int
     file_type: FileType
     is_binary: bool
+    compiled_hash: Optional[str]           # prior last_compiled_hash, or None — required-but-nullable (Q3)
     previous_hash: Optional[str] = None    # CHANGED/UNCHANGED/MOVED
     previous_mtime: Optional[float] = None # CHANGED/UNCHANGED/MOVED
     previous_path: Optional[str] = None    # MOVED only
@@ -50,6 +51,7 @@ class ScanEntry:
             "size_bytes": self.size_bytes,
             "file_type": self.file_type,
             "is_binary": self.is_binary,
+            "compiled_hash": self.compiled_hash,
         }
         if self.previous_hash is not None:
             d["previous_hash"] = self.previous_hash

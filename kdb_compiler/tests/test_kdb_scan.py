@@ -319,6 +319,28 @@ def test_scan_retries_errored_sources_unchanged_hash(tmp_path: Path) -> None:
     assert result.to_skip == ["KDB/raw/ok.md"]
 
 
+def test_scan_entry_to_dict_always_includes_compiled_hash():
+    from kdb_compiler.types import ScanEntry
+    # never-compiled source: compiled_hash is null, still present
+    e = ScanEntry(
+        path="KDB/raw/a.md", action="NEW",
+        current_hash="sha256:" + "a" * 64, current_mtime=1.0,
+        size_bytes=10, file_type="markdown", is_binary=False,
+        compiled_hash=None,
+    )
+    assert "compiled_hash" in e.to_dict()
+    assert e.to_dict()["compiled_hash"] is None
+    # previously-compiled source: carries the prior hash
+    e2 = ScanEntry(
+        path="KDB/raw/b.md", action="UNCHANGED",
+        current_hash="sha256:" + "b" * 64, current_mtime=1.0,
+        size_bytes=10, file_type="markdown", is_binary=False,
+        compiled_hash="sha256:" + "c" * 64,
+        previous_hash="sha256:" + "b" * 64, previous_mtime=0.5,
+    )
+    assert e2.to_dict()["compiled_hash"] == "sha256:" + "c" * 64
+
+
 # ---------- CLI ----------
 
 def test_cli_main_runs_and_writes(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
