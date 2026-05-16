@@ -602,3 +602,83 @@ def test_sync_cleanup_run_deletes_entity_in_graph(graph_dir):
     assert res.entities_deleted == 1
     with GraphDB(graph_dir) as gdb:
         assert gdb.get_entity("alpha") is None
+
+
+def test_rebuild_replays_cleanup_event_deletes_entity(tmp_path, graph_dir):
+    journals = tmp_path / "runs"
+    _write_run(journals, "2026-01-01T00-00-00",
+               started_at="2026-01-01T00:00:00",
+               sources=[("KDB/raw/s.md", ["keep", "drop"])])
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       ["drop"], started_at="2026-02-01T00:00:00")
+    result = rebuild(graph_dir, ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.ok
+    assert result.replayed == 2
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.get_entity("drop") is None    # retracted by the cleanup event
+        assert gdb.get_entity("keep") is not None
+
+
+def test_rebuild_cleanup_then_later_compile_re_emits_slug(tmp_path, graph_dir):
+    # A compile run AFTER the cleanup that re-emits a retracted slug correctly
+    # re-creates it — the cleanup is positional, not permanent.
+    journals = tmp_path / "runs"
+    _write_run(journals, "2026-01-01T00-00-00",
+               started_at="2026-01-01T00:00:00",
+               sources=[("KDB/raw/s.md", ["x"])])
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       ["x"], started_at="2026-02-01T00:00:00")
+    _write_run(journals, "2026-03-01T00-00-00",
+               started_at="2026-03-01T00:00:00",
+               sources=[("KDB/raw/s.md", ["x"])])
+    result = rebuild(graph_dir, ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.ok
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.get_entity("x") is not None   # re-emitted after retraction
+
+
+def test_rebuild_slug_safe_when_slug_survives_under_another_page(tmp_path, graph_dir):
+    # Codex's named slug-safe integration test: the same slug 'foo' is emitted
+    # by an active article AND an orphaned concept. The cleanup retracts only
+    # the concept's page_id — but 'foo' still has a surviving article page, so
+    # reap_orphans excludes 'foo' from retracted_slugs and the graph entity
+    # 'foo' (one slug-keyed node) must survive.
+    from kdb_compiler.kdb_clean import reap_orphans
+
+    journals = tmp_path / "runs"
+    _write_run(journals, "2026-01-01T00-00-00",
+               started_at="2026-01-01T00:00:00",
+               sources=[("KDB/raw/s.md", ["foo", "solo"])])
+
+    manifest = {
+        "pages": {
+            "KDB/wiki/articles/foo.md": {
+                "status": "active", "slug": "foo", "page_type": "article",
+                "page_id": "KDB/wiki/articles/foo.md", "outgoing_links": [],
+            },
+            "KDB/wiki/concepts/foo.md": {
+                "status": "orphan_candidate", "slug": "foo", "page_type": "concept",
+                "page_id": "KDB/wiki/concepts/foo.md", "outgoing_links": [],
+            },
+            "KDB/wiki/concepts/solo.md": {
+                "status": "orphan_candidate", "slug": "solo", "page_type": "concept",
+                "page_id": "KDB/wiki/concepts/solo.md", "outgoing_links": [],
+            },
+        },
+        "orphans": {"KDB/wiki/concepts/foo.md": {}, "KDB/wiki/concepts/solo.md": {}},
+    }
+    report = reap_orphans(manifest)
+    assert "foo" not in report["retracted_slugs"]   # survives under the article
+    assert report["retracted_slugs"] == ["solo"]
+
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       report["retracted_slugs"],
+                       started_at="2026-02-01T00:00:00")
+    result = rebuild(graph_dir, ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.ok
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.get_entity("foo") is not None    # slug-safe — must survive
+        assert gdb.get_entity("solo") is None       # genuinely retracted
