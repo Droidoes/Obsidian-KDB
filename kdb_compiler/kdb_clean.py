@@ -12,12 +12,11 @@ Modes (`kdb-clean <mode>`):
 Every mode is `--dry-run` by DEFAULT — it previews and writes nothing. Pass
 `--apply` to commit.
 
-GraphDB-KDB caveat (Task #68): `orphans --apply` cleans manifest.json but does
-NOT resync the graph. `graphdb-kdb rebuild` replays compile-history journals
-that still contain the reaped pages, so it re-introduces them as orphan
-entities rather than converging — the cleanup is not yet replayable. The
-planned fix is a replayable cleanup/retraction event; until then the graph
-stays queryable and `graphdb-kdb orphans` lists the residual entities.
+GraphDB-KDB sync (Task #68): `orphans --apply` writes a replayable `cleanup`
+run journal + `retraction.json` sidecar into `state/runs/` and live-syncs the
+retraction into the graph through the Obsidian adapter. `graphdb-kdb rebuild`
+replays the cleanup event chronologically, so the reaped pages stay retracted
+instead of being re-introduced.
 
 --- orphans mode ---------------------------------------------------------------
 A full canonical recompile (all sources, one model) defines the manifest truth:
@@ -106,6 +105,45 @@ def reap_orphans(manifest: dict) -> dict:
     }
 
 
+def build_cleanup_artifacts(
+    report: dict,
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+) -> tuple[dict, dict]:
+    """Build the (journal, retraction) pair for a cleanup run (#68).
+
+    journal     -> state/runs/<run_id>.json    (audit record; replay eligibility)
+    retraction  -> state/runs/<run_id>/retraction.json  (the replay payload)
+
+    `report` is a `reap_orphans()` return dict. Pure — also used by the
+    one-shot backfill (scripts/backfill_cleanup_journal.py).
+    """
+    retraction = {
+        "event_type": "cleanup",
+        "run_id": run_id,
+        "reaped": report["reaped"],
+        "retracted_slugs": report["retracted_slugs"],
+        "dead_links": report["dead_links"],
+    }
+    journal = {
+        "schema_version": "2.1",
+        "event_type": "cleanup",
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "success": True,
+        "dry_run": False,
+        "summary": {
+            "reaped_count": len(report["reaped"]),
+            "retracted_slug_count": len(report["retracted_slugs"]),
+            "dead_link_count": len(report["dead_links"]),
+        },
+        "artifacts": {"retraction_path": f"state/runs/{run_id}/retraction.json"},
+    }
+    return journal, retraction
+
+
 def _cmd_orphans(args: argparse.Namespace) -> int:
     """`kdb-clean orphans` — archive + de-list orphan_candidate pages."""
     vault_root = Path(args.vault_root).resolve()
@@ -135,8 +173,19 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
         print("\nnothing to reap — manifest already clean.")
         return 0
 
-    run_id = f"clean-orphans-{datetime.now().strftime('%Y-%m-%dT%H-%M-%S')}"
+    # Capture the clock ONCE (aware) so run_id and started_at can never disagree.
+    now_dt = datetime.now().astimezone()
+    run_id = f"clean-orphans-{now_dt.strftime('%Y-%m-%dT%H-%M-%S')}"
+    started_at = now_dt.isoformat(timespec="seconds")
+    runs_root = state_root / "runs"
     archive_root = state_root / "orphan-archive" / run_id
+
+    # Write order is crash-consistency-critical (blueprint §6.1):
+    #   archive -> retraction sidecar -> manifest -> journal -> live-sync.
+    # The journal (replay state) must never be committed before the manifest
+    # (live state); the sidecar is inert until the journal references it.
+
+    # 1. archive the .md files
     for r in report["reaped"]:
         src = vault_root / r["page_id"]
         dst = archive_root / r["page_id"]
@@ -146,19 +195,39 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
         else:
             print(f"note    {r['page_id']} — file already absent, manifest-only reap")
 
+    finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    journal, retraction = build_cleanup_artifacts(
+        report, run_id, started_at, finished_at)
+
+    # 2. retraction sidecar — inert until the journal references it
+    sidecar_dir = runs_root / run_id
+    sidecar_dir.mkdir(parents=True, exist_ok=True)
+    atomic_io.atomic_write_json(sidecar_dir / "retraction.json", retraction,
+                                sort_keys=True)
+
+    # 3. atomic manifest write — commits live state
     assert_manifest_invariants(manifest)
     atomic_io.atomic_write_json(manifest_path, manifest, sort_keys=True)
-    audit_path = state_root / f"kdb-clean-orphans-audit-{run_id}.json"
-    atomic_io.atomic_write_json(audit_path, {"run_id": run_id, **report},
+
+    # 4. atomic journal write — commits replay state (MUST follow the manifest)
+    atomic_io.atomic_write_json(runs_root / f"{run_id}.json", journal,
                                 sort_keys=True)
+
     print(f"\nAPPLIED — {len(report['reaped'])} page(s) archived to {archive_root}")
-    print(f"          manifest updated; audit at {audit_path}")
-    print("\nNOTE: the manifest is clean, but GraphDB-KDB does NOT auto-resync.")
-    print("      `graphdb-kdb rebuild` replays compile-history journals that")
-    print("      still contain the reaped pages — it re-introduces them as")
-    print("      orphan entities rather than converging. Known gap, tracked by")
-    print("      Task #68. The graph stays queryable; `graphdb-kdb orphans`")
-    print("      lists the residual entities.")
+    print(f"          manifest updated; cleanup journal at "
+          f"{runs_root / (run_id + '.json')}")
+
+    # 5. live-sync the retraction into the graph (best-effort — blueprint §6.4).
+    # On failure the manifest is still the source of truth and the journal from
+    # step 4 makes the next `graphdb-kdb rebuild` reconverge.
+    try:
+        from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+        sync = ObsidianRunsAdapter().sync_cleanup_run(retraction, run_id)
+        print(f"          graph live-sync: {sync.entities_deleted} "
+              f"entity(ies) retracted")
+    except Exception as exc:  # noqa: BLE001 — best-effort, never fails the reap
+        print(f"WARN    graph live-sync failed ({type(exc).__name__}: {exc}); "
+              f"run `graphdb-kdb rebuild` to reconverge.")
     return 0
 
 

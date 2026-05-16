@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from kdb_compiler.kdb_clean import main, reap_orphans
+from kdb_compiler.kdb_clean import build_cleanup_artifacts, main, reap_orphans
 
 
 def _page(status, slug, *, page_type="concept", outgoing_links=None):
@@ -24,7 +24,17 @@ def _page(status, slug, *, page_type="concept", outgoing_links=None):
 
 
 def _manifest(pages, orphans=None):
-    return {"pages": pages, "orphans": orphans or {}}
+    return {"schema_version": "1.0", "pages": pages, "orphans": orphans or {}}
+
+
+def _stub_sync(monkeypatch):
+    """Stub the graph live-sync so --apply tests don't spin up Kuzu."""
+    import types as _types
+    monkeypatch.setattr(
+        "graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter.sync_cleanup_run",
+        lambda self, retraction, run_id, graph_dir=None: _types.SimpleNamespace(
+            entities_deleted=0, run_id=run_id),
+    )
 
 
 def test_reap_removes_orphan_from_pages_and_orphans():
@@ -164,3 +174,89 @@ def test_main_orphans_dry_run_reads_manifest_without_mutating(tmp_path):
 def test_main_requires_a_subcommand():
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_build_cleanup_artifacts_shapes_journal_and_retraction():
+    report = {
+        "reaped": [{"page_id": "p", "slug": "s", "page_type": "concept"}],
+        "dead_links": [],
+        "retracted_slugs": ["s"],
+    }
+    journal, retraction = build_cleanup_artifacts(
+        report, "clean-orphans-2026-05-16T10-16-00",
+        "2026-05-16T10:16:00-04:00", "2026-05-16T10:16:01-04:00")
+    assert journal["schema_version"] == "2.1"
+    assert journal["event_type"] == "cleanup"
+    assert journal["success"] is True
+    assert journal["dry_run"] is False
+    assert journal["summary"]["reaped_count"] == 1
+    assert journal["summary"]["retracted_slug_count"] == 1
+    assert journal["artifacts"]["retraction_path"].endswith("retraction.json")
+    assert retraction["event_type"] == "cleanup"
+    assert retraction["retracted_slugs"] == ["s"]
+    assert retraction["reaped"] == report["reaped"]
+
+
+def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monkeypatch):
+    _stub_sync(monkeypatch)
+    state = tmp_path / "KDB" / "state"
+    state.mkdir(parents=True)
+    pid = "KDB/wiki/concepts/gone.md"
+    md = tmp_path / pid
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text("# gone", encoding="utf-8")
+    manifest = _manifest(
+        pages={pid: _page("orphan_candidate", "gone")},
+        orphans={pid: {}},
+    )
+    (state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    rc = main(["orphans", "--vault-root", str(tmp_path), "--apply"])
+    assert rc == 0
+
+    runs = state / "runs"
+    journals = list(runs.glob("clean-orphans-*.json"))
+    assert len(journals) == 1
+    journal = json.loads(journals[0].read_text(encoding="utf-8"))
+    assert journal["event_type"] == "cleanup"
+    assert journal["schema_version"] == "2.1"
+
+    run_id = journal["run_id"]
+    retraction = json.loads(
+        (runs / run_id / "retraction.json").read_text(encoding="utf-8"))
+    assert retraction["event_type"] == "cleanup"
+    assert retraction["retracted_slugs"] == ["gone"]
+
+
+def test_main_orphans_apply_writes_manifest_before_journal(tmp_path, monkeypatch):
+    # crash-consistency invariant (blueprint §6.1): the replay-state journal
+    # must never be committed before the live-state manifest.
+    _stub_sync(monkeypatch)
+    from kdb_compiler import atomic_io
+    state = tmp_path / "KDB" / "state"
+    state.mkdir(parents=True)
+    pid = "KDB/wiki/concepts/gone.md"
+    md = tmp_path / pid
+    md.parent.mkdir(parents=True, exist_ok=True)
+    md.write_text("# gone", encoding="utf-8")
+    manifest = _manifest(
+        pages={pid: _page("orphan_candidate", "gone")},
+        orphans={pid: {}},
+    )
+    (state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    calls: list[str] = []
+    real = atomic_io.atomic_write_json
+
+    def spy(path, obj, **kw):
+        from pathlib import Path
+        calls.append(Path(path).name)
+        return real(path, obj, **kw)
+
+    monkeypatch.setattr("kdb_compiler.kdb_clean.atomic_io.atomic_write_json", spy)
+    main(["orphans", "--vault-root", str(tmp_path), "--apply"])
+
+    journal_idx = next(i for i, n in enumerate(calls)
+                       if n.startswith("clean-orphans"))
+    assert calls.index("retraction.json") < calls.index("manifest.json")
+    assert calls.index("manifest.json") < journal_idx
