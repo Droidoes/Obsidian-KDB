@@ -780,12 +780,27 @@ def test_backfill_sets_hash_for_recompiled_and_metadata_only():
     assert manifest["sources"]["KDB/raw/x.png"]["last_compiled_hash"] == h
 
 
-def test_backfill_leaves_error_state_absent():
+def test_backfill_leaves_error_markdown_absent():
     h = "sha256:" + "c" * 64
-    manifest = {"sources": {"KDB/raw/e.md": _src(hash=h, compile_state="error")}}
+    manifest = {"sources": {
+        "KDB/raw/e.md": dict(_src(hash=h, compile_state="error"), file_type="markdown"),
+    }}
     report = backfill_manifest(manifest, repair_error_sources=[])
     assert "last_compiled_hash" not in manifest["sources"]["KDB/raw/e.md"]
     assert "KDB/raw/e.md" in report["left_eligible"]
+
+
+def test_backfill_sets_hash_for_error_binary():
+    # a binary has no LLM compile step — metadata recording IS its successful
+    # processing (Q6). Even a binary mis-marked compile_state=="error" by the
+    # pre-#66 apply_compile_result wart is "compiled at its current hash".
+    h = "sha256:" + "c" * 64
+    manifest = {"sources": {
+        "KDB/raw/x.png": dict(_src(hash=h, compile_state="error"), file_type="binary"),
+    }}
+    report = backfill_manifest(manifest, repair_error_sources=[])
+    assert manifest["sources"]["KDB/raw/x.png"]["last_compiled_hash"] == h
+    assert "KDB/raw/x.png" in report["backfilled"]
 
 
 def test_backfill_is_idempotent():
@@ -834,8 +849,12 @@ the first post-#66 run. This script writes the field once (Q2), and performs the
 EP1 `compile_state` repair as a distinct labeled local data repair (Q4).
 
 Q2 backfill rule:
-    compile_state in {compiled, recompiled, metadata_only} -> last_compiled_hash = hash
-    compile_state == "error" (or anything else)            -> leave absent (eligible)
+    file_type == "binary"                                  -> last_compiled_hash = hash
+        (a binary has no LLM compile — metadata recording IS its successful
+         processing, Q6 — so it is "compiled at its current hash" regardless
+         of compile_state, including a stray "error" from the pre-#66 wart)
+    compile_state in {compiled, recompiled, metadata_only}  -> last_compiled_hash = hash
+    compile_state == "error" (or anything else), markdown   -> leave absent (eligible)
 
 Q4 EP1 repair (--repair-error-source, repeatable): a source hand-edited to
 `compile_state: "error"` that was in fact successfully compiled at its recorded
@@ -882,11 +901,14 @@ def backfill_manifest(manifest: dict, *, repair_error_sources: list[str]) -> dic
     for sid, rec in sorted(sources.items()):
         if rec.get("last_compiled_hash") is not None:
             continue                                  # idempotent
-        if rec.get("compile_state") in _COMPILED_STATES:
+        is_binary = rec.get("file_type") == "binary"
+        if is_binary or rec.get("compile_state") in _COMPILED_STATES:
+            # binary: metadata recording IS successful processing (Q6), so it
+            # is compiled-at-current-hash regardless of compile_state.
             rec["last_compiled_hash"] = rec.get("hash")
             report["backfilled"].append(sid)
         else:
-            report["left_eligible"].append(sid)        # error/other -> absent
+            report["left_eligible"].append(sid)        # error/other markdown -> absent
     return report
 
 
@@ -970,23 +992,29 @@ This task mutates the live vault. The subagent executor stops after Task 6 and h
 
 - [ ] **Step 1: Dry-run the migration**
 
-The operator first finds EP1's source_id (`grep -o '"KDB/raw/[^"]*EP1[^"]*"' KDB/state/manifest.json` in the vault), then:
+EP1's source_id in the live vault is `KDB/raw/EP1 - The Journey of China.md` (confirmed `compile_state: "error"` — the kludge). All 4 live sources are `markdown`.
 
 ```
 .venv/bin/python -m scripts.migrate_task66_compiled_hash \
   --vault-root /home/ftu/Obsidian \
-  --repair-error-source "<EP1 source_id>"
+  --repair-error-source "KDB/raw/EP1 - The Journey of China.md"
 ```
 
-Review: EP1 reported `repair`; all 4 sources reported `backfill`; nothing `left eligible` unexpectedly.
+Review: EP1 reported `repair`; all 4 sources reported `backfill`; nothing `left eligible`.
 
 - [ ] **Step 2: Apply**
 
 Re-run with `--apply`. Confirm the audit file is written.
 
-- [ ] **Step 3: Verify a no-op scan recompiles nothing**
+- [ ] **Step 3: Verify a no-op scan recompiles nothing (zero API cost)**
 
-Run a `kdb-compile` scan-only / no-op pass against `/home/ftu/Obsidian` and confirm all 4 sources classify `to_skip` — none spuriously recompile (blueprint §5.2 step 4).
+Run the standalone scanner — it only writes `last_scan.json`, never calls an LLM:
+
+```
+.venv/bin/python -m kdb_compiler.kdb_scan --vault-root /home/ftu/Obsidian
+```
+
+Inspect `/home/ftu/Obsidian/KDB/state/last_scan.json`: assert `to_compile == []` and `to_skip` lists all 4 source paths — none spuriously recompile (blueprint §5.2 step 4).
 
 - [ ] **Step 4: Final wrap-up commit**
 
