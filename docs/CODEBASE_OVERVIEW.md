@@ -357,7 +357,10 @@ Two architectural properties of the wiring:
 
 Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap; `graphdb-kdb rebuild` regenerates either store from the post-#63 run history.
 
-**Maintenance caveat — `kdb-clean orphans` is not yet replay-covered (Task #68).** `kdb-clean` is a sibling maintenance CLI (`kdb-clean <mode>`; mode `orphans`) that garbage-collects orphan-candidate pages: `kdb-clean orphans --apply` archives the page files to `state/orphan-archive/<run-id>/` and removes their entries from `manifest.json` (`pages` + `orphans`). It is deliberately a separate command, not a `kdb-compile` flag — cleanup is destructive and keeps its own dry-run/review gate. **But the reap emits no run journal.** `graphdb-kdb rebuild` replays *compile-history* journals, which still contain the reaped pages — so a rebuild re-introduces them as orphan entities and `verify` reports them `missing_in_manifest` indefinitely. The cleanup is therefore **not replayable**: it mutates the manifest only, and the graph retains the reaped entities. This is an architectural gap, not benign drift; the planned fix (a replayable cleanup/retraction event the rebuilder consumes) is tracked by **#68**.
+**Maintenance — `kdb-clean orphans`:** `--apply` archives orphan pages, removes
+them from `manifest.json`, and emits a replayable `cleanup` run journal +
+`retraction.json` sidecar into `state/runs/`. `graphdb-kdb rebuild` replays the
+cleanup event chronologically, so reaped pages stay retracted (Task #68).
 
 ### 8.5 Pointers to companion docs
 

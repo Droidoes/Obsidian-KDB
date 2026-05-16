@@ -182,6 +182,7 @@ A compliant producer emits **four kinds of artifacts**. Three are per-run; one i
 | Sortable identity (chronologically-sortable run identifier OR explicit `started_at`-style field) | Replay must iterate runs in chronological order | Adapter exposes this as the `sort_key` in `discover_runs()` (see §4) |
 | Path to mutation payload | Used by sidecar lookup (see §3.4) for replay | Recommended via `artifacts.<key>_path` or implicit by sidecar convention |
 | Journal schema version | Adapters declare which versions they support (PR9 in extraction roadmap) — version mismatch raises `UnsupportedJournalVersionError` | Producer chooses field name (Obsidian uses `schema_version`); adapter declares `supported_journal_versions: list[str]` |
+| `event_type` (string, optional) | Discriminates run kinds in one journal stream — `"compile"` (or absent) vs `"cleanup"` (Task #68 retraction event) | Optional; **absent ⇒ `"compile"`** for back-compat with 2.0 journals. A `cleanup` journal is `schema_version: "2.1"`. |
 
 **The "canonical eligibility" indirection**: the contract does NOT require exact field names (`success`, `dry_run`). The contract requires that the *adapter* normalizes producer-specific fields into canonical eligibility values when reporting to the generic replay driver. This preserves producer-shape independence (Obsidian's `success` can be arxiv's `compile_ok` can be youtube's `transcribed: true`) while keeping the rebuilder's interface stable.
 
@@ -202,6 +203,11 @@ state/runs/
     ├── compile_result.json             ← per-run mutation payload archive
     └── last_scan.json                  ← per-run scan/state payload archive
 ```
+
+**Cleanup-event sidecar (Task #68):** a `cleanup` run's sidecar directory
+contains `retraction.json` (the retraction payload — `reaped` audit records +
+`retracted_slugs`) instead of `compile_result.json` + `last_scan.json`. The
+adapter selects the sidecar contents to require by the journal's `event_type`.
 
 **Contract requirements**:
 
@@ -331,6 +337,13 @@ class ProducerAdapter:
 5. **The adapter is small.** Expected size: ≤200 LOC per adapter (post-normalization helpers). If an adapter is growing large, it likely indicates the producer's contract is misaligned with the graph schema — fix the misalignment, not the adapter.
 6. **The adapter's naming is honest.** `obsidian_runs.py`, `arxiv_runs.py` — not `runs.py` (which would imply universality the adapter doesn't have). Public entry points named honestly too: `sync_current_run`, `rebuild_from_obsidian_runs`.
 7. **The adapter is the single bridge.** Both live sync (Stage 9) and replay (`graphdb-kdb rebuild`) route through the adapter. No producer code, anywhere, calls `graphdb_kdb.GraphDB` or `apply_compile_result` directly.
+8. **The adapter routes by `event_type`.** `is_eligible`, `load_payload`, and
+   `apply` read the journal's `event_type` (absent ⇒ `compile`). A `cleanup`
+   event loads `retraction.json` and `apply` dispatches to `apply_cleanup`
+   (`DETACH DELETE` of `Entity` by `retracted_slugs`). An unrecognized
+   `event_type` is skipped with `SkipReason='unsupported_event_type'` — it
+   must never fall through to the compile path. `RunDescriptor` is unchanged;
+   the discriminator lives in the journal JSON, not the descriptor.
 
 ---
 
