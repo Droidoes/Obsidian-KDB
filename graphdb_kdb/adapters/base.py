@@ -25,6 +25,7 @@ SkipReason = Literal[
     "payload_missing",       # sidecar archive absent or incomplete
     "invalid_journal",       # journal JSON malformed or missing required fields
     "unsupported_version",   # journal schema_version not in supported_journal_versions
+    "unsupported_event_type",  # journal event_type is neither 'compile' nor 'cleanup' (#68)
 ]
 
 

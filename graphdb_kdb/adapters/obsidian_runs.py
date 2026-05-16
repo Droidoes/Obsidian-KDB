@@ -35,7 +35,7 @@ class ObsidianRunsAdapter:
 
     source_type:                ClassVar[str]        = "obsidian-kdb-raw"
     entity_id_namespace:        ClassVar[str | None] = None       # grandfathered per D-S1
-    supported_journal_versions: ClassVar[list[str]]  = ["2.0"]    # per D-S3
+    supported_journal_versions: ClassVar[list[str]]  = ["2.0", "2.1"]  # +cleanup #68
 
     # ── discovery ─────────────────────────────────────────────────────────────
 
@@ -109,11 +109,22 @@ class ObsidianRunsAdapter:
         if journal.get("dry_run"):
             return EligibilityResult(False, "dry_run")
 
+        # Event-type routing (#68): absent ⇒ 'compile' (back-compat with 2.0
+        # compile journals). 'cleanup' uses a retraction.json sidecar instead of
+        # compile_result.json + last_scan.json. Anything else is a hard skip —
+        # it must not fall through to 'compile'.
+        event_type = journal.get("event_type", "compile")
         sidecar_dir = descriptor.journal_path.parent / descriptor.run_id
-        if not (sidecar_dir / "compile_result.json").is_file():
-            return EligibilityResult(False, "payload_missing")
-        if not (sidecar_dir / "last_scan.json").is_file():
-            return EligibilityResult(False, "payload_missing")
+        if event_type == "compile":
+            if not (sidecar_dir / "compile_result.json").is_file():
+                return EligibilityResult(False, "payload_missing")
+            if not (sidecar_dir / "last_scan.json").is_file():
+                return EligibilityResult(False, "payload_missing")
+        elif event_type == "cleanup":
+            if not (sidecar_dir / "retraction.json").is_file():
+                return EligibilityResult(False, "payload_missing")
+        else:
+            return EligibilityResult(False, "unsupported_event_type")
 
         return EligibilityResult(True, None)
 
@@ -136,6 +147,13 @@ class ObsidianRunsAdapter:
         assert descriptor.journal_path is not None, \
             "is_eligible should have screened out journal-less descriptors"
         sidecar_dir = descriptor.journal_path.parent / descriptor.run_id
+        # event_type lives in the journal; re-read to route payload loading (#68).
+        with descriptor.journal_path.open() as f:
+            event_type = json.load(f).get("event_type", "compile")
+        if event_type == "cleanup":
+            with (sidecar_dir / "retraction.json").open() as f:
+                retraction = json.load(f)
+            return retraction, {}, descriptor.run_id
         with (sidecar_dir / "compile_result.json").open() as f:
             mutation = json.load(f)
         with (sidecar_dir / "last_scan.json").open() as f:
@@ -151,10 +169,19 @@ class ObsidianRunsAdapter:
         run_id: str,
         conn: kuzu.Connection,
     ) -> SyncResult:
-        """Delegate to core's `apply_compile_result` (Obsidian-flavored v1 per
-        D32-tempered + producer-contract §5)."""
-        from graphdb_kdb.ingestor import apply_compile_result
-        return apply_compile_result(mutation, scan, run_id, conn=conn)
+        """Route to the core ingestor by event_type (#68). A 'cleanup' payload
+        carries `event_type` + `retracted_slugs`; a compile payload has no
+        `event_type` key (absent ⇒ compile). An unrecognized `event_type`
+        raises ValueError — `is_eligible` screens these out on the replay path,
+        but `apply` is also reachable directly (live sync), so it guards too."""
+        event_type = mutation.get("event_type", "compile")
+        if event_type == "cleanup":
+            from graphdb_kdb.ingestor import apply_cleanup
+            return apply_cleanup(mutation, run_id, conn=conn)
+        if event_type == "compile":
+            from graphdb_kdb.ingestor import apply_compile_result
+            return apply_compile_result(mutation, scan, run_id, conn=conn)
+        raise ValueError(f"unsupported event_type: {event_type!r}")
 
     # ── live-sync (D-S0) ──────────────────────────────────────────────────────
 

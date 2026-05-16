@@ -469,3 +469,120 @@ def test_rebuilder_backfill_sorts_first(graph_dir, tmp_path):
     assert baton_page.status == "active"   # baton's source still supports it
     assert kept is not None
     assert kept.status == "active"
+
+
+# ============================================================================
+# Cleanup event routing (#68)
+# ============================================================================
+
+def _write_cleanup_run(
+    journals_dir: Path,
+    run_id: str,
+    retracted_slugs: list[str],
+    *,
+    started_at: str,
+    reaped: list[dict] | None = None,
+    success: bool = True,
+    dry_run: bool = False,
+    schema_version: str = "2.1",
+    skip_sidecar: bool = False,
+) -> Path:
+    """Write a synthetic kdb-clean cleanup run tree:
+        <journals_dir>/<run_id>.json          — cleanup journal
+        <journals_dir>/<run_id>/retraction.json — retraction sidecar
+    """
+    journals_dir.mkdir(parents=True, exist_ok=True)
+    journal = {
+        "schema_version": schema_version,
+        "event_type": "cleanup",
+        "run_id": run_id,
+        "started_at": started_at,
+        "success": success,
+        "dry_run": dry_run,
+    }
+    journal_path = journals_dir / f"{run_id}.json"
+    journal_path.write_text(json.dumps(journal))
+    if skip_sidecar:
+        return journal_path
+    sidecar = journals_dir / run_id
+    sidecar.mkdir(parents=True, exist_ok=True)
+    retraction = {
+        "event_type": "cleanup",
+        "run_id": run_id,
+        "reaped": reaped or [],
+        "retracted_slugs": retracted_slugs,
+        "dead_links": [],
+    }
+    (sidecar / "retraction.json").write_text(json.dumps(retraction))
+    return journal_path
+
+
+def test_obsidian_adapter_cleanup_run_is_eligible(tmp_path):
+    journals = tmp_path / "runs"
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       ["drop"], started_at="2026-02-01T00:00:00")
+    adapter = ObsidianRunsAdapter()
+    [desc] = adapter.discover_runs(journals)
+    # schema_version 2.1 must be accepted (not skipped unsupported_version).
+    assert adapter.is_eligible(desc).eligible is True
+
+
+def test_obsidian_adapter_cleanup_missing_retraction_payload_skipped(tmp_path):
+    journals = tmp_path / "runs"
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       ["drop"], started_at="2026-02-01T00:00:00",
+                       skip_sidecar=True)
+    adapter = ObsidianRunsAdapter()
+    [desc] = adapter.discover_runs(journals)
+    elig = adapter.is_eligible(desc)
+    assert elig.eligible is False
+    assert elig.skip_reason == "payload_missing"
+
+
+def test_obsidian_adapter_unknown_event_type_skipped(tmp_path):
+    journals = tmp_path / "runs"
+    journals.mkdir()
+    (journals / "weird.json").write_text(json.dumps({
+        "schema_version": "2.1", "event_type": "bogus", "run_id": "weird",
+        "started_at": "2026-01-01T00:00:00", "success": True, "dry_run": False,
+    }))
+    adapter = ObsidianRunsAdapter()
+    [desc] = adapter.discover_runs(journals)
+    elig = adapter.is_eligible(desc)
+    assert elig.eligible is False
+    assert elig.skip_reason == "unsupported_event_type"
+
+
+def test_obsidian_adapter_cleanup_load_payload(tmp_path):
+    journals = tmp_path / "runs"
+    _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
+                       ["drop"], started_at="2026-02-01T00:00:00")
+    adapter = ObsidianRunsAdapter()
+    [desc] = adapter.discover_runs(journals)
+    mutation, scan, run_id = adapter.load_payload(desc)
+    assert mutation["event_type"] == "cleanup"
+    assert mutation["retracted_slugs"] == ["drop"]
+    assert scan == {}
+    assert run_id == "clean-orphans-2026-02-01T00-00-00"
+
+
+def test_obsidian_adapter_apply_routes_cleanup_to_apply_cleanup(graph_dir):
+    cr = make_compile_result([
+        make_compiled_source("KDB/raw/s.md", [make_page("gone")])
+    ])
+    scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+    adapter = ObsidianRunsAdapter()
+    with GraphDB(graph_dir) as gdb:
+        adapter.apply(cr, scan, "run-1", gdb.conn)
+        assert gdb.get_entity("gone") is not None
+        retraction = {"event_type": "cleanup", "retracted_slugs": ["gone"]}
+        res = adapter.apply(retraction, {}, "clean-1", gdb.conn)
+        assert gdb.get_entity("gone") is None
+        assert res.entities_deleted == 1
+
+
+def test_obsidian_adapter_apply_raises_on_unknown_event_type(graph_dir):
+    adapter = ObsidianRunsAdapter()
+    with GraphDB(graph_dir) as gdb:
+        with pytest.raises(ValueError, match="unsupported event_type"):
+            adapter.apply({"event_type": "bogus"}, {}, "run-x", gdb.conn)
