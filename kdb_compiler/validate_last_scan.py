@@ -6,19 +6,15 @@ both accumulating (no short-circuit):
     1. JSON-Schema (jsonschema.Draft202012Validator) against
        schemas/last_scan.schema.json — shape, types, per-action required fields.
     2. Semantic — cross-field invariants JSON-Schema can't express cleanly:
-         * to_compile paths have action ∈ {NEW, CHANGED, UNCHANGED}
-           (UNCHANGED is permitted so the scanner can retry sources whose
-           previous compile errored; only the scanner sees the manifest's
-           compile_state, so the validator can't distinguish a legit retry
-           from a spurious inclusion — it trusts the scanner here.)
-         * to_skip paths have action == UNCHANGED
-         * Every NEW/CHANGED path appears in to_compile
-         * Every UNCHANGED path appears in exactly one of to_compile or to_skip
+         * to_compile == { f : current_hash != compiled_hash }  (Task #66 D46)
+         * to_skip    == { f : current_hash == compiled_hash }, the complement
+         * to_compile / to_skip are disjoint; their union is files[]
+         * action (NEW/CHANGED/UNCHANGED/MOVED) describes content-vs-last-seen
+           ONLY — it never decides eligibility
          * Every MOVED in files[] has a matching MOVED reconcile op (and inverse)
          * DELETED paths in to_reconcile must NOT appear in files[]
          * summary counts equal actual array counts
          * No duplicate paths in files[], to_compile, to_skip
-         * to_compile / to_skip disjoint
 
 Public API:
     validate(payload) -> list[str]   # empty = valid
@@ -78,6 +74,7 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
 
     # --- files[] indexing + duplicate detection ---
     status_by_path: dict[str, str] = {}
+    hashes_by_path: dict[str, tuple[Any, Any]] = {}   # path -> (current_hash, compiled_hash)
     action_counter: Counter[str] = Counter()
     dup_paths: list[str] = []
     for entry in files:
@@ -90,6 +87,7 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
         if path in status_by_path:
             dup_paths.append(path)
         status_by_path[path] = action
+        hashes_by_path[path] = (entry.get("current_hash"), entry.get("compiled_hash"))
         action_counter[action] += 1
 
     for p in sorted(set(dup_paths)):
@@ -102,13 +100,14 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
         for p in to_compile:
             if not isinstance(p, str):
                 continue
-            s = status_by_path.get(p)
-            if s is None:
+            if p not in status_by_path:
                 errors.append(f"[$.to_compile] path not found in files[]: {p!r}")
-            elif s not in ("NEW", "CHANGED", "UNCHANGED"):
+                continue
+            cur, comp = hashes_by_path.get(p, (None, None))
+            if cur == comp:
                 errors.append(
-                    f"[$.to_compile] {p!r} has action={s!r} "
-                    "(expected NEW, CHANGED, or UNCHANGED)"
+                    f"[$.to_compile] {p!r} has current_hash == compiled_hash "
+                    "(already compiled — belongs in to_skip)"
                 )
 
     if isinstance(to_skip, list):
@@ -117,12 +116,14 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
         for p in to_skip:
             if not isinstance(p, str):
                 continue
-            s = status_by_path.get(p)
-            if s is None:
+            if p not in status_by_path:
                 errors.append(f"[$.to_skip] path not found in files[]: {p!r}")
-            elif s != "UNCHANGED":
+                continue
+            cur, comp = hashes_by_path.get(p, (None, None))
+            if cur != comp:
                 errors.append(
-                    f"[$.to_skip] {p!r} has action={s!r} (expected UNCHANGED)"
+                    f"[$.to_skip] {p!r} has current_hash != compiled_hash "
+                    "(not yet compiled — belongs in to_compile)"
                 )
 
     # --- disjointness ---
@@ -131,25 +132,20 @@ def _check_semantics(payload: dict, errors: list[str]) -> None:
         if overlap:
             errors.append(f"[$] paths appear in both to_compile and to_skip: {overlap}")
 
-    # --- completeness: every NEW/CHANGED in to_compile; every UNCHANGED
-    # in exactly one of to_compile (retry) or to_skip. ---
+    # --- completeness: every file is in exactly one of to_compile / to_skip,
+    # partitioned purely by current_hash != compiled_hash (Task #66 D46). ---
     if isinstance(to_compile, list) and isinstance(to_skip, list):
         to_compile_set = {p for p in to_compile if isinstance(p, str)}
         to_skip_set = {p for p in to_skip if isinstance(p, str)}
-        for p, s in sorted(status_by_path.items()):
-            if s in ("NEW", "CHANGED"):
-                if p not in to_compile_set:
-                    errors.append(
-                        f"[$.to_compile] missing {s} file {p!r}"
-                    )
-            elif s == "UNCHANGED":
-                in_compile = p in to_compile_set
-                in_skip = p in to_skip_set
-                if not (in_compile or in_skip):
-                    errors.append(
-                        f"[$] UNCHANGED file {p!r} missing from both "
-                        "to_compile and to_skip"
-                    )
+        for p in sorted(status_by_path):
+            cur, comp = hashes_by_path.get(p, (None, None))
+            should_compile = cur != comp
+            in_compile = p in to_compile_set
+            in_skip = p in to_skip_set
+            if should_compile and not in_compile:
+                errors.append(f"[$.to_compile] missing eligible file {p!r}")
+            if not should_compile and not in_skip:
+                errors.append(f"[$.to_skip] missing skippable file {p!r}")
 
     # --- reconcile ops ---
     moved_from_ops: set[str] = set()

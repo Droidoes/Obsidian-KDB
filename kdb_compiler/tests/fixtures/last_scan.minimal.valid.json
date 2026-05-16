@@ -86,6 +86,7 @@
     }
   ],
   "to_skip": [
+    "KDB/raw/moved-new.md",
     "KDB/raw/unchanged.md"
   ],
   "errors": [],

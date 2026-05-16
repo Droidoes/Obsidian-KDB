@@ -131,17 +131,24 @@ def test_minimal_new_only_validates() -> None:
 
 
 def test_all_actions_validate() -> None:
+    # All entries have compiled_hash=None (never compiled) → all go to to_compile.
+    # _payload auto-assigns to_compile/to_skip by action; override explicitly
+    # to use the hash-based invariant (Task #66 D46).
+    files = [
+        _entry("KDB/raw/n.md", "NEW"),
+        _entry("KDB/raw/c.md", "CHANGED"),
+        _entry("KDB/raw/u.md", "UNCHANGED"),
+        _entry("KDB/raw/m.md", "MOVED", previous_path="KDB/raw/m-old.md"),
+    ]
+    to_reconcile = [
+        {"type": "MOVED", "from": "KDB/raw/m-old.md", "to": "KDB/raw/m.md", "hash": H1},
+        {"type": "DELETED", "path": "KDB/raw/gone.md", "hash": H4},
+    ]
     p = _payload(
-        files=[
-            _entry("KDB/raw/n.md", "NEW"),
-            _entry("KDB/raw/c.md", "CHANGED"),
-            _entry("KDB/raw/u.md", "UNCHANGED"),
-            _entry("KDB/raw/m.md", "MOVED", previous_path="KDB/raw/m-old.md"),
-        ],
-        to_reconcile=[
-            {"type": "MOVED", "from": "KDB/raw/m-old.md", "to": "KDB/raw/m.md", "hash": H1},
-            {"type": "DELETED", "path": "KDB/raw/gone.md", "hash": H4},
-        ],
+        files=files,
+        to_compile=["KDB/raw/c.md", "KDB/raw/m.md", "KDB/raw/n.md", "KDB/raw/u.md"],
+        to_skip=[],
+        to_reconcile=to_reconcile,
     )
     assert vls.validate(p) == []
 
@@ -217,16 +224,19 @@ def test_to_compile_path_missing_from_files() -> None:
 
 
 def test_to_compile_action_mismatch() -> None:
-    # MOVED in to_compile is illegal — to_compile allows only
-    # NEW/CHANGED/UNCHANGED (UNCHANGED permitted for error-retry).
+    # MOVED in to_compile is now legal when compiled_hash != current_hash.
+    # What is illegal under D46: a file where compiled_hash == current_hash
+    # (already compiled) placed in to_compile.
+    # Use a MOVED entry whose content was already compiled (hashes match).
     p = _payload(
-        files=[_entry("KDB/raw/m.md", "MOVED", previous_path="KDB/raw/old.md")],
+        files=[_entry("KDB/raw/m.md", "MOVED", previous_path="KDB/raw/old.md",
+                      compiled_hash=H1)],  # compiled_hash == current_hash (H1)
         to_compile=["KDB/raw/m.md"],
         to_skip=[],
         to_reconcile=[{"type": "MOVED", "from": "KDB/raw/old.md", "to": "KDB/raw/m.md"}],
     )
     errors = vls.validate(p)
-    assert any("to_compile" in e and "MOVED" in e for e in errors)
+    assert any("to_compile" in e and "already compiled" in e for e in errors)
 
 
 def test_to_compile_unchanged_permitted_for_error_retry() -> None:
@@ -242,13 +252,15 @@ def test_to_compile_unchanged_permitted_for_error_retry() -> None:
 
 
 def test_to_skip_action_mismatch() -> None:
+    # NEW file with compiled_hash=None → current_hash != compiled_hash → belongs
+    # in to_compile, not to_skip.  Validator must reject this placement.
     p = _payload(
         files=[_entry("KDB/raw/n.md", "NEW")],
         to_compile=[],
         to_skip=["KDB/raw/n.md"],
     )
     errors = vls.validate(p)
-    assert any("to_skip" in e and "NEW" in e for e in errors)
+    assert any("to_skip" in e and "not yet compiled" in e for e in errors)
 
 
 def test_to_compile_and_to_skip_overlap() -> None:
@@ -262,6 +274,8 @@ def test_to_compile_and_to_skip_overlap() -> None:
 
 
 def test_to_compile_missing_expected_entry() -> None:
+    # NEW file with compiled_hash=None → current_hash != compiled_hash → eligible.
+    # If missing from to_compile, validator must flag it.
     p = _payload(
         files=[_entry("KDB/raw/n.md", "NEW")],
         to_compile=[],  # should contain n.md
@@ -269,23 +283,22 @@ def test_to_compile_missing_expected_entry() -> None:
     )
     errors = vls.validate(p)
     assert any(
-        "to_compile" in e and "missing NEW" in e and "KDB/raw/n.md" in e
+        "to_compile" in e and "missing eligible" in e and "KDB/raw/n.md" in e
         for e in errors
     )
 
 
 def test_to_skip_missing_expected_entry() -> None:
-    # UNCHANGED file missing from BOTH to_compile and to_skip is illegal —
-    # the scanner must classify every UNCHANGED file as either retry
-    # (to_compile) or skip (to_skip).
+    # UNCHANGED file with compiled_hash=None → current_hash != compiled_hash →
+    # belongs in to_compile.  Missing from both lists must be flagged.
     p = _payload(
         files=[_entry("KDB/raw/u.md", "UNCHANGED")],
         to_compile=[],
-        to_skip=[],  # should contain u.md
+        to_skip=[],  # should contain u.md (or to_compile if never compiled)
     )
     errors = vls.validate(p)
     assert any(
-        "UNCHANGED" in e and "KDB/raw/u.md" in e and "missing" in e
+        "missing" in e and "KDB/raw/u.md" in e
         for e in errors
     )
 
@@ -383,3 +396,47 @@ def test_cli_reads_stdin_when_no_argv() -> None:
     r = _run_cli([], stdin=raw)
     assert r.returncode == 0
     assert "OK" in r.stdout
+
+
+# ---------- hash-based eligibility (Task #66 D46) ----------
+
+def test_unchanged_file_in_to_compile_is_valid_when_hashes_differ():
+    from kdb_compiler.validate_last_scan import validate
+    payload = _minimal_valid_scan()
+    f = payload["files"][0]
+    f["action"] = "UNCHANGED"
+    f["previous_hash"] = f["current_hash"]
+    f["previous_mtime"] = 0.5
+    f["compiled_hash"] = None                     # current_hash != compiled_hash
+    payload["to_compile"] = [f["path"]]
+    payload["to_skip"] = []
+    payload["summary"]["unchanged"] = 1
+    payload["summary"]["new"] = 0
+    assert validate(payload) == []
+
+
+def test_file_misclassified_into_to_skip_is_rejected():
+    from kdb_compiler.validate_last_scan import validate
+    payload = _minimal_valid_scan()
+    f = payload["files"][0]
+    f["compiled_hash"] = None                     # never compiled
+    payload["to_compile"] = []
+    payload["to_skip"] = [f["path"]]
+    errors = validate(payload)
+    assert any("to_skip" in e for e in errors)
+
+
+def test_file_misclassified_into_to_compile_is_rejected():
+    from kdb_compiler.validate_last_scan import validate
+    payload = _minimal_valid_scan()
+    f = payload["files"][0]
+    f["action"] = "UNCHANGED"
+    f["previous_hash"] = f["current_hash"]
+    f["previous_mtime"] = 0.5
+    f["compiled_hash"] = f["current_hash"]        # already compiled
+    payload["to_compile"] = [f["path"]]
+    payload["to_skip"] = []
+    payload["summary"]["unchanged"] = 1
+    payload["summary"]["new"] = 0
+    errors = validate(payload)
+    assert any("to_compile" in e for e in errors)
