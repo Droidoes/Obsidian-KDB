@@ -7,7 +7,11 @@ branch. Fails explicitly if graph state is insufficient.
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
     T2 (score=2): entities whose slug appears as whole-word in source_text
+                  Cold-start widening (D48): when T1 is empty, T2 also matches
+                  eligible entity titles as exact phrases in source_text.
     T3 (score=1): 1-hop neighbors (in+out) of T1∪T2 seeds, excluding seeds
+                  Cold-start widening: expands to 2-hop when T1 empty and
+                  |T2| < _MIN_SEED_THRESHOLD.
     Tie-break:    PageRank (desc), then slug (asc) — within same tier only
 """
 from __future__ import annotations
@@ -23,6 +27,9 @@ if TYPE_CHECKING:
     pass
 
 _VALID_PAGE_TYPES = frozenset({"summary", "concept", "article"})
+
+
+_MIN_SEED_THRESHOLD = 5
 
 
 def build_context_snapshot(
@@ -45,9 +52,20 @@ def build_context_snapshot(
 
     # --- Tier assignment ---
     t1_slugs = _t1_source_supported(conn, source_id, slug_set)
+    cold_start = len(t1_slugs) == 0
+
     t2_slugs = _t2_slug_in_text(source_text, slug_set - t1_slugs)
+    if cold_start:
+        t2_title_slugs = _t2_title_in_text(
+            source_text, slug_set - t1_slugs - t2_slugs, active_entities
+        )
+        t2_slugs = t2_slugs | t2_title_slugs
+
     seeds = t1_slugs | t2_slugs
-    t3_slugs = _t3_neighbors(conn, seeds, slug_set - seeds)
+    max_hops = 1
+    if cold_start and len(t2_slugs) < _MIN_SEED_THRESHOLD:
+        max_hops = 2
+    t3_slugs = _t3_neighbors(conn, seeds, slug_set - seeds, max_hops=max_hops)
 
     # --- Scoring + ranking ---
     pagerank_scores = _pagerank_scores(conn)
@@ -123,33 +141,104 @@ def _t2_slug_in_text(source_text: str, candidate_slugs: set[str]) -> set[str]:
     return {m.group(0).lower() for m in pattern.finditer(source_text)}
 
 
-def _t3_neighbors(
-    conn: kuzu.Connection, seeds: set[str], candidate_slugs: set[str]
+def _title_eligible(title: str) -> bool:
+    """Check if a title passes the cold-start matching guardrail.
+
+    Eligible iff:
+      - normalized length > 3, AND
+      - either has 2+ alphanumeric tokens, OR is a single token with length >= 6
+    """
+    normalized = title.strip().lower()
+    if len(normalized) <= 3:
+        return False
+    tokens = re.findall(r"[a-z0-9]+", normalized)
+    if len(tokens) >= 2:
+        return True
+    if len(tokens) == 1 and len(tokens[0]) >= 6:
+        return True
+    return False
+
+
+def _t2_title_in_text(
+    source_text: str,
+    candidate_slugs: set[str],
+    active_entities: dict[str, dict],
 ) -> set[str]:
-    """1-hop in+out neighbors of seeds that are active and not already a seed."""
-    if not seeds:
+    """Title-phrase matching for cold-start widening (D48, Task #71).
+
+    Matches eligible entity titles as exact phrases in source_text.
+    Returns the set of slugs whose titles matched.
+    """
+    if not candidate_slugs or not source_text:
         return set()
-    neighbors: set[str] = set()
-    for slug in seeds:
-        # outgoing
-        result = conn.execute(
-            "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) RETURN b.slug",
-            {"s": slug},
-        )
-        while result.has_next():
-            n = result.get_next()[0]
-            if n in candidate_slugs:
-                neighbors.add(n)
-        # incoming
-        result = conn.execute(
-            "MATCH (a:Entity {slug: $s})<-[:LINKS_TO]-(b:Entity) RETURN b.slug",
-            {"s": slug},
-        )
-        while result.has_next():
-            n = result.get_next()[0]
-            if n in candidate_slugs:
-                neighbors.add(n)
-    return neighbors
+
+    title_to_slug: dict[str, str] = {}
+    for slug in candidate_slugs:
+        ent = active_entities.get(slug)
+        if ent is None:
+            continue
+        title = ent.get("title", "")
+        if not title or not _title_eligible(title):
+            continue
+        title_to_slug[title.strip().lower()] = slug
+
+    if not title_to_slug:
+        return set()
+
+    escaped_titles = [re.escape(t) for t in sorted(title_to_slug.keys(), key=len, reverse=True)]
+    pattern = re.compile(
+        r"(?<!\w)(" + "|".join(escaped_titles) + r")(?!\w)",
+        re.IGNORECASE,
+    )
+    matched_slugs: set[str] = set()
+    for m in pattern.finditer(source_text):
+        matched_title = m.group(0).lower()
+        slug = title_to_slug.get(matched_title)
+        if slug:
+            matched_slugs.add(slug)
+    return matched_slugs
+
+
+def _t3_neighbors(
+    conn: kuzu.Connection,
+    seeds: set[str],
+    candidate_slugs: set[str],
+    *,
+    max_hops: int = 1,
+) -> set[str]:
+    """Multi-hop in+out neighbors of seeds that are active and not already a seed."""
+    if not seeds or not candidate_slugs:
+        return set()
+    current_frontier = set(seeds)
+    all_neighbors: set[str] = set()
+    visited = set(seeds)
+
+    for _ in range(max_hops):
+        next_frontier: set[str] = set()
+        for slug in current_frontier:
+            # outgoing
+            result = conn.execute(
+                "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) RETURN b.slug",
+                {"s": slug},
+            )
+            while result.has_next():
+                n = result.get_next()[0]
+                if n in candidate_slugs and n not in visited:
+                    all_neighbors.add(n)
+                    next_frontier.add(n)
+            # incoming
+            result = conn.execute(
+                "MATCH (a:Entity {slug: $s})<-[:LINKS_TO]-(b:Entity) RETURN b.slug",
+                {"s": slug},
+            )
+            while result.has_next():
+                n = result.get_next()[0]
+                if n in candidate_slugs and n not in visited:
+                    all_neighbors.add(n)
+                    next_frontier.add(n)
+        visited |= next_frontier
+        current_frontier = next_frontier
+    return all_neighbors
 
 
 def _pagerank_scores(conn: kuzu.Connection) -> dict[str, float]:
