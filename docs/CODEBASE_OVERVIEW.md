@@ -101,17 +101,23 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 
 ## 6. State Model
 
-Adopts **GPT 5.4's three-layer design**, hardened by Codex 5.3:
+### Architectural layers (D51)
 
-| Layer | Storage | Authority |
+| Layer | Path | Role |
 |---|---|---|
-| **Per-page provenance** | Frontmatter in each `.md` file (`raw_path`, `raw_hash`, `raw_mtime`, `compiled_at`) | Human-readable, survives manifest loss |
-| **Ledger** | `KDB/state/manifest.json` | Authoritative index of sources, pages, orphans, tombstones, runs |
-| **Audit trail** | `KDB/state/runs/<run_id>.json` | Per-compile journal (JSON) — authoritative; no derived `log.md` mirror (D24) |
+| **Source corpus** | `KDB/raw/` | Human-authored raw sources |
+| **Live ontology authority** | `GraphDB-KDB/` (Kuzu) | Primary. Updated immediately on every compile (Stage 9). Owns Entity, LINKS_TO, SUPPORTS, orphan status |
+| **Reconstruction material** | `KDB/state/runs/<run_id>/` sidecars | Backup. Durable compile_result + scan snapshots. Enables `graphdb-kdb rebuild` if GraphDB is lost/corrupted |
+| **Audit log** | `KDB/state/runs/<run_id>.json` journals | What happened, when, with which model, what failed |
+| **Source-file lifecycle** | `KDB/state/source_state.json` | Source metadata ledger (hashes, compile state, timestamps). Not an ontology index (D50) |
+| **Per-page provenance** | Frontmatter in each `.md` file | Human-readable (`raw_path`, `raw_hash`, `compiled_at`) |
+| **Rendered view** | `KDB/wiki/` | Markdown output for Obsidian consumption |
 
-**Rejected alternatives:** SQLite (too opaque, no diff, breaks OneDrive sync), vector DB (Karpathy explicitly rejects this), pure frontmatter-only (Grok's proposal — too lean at projected scale of thousands of files, no dependency graph).
+**Primary data flow:** `raw/ → kdb-compile → Stage 9 immediate GraphDB update`. Runs are not in this hot path — they are written as audit records whose sidecars happen to also serve as reconstruction material.
 
-**Manifest schema:** see `kdb_compiler/manifest.schema.md` (to be written in M1). Top-level sections: `schema_version`, `settings`, `stats`, `runs`, `sources`, `pages`, `orphans`, `tombstones`.
+**Rebuild/verify:** Proves the live authority matches what a clean reconstruction from sidecars would produce. Operational safety net, not the normal data flow.
+
+**Rejected alternatives:** SQLite (too opaque, no diff, breaks OneDrive sync), vector DB (Karpathy explicitly rejects this), pure frontmatter-only (Grok's proposal — too lean at projected scale), `ontology_sources/*.json` per-source durable layer (redundant with sidecars, adds a third consistency surface — rejected in D51).
 
 ---
 
@@ -478,6 +484,7 @@ When cold-start AND `|widened_T2| < 5` (the `_MIN_SEED_THRESHOLD`), T3 expands f
 | D48 | 2026-05-17 (Task #71) | **Graph context loader must be self-sufficient — no manifest fallback path.** Cold-start is resolved by widening graph-native matching (title phrase + extended neighborhood hops), never by delegating to manifest. | Manifest is being phased out of the context-generation pipeline. Any fallback would be architectural regression. Rejected: (b) min-context fallback to manifest; (c) manifest-for-first-compile / graph-for-recompile split. |
 | D49 | 2026-05-17 (Task #70 closure) | **GraphDB is the only supported EXISTING CONTEXT authority.** `manifest.json` must not be used for context generation. `KDB_CONTEXT_SOURCE` env var removed; planner always uses `graph_context_loader`. If GraphDB is missing/empty/corrupt, context planning fails loud → operator runs `graphdb-kdb rebuild`. `context_loader.py` retained as legacy reference only (not operator-facing). | Manifest is the wrong substrate for ontology/context — a flat index cannot encode graph relationships. Keeping it as rollback implies it is an acceptable competing source of truth; it is not. Graph outperforms manifest on both cold-start (17–23 vs 0–8 pages) and steady-state. Recovery path is rebuild from run journals (D39), not fallback to a weaker substrate. |
 | D50 | 2026-05-17 (Task #73) | **`manifest.json` is no longer an ontology store.** GraphDB owns Entity, LINKS_TO, SUPPORTS, orphan status, graph topology. Manifest becomes source-file metadata ledger only (hashes, compile state, timestamps). Stage 9 `graph_sync` becomes fatal for non-dry-run compiles (revokes D38 non-fatal semantics for ontology writes). No piecemeal removal — pages, outgoing_links, source_refs, orphan status stripped together once consumers migrate. | Dual-write is architecturally confusing (two "sources of truth" invite drift) and blocks manifest slimming. Piecemeal removal (e.g., outgoing_links only) creates half-stale state — worse than either extreme. GraphDB is deterministically regenerable from run journals (D39); manifest cannot serve as fallback once it stops tracking ontology. See `docs/task73-manifest-ontology-removal-blueprint.md`. |
+| D51 | 2026-05-17 (Task #73 closure) | **GraphDB is the live ontology authority; `state/runs/` sidecars are reconstruction material, not the primary data flow.** Layer model: `raw/` = source corpus; `GraphDB-KDB/` = live ontology authority (primary); `state/runs/` = audit log + reconstruction material (backup); `source_state.json` = source-file lifecycle metadata; `wiki/` = markdown rendering. Primary path: `kdb-compile → Stage 9 immediate GraphDB update` — runs are not in this hot path. Rebuild/verify use sidecars as backup to prove or restore consistency. `source_state` must not carry replay-selection pointers — replay eligibility belongs to the adapter/rebuilder, not the source metadata ledger. | Rejected: (a) event-sourcing framing where runs/ IS the ontology authority and GraphDB is "just a projection" — technically correct but cognitively misleading (implies the normal path goes through runs/; it doesn't). (b) `ontology_sources/*.json` per-source durable layer — redundant with sidecars, adds a third consistency surface, re-introduces coupling removed by D50. The current architecture already matches the compiler mental model (source → distill → update GraphDB); the naming just needed to make that explicit. |
 | D-A1 | 2026-05-14 (Round 1 Codex) | Schema rename: `Page → Entity` node-table label. | `Node` would collide with Kuzu's NODE keyword + universal graph-theory term. `Entity` signals abstract identity. Free upgrade while schema is empty/small. |
 | D-A2 | 2026-05-14 (Round 1 Codex) | Source field renames: `compile_state → ingest_state`, `compile_count → ingest_count`, `last_compiled_at → last_ingested_at`. Page enum values (page_type/status/confidence) retained — *values* are Obsidian-flavored; renaming names without revisiting values is cosmetic. | Pipeline-specific field NAMES become pipeline-neutral now. Pipeline-specific VALUES wait for producer #2 to inform the right abstraction. Verifier carries an alias map bridging the manifest side (still `compile_*`) and graph side. |
 | D-B1 | 2026-05-14 (Round 1 Codex) | Rebuilder is **B-lite (adapter split)**: thin generic core in `graphdb_kdb/rebuilder.py` (drop+recreate, chronological iter, error reporting) + producer-specific logic in `graphdb_kdb/adapters/obsidian_runs.py`. Rule: `graphdb_kdb/` MUST NOT `import kdb_compiler.*`. Public function name `rebuild_from_obsidian_runs(...)`. | Pure-C (core imports producer types) would silently weaken D34 independence. B-lite preserves it by structure, not convention. Cost: ≤200 LOC adapter; verified by grep invariant. |
