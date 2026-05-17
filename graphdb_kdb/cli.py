@@ -167,35 +167,80 @@ def cmd_orphans(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
+    """D50 Phase G: replay-to-temp structural equality verification.
+
+    --vault-root (preferred): derives state_root and manifest path.
+    --state-root (advanced override): explicit state_root.
+    --source-state-only: skip full replay, just run cheap preflight.
+    """
+    from graphdb_kdb import verifier
+
     graph_dir = _resolve_graph_dir(args)
-    if args.manifest:
-        manifest_path = Path(args.manifest)
+
+    # Resolve state_root
+    if args.state_root:
+        state_root = Path(args.state_root)
     elif args.vault_root:
-        manifest_path = Path(args.vault_root) / "KDB" / "state" / "manifest.json"
+        state_root = Path(args.vault_root) / "KDB" / "state"
     else:
         print(
-            "verify requires --vault-root <path> (manifest at <root>/state/manifest.json) "
-            "or --manifest <path>.",
+            "verify requires --vault-root <path> (or --state-root as advanced override).",
             file=sys.stderr,
         )
         return 2
-    if not manifest_path.is_file():
-        print(f"manifest not found: {manifest_path}", file=sys.stderr)
+
+    journals_dir = state_root / "runs"
+    if not journals_dir.is_dir() and not args.source_state_only:
+        print(f"runs directory not found: {journals_dir}", file=sys.stderr)
         return 2
+
+    # Load manifest for source-state preflight (optional)
+    manifest: dict | None = None
+    manifest_path = state_root / "manifest.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
     with GraphDB(graph_dir) as gdb:
-        result = gdb.verify_against_manifest(manifest_path)
+        if args.source_state_only:
+            if manifest is None:
+                print(f"manifest not found for preflight: {manifest_path}", file=sys.stderr)
+                return 2
+            divs = verifier.verify_source_state(gdb.conn, manifest)
+            m_keys = set((manifest.get("sources") or {}).keys())
+            l_keys = set(verifier._graph_sources(gdb.conn).keys())
+            result = verifier.VerifyResult(ok=not divs, divergences=divs, counts={
+                "sources_checked": len(m_keys | l_keys),
+            })
+        else:
+            result = verifier.verify(
+                gdb.conn,
+                journals_dir=journals_dir,
+                manifest=manifest,
+            )
+
     if args.json:
         _print_json({
             "ok": result.ok,
+            "rebuild_failed": result.rebuild_failed,
+            "rebuild_error": result.rebuild_error,
             "counts": result.counts,
             "divergences": [dataclasses.asdict(d) for d in result.divergences],
         })
         return 0 if result.ok else 1
+
+    if result.rebuild_failed:
+        print(f"REBUILD FAILED — cannot verify")
+        print(f"  error: {result.rebuild_error}")
+        for k, v in result.counts.items():
+            print(f"  {k:<22} {v}")
+        return 1
+
     if result.ok:
-        print("ok — graph and manifest agree")
+        print("ok — replay and live graph agree")
         for k, v in result.counts.items():
             print(f"  {k:<22} {v}")
         return 0
+
     print(f"DIVERGENCE — {len(result.divergences)} issue(s)")
     for k, v in result.counts.items():
         print(f"  {k:<22} {v}")
@@ -203,11 +248,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
     for d in result.divergences:
         if d.kind == "attribute_mismatch":
             print(
-                f"  [{d.kind}] {d.entity}={d.key} field={d.field} "
-                f"manifest={d.manifest_value!r} kuzu={d.kuzu_value!r}"
+                f"  [{d.source}] [{d.kind}] {d.category}={d.key} field={d.field} "
+                f"expected={d.expected_value!r} actual={d.actual_value!r}"
             )
         else:
-            print(f"  [{d.kind}] {d.entity}={d.key}")
+            print(f"  [{d.source}] [{d.kind}] {d.category}={d.key}")
     return 1
 
 
@@ -478,15 +523,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_v = sub.add_parser(
         "verify",
-        help="Diff Kuzu state vs manifest.json. Exit 0 = perfect; 1 = divergence.",
+        help="Replay-to-temp structural equality verification (D50). "
+             "Exit 0 = replay matches live; 1 = divergence or rebuild failure.",
     )
     p_v.add_argument(
         "--vault-root", default=None,
-        help="Vault root (manifest read from <root>/KDB/state/manifest.json).",
+        help="Vault root (state at <root>/KDB/state/). Preferred.",
     )
     p_v.add_argument(
-        "--manifest", default=None,
-        help="Explicit manifest.json path (overrides --vault-root).",
+        "--state-root", default=None,
+        help="Explicit state root (advanced override; skips vault-root derivation).",
+    )
+    p_v.add_argument(
+        "--source-state-only", action="store_true",
+        help="Skip full replay — only run cheap manifest-vs-graph source preflight.",
     )
     p_v.add_argument("--json", action="store_true", help="JSON output.")
 

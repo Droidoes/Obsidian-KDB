@@ -241,8 +241,3 @@ class GraphDB:
         from graphdb_kdb import analytics
         return analytics.structural_holes(self.conn)
 
-    # ---- verifier (#63.5) ----
-
-    def verify_against_manifest(self, manifest_path):
-        from graphdb_kdb import verifier
-        return verifier.verify_against_manifest(self.conn, manifest_path)

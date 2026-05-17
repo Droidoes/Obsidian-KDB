@@ -1,92 +1,74 @@
-"""Manifest ↔ Kuzu cross-check (#63.5).
+"""Replay-to-temp structural equality verifier (D50 Phase G).
 
-Per blueprint §8.1: walks `manifest.json` and confirms every (page, edge,
-source, support) is present in Kuzu with matching attributes. Reports
-three classes of divergence:
+Proves graph integrity by replaying journals into a temp Kuzu, then
+structurally diffing temp (expected) vs live (actual). Two layers:
 
-  - missing_in_kuzu      — present in manifest, absent in graph
-  - missing_in_manifest  — present in graph, absent in manifest
-  - attribute_mismatch   — both present but differ on a tracked field
+  Layer 1 — source-state preflight: cheap manifest.sources{} vs graph
+            Source nodes check. Catches obvious drift without a full rebuild.
 
-Per L4 (blueprint §13.2): the verifier reports on **overlap only**.
-Manifest-only fields (`stats`, `runs`, `settings`, top-level `orphans`,
-`tombstones`) are intentionally not mirrored in the graph and are
-skipped. Timestamps are also skipped: manifest pages carry mixed
-UTC-`Z` and local-offset strings; the graph uses local-offset only
-(per `feedback_local_time_everywhere`). Comparing as strings would
-produce false positives on format drift, not real state divergence.
+  Layer 2 — replay structural diff: rebuild() into a temp Kuzu, then
+            diff ALL graph state (entities, sources, links, supports) between
+            the replay graph (expected) and the live graph (actual).
 
-Tracked attribute set:
-  - Entity: page_type, last_run_id, confidence, status (mapped from
-            manifest's `orphan_candidate` bool)
-  - Source: status, ingest_state, ingest_count, hash, file_type,
-            size_bytes, last_run_id
+Divergence classes:
+  - missing_in_live   — present in replay, absent in live graph
+  - missing_in_replay — present in live, absent in replay
+  - attribute_mismatch — both present but tracked fields differ
 
-Naming bridge (D-A1 + D-A2, 2026-05-14): the graph side renamed
-`Page → Entity` and `compile_state/count/last_compiled_at →
-ingest_state/count/last_ingested_at`. The manifest side retains
-producer-side names (`pages.*`, `compile_state`, etc.) because
-`manifest_update.py` is the producer's writer. The field-alias
-tuples below (_PAGE_DIRECT_FIELDS, _SOURCE_DIRECT_FIELDS) map
-(manifest_field_name, graph_field_name) explicitly so the verifier
-bridges the two name spaces without false-positive divergences.
+Each divergence carries a `source` tag: 'source_state_preflight' or
+'replay_structural_diff', so consumers can separate cheap-check results
+from the authoritative replay proof.
 """
 from __future__ import annotations
 
-import json
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import kuzu
 
+from graphdb_kdb.graphdb import GraphDB
+
 
 # ---------- result types ----------
 
 @dataclass(frozen=True)
 class Divergence:
-    kind: str       # 'missing_in_kuzu' | 'missing_in_manifest' | 'attribute_mismatch'
-    entity: str     # 'page' | 'source' | 'links_to' | 'supports'
+    kind: str       # 'missing_in_live' | 'missing_in_replay' | 'attribute_mismatch'
+    category: str   # 'entity' | 'source' | 'links_to' | 'supports'
     key: str        # slug | source_id | 'a→b' | 'sid→slug'
+    source: str     # 'source_state_preflight' | 'replay_structural_diff'
     field: str | None = None
-    manifest_value: Any = None
-    kuzu_value: Any = None
+    expected_value: Any = None
+    actual_value: Any = None
 
 
 @dataclass
 class VerifyResult:
     ok: bool
+    rebuild_failed: bool = False
+    rebuild_error: str | None = None
     divergences: list[Divergence] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
 
 
 # ---------- attribute maps ----------
 
-# (manifest_field_name, graph_field_name) pairs. Identical names = no rename;
-# divergent names bridge producer-side terminology to graph-side terminology
-# (D-A1 + D-A2 — see module docstring).
-#
-# Known prospective-from-#63 drift (#63.7 validation 2026-05-14):
-#   `compile_count` (manifest, cumulative all-time) vs `ingest_count` (graph,
-#   post-#63 only) WILL diverge for any source that existed pre-#63. Manifest's
-#   counter has been ticking since vault inception; graph's counter starts at
-#   the first post-#63 ingestion. The verifier reports the mismatch honestly
-#   — this is expected per D39 prospective claim, not a bug. (Locked as
-#   Option A in 2026-05-14 #63.7 deliberation: report-and-document rather
-#   than mask via semantic-equivalence comparison.)
-_PAGE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
-    ("page_type", "page_type"),
-    ("last_run_id", "last_run_id"),
-    ("confidence", "confidence"),
-)
-
 _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("status", "status"),
-    ("compile_state", "ingest_state"),       # D-A2: graph-side renamed
-    ("compile_count", "ingest_count"),       # D-A2: graph-side renamed; pre-#63 drift expected
+    ("compile_state", "ingest_state"),
+    ("compile_count", "ingest_count"),
     ("hash", "hash"),
     ("file_type", "file_type"),
     ("size_bytes", "size_bytes"),
+    ("last_run_id", "last_run_id"),
+)
+
+_ENTITY_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("page_type", "page_type"),
+    ("status", "status"),
+    ("confidence", "confidence"),
     ("last_run_id", "last_run_id"),
 )
 
@@ -94,13 +76,9 @@ _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 # ---------- graph state loaders ----------
 
 def _graph_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
-    """Return entities keyed by slug, with graph-side field names."""
     r = conn.execute(
-        """
-        MATCH (e:Entity)
-        RETURN e.slug, e.page_type, e.status, e.confidence,
-               e.last_run_id
-        """
+        "MATCH (e:Entity) "
+        "RETURN e.slug, e.page_type, e.status, e.confidence, e.last_run_id"
     )
     out: dict[str, dict[str, Any]] = {}
     while r.has_next():
@@ -116,13 +94,10 @@ def _graph_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
 
 
 def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
-    """Return sources keyed by source_id, with graph-side field names (ingest_*)."""
     r = conn.execute(
-        """
-        MATCH (s:Source)
-        RETURN s.source_id, s.status, s.ingest_state, s.ingest_count,
-               s.hash, s.file_type, s.size_bytes, s.last_run_id
-        """
+        "MATCH (s:Source) "
+        "RETURN s.source_id, s.status, s.ingest_state, s.ingest_count, "
+        "       s.hash, s.file_type, s.size_bytes, s.last_run_id"
     )
     out: dict[str, dict[str, Any]] = {}
     while r.has_next():
@@ -160,30 +135,7 @@ def _graph_supports(conn: kuzu.Connection) -> set[tuple[str, str]]:
     return out
 
 
-# ---------- manifest projection ----------
-
-def _manifest_pages(manifest: dict) -> dict[str, dict[str, Any]]:
-    """Project manifest pages dict to {slug: tracked-attrs-dict}.
-
-    Keys here use manifest's producer-side names (page_type, status from
-    orphan_candidate bool, etc.) — _diff_attrs() bridges to graph-side
-    via the (manifest_field, graph_field) tuples.
-    """
-    out: dict[str, dict[str, Any]] = {}
-    for page in (manifest.get("pages") or {}).values():
-        slug = page.get("slug")
-        if not slug:
-            continue
-        status = "orphan_candidate" if page.get("orphan_candidate") else "active"
-        out[slug] = {
-            "slug": slug,
-            "page_type": page.get("page_type"),
-            "status": status,
-            "confidence": page.get("confidence"),
-            "last_run_id": page.get("last_run_id"),
-        }
-    return out
-
+# ---------- manifest projection (source-state preflight only) ----------
 
 def _manifest_sources(manifest: dict) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
@@ -201,157 +153,223 @@ def _manifest_sources(manifest: dict) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _manifest_links(manifest: dict) -> set[tuple[str, str]]:
-    """Derive expected LINKS_TO edges from each page's outgoing_links."""
-    out: set[tuple[str, str]] = set()
-    for page in (manifest.get("pages") or {}).values():
-        slug = page.get("slug")
-        if not slug:
-            continue
-        for tgt in page.get("outgoing_links") or []:
-            out.add((slug, tgt))
-    return out
-
-
-def _manifest_supports(manifest: dict) -> set[tuple[str, str]]:
-    """Derive expected SUPPORTS edges from each page's source_refs."""
-    out: set[tuple[str, str]] = set()
-    for page in (manifest.get("pages") or {}).values():
-        slug = page.get("slug")
-        if not slug:
-            continue
-        for ref in page.get("source_refs") or []:
-            sid = ref.get("source_id")
-            if sid:
-                out.add((sid, slug))
-    return out
-
-
 # ---------- diff helpers ----------
 
 def _diff_attrs(
     *,
-    entity: str,
+    category: str,
     key: str,
-    manifest_row: dict[str, Any],
-    kuzu_row: dict[str, Any],
+    source: str,
+    expected_row: dict[str, Any],
+    actual_row: dict[str, Any],
     fields: tuple[tuple[str, str], ...],
 ) -> list[Divergence]:
     out: list[Divergence] = []
-    for mfield, kfield in fields:
-        mv = manifest_row.get(mfield)
-        kv = kuzu_row.get(kfield)
-        if mv != kv:
+    for efield, afield in fields:
+        ev = expected_row.get(efield)
+        av = actual_row.get(afield)
+        if ev != av:
             out.append(Divergence(
                 kind="attribute_mismatch",
-                entity=entity,
+                category=category,
                 key=key,
-                field=mfield,
-                manifest_value=mv,
-                kuzu_value=kv,
+                source=source,
+                field=efield,
+                expected_value=ev,
+                actual_value=av,
             ))
     return out
 
 
-def _diff_pages(
-    manifest_pages: dict[str, dict],
-    kuzu_pages: dict[str, dict],
+def _diff_sources_preflight(
+    manifest_sources: dict[str, dict],
+    live_sources: dict[str, dict],
 ) -> list[Divergence]:
     divs: list[Divergence] = []
-    for slug in sorted(manifest_pages.keys() - kuzu_pages.keys()):
-        divs.append(Divergence(kind="missing_in_kuzu", entity="page", key=slug))
-    for slug in sorted(kuzu_pages.keys() - manifest_pages.keys()):
-        divs.append(Divergence(kind="missing_in_manifest", entity="page", key=slug))
-    # status is its own field; bundle into the same direct-fields sweep.
-    fields = _PAGE_DIRECT_FIELDS + (("status", "status"),)
-    for slug in sorted(manifest_pages.keys() & kuzu_pages.keys()):
+    src = "source_state_preflight"
+    for sid in sorted(manifest_sources.keys() - live_sources.keys()):
+        divs.append(Divergence(kind="missing_in_live", category="source", key=sid, source=src))
+    for sid in sorted(live_sources.keys() - manifest_sources.keys()):
+        divs.append(Divergence(kind="missing_in_replay", category="source", key=sid, source=src))
+    for sid in sorted(manifest_sources.keys() & live_sources.keys()):
         divs.extend(_diff_attrs(
-            entity="page",
-            key=slug,
-            manifest_row=manifest_pages[slug],
-            kuzu_row=kuzu_pages[slug],
-            fields=fields,
+            category="source",
+            key=sid,
+            source=src,
+            expected_row=manifest_sources[sid],
+            actual_row=live_sources[sid],
+            fields=_SOURCE_DIRECT_FIELDS,
         ))
     return divs
 
 
-def _diff_sources(
-    manifest_sources: dict[str, dict],
-    kuzu_sources: dict[str, dict],
+def _diff_entities(
+    expected: dict[str, dict],
+    actual: dict[str, dict],
 ) -> list[Divergence]:
     divs: list[Divergence] = []
-    for sid in sorted(manifest_sources.keys() - kuzu_sources.keys()):
-        divs.append(Divergence(kind="missing_in_kuzu", entity="source", key=sid))
-    for sid in sorted(kuzu_sources.keys() - manifest_sources.keys()):
-        divs.append(Divergence(kind="missing_in_manifest", entity="source", key=sid))
-    for sid in sorted(manifest_sources.keys() & kuzu_sources.keys()):
+    src = "replay_structural_diff"
+    for slug in sorted(expected.keys() - actual.keys()):
+        divs.append(Divergence(kind="missing_in_live", category="entity", key=slug, source=src))
+    for slug in sorted(actual.keys() - expected.keys()):
+        divs.append(Divergence(kind="missing_in_replay", category="entity", key=slug, source=src))
+    for slug in sorted(expected.keys() & actual.keys()):
         divs.extend(_diff_attrs(
-            entity="source",
+            category="entity",
+            key=slug,
+            source=src,
+            expected_row=expected[slug],
+            actual_row=actual[slug],
+            fields=_ENTITY_DIRECT_FIELDS,
+        ))
+    return divs
+
+
+def _diff_sources_replay(
+    expected: dict[str, dict],
+    actual: dict[str, dict],
+) -> list[Divergence]:
+    divs: list[Divergence] = []
+    src = "replay_structural_diff"
+    for sid in sorted(expected.keys() - actual.keys()):
+        divs.append(Divergence(kind="missing_in_live", category="source", key=sid, source=src))
+    for sid in sorted(actual.keys() - expected.keys()):
+        divs.append(Divergence(kind="missing_in_replay", category="source", key=sid, source=src))
+    for sid in sorted(expected.keys() & actual.keys()):
+        divs.extend(_diff_attrs(
+            category="source",
             key=sid,
-            manifest_row=manifest_sources[sid],
-            kuzu_row=kuzu_sources[sid],
-            fields=_SOURCE_DIRECT_FIELDS,
+            source=src,
+            expected_row=expected[sid],
+            actual_row=actual[sid],
+            fields=(("ingest_state", "ingest_state"),
+                    ("ingest_count", "ingest_count"),
+                    ("hash", "hash"),
+                    ("file_type", "file_type"),
+                    ("size_bytes", "size_bytes"),
+                    ("status", "status"),
+                    ("last_run_id", "last_run_id")),
         ))
     return divs
 
 
 def _diff_edge_set(
     *,
-    entity: str,
-    manifest_set: set[tuple[str, str]],
-    kuzu_set: set[tuple[str, str]],
+    category: str,
+    expected_set: set[tuple[str, str]],
+    actual_set: set[tuple[str, str]],
     arrow: str = "→",
 ) -> list[Divergence]:
     divs: list[Divergence] = []
-    for a, b in sorted(manifest_set - kuzu_set):
-        divs.append(Divergence(kind="missing_in_kuzu", entity=entity, key=f"{a}{arrow}{b}"))
-    for a, b in sorted(kuzu_set - manifest_set):
-        divs.append(Divergence(kind="missing_in_manifest", entity=entity, key=f"{a}{arrow}{b}"))
+    src = "replay_structural_diff"
+    for a, b in sorted(expected_set - actual_set):
+        divs.append(Divergence(kind="missing_in_live", category=category, key=f"{a}{arrow}{b}", source=src))
+    for a, b in sorted(actual_set - expected_set):
+        divs.append(Divergence(kind="missing_in_replay", category=category, key=f"{a}{arrow}{b}", source=src))
     return divs
 
 
 # ---------- public entry points ----------
 
-def verify(conn: kuzu.Connection, manifest: dict) -> VerifyResult:
-    """Diff in-memory manifest dict against the Kuzu state behind `conn`."""
-    m_pages = _manifest_pages(manifest)
+def verify_source_state(
+    live_conn: kuzu.Connection,
+    manifest: dict,
+) -> list[Divergence]:
+    """Layer 1: source-state preflight. Cheap comparison of manifest sources{}
+    against live graph Source nodes. Returns divergences tagged with
+    source='source_state_preflight'."""
     m_sources = _manifest_sources(manifest)
-    m_links = _manifest_links(manifest)
-    m_supports = _manifest_supports(manifest)
+    l_sources = _graph_sources(live_conn)
+    return _diff_sources_preflight(m_sources, l_sources)
 
-    k_pages = _graph_entities(conn)
-    k_sources = _graph_sources(conn)
-    k_links = _graph_links(conn)
-    k_supports = _graph_supports(conn)
 
-    divs: list[Divergence] = []
-    divs.extend(_diff_pages(m_pages, k_pages))
-    divs.extend(_diff_sources(m_sources, k_sources))
-    divs.extend(_diff_edge_set(
-        entity="links_to", manifest_set=m_links, kuzu_set=k_links,
+def verify(
+    live_conn: kuzu.Connection,
+    *,
+    journals_dir: Path,
+    manifest: dict | None = None,
+) -> VerifyResult:
+    """Full replay verification: rebuild temp graph from journals, diff against live.
+
+    Args:
+        live_conn: Connection to the live Kuzu graph.
+        journals_dir: Directory containing run journals (state/runs/).
+        manifest: Optional manifest dict for source-state preflight.
+            If None, preflight is skipped.
+
+    Returns:
+        VerifyResult. If rebuild fails, ok=False + rebuild_failed=True + no
+        divergences (partial replay is not compared).
+    """
+    from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+    from graphdb_kdb.rebuilder import rebuild
+
+    all_divs: list[Divergence] = []
+
+    # Layer 1: source-state preflight (if manifest provided)
+    if manifest is not None:
+        all_divs.extend(verify_source_state(live_conn, manifest))
+
+    # Layer 2: replay structural diff
+    adapter = ObsidianRunsAdapter()
+
+    with tempfile.TemporaryDirectory() as td:
+        temp_graph_dir = Path(td) / "graph"
+
+        rebuild_result = rebuild(
+            graph_dir=temp_graph_dir,
+            adapter=adapter,
+            journals_dir=journals_dir,
+            confirm=False,
+        )
+
+        if not rebuild_result.ok:
+            failed_runs = [
+                o for o in rebuild_result.outcomes if o.state == "failed"
+            ]
+            error_msg = "; ".join(
+                f"{o.run_id}: {o.error}" for o in failed_runs
+            )
+            return VerifyResult(
+                ok=False,
+                rebuild_failed=True,
+                rebuild_error=error_msg,
+                divergences=all_divs,
+                counts={"rebuild_replayed": rebuild_result.replayed,
+                        "rebuild_skipped": rebuild_result.skipped,
+                        "rebuild_failed": rebuild_result.failed},
+            )
+
+        with GraphDB(temp_graph_dir) as replay_gdb:
+            r_entities = _graph_entities(replay_gdb.conn)
+            r_sources = _graph_sources(replay_gdb.conn)
+            r_links = _graph_links(replay_gdb.conn)
+            r_supports = _graph_supports(replay_gdb.conn)
+
+    l_entities = _graph_entities(live_conn)
+    l_sources = _graph_sources(live_conn)
+    l_links = _graph_links(live_conn)
+    l_supports = _graph_supports(live_conn)
+
+    all_divs.extend(_diff_entities(r_entities, l_entities))
+    all_divs.extend(_diff_sources_replay(r_sources, l_sources))
+    all_divs.extend(_diff_edge_set(
+        category="links_to", expected_set=r_links, actual_set=l_links,
     ))
-    divs.extend(_diff_edge_set(
-        entity="supports", manifest_set=m_supports, kuzu_set=k_supports,
+    all_divs.extend(_diff_edge_set(
+        category="supports", expected_set=r_supports, actual_set=l_supports,
     ))
 
     counts = {
-        "pages_checked": len(m_pages | k_pages.keys()),
-        "sources_checked": len(m_sources.keys() | k_sources.keys()),
-        "links_checked": len(m_links | k_links),
-        "supports_checked": len(m_supports | k_supports),
-        "missing_in_kuzu": sum(1 for d in divs if d.kind == "missing_in_kuzu"),
-        "missing_in_manifest": sum(1 for d in divs if d.kind == "missing_in_manifest"),
-        "attribute_mismatch": sum(1 for d in divs if d.kind == "attribute_mismatch"),
+        "entities_checked": len(r_entities.keys() | l_entities.keys()),
+        "sources_checked": len(r_sources.keys() | l_sources.keys()),
+        "links_checked": len(r_links | l_links),
+        "supports_checked": len(r_supports | l_supports),
+        "missing_in_live": sum(1 for d in all_divs if d.kind == "missing_in_live"),
+        "missing_in_replay": sum(1 for d in all_divs if d.kind == "missing_in_replay"),
+        "attribute_mismatch": sum(1 for d in all_divs if d.kind == "attribute_mismatch"),
+        "replay_replayed": rebuild_result.replayed,
+        "replay_skipped": rebuild_result.skipped,
     }
-    return VerifyResult(ok=not divs, divergences=divs, counts=counts)
 
-
-def verify_against_manifest(
-    conn: kuzu.Connection,
-    manifest_path: Path | str,
-) -> VerifyResult:
-    """Load manifest JSON from disk + delegate to `verify`."""
-    path = Path(manifest_path)
-    with path.open() as f:
-        manifest = json.load(f)
-    return verify(conn, manifest)
+    return VerifyResult(ok=not all_divs, divergences=all_divs, counts=counts)
