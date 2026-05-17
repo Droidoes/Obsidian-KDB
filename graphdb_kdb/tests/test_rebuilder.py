@@ -377,6 +377,38 @@ def test_obsidian_adapter_skip_unsupported_version(graph_dir, tmp_path):
     assert result.outcomes[0].skip_reason == "unsupported_version"
 
 
+def test_obsidian_adapter_replayable_payload_eligible_despite_failure(graph_dir, tmp_path):
+    """D50 amended D39: success=False + replayable_payload=True is eligible.
+    Graph-sync-failed runs with valid sidecars must be replayable by rebuild."""
+    journals = tmp_path / "runs"
+    journal_path = _write_run(journals, "r-graphsync-fail", success=False)
+    # Patch the journal to include replayable_payload=True
+    import json
+    journal = json.loads(journal_path.read_text())
+    journal["replayable_payload"] = True
+    journal_path.write_text(json.dumps(journal))
+
+    adapter = ObsidianRunsAdapter()
+    result = rebuild(graph_dir=graph_dir, adapter=adapter, journals_dir=journals, confirm=False)
+    assert result.replayed == 1
+    assert result.skipped == 0
+
+
+def test_obsidian_adapter_failed_without_replayable_payload_skipped(graph_dir, tmp_path):
+    """D50: success=False + replayable_payload=False → still skipped."""
+    journals = tmp_path / "runs"
+    journal_path = _write_run(journals, "r-compile-fail", success=False)
+    import json
+    journal = json.loads(journal_path.read_text())
+    journal["replayable_payload"] = False
+    journal_path.write_text(json.dumps(journal))
+
+    adapter = ObsidianRunsAdapter()
+    result = rebuild(graph_dir=graph_dir, adapter=adapter, journals_dir=journals, confirm=False)
+    assert result.skipped == 1
+    assert result.outcomes[0].skip_reason == "failed"
+
+
 def test_obsidian_adapter_skip_invalid_journal(graph_dir, tmp_path):
     """Malformed JSON journal → skipped with invalid_journal."""
     journals = tmp_path / "runs"

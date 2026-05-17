@@ -1067,11 +1067,12 @@ def test_stage9_lands_in_journal_with_sync_payload(tmp_path: Path) -> None:
     assert stage9["sidecar_path"].endswith(f"/runs/{ctx.run_id}")
 
 
-def test_stage9_non_fatal_on_adapter_failure(
+def test_stage9_graph_sync_failure_is_fatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If the adapter's sync_current_run raises, Stage 9 closes with ok=False
-    but the overall run still returns success=True (D38 non-fatal)."""
+    """D50 Phase B: graph_sync failure is fatal — run reports success=False.
+    But the failure journal carries replayable_payload=True and the sidecar
+    is archived, so `graphdb-kdb rebuild` can still replay this run."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -1092,18 +1093,26 @@ def test_stage9_non_fatal_on_adapter_failure(
     finally:
         del os.environ["KDB_GRAPH_PATH"]
 
-    # Overall run succeeded despite Stage 9 failing.
-    assert result.success is True
-    assert result.manifest_written is True
+    # D50: graph_sync failure is now fatal.
+    assert result.success is False
+
+    # Failure journal is written with replayable_payload=True.
     journal = _load_journal(state, ctx.run_id)
-    assert journal["success"] is True
+    assert journal["success"] is False
+    assert journal["replayable_payload"] is True
+
+    # Stage 9 records the failure detail.
     by_idx = {s["index"]: s for s in journal["stages"]}
     stage9 = by_idx[9]
     assert stage9["ok"] is False
     assert "simulated graph_sync failure" in stage9["note"]
     assert "graphdb-kdb rebuild" in stage9["recovery_hint"]
+
     # Sidecar archival ran BEFORE the adapter call → it succeeded.
     assert stage9["sidecar_archived"] is True
+    sidecar_dir = state / "runs" / ctx.run_id
+    assert (sidecar_dir / "compile_result.json").exists()
+    assert (sidecar_dir / "last_scan.json").exists()
 
 
 def test_sidecar_archival_is_byte_identical(tmp_path: Path) -> None:

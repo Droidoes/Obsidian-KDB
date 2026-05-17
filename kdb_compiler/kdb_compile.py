@@ -160,6 +160,7 @@ def compile(
 
     def _finalize_and_write(
         *, success: bool, manifest_written: bool, journal_written: bool,
+        replayable_payload: bool = False,
     ) -> None:
         """Build the final journal and persist it to disk (unless told not
         to). Mutates nothing on the orchestrator state."""
@@ -184,6 +185,7 @@ def compile(
             compile_success=compile_success,
             journal_written=journal_written,
             manifest_written=manifest_written,
+            replayable_payload=replayable_payload,
             compile_result=cr,
             next_manifest=next_manifest,
             apply_result=(
@@ -501,15 +503,16 @@ def compile(
 
     # ----- [9] graph_sync -----
     # D-S0: route through Obsidian adapter; no direct GraphDB/apply_compile_result
-    # import in this file. D38: non-fatal — graph_sync errors emit a warning +
-    # journal entry, but the overall compile run still returns success.
+    # import in this file.
     #
-    # Two sub-steps inside Stage 9: (a) archive per-run sidecar of the current
-    # baton (compile_result.json + last_scan.json) under state/runs/<run_id>/
-    # so future `graphdb-kdb rebuild` can replay this run; (b) live-sync the
-    # in-memory payload into the graph. Archival happens first so that even
-    # if the live sync fails, the sidecar exists for the rebuild recovery path.
+    # D50 Phase B: graph_sync is FATAL for non-dry-run compiles (revokes D38).
+    # GraphDB is the sole ontology authority; a failed sync = stale authority.
+    #
+    # Two sub-steps: (a) archive sidecar FIRST so the run is replayable by
+    # `graphdb-kdb rebuild` even if the live sync fails; (b) live-sync via
+    # adapter. On sync failure: write failure journal with replayable_payload=True.
     _stage_open(9)
+    replayable_payload = False
     if dry_run:
         _stage_close(9, ok=True, note="skipped (dry-run)")
     else:
@@ -527,6 +530,7 @@ def compile(
                 sidecar_dir / "last_scan.json",
             )
             sidecar_archived = True
+            replayable_payload = True
 
             from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
             adapter = ObsidianRunsAdapter()
@@ -548,12 +552,34 @@ def compile(
                 sidecar_archived=sidecar_archived,
                 recovery_hint=f"run: graphdb-kdb rebuild --vault-root {vault_root}",
             )
-            # NO call to _fail(); per D38 the overall run remains successful.
+            # D50: graph_sync failure is fatal. Write failure journal with
+            # replayable_payload=True so rebuild can still replay this run.
+            _finalize_and_write(
+                success=False,
+                manifest_written=manifest_written,
+                journal_written=journal_written,
+                replayable_payload=replayable_payload,
+            )
+            return CompileRunResult(
+                run_id=run_id,
+                success=False,
+                scan_counts=scan_counts,
+                pages_written=apply_result.pages_written if apply_result else [],
+                manifest_written=manifest_written,
+                journal_written=journal_written,
+                dry_run=dry_run,
+                errors=[note],
+                sources_attempted=sources_attempted,
+                sources_compiled=sources_compiled,
+                sources_failed=sources_failed,
+                compile_errors=compile_errors,
+            )
 
     _finalize_and_write(
         success=True,
         manifest_written=manifest_written,
         journal_written=journal_written,
+        replayable_payload=replayable_payload if not dry_run else False,
     )
 
     return CompileRunResult(

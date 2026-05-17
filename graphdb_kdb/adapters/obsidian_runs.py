@@ -80,8 +80,11 @@ class ObsidianRunsAdapter:
     # ── eligibility ───────────────────────────────────────────────────────────
 
     def is_eligible(self, descriptor: RunDescriptor) -> EligibilityResult:
-        """Apply D39 filter (success && !dry_run && payload_present) plus
-        D-S3 version check. Returns structured skip reason for audit.
+        """D39 amended (D50): dry_run=false AND replayable_payload=true.
+
+        Accepts runs with success=false IF replayable_payload=true (e.g.,
+        graph_sync failed but compile output is valid and sidecar archived).
+        Falls back to success=true for pre-D50 journals without the field.
         """
         # Direct descriptors (baton-style) are implicitly eligible: caller
         # opted in by constructing them with explicit payload_paths.
@@ -89,7 +92,6 @@ class ObsidianRunsAdapter:
             return EligibilityResult(True, None)
 
         if descriptor.journal_path is None:
-            # Neither journal nor payload paths — malformed descriptor.
             return EligibilityResult(False, "invalid_journal")
 
         try:
@@ -98,16 +100,23 @@ class ObsidianRunsAdapter:
         except (OSError, json.JSONDecodeError):
             return EligibilityResult(False, "invalid_journal")
 
-        # Version gate (D-S3) — runs before success/dry_run since unsupported
-        # journal shapes can't be trusted to populate those fields correctly.
+        # Version gate (D-S3)
         version = str(journal.get("schema_version", ""))
         if version not in self.supported_journal_versions:
             return EligibilityResult(False, "unsupported_version")
 
-        if not journal.get("success"):
-            return EligibilityResult(False, "failed")
         if journal.get("dry_run"):
             return EligibilityResult(False, "dry_run")
+
+        # D50 amended eligibility: replayable_payload=true is sufficient.
+        # For pre-D50 journals without the field, fall back to success=true.
+        replayable = journal.get("replayable_payload")
+        if replayable is None:
+            # Legacy journal — use original D39 rule
+            if not journal.get("success"):
+                return EligibilityResult(False, "failed")
+        elif not replayable:
+            return EligibilityResult(False, "failed")
 
         # Event-type routing (#68): absent ⇒ 'compile' (back-compat with 2.0
         # compile journals). 'cleanup' uses a retraction.json sidecar instead of

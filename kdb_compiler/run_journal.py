@@ -11,6 +11,7 @@ Top-level shape:
     schema_version, run_id, compiler_version, dry_run, vault_root,
     started_at, finished_at, duration_ms,
     success, compile_success, journal_written, manifest_written,
+    replayable_payload,
     terminated_at_stage, failure_stage_name, failure_type, failure_message,
     config, artifacts,
     stages[], summary{}
@@ -212,6 +213,7 @@ class RunJournalBuilder:
         compile_success: bool | None = None,
         journal_written: bool,
         manifest_written: bool,
+        replayable_payload: bool = False,
         compile_result: dict | None = None,
         next_manifest: dict | None = None,
         apply_result: dict | None = None,
@@ -290,6 +292,7 @@ class RunJournalBuilder:
             "compile_success": compile_success,
             "journal_written": journal_written,
             "manifest_written": manifest_written,
+            "replayable_payload": replayable_payload,
             **failure,
             "config": {
                 "provider": self._provider,
