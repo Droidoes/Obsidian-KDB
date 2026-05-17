@@ -396,6 +396,32 @@ graphdb-kdb rebuild --vault-root <P> [--backfill-baton] # drop + replay (D-S2 wh
 
 `--graph-dir <path>` overrides the Kuzu data directory (default: `$KDB_GRAPH_PATH` or `~/Droidoes/GraphDB-KDB/`).
 
+### 8.7 Graph context loader — retrieval tiers & cold-start widening
+
+`graph_context_loader.py` builds a source-specific `ContextSnapshot` from the graph. It replaces `context_loader.py`'s manifest-based approach (selected via `KDB_CONTEXT_SOURCE=graphdb` in planner). The loader assigns entities to **retrieval tiers** — relevance-source categories, not graph-distance measures:
+
+| Tier | Name | Score | Semantics |
+|------|------|-------|-----------|
+| T1 | Provenance tier | 3 | Entities directly supported by the current source via `(:Source)-[:SUPPORTS]->(:Entity)`. Strongest signal: "this source already owns/contributed to these entities." |
+| T2 | Lexical-match tier | 2 | Active entities matched from source text. Slug-in-text (whole-word); on cold-start, widened to slug-or-title-in-text (#71). Seeds discovered from lexical evidence rather than provenance. |
+| T3 | Neighborhood-expansion tier | 1 | Entities connected to the seed set (T1 ∪ T2) through `[:LINKS_TO]`. 1-hop by default; conditional 2-hop on cold-start when seed count is thin. |
+
+Key distinction: **T1/T2 are seed-selection tiers** (what we search for). **T3 is graph-expansion** (how far we walk from seeds). Only T3 maps to "degree of separation"; T1 and T2 are relevance-source categories, not distances.
+
+Tie-break within the same tier: PageRank descending, then slug ascending.
+
+#### Cold-start detection & widening (D48, Task #71)
+
+A source is cold-start when `len(t1_slugs) == 0` — it has no `SUPPORTS` edges (never compiled before). Without widening, T2 slug-in-text alone is too narrow for natural-language prose (hyphenated slugs rarely appear verbatim).
+
+**Primary fix — title-in-text matching (T2 widening):**
+When cold-start fires, T2 additionally matches entity titles as exact phrases in source text. Guardrail: a title is eligible iff `len(normalized) > 3` AND (has 2+ alphanumeric tokens OR is a single token with length >= 6). Filters short generics ("Risk", "Value", "Moat") while keeping useful concepts ("Margin of Safety", "Legalism", "Confucianism").
+
+**Secondary amplifier — conditional 2-hop T3:**
+When cold-start AND `|widened_T2| < 5` (the `_MIN_SEED_THRESHOLD`), T3 expands from 1-hop to 2-hop. Compensates for genuinely thin vocabulary overlap between source and graph.
+
+**What does NOT change on cold-start:** tier scores (3/2/1), PageRank tie-break, `page_cap`, `ContextSnapshot` shape.
+
 ---
 
 ## 9. Decisions Ledger
