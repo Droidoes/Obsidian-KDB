@@ -50,3 +50,4 @@ kdb_benchmark = ["models.json"]
 testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "graphdb_kdb/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q"
+markers      = ["uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)"]

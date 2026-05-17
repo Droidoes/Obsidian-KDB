@@ -1,4 +1,8 @@
-"""Tests for planner.py graph-context wiring (#70.2)."""
+"""Tests for planner.py graph-context wiring (D49 — GraphDB only).
+
+Marked uses_real_graph_context to opt out of the conftest stub and test
+the real graph_context_loader integration.
+"""
 from __future__ import annotations
 
 import os
@@ -10,14 +14,12 @@ import pytest
 from graphdb_kdb.graphdb import GraphDB
 from kdb_compiler.planner import build_jobs
 
+pytestmark = pytest.mark.uses_real_graph_context
+
 
 @pytest.fixture
 def graph_path_with_source(tmp_path: Path) -> Path:
-    """Seed a temp GraphDB with one source + one entity, close it, return path.
-
-    Closed before returning so build_jobs() can open it via KDB_GRAPH_PATH
-    without conflicting with an already-open handle.
-    """
+    """Seed a temp GraphDB with one source + one entity, close it, return path."""
     gpath = tmp_path / "test-graph"
     with GraphDB(gpath) as g:
         conn = g.conn
@@ -76,12 +78,11 @@ def manifest_minimal():
 
 
 class TestPlannerGraphContext:
-    def test_graphdb_context_source_uses_graph_loader(
+    def test_graphdb_produces_context(
         self, graph_path_with_source, vault_with_source, scan_one_source, manifest_minimal
     ):
-        """KDB_CONTEXT_SOURCE=graphdb routes through graph_context_loader."""
+        """GraphDB with SUPPORTS edge → context includes the supported entity."""
         with patch.dict(os.environ, {
-            "KDB_CONTEXT_SOURCE": "graphdb",
             "KDB_GRAPH_PATH": str(graph_path_with_source),
         }):
             jobs = build_jobs(
@@ -90,46 +91,33 @@ class TestPlannerGraphContext:
                 vault_with_source,
             )
         assert len(jobs) == 1
-        # alpha is supported by this source → must appear
         slugs = [p.slug for p in jobs[0].context_snapshot.pages]
         assert "alpha" in slugs
 
-    def test_manifest_context_source_uses_manifest_loader(
+    def test_manifest_env_var_raises(
         self, vault_with_source, scan_one_source, manifest_minimal
     ):
-        """KDB_CONTEXT_SOURCE=manifest (default) uses context_loader."""
+        """KDB_CONTEXT_SOURCE=manifest is deprecated (D49) → explicit error."""
         with patch.dict(os.environ, {"KDB_CONTEXT_SOURCE": "manifest"}):
-            jobs = build_jobs(
-                scan_one_source,
-                manifest_minimal,
-                vault_with_source,
-            )
-        assert len(jobs) == 1
-        # manifest has no pages → empty context
-        assert jobs[0].context_snapshot.pages == []
+            with pytest.raises(RuntimeError, match="deprecated"):
+                build_jobs(scan_one_source, manifest_minimal, vault_with_source)
 
     def test_graphdb_missing_path_raises(
         self, vault_with_source, scan_one_source, manifest_minimal, tmp_path
     ):
-        """If graphdb requested but path doesn't exist → RuntimeError."""
+        """If graph path doesn't exist → RuntimeError."""
         bogus_path = tmp_path / "nonexistent" / "graph"
-        with patch.dict(os.environ, {
-            "KDB_CONTEXT_SOURCE": "graphdb",
-            "KDB_GRAPH_PATH": str(bogus_path),
-        }):
+        with patch.dict(os.environ, {"KDB_GRAPH_PATH": str(bogus_path)}):
             with pytest.raises(RuntimeError, match="GraphDB unavailable"):
                 build_jobs(scan_one_source, manifest_minimal, vault_with_source)
 
     def test_graphdb_empty_graph_raises(
         self, vault_with_source, scan_one_source, manifest_minimal, tmp_path
     ):
-        """If graphdb requested but graph has 0 entities → RuntimeError."""
+        """If graph has 0 entities → RuntimeError."""
         empty_graph_path = tmp_path / "empty-graph"
         with GraphDB(empty_graph_path) as g:
-            pass  # creates schema but no data — closes on exit
-        with patch.dict(os.environ, {
-            "KDB_CONTEXT_SOURCE": "graphdb",
-            "KDB_GRAPH_PATH": str(empty_graph_path),
-        }):
-            with pytest.raises(RuntimeError, match="GraphDB unavailable"):
+            pass
+        with patch.dict(os.environ, {"KDB_GRAPH_PATH": str(empty_graph_path)}):
+            with pytest.raises(RuntimeError, match="0 entities"):
                 build_jobs(scan_one_source, manifest_minimal, vault_with_source)

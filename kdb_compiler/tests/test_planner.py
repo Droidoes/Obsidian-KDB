@@ -153,42 +153,21 @@ def test_build_jobs_missing_source_file_still_emits_job(tmp_path: Path) -> None:
 # ---------- build_jobs: context snapshot wired correctly ----------
 
 def test_build_jobs_populates_context_snapshot(tmp_path: Path) -> None:
-    """Manifest has a page citing SOURCE_A; the job's context_snapshot
-    should include it."""
+    """Job's context_snapshot is a ContextSnapshot (content tested in
+    test_planner_graph_context and test_graph_context_loader)."""
     _write_vault_source(tmp_path, SOURCE_A, "body")
-    manifest = {
-        "pages": {
-            "KDB/wiki/summaries/alpha.md": {
-                "slug": "alpha",
-                "title": "Alpha",
-                "page_type": "summary",
-                "outgoing_links": [],
-                "source_refs": [{"source_id": SOURCE_A, "hash": "x", "role": "primary"}],
-            },
-        }
-    }
     scan = _scan(to_compile=[SOURCE_A], files=[_file(SOURCE_A)])
-    jobs = planner.build_jobs(scan, manifest, tmp_path)
-    assert [p.slug for p in jobs[0].context_snapshot.pages] == ["alpha"]
+    jobs = planner.build_jobs(scan, {}, tmp_path)
+    assert jobs[0].context_snapshot.source_id == SOURCE_A
 
 
 def test_build_jobs_context_cap_forwarded(tmp_path: Path) -> None:
+    """page_cap parameter is accepted without error (graph-context cap
+    tested in test_graph_context_loader::test_page_cap_truncates)."""
     _write_vault_source(tmp_path, SOURCE_A, "body")
-    pages = {}
-    for i in range(10):
-        slug = f"c{i:02d}"
-        pages[f"KDB/wiki/concepts/{slug}.md"] = {
-            "slug": slug,
-            "title": slug,
-            "page_type": "concept",
-            "outgoing_links": [],
-            "source_refs": [{"source_id": SOURCE_A, "hash": "x", "role": "primary"}],
-        }
-    manifest = {"pages": pages}
     scan = _scan(to_compile=[SOURCE_A], files=[_file(SOURCE_A)])
-
-    jobs = planner.build_jobs(scan, manifest, tmp_path, context_page_cap=3)
-    assert len(jobs[0].context_snapshot.pages) == 3
+    jobs = planner.build_jobs(scan, {}, tmp_path, context_page_cap=3)
+    assert jobs[0].context_snapshot.source_id == SOURCE_A
 
 
 # ---------- load_manifest ----------
@@ -229,25 +208,19 @@ def test_plan_uses_default_state_root(tmp_path: Path) -> None:
 
 
 def test_plan_respects_explicit_state_root(tmp_path: Path) -> None:
+    """plan() with explicit state_root loads manifest from that path
+    (for downstream stages — not for context generation per D49)."""
     vault = tmp_path / "vault"
     vault.mkdir()
     _write_vault_source(vault, SOURCE_A, "body")
     explicit_state = tmp_path / "elsewhere"
     explicit_state.mkdir()
-    manifest = {
-        "pages": {
-            "KDB/wiki/summaries/alpha.md": {
-                "slug": "alpha", "title": "Alpha", "page_type": "summary",
-                "outgoing_links": [],
-                "source_refs": [{"source_id": SOURCE_A, "hash": "x", "role": "primary"}],
-            },
-        }
-    }
-    (explicit_state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (explicit_state / "manifest.json").write_text("{}", encoding="utf-8")
 
     scan = _scan(to_compile=[SOURCE_A], files=[_file(SOURCE_A)])
     jobs = planner.plan(vault, scan=scan, state_root=explicit_state)
-    assert [p.slug for p in jobs[0].context_snapshot.pages] == ["alpha"]
+    assert len(jobs) == 1
+    assert jobs[0].source_id == SOURCE_A
 
 
 # ---------- CLI ----------

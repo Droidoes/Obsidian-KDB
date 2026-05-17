@@ -15,11 +15,15 @@ One CompileJob per eligible source. The planner owns:
      vault-relative POSIX; jobs carry the absolute path for the compiler.
 
   3. **Context-snapshot pre-build**. We read the source file (UTF-8) so
-     context_loader can run its slug-in-text match. A read failure is
-     *not* fatal at plan time — we emit an empty source_text, let the job
-     reach compile_one, and the compiler captures the read failure in its
-     resp-stats record (blueprint §9). Keeps the "one resp-stats record per
-     eligible source" invariant even for unreadable files.
+     graph_context_loader can run its tier-ranked matching. A read failure
+     is *not* fatal at plan time — we emit an empty source_text, let the
+     job reach compile_one, and the compiler captures the read failure in
+     its resp-stats record (blueprint §9). Keeps the "one resp-stats record
+     per eligible source" invariant even for unreadable files.
+
+Context authority: GraphDB only (D49). manifest.json is not used for
+context generation. If GraphDB is missing/empty/corrupt, planning fails
+loud — operator runs `graphdb-kdb rebuild`.
 
 CLI `kdb-plan` prints the job list for inspection. Not part of the
 normal run path (compile drives planner internally via `plan()`).
@@ -33,7 +37,6 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from kdb_compiler import context_loader
 from kdb_compiler import graph_context_loader
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
@@ -98,52 +101,26 @@ def build_jobs(
 ) -> list[CompileJob]:
     """Pure-ish (reads source files). One job per eligible source_id.
 
-    Context source is selected by KDB_CONTEXT_SOURCE env var:
-      - 'manifest' (default): manifest-backed context_loader
-      - 'graphdb': GraphDB-backed graph_context_loader (fail-loud if unavailable)
+    Context authority: GraphDB only (D49). If the deprecated env var
+    KDB_CONTEXT_SOURCE=manifest is set, raises explicitly.
     """
     vault_root = Path(vault_root)
-    context_source = os.environ.get("KDB_CONTEXT_SOURCE", "manifest")
-
-    if context_source == "graphdb":
-        return _build_jobs_graphdb(scan, vault_root, context_page_cap)
-    return _build_jobs_manifest(scan, manifest, vault_root, context_page_cap)
-
-
-def _build_jobs_manifest(
-    scan: dict, manifest: dict, vault_root: Path, page_cap: int
-) -> list[CompileJob]:
-    jobs: list[CompileJob] = []
-    for source_id in eligible_source_ids(scan):
-        abs_path = vault_root / source_id
-        source_text = _read_source_text(abs_path)
-        snapshot = context_loader.build_context_snapshot(
-            manifest,
-            source_id=source_id,
-            source_text=source_text,
-            page_cap=page_cap,
+    context_source = os.environ.get("KDB_CONTEXT_SOURCE", "")
+    if context_source == "manifest":
+        raise RuntimeError(
+            "KDB_CONTEXT_SOURCE=manifest is deprecated (D49). "
+            "GraphDB is the only supported context authority. "
+            "Unset the variable or run `graphdb-kdb rebuild`."
         )
-        jobs.append(CompileJob(
-            source_id=source_id,
-            abs_path=str(abs_path),
-            context_snapshot=snapshot,
-        ))
-    return jobs
 
-
-def _build_jobs_graphdb(
-    scan: dict, vault_root: Path, page_cap: int
-) -> list[CompileJob]:
     with _graph_conn_or_raise() as conn:
         jobs: list[CompileJob] = []
         for source_id in eligible_source_ids(scan):
             abs_path = vault_root / source_id
             source_text = _read_source_text(abs_path)
-            snapshot = graph_context_loader.build_context_snapshot(
-                conn,
-                source_id=source_id,
-                source_text=source_text,
-                page_cap=page_cap,
+            snapshot = _build_context(
+                conn, source_id=source_id,
+                source_text=source_text, page_cap=context_page_cap,
             )
             jobs.append(CompileJob(
                 source_id=source_id,
@@ -151,6 +128,15 @@ def _build_jobs_graphdb(
                 context_snapshot=snapshot,
             ))
         return jobs
+
+
+def _build_context(
+    conn, *, source_id: str, source_text: str, page_cap: int = 50
+) -> ContextSnapshot:
+    """Thin delegation to graph_context_loader (seam for test stubbing)."""
+    return graph_context_loader.build_context_snapshot(
+        conn, source_id=source_id, source_text=source_text, page_cap=page_cap,
+    )
 
 
 @contextmanager
@@ -168,14 +154,14 @@ def _graph_conn_or_raise():
     if not graph_path.exists():
         raise RuntimeError(
             f"GraphDB unavailable at {graph_path}. "
-            "Run `graphdb-kdb rebuild` or set KDB_CONTEXT_SOURCE=manifest."
+            "Run `graphdb-kdb rebuild` to regenerate from run journals."
         )
 
     with GraphDB(graph_path, read_only=True) as gdb:
         if gdb.stats()["entities"] == 0:
             raise RuntimeError(
-                f"GraphDB unavailable at {graph_path} (0 entities). "
-                "Run `graphdb-kdb rebuild` or set KDB_CONTEXT_SOURCE=manifest."
+                f"GraphDB at {graph_path} has 0 entities. "
+                "Run `graphdb-kdb rebuild` to regenerate from run journals."
             )
         yield gdb.conn
 
@@ -187,8 +173,12 @@ def plan(
     state_root: Path | None = None,
     context_page_cap: int = 50,
 ) -> list[CompileJob]:
-    """I/O shell. Loads manifest (default <vault>/KDB/state/manifest.json),
-    delegates to build_jobs."""
+    """I/O shell. Loads manifest for state purposes, delegates to build_jobs.
+
+    Context is always built from GraphDB (D49). Manifest is loaded for
+    downstream pipeline stages (patch_applier, manifest_update) — not for
+    context generation.
+    """
     vault_root = Path(vault_root)
     if state_root is None:
         state_root = vault_root / "KDB" / "state"
