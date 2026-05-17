@@ -37,6 +37,31 @@ def _stub_sync(monkeypatch):
     )
 
 
+def _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone"):
+    """Create an in-memory GraphDB with one orphan_candidate entity."""
+    from graphdb_kdb.graphdb import GraphDB
+    from graphdb_kdb.tests.conftest import (
+        make_compile_result, make_compiled_source, make_page,
+        make_scan, make_scan_entry,
+    )
+    graph_dir = tmp_path / "GraphDB-KDB"
+    with GraphDB(graph_dir) as gdb:
+        pages = [make_page(slug)]
+        cr1 = make_compile_result([
+            make_compiled_source("KDB/raw/a.md", pages),
+        ], run_id="run-1")
+        scan1 = make_scan([make_scan_entry("KDB/raw/a.md")])
+        gdb.apply_compile_result(cr1, scan1, "run-1")
+        # Delete source to orphan the entity
+        cr2 = make_compile_result([], run_id="run-2")
+        scan2 = make_scan(
+            [],
+            to_reconcile=[{"type": "DELETED", "path": "KDB/raw/a.md"}],
+        )
+        gdb.apply_compile_result(cr2, scan2, "run-2")
+    monkeypatch.setattr("kdb_compiler.kdb_clean.default_graph_path", lambda: graph_dir)
+
+
 def test_reap_removes_orphan_from_pages_and_orphans():
     pid = "KDB/wiki/concepts/zheng-he-voyages.md"
     manifest = _manifest(
@@ -155,7 +180,8 @@ def test_reap_retracted_slugs_excludes_slug_surviving_under_another_type():
     assert report["retracted_slugs"] == ["solo"]
 
 
-def test_main_orphans_dry_run_reads_manifest_without_mutating(tmp_path):
+def test_main_orphans_dry_run_reads_graph_without_mutating(tmp_path, monkeypatch):
+    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
     pid = "KDB/wiki/concepts/gone.md"
@@ -199,6 +225,7 @@ def test_build_cleanup_artifacts_shapes_journal_and_retraction():
 
 def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monkeypatch):
     _stub_sync(monkeypatch)
+    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
     pid = "KDB/wiki/concepts/gone.md"
@@ -232,6 +259,7 @@ def test_main_orphans_apply_writes_manifest_before_journal(tmp_path, monkeypatch
     # crash-consistency invariant (blueprint §6.1): the replay-state journal
     # must never be committed before the live-state manifest.
     _stub_sync(monkeypatch)
+    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
     from kdb_compiler import atomic_io
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
