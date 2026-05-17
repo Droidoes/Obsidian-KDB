@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import manifest_update, patch_applier
+from kdb_compiler import patch_applier
 from kdb_compiler.patch_applier import (
     ApplyResult,
     PagePatch,
@@ -179,14 +179,12 @@ def test_emit_frontmatter_null_and_bool_scalars() -> None:
 
 
 # ===========================================================================
-# build_page_patches (tests 8–13)
+# build_page_patches (tests 8–13) — updated for D50 Phase C (scan-based)
 # ===========================================================================
 
 def test_build_page_patches_new_page_body_and_fm() -> None:
     ctx = _ctx()
-    page = _page_record("paper", "summary", title="A Paper")
-    m = _manifest(pages={"KDB/wiki/summaries/paper.md": page},
-                  sources={"KDB/raw/x.md": _source_record("KDB/raw/x.md")})
+    scan = _scan(files=[_scan_file("KDB/raw/x.md", h=H1, mtime=1700000000.0)])
     cr = {"compiled_sources": [{
         "source_id": "KDB/raw/x.md", "summary_slug": "paper",
         "pages": [{"slug": "paper", "page_type": "summary", "title": "A Paper",
@@ -195,7 +193,7 @@ def test_build_page_patches_new_page_body_and_fm() -> None:
                    "outgoing_links": [], "confidence": "medium"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
-    patches = build_page_patches(cr, m, ctx)
+    patches = build_page_patches(cr, scan, ctx)
     assert len(patches) == 1
     p = patches[0]
     assert p.page_key == "KDB/wiki/summaries/paper.md"
@@ -208,14 +206,10 @@ def test_build_page_patches_new_page_body_and_fm() -> None:
 
 def test_build_page_patches_same_slug_from_two_sources_emits_two_patches() -> None:
     ctx = _ctx()
-    # Shared concept page; primary is one source, second compile emits same concept.
-    page = _page_record("idea", "concept", source_refs=[
-        {"source_id": "KDB/raw/a.md", "hash": H1, "role": "primary"},
-        {"source_id": "KDB/raw/b.md", "hash": H2, "role": "supporting"},
+    scan = _scan(files=[
+        _scan_file("KDB/raw/a.md", h=H1, mtime=1700000000.0),
+        _scan_file("KDB/raw/b.md", h=H2, mtime=1700000001.0),
     ])
-    m = _manifest(pages={"KDB/wiki/concepts/idea.md": page},
-                  sources={"KDB/raw/a.md": _source_record("KDB/raw/a.md"),
-                           "KDB/raw/b.md": _source_record("KDB/raw/b.md", h=H2)})
     cr = {"compiled_sources": [
         {"source_id": "KDB/raw/a.md", "summary_slug": "a",
          "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
@@ -230,22 +224,15 @@ def test_build_page_patches_same_slug_from_two_sources_emits_two_patches() -> No
                     "confidence": "medium"}],
          "concept_slugs": [], "article_slugs": []},
     ]}
-    patches = build_page_patches(cr, m, ctx)
+    patches = build_page_patches(cr, scan, ctx)
     assert len(patches) == 2
     assert {p.body.strip() for p in patches} == {"b1", "b2"}
 
 
-def test_build_page_patches_multi_source_refs_primary_first() -> None:
+def test_build_page_patches_summary_has_primary_role() -> None:
+    """Source's summary page gets role=primary; only that source's ref appears."""
     ctx = _ctx()
-    refs = [
-        {"source_id": "KDB/raw/main.md", "hash": H1, "role": "primary"},
-        {"source_id": "KDB/raw/s1.md", "hash": H2, "role": "supporting"},
-        {"source_id": "KDB/raw/s2.md", "hash": H3, "role": "supporting"},
-    ]
-    page = _page_record("paper", "summary", source_refs=refs)
-    m = _manifest(pages={"KDB/wiki/summaries/paper.md": page},
-                  sources={r["source_id"]: _source_record(r["source_id"], h=r["hash"])
-                           for r in refs})
+    scan = _scan(files=[_scan_file("KDB/raw/main.md", h=H1, mtime=1700000000.0)])
     cr = {"compiled_sources": [{
         "source_id": "KDB/raw/main.md", "summary_slug": "paper",
         "pages": [{"slug": "paper", "page_type": "summary", "title": "P",
@@ -254,18 +241,16 @@ def test_build_page_patches_multi_source_refs_primary_first() -> None:
                    "confidence": "medium"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
-    patches = build_page_patches(cr, m, ctx)
+    patches = build_page_patches(cr, scan, ctx)
     fm_refs = patches[0].frontmatter["source_refs"]
+    assert len(fm_refs) == 1
     assert fm_refs[0]["role"] == "primary"
-    assert [r["role"] for r in fm_refs[1:]] == ["supporting", "supporting"]
     assert patches[0].frontmatter["raw_path"] == "KDB/raw/main.md"
 
 
 def test_build_page_patches_orphan_status_propagates() -> None:
     ctx = _ctx()
-    page = _page_record("p", "summary", status="orphan_candidate")
-    m = _manifest(pages={"KDB/wiki/summaries/p.md": page},
-                  sources={"KDB/raw/x.md": _source_record("KDB/raw/x.md")})
+    scan = _scan(files=[_scan_file("KDB/raw/x.md")])
     cr = {"compiled_sources": [{
         "source_id": "KDB/raw/x.md", "summary_slug": "p",
         "pages": [{"slug": "p", "page_type": "summary", "title": "P",
@@ -274,13 +259,14 @@ def test_build_page_patches_orphan_status_propagates() -> None:
                    "confidence": "low"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
-    patches = build_page_patches(cr, m, ctx)
+    patches = build_page_patches(cr, scan, ctx)
     assert patches[0].frontmatter["status"] == "orphan_candidate"
 
 
-def test_build_page_patches_missing_page_record_raises() -> None:
+def test_build_page_patches_source_missing_raises() -> None:
+    """Source in compile_result but not in scan → error."""
     ctx = _ctx()
-    m = _manifest(pages={}, sources={"KDB/raw/x.md": _source_record("KDB/raw/x.md")})
+    scan = _scan(files=[])
     cr = {"compiled_sources": [{
         "source_id": "KDB/raw/x.md", "summary_slug": "ghost",
         "pages": [{"slug": "ghost", "page_type": "summary", "title": "?",
@@ -289,49 +275,122 @@ def test_build_page_patches_missing_page_record_raises() -> None:
                    "confidence": "medium"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
-    with pytest.raises(PagePatchError, match="no PageRecord"):
-        build_page_patches(cr, m, ctx)
+    with pytest.raises(PagePatchError, match="missing from scan"):
+        build_page_patches(cr, scan, ctx)
 
 
 def test_build_page_patches_concept_with_supporting_only_uses_first_ref() -> None:
-    # Concept pages legitimately have no role=primary ref; first-by-source_id wins.
+    """Concept pages have no role=primary ref; alphabetically first source wins."""
     ctx = _ctx()
-    refs = [
-        {"source_id": "KDB/raw/zeta.md", "hash": H2, "role": "supporting"},
-        {"source_id": "KDB/raw/alpha.md", "hash": H1, "role": "supporting"},
-    ]
-    page = _page_record("idea", "concept", source_refs=refs)
-    m = _manifest(pages={"KDB/wiki/concepts/idea.md": page},
-                  sources={r["source_id"]: _source_record(r["source_id"], h=r["hash"])
-                           for r in refs})
-    cr = {"compiled_sources": [{
-        "source_id": "KDB/raw/alpha.md", "summary_slug": "alpha",
-        "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
-                   "body": "b", "status": "active",
-                   "supports_page_existence": [], "outgoing_links": [],
-                   "confidence": "medium"}],
-        "concept_slugs": [], "article_slugs": [],
-    }]}
-    patches = build_page_patches(cr, m, ctx)
+    scan = _scan(files=[
+        _scan_file("KDB/raw/zeta.md", h=H2, mtime=1700000000.0),
+        _scan_file("KDB/raw/alpha.md", h=H1, mtime=1700000001.0),
+    ])
+    cr = {"compiled_sources": [
+        {"source_id": "KDB/raw/zeta.md", "summary_slug": "zeta_summary",
+         "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
+                    "body": "b", "status": "active",
+                    "supports_page_existence": [], "outgoing_links": [],
+                    "confidence": "medium"}],
+         "concept_slugs": ["idea"], "article_slugs": []},
+        {"source_id": "KDB/raw/alpha.md", "summary_slug": "alpha_summary",
+         "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
+                    "body": "b", "status": "active",
+                    "supports_page_existence": [], "outgoing_links": [],
+                    "confidence": "medium"}],
+         "concept_slugs": ["idea"], "article_slugs": []},
+    ]}
+    patches = build_page_patches(cr, scan, ctx)
     # Alphabetically first source_id wins as the singular raw_* primary.
     assert patches[0].frontmatter["raw_path"] == "KDB/raw/alpha.md"
     assert patches[0].frontmatter["raw_hash"] == H1
 
 
-def test_build_page_patches_empty_source_refs_raises() -> None:
+# ===========================================================================
+# build_page_patches — Phase C (D50): derive from compile_result + scan
+# ===========================================================================
+
+def _scan(files: list[dict] | None = None) -> dict:
+    """Minimal last_scan dict with files[]."""
+    return {
+        "schema_version": "1.0", "run_id": "2026-04-19T14-00-00Z",
+        "scanned_at": "2026-04-19T14:00:00Z",
+        "files": files or [],
+        "to_compile": [], "to_reconcile": [], "to_skip": [],
+    }
+
+
+def _scan_file(path: str, *, h: str = H1, mtime: float = 1700000000.0) -> dict:
+    return {
+        "path": path, "action": "NEW",
+        "current_hash": h, "current_mtime": mtime,
+        "size_bytes": 100, "file_type": "markdown", "is_binary": False,
+    }
+
+
+def test_build_page_patches_derives_fm_from_compile_and_scan() -> None:
+    """Phase C: frontmatter derived from compile_result + scan, no manifest.pages."""
     ctx = _ctx()
-    page = _page_record("p", "summary", source_refs=[])
-    m = _manifest(pages={"KDB/wiki/summaries/p.md": page}, sources={})
+    scan = _scan(files=[_scan_file("KDB/raw/x.md", h=H1, mtime=1700000000.0)])
     cr = {"compiled_sources": [{
-        "source_id": "KDB/raw/x.md", "summary_slug": "p",
-        "pages": [{"slug": "p", "page_type": "summary", "title": "P",
-                   "body": "b", "status": "active",
-                   "supports_page_existence": [], "outgoing_links": [],
-                   "confidence": "medium"}],
+        "source_id": "KDB/raw/x.md", "summary_slug": "paper",
+        "pages": [{"slug": "paper", "page_type": "summary", "title": "A Paper",
+                   "body": "hello", "status": "active",
+                   "supports_page_existence": ["KDB/raw/x.md"],
+                   "outgoing_links": [], "confidence": "medium"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
-    with pytest.raises(PagePatchError, match="no source_refs"):
-        build_page_patches(cr, m, ctx)
+    patches = build_page_patches(cr, scan, ctx)
+    assert len(patches) == 1
+    p = patches[0]
+    assert p.page_key == "KDB/wiki/summaries/paper.md"
+    assert p.frontmatter["title"] == "A Paper"
+    assert p.frontmatter["slug"] == "paper"
+    assert p.frontmatter["page_type"] == "summary"
+    assert p.frontmatter["status"] == "active"
+    assert p.frontmatter["raw_path"] == "KDB/raw/x.md"
+    assert p.frontmatter["raw_hash"] == H1
+    assert p.frontmatter["raw_mtime"] == 1700000000.0
+    assert p.frontmatter["source_refs"] == [
+        {"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"},
+    ]
+
+
+def test_build_page_patches_concept_from_two_sources_accumulates_refs() -> None:
+    """Phase C: concept emitted by two sources in same run → both refs in frontmatter."""
+    ctx = _ctx()
+    scan = _scan(files=[
+        _scan_file("KDB/raw/a.md", h=H1, mtime=1700000000.0),
+        _scan_file("KDB/raw/b.md", h=H2, mtime=1700000001.0),
+    ])
+    cr = {"compiled_sources": [
+        {"source_id": "KDB/raw/a.md", "summary_slug": "a_summary",
+         "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
+                    "body": "b1", "status": "active",
+                    "supports_page_existence": [], "outgoing_links": [],
+                    "confidence": "medium"}],
+         "concept_slugs": ["idea"], "article_slugs": []},
+        {"source_id": "KDB/raw/b.md", "summary_slug": "b_summary",
+         "pages": [{"slug": "idea", "page_type": "concept", "title": "Idea",
+                    "body": "b2", "status": "active",
+                    "supports_page_existence": [], "outgoing_links": [],
+                    "confidence": "medium"}],
+         "concept_slugs": ["idea"], "article_slugs": []},
+    ]}
+    patches = build_page_patches(cr, scan, ctx)
+    assert len(patches) == 2
+    # Both patches for the same concept page carry both source_refs
+    for p in patches:
+        refs = p.frontmatter["source_refs"]
+        assert len(refs) == 2
+        source_ids = {r["source_id"] for r in refs}
+        assert source_ids == {"KDB/raw/a.md", "KDB/raw/b.md"}
+        # Both are "supporting" (neither source's summary_slug == "idea")
+        assert all(r["role"] == "supporting" for r in refs)
+    # Primary ref (for raw_path/raw_hash) falls back to alphabetically first
+    assert patches[0].frontmatter["raw_path"] == "KDB/raw/a.md"
+    assert patches[0].frontmatter["raw_hash"] == H1
+
 
 
 # ===========================================================================
@@ -360,6 +419,10 @@ def _basic_cr() -> dict:
     }
 
 
+def _basic_scan() -> dict:
+    return _scan(files=[_scan_file("KDB/raw/x.md", h=H1, mtime=1700000000.0)])
+
+
 def _basic_manifest() -> dict:
     return _manifest(
         pages={"KDB/wiki/summaries/paper.md": _page_record("paper", "summary", title="Paper")},
@@ -373,6 +436,7 @@ def test_apply_writes_page_only(tmp_path: Path) -> None:
     r = apply(
         vault,
         compile_result=_basic_cr(),
+        last_scan=_basic_scan(),
         next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
@@ -394,6 +458,7 @@ def test_apply_dry_run_writes_nothing(tmp_path: Path) -> None:
     r = apply(
         vault,
         compile_result=_basic_cr(),
+        last_scan=_basic_scan(),
         next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
@@ -411,6 +476,7 @@ def test_apply_normalizes_trailing_newline(tmp_path: Path) -> None:
     apply(
         vault,
         compile_result=cr,
+        last_scan=_basic_scan(),
         next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
@@ -532,12 +598,14 @@ def _unquote(v: str) -> object:
 
 
 def test_render_page_roundtrip_frontmatter() -> None:
-    page = _page_record("paper", "summary", title="A: Paper")  # colon forces quoting
-    m = _manifest(pages={"KDB/wiki/summaries/paper.md": page},
-                  sources={"KDB/raw/x.md": _source_record("KDB/raw/x.md",
-                                                           mtime=1700000000.5)})
+    from kdb_compiler.patch_applier import _scan_source_meta
+    intent = {"slug": "paper", "page_type": "summary", "title": "A: Paper",
+              "status": "active"}
+    source_refs = [{"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"}]
+    scan = _scan(files=[_scan_file("KDB/raw/x.md", h=H1, mtime=1700000000.5)])
+    scan_meta = _scan_source_meta(scan)
     ctx = _ctx()
-    page_text = render_page(page, "Body.\n", m, ctx)
+    page_text = render_page(intent, "Body.\n", source_refs, scan_meta, ctx)
     fm = _parse_mini_frontmatter(page_text)
     assert fm["title"] == "A: Paper"
     assert fm["slug"] == "paper"

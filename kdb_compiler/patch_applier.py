@@ -1,11 +1,11 @@
-"""patch_applier — writes wiki pages from compile_result + next_manifest.
+"""patch_applier — writes wiki pages from compile_result + last_scan.
 
-Architecture (Selection A + iii + a, M1.6 blueprint):
-    * Pure core renders PagePatch objects.
+Architecture (Selection A + iii + a, M1.6 blueprint; D50 Phase C):
+    * Pure core renders PagePatch objects from compile_result + scan metadata.
     * I/O shell (`apply`) does all filesystem writes via atomic_io.
-    * CLI runs pure manifest_update.build_manifest_update() to get next_manifest
-      in memory, then applies — but does NOT write manifest.json (that is
-      manifest_update's CLI or the M1.7 orchestrator's last step).
+    * Frontmatter derived directly from compile intents + scan (no manifest.pages
+      dependency). `next_manifest` is only passed for orphan counting (Phase E
+      removes).
 
 Contracts:
     * D8: LLM emits slug-keyed intents; Python owns frontmatter + paths.
@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import sys
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -131,49 +132,57 @@ def emit_frontmatter(fm: dict) -> str:
 # Pure core
 # -------------------------------------------------------------------------
 
-def _select_primary_ref(page_record: dict) -> dict:
+def _select_primary_ref(source_refs: list[dict]) -> dict:
     """Pick the ref used to populate singular `raw_*` frontmatter fields.
 
-    Summaries have a role=primary ref (set by manifest_update). Concepts and
-    articles are cross-source and have none — fall back to the first ref
-    after sorting by source_id for determinism.
+    Summaries have a role=primary ref. Concepts and articles are cross-source
+    and have none — fall back to the first ref after sorting by source_id for
+    determinism.
     """
-    refs = page_record.get("source_refs", [])
-    if not refs:
-        raise PagePatchError(
-            f"Page {page_record.get('page_id', '<?>')} has no source_refs"
-        )
-    for ref in refs:
+    if not source_refs:
+        raise PagePatchError("Page has no source_refs")
+    for ref in source_refs:
         if ref.get("role") == "primary":
             return ref
-    return sorted(refs, key=lambda r: r["source_id"])[0]
+    return sorted(source_refs, key=lambda r: r["source_id"])[0]
 
 
-def _source_mtime(next_manifest: dict, source_id: str) -> float:
-    src = next_manifest.get("sources", {}).get(source_id)
-    if not src:
-        raise PagePatchError(f"Primary source {source_id!r} missing from manifest.sources")
-    mtime = src.get("mtime")
+def _scan_source_meta(last_scan: dict) -> dict[str, dict]:
+    """Build {source_id: file_entry} from scan files[]."""
+    return {f["path"]: f for f in last_scan.get("files", [])}
+
+
+def _source_mtime_from_scan(scan_meta: dict[str, dict], source_id: str) -> float:
+    entry = scan_meta.get(source_id)
+    if not entry:
+        raise PagePatchError(f"Primary source {source_id!r} missing from scan")
+    mtime = entry.get("current_mtime")
     if not isinstance(mtime, (int, float)):
         raise PagePatchError(f"Source {source_id!r} has non-numeric mtime: {mtime!r}")
     return float(mtime)
 
 
-def _fm_for_page(page_record: dict, next_manifest: dict, run_ctx: RunContext) -> dict:
-    primary = _select_primary_ref(page_record)
+def _fm_for_page(
+    intent: dict,
+    source_refs: list[dict],
+    scan_meta: dict[str, dict],
+    run_ctx: RunContext,
+) -> dict:
+    """Build frontmatter from compile intent + scan metadata (D50 Phase C)."""
+    primary = _select_primary_ref(source_refs)
     raw_path = primary["source_id"]
     return {
-        "title": page_record["title"],
-        "slug": page_record["slug"],
-        "page_type": page_record["page_type"],
-        "status": page_record["status"],
+        "title": intent["title"],
+        "slug": intent["slug"],
+        "page_type": intent["page_type"],
+        "status": intent.get("status", "active"),
         "raw_path": raw_path,
         "raw_hash": primary["hash"],
-        "raw_mtime": _source_mtime(next_manifest, raw_path),
+        "raw_mtime": _source_mtime_from_scan(scan_meta, raw_path),
         "compiled_at": run_ctx.started_at,
         "compiler_version": run_ctx.compiler_version,
         "schema_version_used": run_ctx.schema_version,
-        "source_refs": list(page_record["source_refs"]),
+        "source_refs": list(source_refs),
     }
 
 
@@ -184,27 +193,50 @@ def _normalize_body(body: str) -> str:
     return stripped + "\n"
 
 
-def render_page(page_record: dict, body: str, next_manifest: dict, run_ctx: RunContext) -> str:
-    fm = _fm_for_page(page_record, next_manifest, run_ctx)
+def render_page(intent: dict, body: str, source_refs: list[dict],
+                scan_meta: dict[str, dict], run_ctx: RunContext) -> str:
+    """Render a full page (frontmatter + body) from compile intent + scan."""
+    fm = _fm_for_page(intent, source_refs, scan_meta, run_ctx)
     return emit_frontmatter(fm) + _normalize_body(body)
 
 
 def build_page_patches(
-    compile_result: dict, next_manifest: dict, run_ctx: RunContext
+    compile_result: dict, last_scan: dict, run_ctx: RunContext
 ) -> list[PagePatch]:
-    pages_by_key = next_manifest.get("pages", {})
+    """Build patches from compile_result + scan (D50 Phase C).
+
+    Derives all frontmatter from compile_result intents and scan metadata.
+    No manifest.pages dependency.
+    """
+    scan_meta = _scan_source_meta(last_scan)
+
+    # First pass: accumulate source_refs per page_key across all compiled_sources.
+    page_refs: dict[str, list[dict]] = defaultdict(list)
+    for cs in compile_result.get("compiled_sources", []):
+        source_id = cs["source_id"]
+        source_hash = scan_meta.get(source_id, {}).get("current_hash")
+        if source_id not in scan_meta:
+            raise PagePatchError(
+                f"Source {source_id!r} missing from scan"
+            )
+        for intent in cs.get("pages", []):
+            slug = intent["slug"]
+            ptype = intent["page_type"]
+            page_key = paths.slug_to_relpath(slug, ptype)
+            role = "primary" if slug == cs["summary_slug"] else "supporting"
+            page_refs[page_key].append({
+                "source_id": source_id, "hash": source_hash, "role": role,
+            })
+
+    # Second pass: build patches with accumulated refs.
     patches: list[PagePatch] = []
     for cs in compile_result.get("compiled_sources", []):
         for intent in cs.get("pages", []):
             slug = intent["slug"]
             ptype = intent["page_type"]
             page_key = paths.slug_to_relpath(slug, ptype)
-            page_record = pages_by_key.get(page_key)
-            if page_record is None:
-                raise PagePatchError(
-                    f"Compiled intent {slug!r} has no PageRecord at {page_key!r}"
-                )
-            fm = _fm_for_page(page_record, next_manifest, run_ctx)
+            source_refs = page_refs[page_key]
+            fm = _fm_for_page(intent, source_refs, scan_meta, run_ctx)
             body = _normalize_body(intent["body"])
             abs_path = run_ctx.vault_root / page_key
             patches.append(PagePatch(page_key=page_key, abs_path=abs_path,
@@ -241,17 +273,17 @@ def apply(
     vault_root: Path,
     *,
     compile_result: dict,
-    next_manifest: dict,
+    last_scan: dict,
+    next_manifest: dict | None = None,
     run_ctx: RunContext,
     write: bool = True,
 ) -> ApplyResult:
-    """Render pages from `compile_result` against `next_manifest`.
+    """Render pages from `compile_result` + `last_scan` (D50 Phase C).
 
-    `compile_result` is passed in explicitly rather than re-read from disk
-    so dry-runs (where compile_result.json is NOT written) don't silently
-    fall back to a stale on-disk file from a previous run.
+    Frontmatter is derived from compile_result intents + scan metadata.
+    `next_manifest` is only used for orphan counting (Phase E removes).
     """
-    patches = build_page_patches(compile_result, next_manifest, run_ctx)
+    patches = build_page_patches(compile_result, last_scan, run_ctx)
 
     per_type = _count_page_types(patches)
     unique_page_keys = sorted({p.page_key for p in patches})
@@ -260,7 +292,7 @@ def apply(
         "summaries": per_type["summary"],
         "concepts": per_type["concept"],
         "articles": per_type["article"],
-        "orphan_candidates": _count_orphans(next_manifest),
+        "orphan_candidates": _count_orphans(next_manifest) if next_manifest else 0,
     }
 
     result = ApplyResult(
@@ -340,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     ctx = _make_ctx(scan, vault_root, args.dry_run)
     try:
         next_manifest, _stage = manifest_update.build_manifest_update(prior, scan, cr, ctx)
-        result = apply(vault_root, compile_result=cr,
+        result = apply(vault_root, compile_result=cr, last_scan=scan,
                        next_manifest=next_manifest,
                        run_ctx=ctx, write=not args.dry_run)
     except PagePatchError as e:

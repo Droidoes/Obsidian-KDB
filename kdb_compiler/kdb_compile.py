@@ -435,6 +435,7 @@ def compile(
         apply_result = patch_applier.apply(
             vault_root,
             compile_result=cr,
+            last_scan=scan_dict,
             next_manifest=next_manifest,
             run_ctx=ctx,
             write=not dry_run,
