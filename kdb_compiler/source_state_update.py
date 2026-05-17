@@ -144,7 +144,7 @@ def _write_tombstone_deleted(state: dict, *, path: str, hash_: str | None,
 def apply_scan_reconciliation(state: dict, last_scan: dict, ctx: RunContext) -> dict:
     """Apply NEW/CHANGED/UNCHANGED/MOVED + DELETED to sources{} and tombstones{}.
 
-    Unlike manifest_update's version, this does NOT touch pages or orphans.
+    Applies scan-level state transitions without touching ontology (pages/orphans).
     """
     sources = state["sources"]
 

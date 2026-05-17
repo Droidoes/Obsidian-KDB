@@ -3,7 +3,7 @@
 Per docs/task19-kpi-design.md § Phase 3 § 1 + Task #30 ledger entry:
 
   * Invokes `compile_one` directly (NOT the production kdb-compile pipeline).
-    This is structural isolation — the runner cannot call manifest_update,
+    This is structural isolation — the runner cannot call source_state_update,
     patch_applier, or any vault-write stage because it doesn't import them.
   * Uses an EMPTY ContextSnapshot for every source (Round 4 [3]:
     every benchmark source compiled cold for determinism).

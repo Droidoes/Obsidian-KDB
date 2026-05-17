@@ -1,7 +1,7 @@
 """KDB Compiler — Karpathy-style LLM knowledge-base compiler for Obsidian.
 
 Pipeline:
-    kdb_scan  ->  planner  ->  compiler  ->  validate_compile_result  ->  patch_applier  ->  manifest_update
+    kdb_scan  ->  planner  ->  compiler  ->  validate_compile_result  ->  patch_applier  ->  source_state_update
 
 LLM produces structured JSON patch-ops; Python owns every filesystem write.
 

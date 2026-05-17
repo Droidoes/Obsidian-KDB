@@ -1,7 +1,7 @@
 """compiler — per-source LLM compile orchestration.
 
 Pipeline position:
-    kdb_scan -> planner -> [compiler] -> validate -> patch_applier -> manifest_update
+    kdb_scan -> planner -> [compiler] -> validate -> patch_applier -> source_state_update
 
 Contract (per blueprint §5.7 / §9):
 

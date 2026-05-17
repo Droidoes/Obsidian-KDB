@@ -1,8 +1,8 @@
 """graph_context_loader — GraphDB-backed context snapshot for one compile job.
 
-Parallel to context_loader.py (manifest-backed). Selected by planner.py via
-KDB_CONTEXT_SOURCE=graphdb. Does NOT read env vars itself — planner owns the
-branch. Fails explicitly if graph state is insufficient.
+Selected by planner.py via KDB_CONTEXT_SOURCE=graphdb. Does NOT read env vars
+itself — planner owns the branch. Fails explicitly if graph state is
+insufficient.
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
@@ -287,7 +287,7 @@ def _batch_outgoing_links(
     return out
 
 
-# ---------- Regex helper (duplicated from context_loader — sunset-bound) ----------
+# ---------- Regex helper ----------
 
 
 def _whole_word_alternation(slugs: list[str]) -> re.Pattern[str]:

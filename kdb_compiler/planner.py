@@ -1,7 +1,7 @@
 """planner — turn last_scan + manifest into a list of CompileJobs.
 
 Pipeline position:
-    kdb_scan -> [planner] -> compiler -> patch_applier -> manifest_update
+    kdb_scan -> [planner] -> compiler -> patch_applier -> source_state_update
 
 One CompileJob per eligible source. The planner owns:
 
@@ -176,7 +176,7 @@ def plan(
     """I/O shell. Loads manifest for state purposes, delegates to build_jobs.
 
     Context is always built from GraphDB (D49). Manifest is loaded for
-    downstream pipeline stages (patch_applier, manifest_update) — not for
+    downstream pipeline stages (patch_applier, source_state_update) — not for
     context generation.
     """
     vault_root = Path(vault_root)

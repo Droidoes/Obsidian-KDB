@@ -3,7 +3,7 @@
 Coverage per blueprint §10:
     - one job per to_compile entry (non-binary)
     - abs_path resolution (vault_root / source_id)
-    - context_snapshot populated via context_loader
+    - context_snapshot populated via graph_context_loader
     - empty to_compile -> empty job list
     - manifest missing -> jobs still produced with empty context
     - binary filter: to_compile=[a.md, b.pdf with is_binary=True] -> only a.md

@@ -1,7 +1,7 @@
 """kdb_scan — deterministic scan of KDB/raw/, emits state/last_scan.json.
 
 Pipeline position:
-    [kdb_scan] -> planner -> compiler -> validate -> patch_applier -> manifest_update
+    [kdb_scan] -> planner -> compiler -> validate -> patch_applier -> source_state_update
 
 Contract:
     Input:  KDB/raw/** + KDB/state/manifest.json (prior state; may be empty)

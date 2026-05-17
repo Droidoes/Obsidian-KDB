@@ -422,7 +422,7 @@ def compile(
         _stage_close(6, ok=False, note=note,
                      prior_manifest_loaded=prior_manifest_loaded)
         return _fail(
-            [f"build_manifest_update failed: {note}"],
+            [f"build_source_state_update failed: {note}"],
             stage_index=6, stage_name=_STAGES[5],
             failure_type=type(exc).__name__,
         )

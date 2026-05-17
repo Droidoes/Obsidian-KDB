@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -40,51 +38,6 @@ def _ctx(run_id: str = "2026-04-19T14-00-00Z",
         kdb_root=vr / "KDB",
     )
 
-
-def _page_record(slug: str, page_type: str, *,
-                 title: str = "T",
-                 status: str = "active",
-                 source_refs: list[dict] | None = None) -> dict:
-    refs = source_refs if source_refs is not None else [
-        {"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"},
-    ]
-    page_key = f"KDB/wiki/{ {'summary':'summaries','concept':'concepts','article':'articles'}[page_type] }/{slug}.md"
-    return {
-        "page_id": page_key, "slug": slug, "page_type": page_type,
-        "status": status, "title": title,
-        "created_at": "2026-04-19T01:00:00Z", "updated_at": "2026-04-19T14:00:00Z",
-        "last_run_id": "r1",
-        "source_refs": refs,
-        "supports_page_existence": [r["source_id"] for r in refs],
-        "outgoing_links": [], "incoming_links_known": [],
-        "last_link_reconciled_at": "2026-04-19T14:00:00Z",
-        "confidence": "medium", "orphan_candidate": False,
-    }
-
-
-def _source_record(source_id: str, *, h: str = H1, mtime: float = 1700000000.0) -> dict:
-    return {
-        "source_id": source_id, "canonical_path": source_id,
-        "status": "active", "file_type": "markdown",
-        "hash": h, "mtime": mtime, "size_bytes": 100,
-        "first_seen_at": "x", "last_seen_at": "x",
-        "last_compiled_at": None, "last_run_id": "r1",
-        "compile_state": "compiled", "compile_count": 1,
-        "summary_page": None, "outputs_created": [], "outputs_touched": [],
-        "concept_ids": [],
-        "link_operations": {"links_added": 0, "links_removed": 0, "backlink_edits": 0},
-        "provenance": {}, "previous_versions": [],
-    }
-
-
-def _manifest(pages: dict, sources: dict) -> dict:
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "kb_id": "test-kdb",
-        "created_at": "x", "updated_at": "x",
-        "settings": {}, "stats": {}, "runs": {"last_run_id": None, "last_successful_run_id": None},
-        "sources": sources, "pages": pages, "orphans": {}, "tombstones": {},
-    }
 
 
 # ===========================================================================
@@ -423,13 +376,6 @@ def _basic_scan() -> dict:
     return _scan(files=[_scan_file("KDB/raw/x.md", h=H1, mtime=1700000000.0)])
 
 
-def _basic_manifest() -> dict:
-    return _manifest(
-        pages={"KDB/wiki/summaries/paper.md": _page_record("paper", "summary", title="Paper")},
-        sources={"KDB/raw/x.md": _source_record("KDB/raw/x.md")},
-    )
-
-
 def test_apply_writes_page_only(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     ctx = _ctx(vault_root=vault)
@@ -437,7 +383,6 @@ def test_apply_writes_page_only(tmp_path: Path) -> None:
         vault,
         compile_result=_basic_cr(),
         last_scan=_basic_scan(),
-        next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
     assert r.pages_written == ["KDB/wiki/summaries/paper.md"]
@@ -459,7 +404,6 @@ def test_apply_dry_run_writes_nothing(tmp_path: Path) -> None:
         vault,
         compile_result=_basic_cr(),
         last_scan=_basic_scan(),
-        next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
     assert r.dry_run is True
@@ -477,73 +421,11 @@ def test_apply_normalizes_trailing_newline(tmp_path: Path) -> None:
         vault,
         compile_result=cr,
         last_scan=_basic_scan(),
-        next_manifest=_basic_manifest(),
         run_ctx=ctx,
     )
     text = (vault / "KDB/wiki/summaries/paper.md").read_text()
     # Exactly one trailing newline after the normalized body.
     assert text.endswith("multi\nline\n")
-
-
-# ===========================================================================
-# CLI (tests 25–27)
-# ===========================================================================
-
-def _run_cli(args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [sys.executable, "-m", "kdb_compiler.patch_applier", *args],
-        capture_output=True, text=True,
-    )
-
-
-def _write_full_state(state_root: Path, vault_root: Path) -> None:
-    # Minimal last_scan.
-    scan = {
-        "schema_version": "1.0", "run_id": "2026-04-19T14-00-00Z",
-        "scanned_at": "2026-04-19T14:00:00Z",
-        "vault_root": str(vault_root), "raw_root": "KDB/raw",
-        "settings_snapshot": {"rename_detection": True, "symlink_policy": "skip",
-                              "scan_binary_files": True,
-                              "binary_compile_mode": "metadata_only"},
-        "summary": {"new": 1, "changed": 0, "unchanged": 0, "moved": 0,
-                    "deleted": 0, "error": 0, "skipped_symlink": 0},
-        "files": [{"path": "KDB/raw/x.md", "action": "NEW",
-                   "current_hash": H1, "current_mtime": 1700000000.0,
-                   "size_bytes": 100, "file_type": "markdown", "is_binary": False}],
-        "to_compile": ["KDB/raw/x.md"], "to_reconcile": [], "to_skip": [],
-        "errors": [], "skipped_symlinks": [],
-    }
-    state_root.mkdir(parents=True, exist_ok=True)
-    (state_root / "last_scan.json").write_text(json.dumps(scan), encoding="utf-8")
-    (state_root / "compile_result.json").write_text(json.dumps(_basic_cr()), encoding="utf-8")
-
-
-def test_cli_happy_path_writes_wiki_but_not_manifest(tmp_path: Path) -> None:
-    state = tmp_path / "state"
-    vault = tmp_path / "vault"
-    _write_full_state(state, vault)
-    r = _run_cli(["--state-root", str(state), "--vault-root", str(vault)])
-    assert r.returncode == 0, r.stderr
-    assert (vault / "KDB/wiki/summaries/paper.md").exists()
-    assert not (vault / "KDB/wiki/index.md").exists()
-    assert not (vault / "KDB/wiki/log.md").exists()
-    assert not (state / "manifest.json").exists()  # patch_applier does NOT write manifest
-
-
-def test_cli_dry_run_writes_nothing(tmp_path: Path) -> None:
-    state = tmp_path / "state"
-    vault = tmp_path / "vault"
-    _write_full_state(state, vault)
-    r = _run_cli(["--state-root", str(state), "--vault-root", str(vault), "--dry-run"])
-    assert r.returncode == 0, r.stderr
-    assert not (vault / "KDB").exists()
-
-
-def test_cli_missing_input_exits_two(tmp_path: Path) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
-    r = _run_cli(["--state-root", str(state), "--vault-root", str(tmp_path / "v")])
-    assert r.returncode == 2
 
 
 # ===========================================================================

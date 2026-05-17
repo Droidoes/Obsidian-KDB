@@ -4,8 +4,7 @@ Architecture (Selection A + iii + a, M1.6 blueprint; D50 Phase C):
     * Pure core renders PagePatch objects from compile_result + scan metadata.
     * I/O shell (`apply`) does all filesystem writes via atomic_io.
     * Frontmatter derived directly from compile intents + scan (no manifest.pages
-      dependency). `next_manifest` is only passed for orphan counting (Phase E
-      removes).
+      dependency).
 
 Contracts:
     * D8: LLM emits slug-keyed intents; Python owns frontmatter + paths.
@@ -19,19 +18,15 @@ Never writes outside KDB/wiki/. Never mutates KDB/raw/ or KDB/state/.
 """
 from __future__ import annotations
 
-import argparse
-import json
 import re
-import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import manifest_update
 from . import paths
 from .atomic_io import atomic_write_text
-from .run_context import RunContext, SCHEMA_VERSION, run_id_from_timestamp, now_iso
+from .run_context import RunContext
 
 
 class PagePatchError(Exception):
@@ -248,11 +243,6 @@ def build_page_patches(
 # I/O shell
 # -------------------------------------------------------------------------
 
-def _load_json(path: Path) -> dict:
-    with path.open(encoding="utf-8") as f:
-        return json.load(f)
-
-
 def _count_page_types(patches: list[PagePatch]) -> dict:
     seen: dict[str, set[str]] = {"summary": set(), "concept": set(), "article": set()}
     for p in patches:
@@ -262,26 +252,17 @@ def _count_page_types(patches: list[PagePatch]) -> dict:
     return {k: len(v) for k, v in seen.items()}
 
 
-def _count_orphans(next_manifest: dict) -> int:
-    return sum(
-        1 for p in next_manifest.get("pages", {}).values()
-        if p.get("status") == "orphan_candidate"
-    )
-
-
 def apply(
     vault_root: Path,
     *,
     compile_result: dict,
     last_scan: dict,
-    next_manifest: dict | None = None,
     run_ctx: RunContext,
     write: bool = True,
 ) -> ApplyResult:
     """Render pages from `compile_result` + `last_scan` (D50 Phase C).
 
     Frontmatter is derived from compile_result intents + scan metadata.
-    `next_manifest` is only used for orphan counting (Phase E removes).
     """
     patches = build_page_patches(compile_result, last_scan, run_ctx)
 
@@ -292,7 +273,6 @@ def apply(
         "summaries": per_type["summary"],
         "concepts": per_type["concept"],
         "articles": per_type["article"],
-        "orphan_candidates": _count_orphans(next_manifest) if next_manifest else 0,
     }
 
     result = ApplyResult(
@@ -311,81 +291,3 @@ def apply(
     return result
 
 
-# -------------------------------------------------------------------------
-# CLI
-# -------------------------------------------------------------------------
-
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="python -m kdb_compiler.patch_applier",
-        description="Render wiki pages from compile_result (pages-only; does not write manifest.json).",
-    )
-    p.add_argument("--state-root", required=True, type=Path,
-                   help="Directory containing last_scan.json + compile_result.json + (optional) manifest.json")
-    p.add_argument("--vault-root", required=True, type=Path,
-                   help="Vault root (writes to <vault-root>/KDB/wiki/)")
-    p.add_argument("--dry-run", action="store_true")
-    return p
-
-
-def _make_ctx(scan: dict, vault_root: Path, dry_run: bool) -> RunContext:
-    run_id = scan.get("run_id") or run_id_from_timestamp(now_iso())
-    started_at = scan.get("scanned_at") or now_iso()
-    from . import __version__
-    return RunContext(
-        run_id=run_id,
-        started_at=started_at,
-        compiler_version=__version__,
-        schema_version=SCHEMA_VERSION,
-        dry_run=dry_run,
-        vault_root=vault_root,
-        kdb_root=vault_root / "KDB",
-    )
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    state_root: Path = args.state_root
-    vault_root: Path = args.vault_root
-
-    try:
-        scan = _load_json(state_root / "last_scan.json")
-        cr = _load_json(state_root / "compile_result.json")
-    except FileNotFoundError as e:
-        print(f"patch_applier: missing input — {e}", file=sys.stderr)
-        return 2
-    except json.JSONDecodeError as e:
-        print(f"patch_applier: invalid JSON — {e}", file=sys.stderr)
-        return 2
-
-    if scan.get("run_id") != cr.get("run_id"):
-        print(
-            f"patch_applier: run_id mismatch last_scan={scan.get('run_id')!r} "
-            f"compile_result={cr.get('run_id')!r}",
-            file=sys.stderr,
-        )
-        return 2
-
-    manifest_path = state_root / "manifest.json"
-    prior = _load_json(manifest_path) if manifest_path.exists() else {}
-
-    ctx = _make_ctx(scan, vault_root, args.dry_run)
-    try:
-        next_manifest, _stage = manifest_update.build_manifest_update(prior, scan, cr, ctx)
-        result = apply(vault_root, compile_result=cr, last_scan=scan,
-                       next_manifest=next_manifest,
-                       run_ctx=ctx, write=not args.dry_run)
-    except PagePatchError as e:
-        print(f"patch_applier: {e}", file=sys.stderr)
-        return 1
-    except Exception as e:  # noqa: BLE001
-        print(f"patch_applier: unexpected error — {e}", file=sys.stderr)
-        return 1
-
-    mode = "dry-run" if result.dry_run else "applied"
-    print(f"patch_applier ({mode}): {len(result.pages_written)} pages")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

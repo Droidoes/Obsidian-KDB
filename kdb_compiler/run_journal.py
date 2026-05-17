@@ -173,7 +173,7 @@ class RunJournalBuilder:
     # ---------- stage-specific payload setters ----------
 
     def set_manifest_stage_payload(self, payload: dict[str, Any]) -> None:
-        """Supplied by build_manifest_update; folded into stage 5 entry."""
+        """Supplied by build_source_state_update; folded into stage 5 entry."""
         self._manifest_stage_payload = dict(payload) if payload else None
 
     def set_apply_stage_payload(self, payload: dict[str, Any]) -> None:
