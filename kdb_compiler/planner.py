@@ -28,10 +28,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from kdb_compiler import context_loader
+from kdb_compiler import graph_context_loader
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
 
@@ -93,8 +96,23 @@ def build_jobs(
     *,
     context_page_cap: int = 50,
 ) -> list[CompileJob]:
-    """Pure-ish (reads source files). One job per eligible source_id."""
+    """Pure-ish (reads source files). One job per eligible source_id.
+
+    Context source is selected by KDB_CONTEXT_SOURCE env var:
+      - 'manifest' (default): manifest-backed context_loader
+      - 'graphdb': GraphDB-backed graph_context_loader (fail-loud if unavailable)
+    """
     vault_root = Path(vault_root)
+    context_source = os.environ.get("KDB_CONTEXT_SOURCE", "manifest")
+
+    if context_source == "graphdb":
+        return _build_jobs_graphdb(scan, vault_root, context_page_cap)
+    return _build_jobs_manifest(scan, manifest, vault_root, context_page_cap)
+
+
+def _build_jobs_manifest(
+    scan: dict, manifest: dict, vault_root: Path, page_cap: int
+) -> list[CompileJob]:
     jobs: list[CompileJob] = []
     for source_id in eligible_source_ids(scan):
         abs_path = vault_root / source_id
@@ -103,16 +121,63 @@ def build_jobs(
             manifest,
             source_id=source_id,
             source_text=source_text,
-            page_cap=context_page_cap,
+            page_cap=page_cap,
         )
-        jobs.append(
-            CompileJob(
+        jobs.append(CompileJob(
+            source_id=source_id,
+            abs_path=str(abs_path),
+            context_snapshot=snapshot,
+        ))
+    return jobs
+
+
+def _build_jobs_graphdb(
+    scan: dict, vault_root: Path, page_cap: int
+) -> list[CompileJob]:
+    with _graph_conn_or_raise() as conn:
+        jobs: list[CompileJob] = []
+        for source_id in eligible_source_ids(scan):
+            abs_path = vault_root / source_id
+            source_text = _read_source_text(abs_path)
+            snapshot = graph_context_loader.build_context_snapshot(
+                conn,
+                source_id=source_id,
+                source_text=source_text,
+                page_cap=page_cap,
+            )
+            jobs.append(CompileJob(
                 source_id=source_id,
                 abs_path=str(abs_path),
                 context_snapshot=snapshot,
-            )
+            ))
+        return jobs
+
+
+@contextmanager
+def _graph_conn_or_raise():
+    """Open GraphDB via context manager or raise RuntimeError with guidance.
+
+    Validates: (1) graph path exists, (2) graph has >0 entities.
+    Yields: kuzu.Connection for the duration of the block.
+    """
+    from graphdb_kdb import default_graph_path
+    from graphdb_kdb.graphdb import GraphDB
+
+    graph_path = default_graph_path()
+
+    if not graph_path.exists():
+        raise RuntimeError(
+            f"GraphDB unavailable at {graph_path}. "
+            "Run `graphdb-kdb rebuild` or set KDB_CONTEXT_SOURCE=manifest."
         )
-    return jobs
+
+    with GraphDB(graph_path, read_only=True) as gdb:
+        if gdb.stats()["entities"] == 0:
+            raise RuntimeError(
+                f"GraphDB unavailable at {graph_path} (0 entities). "
+                "Run `graphdb-kdb rebuild` or set KDB_CONTEXT_SOURCE=manifest."
+            )
+        yield gdb.conn
 
 
 def plan(
