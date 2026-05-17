@@ -75,9 +75,65 @@ If you'd rather do something lighter, **#25** (resp-stats debuggability) is a sm
 
 ---
 
-## Loose ends not on the ledger
+## Next GraphDB-KDB utilization arc
 
-- **Dead-link hygiene** — `confucianism→mencius`, `yield-chasing→risk-management`. Future `kdb-clean links` cleanup-mode discussion (a new mode, sibling to `orphans`).
+GraphDB-KDB is now built, populated, rebuildable, and trusted enough for its
+first real production use: **GraphDB-backed EXISTING CONTEXT / known-connection
+selection for `kdb-compile`.**
+
+Current state: `context_loader.py` still builds the LLM's `EXISTING CONTEXT`
+from `manifest.json` using source-backed pages, slug-in-source-text regex
+matches, and one-hop outgoing-link expansion. That was the right pre-GraphDB
+bridge, but it is exactly the kind of graph query #63 was built to replace.
+
+Recommended shape for the new arc (likely a new task, e.g. #70, not yet filed):
+
+1. Seed candidates from slugs/titles mentioned in the source text plus pages
+   already supported by the source (important for recompiles).
+2. Expand through GraphDB-KDB: incoming + outgoing neighbors first; possibly
+   depth-2 with lower weight; PageRank/centrality as a tie-breaker, not as the
+   main signal.
+3. Rank source-specific candidates and emit the top N (user intuition: ~40;
+   existing loader default is 50) as the body-free `EXISTING CONTEXT` snapshot.
+4. Do **not** feed a global top-40 list to every compile — that would over-bias
+   every source toward the same hub concepts. The useful list is
+   source-specific: "the top known entities most connected to this source."
+5. Keep the manifest loader as a fallback during rollout:
+   `KDB_CONTEXT_SOURCE=manifest|graphdb` (exact switch name open).
+6. Before flipping the default, run a side-by-side benchmark/harness:
+   same sources, same model, same settings, manifest-context vs graphdb-context.
+   Accept GraphDB context only if quality is parity-or-better within the same
+   session (apples-to-apples).
+
+This maps directly to `docs/manifest-succession-arc.md` Stage M1:
+`context_loader.py` becomes GraphDB-primary for EXISTING CONTEXT while
+`manifest.json` remains populated and available as fallback.
+
+---
+
+## Task #70 — shipped core, default NOT flipped
+
+**Landed this session:** `graph_context_loader.py` + planner env-switch (`KDB_CONTEXT_SOURCE=graphdb`). Commits `1d05b0b`→`7e7efd4`→`efaf6a5`. 14 new tests (850 total, all green).
+
+**Gate results:**
+- ✅ Context-set parity (cap≥20: identical sets across all 4 canonical sources)
+- ✅ Small-cap stress (cap=5/10: graph keeps higher-centrality pages)
+- ✅ Failure modes (missing/empty graph → RuntimeError with guidance)
+- ✅ Rebuild reproducibility (identical output pre/post rebuild)
+- ✅ Steady-state compile parity (Pabrai: 6/7 overlap, graph subset more connected)
+- ⚠️ **Cold-start gap** (new source "My First Million Interview II": graph=3 pages, manifest=6 pages)
+
+**Root cause:** new source has no SUPPORTS edges → T1 empty → only T2 slug-in-text hits, which are narrower against graph entities than manifest pages.
+
+**Default stays `manifest`.** Before flipping, need a cold-start widening rule:
+1. If T1 is empty, widen T2 aggressively (match against all active entities, not just non-T1 remainder — but T1 is empty so this is already the case; the issue is the entity set is smaller than manifest's page set for a brand-new source with no graph history yet).
+2. Or: minimum-context-target — if graph returns < N pages, fall back to manifest for that source.
+3. Or: for first-compile, always use manifest context (graph context only for recompiles where SUPPORTS edges exist).
+
+**Dead-link hygiene — DONE this session.** Removed `confucianism→mencius` and `yield-chasing→risk-management` from manifest (graph was already clean).
+
+## Remaining loose ends
+
 - **`verify`-classification refinement** — teach `graphdb-kdb verify` to label the 8 known-benign `attribute_mismatch` issues as a distinct band. Per #69 §4a this needs **two separate rules** (`compile_count` is a replay-eligibility function; `compile_state` is an unpopulated-producer-field function). Not filed — YAGNI until `verify` noise becomes a real nuisance.
 
 ---
