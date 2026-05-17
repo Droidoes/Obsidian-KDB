@@ -71,18 +71,28 @@ Stage 10: run_journal       — write run journal with success=true
 ```
 
 Key properties:
-- **Sidecar written before graph_sync.** If graph_sync fails fatally, the sidecar exists → `graphdb-kdb rebuild` can replay this run later.
-- **Graph_sync failure = `success=false` in journal.** But the sidecar is present and payload_present=true → rebuild eligibility preserved (D39 eligibility: `success=true AND dry_run=false AND payload_present`).
+- **Sidecar written before graph_sync.** If graph_sync fails fatally, the sidecar exists and rebuild can replay this run later.
+- **Failure journal written on graph_sync failure.** A sidecar without a journal is orphaned — rebuild discovers runs via journals, not by scanning for sidecar directories. On graph_sync failure, write a run journal with `success=false` AND `replayable_payload=true` AND artifact refs pointing to the sidecar, *before* returning failure to the operator.
+- **Graph_sync failure = `success=false` + `replayable_payload=true` in journal.** The operator sees the failure and knows the live graph is stale. Rebuild sees `replayable_payload=true` and knows the payload is safe to replay.
 
-**Wait — D39 eligibility requires `success=true`.** If graph_sync fails and we write `success=false`, rebuild won't replay it. Two options:
+### D39 Eligibility Amendment
 
-**Option 1 (recommended): Separate sidecar-present from run-success.**
-Add a new eligibility rule: `payload_present=true` is sufficient for rebuild eligibility, regardless of success flag. The success flag tells the *operator* whether the live graph is current; the payload tells *rebuild* whether it can replay.
+**Current D39:** `success=true AND dry_run=false AND payload_present`
 
-**Option 2: Graph_sync failure = success=true with a `graph_sync_failed` flag.**
-Run still counts as successful for rebuild purposes (compile was valid), but carries a warning flag. Operator sees the flag and runs `graphdb-kdb rebuild` manually. Simpler but semantically dishonest — the live graph IS stale.
+**Amended D39:** `dry_run=false AND replayable_payload=true`
 
-**Recommendation: Option 1.** Amend D39 eligibility to `(success=true OR payload_present=true) AND dry_run=false`. This means rebuild always has maximum replay coverage. The success flag accurately reports live-graph health.
+The `replayable_payload` field is set to `true` only when:
+1. Stage 4 has validated compile_result (payload is structurally sound), AND
+2. Stage 8a has archived both sidecars (compile_result + last_scan) to `state/runs/<run_id>/`
+
+This is more precise than plain `payload_present=true`, which could match runs that wrote sidecars but produced malformed/unvalidated compile output. The three run states:
+
+| State | `success` | `replayable_payload` | Rebuild replays? |
+|-------|-----------|---------------------|-----------------|
+| Normal successful run | `true` | `true` | Yes |
+| Graph-sync-failed run | `false` | `true` | Yes — payload is valid, live graph just wasn't updated |
+| Compile-failed run | `false` | `false` | No — no valid payload to replay |
+| Dry run | `true` | N/A | No — `dry_run=true` excludes |
 
 ### Why patch_applier Does NOT Need GraphDB
 
@@ -97,7 +107,7 @@ Migration path: change `patch_applier` to read from `compile_result` payload dir
 | Phase | Task | Dependency |
 |-------|------|------------|
 | A | **Blueprint approval** (this doc) | — |
-| B | **Reorder stages: sidecar before graph_sync** — separate sidecar archival from graph_sync; make graph_sync fatal; amend D39 eligibility | A |
+| B | **Reorder stages: sidecar before graph_sync** — separate sidecar archival from graph_sync; make graph_sync fatal; amend D39 eligibility (`replayable_payload`); write failure journal on graph_sync error; test: simulated graph_sync failure produces replayable failure journal with artifact refs | A |
 | C | **Migrate `patch_applier`** — derive frontmatter from `compile_result` directly, not from manifest.pages | A (independent of B) |
 | D | **Split `manifest_update`** — extract `source_state_update` (source-meta only) from page/ontology writes; page/ontology writes already handled by existing graph_sync adapter (D-S0) | B + C |
 | E | **Migrate `kdb-clean orphans`** — read orphan candidates from GraphDB; reconstruct page paths from Entity.slug + page_type; maintain replayable cleanup journaling | D |
@@ -159,13 +169,15 @@ These should be updated when Phase B lands (not before, to avoid docs/code diver
 
 1. `manifest.json` contains only source-file metadata after a full compile run.
 2. All ontology queries (entity lookup, link traversal, orphan detection) route through GraphDB.
-3. Stage 9 graph_sync failure on a non-dry-run compile reports `success=false` in run journal.
-4. Sidecar archive is written *before* graph_sync — a failed graph_sync run remains replayable by rebuild.
-5. D39 rebuild eligibility amended: `(success=true OR payload_present=true) AND dry_run=false`.
-6. `graphdb-kdb rebuild` remains the recovery path for corrupted/missing GraphDB.
-7. All existing tests pass or are migrated.
-8. `kdb-clean orphans --apply` still works, reading from GraphDB; cleanup journals remain replayable.
-9. `graphdb-kdb verify` replaced with replay-to-temp-DB structural equality (CLI survives, implementation changes).
+3. Stage 9 graph_sync failure on a non-dry-run compile reports `success=false` AND `replayable_payload=true` in run journal.
+4. On graph_sync failure, a failure journal with artifact refs is written *before* returning failure — no orphaned sidecars.
+5. Sidecar archive is written *before* graph_sync — a failed graph_sync run remains replayable by rebuild.
+6. D39 rebuild eligibility amended: `dry_run=false AND replayable_payload=true`.
+7. `graphdb-kdb rebuild` remains the recovery path for corrupted/missing GraphDB.
+8. All existing tests pass or are migrated.
+9. **Phase B test requirement:** a test that simulates graph_sync failure and verifies a replayable failure journal is written with correct artifact refs.
+10. `kdb-clean orphans --apply` still works, reading from GraphDB; cleanup journals remain replayable.
+11. `graphdb-kdb verify` replaced with replay-to-temp-DB structural equality (CLI survives, implementation changes).
 
 ---
 
@@ -173,4 +185,3 @@ These should be updated when Phase B lands (not before, to avoid docs/code diver
 
 - **Rename manifest.json?** Once it's source-meta-only, "manifest" is misleading. Candidate: `source_state.json`. Defer to implementation time.
 - **Schema version bump?** Removing `pages` is a breaking change. Version 3.0 with a one-time migration that drops pages on first write? Or just drop them and let old tooling fail loud?
-- **D39 eligibility amendment timing:** Should this land with Phase B (recommended) or as a standalone pre-Phase-B change?
