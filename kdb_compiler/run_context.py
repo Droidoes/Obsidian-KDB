@@ -25,6 +25,8 @@ from . import paths
 MANIFEST_SCHEMA_VERSION = "1.0"
 SCHEMA_VERSION = MANIFEST_SCHEMA_VERSION  # legacy alias — prefer MANIFEST_SCHEMA_VERSION
 
+SOURCE_STATE_SCHEMA_VERSION = "3.0"
+
 
 def now_iso() -> str:
     """ISO-8601 local timestamp with offset, second precision.

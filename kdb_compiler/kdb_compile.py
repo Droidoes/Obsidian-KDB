@@ -20,9 +20,9 @@ from kdb_compiler import (
     atomic_io,
     compiler,
     kdb_scan,
-    manifest_update,
     patch_applier,
     reconcile,
+    source_state_update,
     validate_compile_result,
     validate_last_scan,
 )
@@ -408,8 +408,13 @@ def compile(
                 failure_type=type(exc).__name__,
             )
 
+    # D50 Phase F: auto-migrate v1.0 manifest (with pages/orphans) to v3.0
+    # source-state-only format on first read.
+    if prior and "pages" in prior:
+        prior = source_state_update.migrate_manifest_to_source_state(prior)
+
     try:
-        next_manifest, manifest_stage = manifest_update.build_manifest_update(
+        next_manifest, manifest_stage = source_state_update.build_source_state_update(
             prior, scan_dict, cr, ctx,
         )
     except Exception as exc:
@@ -422,9 +427,6 @@ def compile(
             failure_type=type(exc).__name__,
         )
 
-    # Ensure the stage-6 payload carries prior_manifest_loaded (from a
-    # real load vs an empty prior) — build_manifest_stage_payload uses
-    # `bool(prior)` which agrees for empty-dict prior.
     manifest_stage["prior_manifest_loaded"] = prior_manifest_loaded
     builder.set_manifest_stage_payload(manifest_stage)
     _stage_close(6, ok=True)
@@ -436,7 +438,6 @@ def compile(
             vault_root,
             compile_result=cr,
             last_scan=scan_dict,
-            next_manifest=next_manifest,
             run_ctx=ctx,
             write=not dry_run,
         )
@@ -450,11 +451,8 @@ def compile(
         )
     _stage_close(7, ok=True)
 
-    deltas = manifest_stage.get("deltas") or {}
     _emit(
         "pages_done",
-        created=len(deltas.get("pages_created") or []),
-        updated=len(deltas.get("pages_updated") or []),
         written=len(apply_result.pages_written),
         dry_run=dry_run,
     )

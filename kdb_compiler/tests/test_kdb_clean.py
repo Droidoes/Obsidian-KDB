@@ -184,17 +184,10 @@ def test_main_orphans_dry_run_reads_graph_without_mutating(tmp_path, monkeypatch
     _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
-    pid = "KDB/wiki/concepts/gone.md"
-    manifest = _manifest(
-        pages={pid: _page("orphan_candidate", "gone")},
-        orphans={pid: {}},
-    )
-    mpath = state / "manifest.json"
-    mpath.write_text(json.dumps(manifest), encoding="utf-8")
     rc = main(["orphans", "--vault-root", str(tmp_path)])
     assert rc == 0
-    # dry-run is the default — the manifest file must be byte-identical
-    assert json.loads(mpath.read_text(encoding="utf-8")) == manifest
+    # dry-run is the default — no files written
+    assert not list(state.glob("runs/clean-orphans-*"))
 
 
 def test_main_requires_a_subcommand():
@@ -232,11 +225,6 @@ def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monk
     md = tmp_path / pid
     md.parent.mkdir(parents=True, exist_ok=True)
     md.write_text("# gone", encoding="utf-8")
-    manifest = _manifest(
-        pages={pid: _page("orphan_candidate", "gone")},
-        orphans={pid: {}},
-    )
-    (state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     rc = main(["orphans", "--vault-root", str(tmp_path), "--apply"])
     assert rc == 0
@@ -255,9 +243,7 @@ def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monk
     assert retraction["retracted_slugs"] == ["gone"]
 
 
-def test_main_orphans_apply_writes_manifest_before_journal(tmp_path, monkeypatch):
-    # crash-consistency invariant (blueprint §6.1): the replay-state journal
-    # must never be committed before the live-state manifest.
+def test_main_orphans_apply_writes_retraction_before_journal(tmp_path, monkeypatch):
     _stub_sync(monkeypatch)
     _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
     from kdb_compiler import atomic_io
@@ -267,11 +253,6 @@ def test_main_orphans_apply_writes_manifest_before_journal(tmp_path, monkeypatch
     md = tmp_path / pid
     md.parent.mkdir(parents=True, exist_ok=True)
     md.write_text("# gone", encoding="utf-8")
-    manifest = _manifest(
-        pages={pid: _page("orphan_candidate", "gone")},
-        orphans={pid: {}},
-    )
-    (state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     calls: list[str] = []
     real = atomic_io.atomic_write_json
@@ -286,5 +267,4 @@ def test_main_orphans_apply_writes_manifest_before_journal(tmp_path, monkeypatch
 
     journal_idx = next(i for i, n in enumerate(calls)
                        if n.startswith("clean-orphans"))
-    assert calls.index("retraction.json") < calls.index("manifest.json")
-    assert calls.index("manifest.json") < journal_idx
+    assert calls.index("retraction.json") < journal_idx

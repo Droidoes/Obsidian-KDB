@@ -7,7 +7,6 @@ and the rewired CLI path. The old manifest-based `reap_orphans()` is kept
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -21,10 +20,7 @@ from graphdb_kdb.tests.conftest import (
     make_scan_entry,
 )
 
-from kdb_compiler.kdb_clean import (
-    reap_orphans_from_graph,
-    apply_reap_to_manifest,
-)
+from kdb_compiler.kdb_clean import reap_orphans_from_graph
 
 
 # ---------- helpers ----------
@@ -172,55 +168,15 @@ def test_no_orphans_returns_empty_report(graph_dir):
     assert report["retracted_slugs"] == []
 
 
-# ---------- apply_reap_to_manifest ----------
-
-def test_apply_reap_removes_from_pages_and_orphans():
-    pid = "KDB/wiki/concepts/gone.md"
-    manifest = {
-        "pages": {pid: {"status": "orphan_candidate", "slug": "gone"}},
-        "orphans": {pid: {"reason": "superseded"}},
-    }
-    report = {
-        "reaped": [{"page_id": pid, "slug": "gone", "page_type": "concept"}],
-        "dead_links": [],
-        "retracted_slugs": ["gone"],
-    }
-    apply_reap_to_manifest(manifest, report)
-    assert pid not in manifest["pages"]
-    assert pid not in manifest["orphans"]
-
-
-def test_apply_reap_leaves_active_pages_untouched():
-    active_pid = "KDB/wiki/concepts/alive.md"
-    orphan_pid = "KDB/wiki/concepts/gone.md"
-    manifest = {
-        "pages": {
-            active_pid: {"status": "active", "slug": "alive"},
-            orphan_pid: {"status": "orphan_candidate", "slug": "gone"},
-        },
-        "orphans": {orphan_pid: {}},
-    }
-    report = {
-        "reaped": [{"page_id": orphan_pid, "slug": "gone", "page_type": "concept"}],
-        "dead_links": [],
-        "retracted_slugs": ["gone"],
-    }
-    apply_reap_to_manifest(manifest, report)
-    assert active_pid in manifest["pages"]
-    assert orphan_pid not in manifest["pages"]
-
-
 # ---------- CLI integration (rewired path) ----------
 
 def test_cli_dry_run_reads_from_graph(tmp_path, monkeypatch, graph_dir):
-    """Dry-run enumerates from GraphDB, not manifest.pages."""
+    """Dry-run enumerates from GraphDB, no disk writes."""
     from kdb_compiler.kdb_clean import main
 
-    # Set up vault with manifest + graph
+    # Set up vault with graph (no manifest needed post-Phase F)
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
-    manifest = {"schema_version": "1.0", "pages": {}, "orphans": {}}
-    (state / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     # Seed graph with an orphan
     with GraphDB(graph_dir) as gdb:
@@ -244,5 +200,5 @@ def test_cli_dry_run_reads_from_graph(tmp_path, monkeypatch, graph_dir):
 
     rc = main(["orphans", "--vault-root", str(tmp_path)])
     assert rc == 0
-    # Manifest untouched (dry-run)
-    assert json.loads((state / "manifest.json").read_text()) == manifest
+    # Dry-run — no journal or retraction written
+    assert not list(state.glob("runs/clean-orphans-*"))

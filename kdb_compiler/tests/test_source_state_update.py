@@ -9,13 +9,15 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from kdb_compiler.run_context import RunContext, SCHEMA_VERSION
+from kdb_compiler.run_context import RunContext, SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION
 from kdb_compiler.source_state_update import (
     build_source_state_update,
     apply_scan_reconciliation,
     apply_compile_sources,
     recompute_source_stats,
     ensure_source_state_shape,
+    migrate_manifest_to_source_state,
+    assert_source_state_invariants,
     PREV_VERSIONS_CAP,
 )
 
@@ -83,7 +85,7 @@ def test_bootstrap_empty_seeds_all_keys() -> None:
     assert "sources" in state
     assert "tombstones" in state
     assert "runs" in state
-    assert state["schema_version"] == SCHEMA_VERSION
+    assert state["schema_version"] == SOURCE_STATE_SCHEMA_VERSION
     assert state["sources"] == {}
     assert state["tombstones"] == {}
 
@@ -91,7 +93,7 @@ def test_bootstrap_empty_seeds_all_keys() -> None:
 def test_shape_idempotent_on_existing() -> None:
     """Non-empty prior retains its data."""
     ctx = _ctx()
-    prior = {"schema_version": SCHEMA_VERSION, "sources": {"x": {}},
+    prior = {"schema_version": SOURCE_STATE_SCHEMA_VERSION, "sources": {"x": {}},
              "tombstones": {}, "runs": {"last_run_id": "r1"},
              "updated_at": "old", "stats": {}}
     state = ensure_source_state_shape(prior, ctx=ctx)
@@ -417,7 +419,7 @@ def test_build_source_state_update_bootstrap() -> None:
     assert rec["compile_state"] == "compiled"
     assert rec["summary_slug"] == "a-summary"
     assert next_state["stats"]["total_raw_files"] == 1
-    assert payload["sources_added"] == ["KDB/raw/a.md"]
+    assert payload["deltas"]["sources_added"] == ["KDB/raw/a.md"]
 
 
 def test_build_source_state_update_second_run() -> None:
@@ -425,7 +427,7 @@ def test_build_source_state_update_second_run() -> None:
     ctx = _ctx(run_id="2026-05-17T11-00-00-04-00",
                started_at="2026-05-17T11:00:00-04:00")
     prior = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": SOURCE_STATE_SCHEMA_VERSION,
         "sources": {
             "KDB/raw/a.md": {
                 "source_id": "KDB/raw/a.md", "canonical_path": "KDB/raw/a.md",
@@ -464,7 +466,7 @@ def test_build_source_state_update_second_run() -> None:
     assert rec["hash"] == "sha256:bbb"
     assert rec["compiled_title"] == "A v2"
     assert len(rec["previous_versions"]) == 1
-    assert payload["sources_changed"] == ["KDB/raw/a.md"]
+    assert payload["deltas"]["sources_changed"] == ["KDB/raw/a.md"]
 
 
 def test_build_source_state_update_no_pages_in_output() -> None:
@@ -480,3 +482,217 @@ def test_build_source_state_update_no_pages_in_output() -> None:
     assert "supports_page_existence" not in str(next_state)
     assert "concept_ids" not in str(next_state)
     assert "link_operations" not in str(next_state)
+
+
+# ---- Phase F: migration + invariants ----
+
+def _v1_manifest():
+    """A realistic v1.0 manifest with pages/orphans/ontology stats."""
+    return {
+        "schema_version": "1.0",
+        "kb_id": "joseph-kdb",
+        "created_at": "2026-04-01T10:00:00-04:00",
+        "updated_at": "2026-05-16T22:00:32-04:00",
+        "settings": {
+            "raw_root": "KDB/raw",
+            "wiki_root": "KDB/wiki",
+            "hash_algorithm": "sha256",
+            "rename_detection": True,
+        },
+        "stats": {
+            "total_raw_files": 6,
+            "total_pages": 68,
+            "total_summary_pages": 6,
+            "total_concept_pages": 53,
+            "total_article_pages": 9,
+            "total_runs": 20,
+        },
+        "runs": {
+            "last_run_id": "2026-05-16T22-00-32_EDT",
+            "last_successful_run_id": "2026-05-16T22-00-32_EDT",
+        },
+        "sources": {
+            "KDB/raw/a.md": {
+                "source_id": "KDB/raw/a.md",
+                "canonical_path": "KDB/raw/a.md",
+                "status": "active",
+                "file_type": "markdown",
+                "hash": "sha256:abc",
+                "mtime": 1700000000.0,
+                "size_bytes": 1024,
+                "first_seen_at": "2026-04-01T10:00:00-04:00",
+                "last_seen_at": "2026-05-16T22:00:32-04:00",
+                "last_compiled_at": "2026-05-16T22:00:32-04:00",
+                "last_run_id": "2026-05-16T22-00-32_EDT",
+                "compile_state": "compiled",
+                "compile_count": 5,
+                "last_compiled_hash": "sha256:abc",
+                "summary_page": "KDB/wiki/summaries/a.md",
+                "outputs_created": ["KDB/wiki/concepts/foo.md"],
+                "outputs_touched": [],
+                "concept_ids": ["foo"],
+                "link_operations": {"links_added": 2, "links_removed": 0},
+                "provenance": {},
+                "previous_versions": [],
+            },
+        },
+        "pages": {
+            "KDB/wiki/concepts/foo.md": {
+                "slug": "foo",
+                "status": "active",
+                "page_type": "concept",
+                "source_refs": [{"source_id": "KDB/raw/a.md"}],
+                "supports_page_existence": ["KDB/raw/a.md"],
+                "outgoing_links": ["bar"],
+            },
+        },
+        "orphans": {},
+        "tombstones": {},
+    }
+
+
+class TestMigrateManifestToSourceState:
+
+    def test_strips_pages_and_orphans(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert "pages" not in result
+        assert "orphans" not in result
+
+    def test_bumps_schema_to_3_0(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["schema_version"] == "3.0"
+
+    def test_preserves_kb_id(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["kb_id"] == "joseph-kdb"
+
+    def test_preserves_created_at(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["created_at"] == "2026-04-01T10:00:00-04:00"
+
+    def test_preserves_updated_at(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["updated_at"] == "2026-05-16T22:00:32-04:00"
+
+    def test_preserves_settings(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["settings"]["raw_root"] == "KDB/raw"
+        assert result["settings"]["hash_algorithm"] == "sha256"
+
+    def test_preserves_sources(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert "KDB/raw/a.md" in result["sources"]
+        src = result["sources"]["KDB/raw/a.md"]
+        assert src["hash"] == "sha256:abc"
+        assert src["first_seen_at"] == "2026-04-01T10:00:00-04:00"
+        assert src["compile_count"] == 5
+
+    def test_strips_ontology_fields_from_source_records(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        src = result["sources"]["KDB/raw/a.md"]
+        assert "summary_page" not in src
+        assert "outputs_created" not in src
+        assert "outputs_touched" not in src
+        assert "concept_ids" not in src
+        assert "link_operations" not in src
+        assert "provenance" not in src
+
+    def test_preserves_source_metadata_fields(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        src = result["sources"]["KDB/raw/a.md"]
+        assert src["source_id"] == "KDB/raw/a.md"
+        assert src["canonical_path"] == "KDB/raw/a.md"
+        assert src["status"] == "active"
+        assert src["file_type"] == "markdown"
+        assert src["mtime"] == 1700000000.0
+        assert src["size_bytes"] == 1024
+        assert src["last_compiled_at"] == "2026-05-16T22:00:32-04:00"
+        assert src["last_run_id"] == "2026-05-16T22-00-32_EDT"
+        assert src["compile_state"] == "compiled"
+        assert src["last_compiled_hash"] == "sha256:abc"
+        assert src["previous_versions"] == []
+
+    def test_strips_page_derived_stats(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert "total_pages" not in result["stats"]
+        assert "total_summary_pages" not in result["stats"]
+        assert "total_concept_pages" not in result["stats"]
+        assert "total_article_pages" not in result["stats"]
+
+    def test_preserves_source_stats(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["stats"]["total_raw_files"] == 6
+        assert result["stats"]["total_runs"] == 20
+
+    def test_preserves_runs(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        assert result["runs"]["last_run_id"] == "2026-05-16T22-00-32_EDT"
+        assert result["runs"]["last_successful_run_id"] == "2026-05-16T22-00-32_EDT"
+
+    def test_preserves_tombstones(self):
+        m = _v1_manifest()
+        m["tombstones"]["KDB/raw/old.md"] = {
+            "source_id": "KDB/raw/old.md",
+            "status": "deleted",
+            "hash": "sha256:old",
+            "recorded_at": "2026-05-01T10:00:00-04:00",
+            "last_run_id": "run-x",
+        }
+        result = migrate_manifest_to_source_state(m)
+        assert "KDB/raw/old.md" in result["tombstones"]
+
+    def test_idempotent_on_already_migrated(self):
+        first = migrate_manifest_to_source_state(_v1_manifest())
+        second = migrate_manifest_to_source_state(first)
+        assert first == second
+
+    def test_adds_summary_slug_from_summary_page(self):
+        result = migrate_manifest_to_source_state(_v1_manifest())
+        src = result["sources"]["KDB/raw/a.md"]
+        assert src["summary_slug"] == "a"
+
+
+class TestAssertSourceStateInvariants:
+
+    def test_passes_on_valid_state(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        assert_source_state_invariants(state)
+
+    def test_fails_on_wrong_schema_version(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["schema_version"] = "1.0"
+        with pytest.raises(Exception):
+            assert_source_state_invariants(state)
+
+    def test_fails_on_source_in_both_sources_and_deleted_tombstones(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["tombstones"]["KDB/raw/a.md"] = {
+            "source_id": "KDB/raw/a.md",
+            "status": "deleted",
+            "hash": "sha256:abc",
+            "recorded_at": "2026-05-17T10:00:00-04:00",
+            "last_run_id": "run-x",
+        }
+        with pytest.raises(Exception):
+            assert_source_state_invariants(state)
+
+    def test_fails_on_previous_versions_exceeding_cap(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["sources"]["KDB/raw/a.md"]["previous_versions"] = [
+            {"hash": f"h{i}", "mtime": 0, "size_bytes": 0, "compiled_at": None, "run_id": None}
+            for i in range(PREV_VERSIONS_CAP + 1)
+        ]
+        with pytest.raises(Exception):
+            assert_source_state_invariants(state)
+
+    def test_passes_with_moved_tombstone_and_active_source(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["tombstones"]["KDB/raw/old.md"] = {
+            "source_id": "KDB/raw/old.md",
+            "status": "moved",
+            "moved_to": "KDB/raw/a.md",
+            "hash": "sha256:abc",
+            "recorded_at": "2026-05-01T10:00:00-04:00",
+            "last_run_id": "run-x",
+        }
+        assert_source_state_invariants(state)

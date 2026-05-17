@@ -1024,10 +1024,9 @@ def test_pairing_omission_repair_flows_through_to_disk_wet_run(
     assert by_idx[5]["actions_count"] == 1
     assert by_idx[5]["reconciler_actions"][0]["finding_type"] == "pairing_omission"
 
-    # Stage 6 deltas include both pages as created.
-    created = by_idx[6]["deltas"]["pages_created"]
-    assert "KDB/wiki/summaries/summary-paper.md" in created
-    assert "KDB/wiki/concepts/mencius.md" in created
+    # Stage 6 deltas include the source as added (D50: no page deltas).
+    sources_added = by_idx[6]["deltas"]["sources_added"]
+    assert "KDB/raw/paper.md" in sources_added
 
     # Stage 7 pages_written matches.
     written = by_idx[7]["pages_written"]
@@ -1220,3 +1219,59 @@ def test_rebuild_after_compile_reproduces_graph(tmp_path: Path) -> None:
     assert after_sync_entity is not None
     assert after_replay_entity is not None
     assert after_sync_entity.slug == after_replay_entity.slug == "summary-paper"
+
+
+# ---------------------------------------------------------------------------
+# D50 Phase F — manifest is source-state-only (no pages/orphans)
+# ---------------------------------------------------------------------------
+
+def test_manifest_is_source_state_only_after_compile(tmp_path: Path) -> None:
+    """Phase F: manifest.json written by compile has no pages{} or orphans{}
+    and carries schema_version 3.0."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+
+    manifest = json.loads((state / "manifest.json").read_text())
+    assert "pages" not in manifest
+    assert "orphans" not in manifest
+    assert manifest["schema_version"] == "3.0"
+    assert "KDB/raw/paper.md" in manifest["sources"]
+
+
+def test_compile_auto_migrates_v1_manifest(tmp_path: Path) -> None:
+    """If a v1.0 manifest with pages{} exists on disk, compile auto-migrates
+    it to v3.0 source-state-only format."""
+    vault, raw, state = _make_vault(tmp_path)
+    (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
+
+    # Seed a v1.0 manifest with pages{} and orphans{}
+    v1_manifest = {
+        "schema_version": "1.0",
+        "kb_id": "joseph-kdb",
+        "created_at": "2026-04-01T10:00:00-04:00",
+        "updated_at": "2026-04-01T10:00:00-04:00",
+        "settings": {"raw_root": "KDB/raw"},
+        "stats": {"total_raw_files": 1, "total_pages": 3, "total_runs": 5},
+        "runs": {"last_run_id": "old-run", "last_successful_run_id": "old-run"},
+        "sources": {},
+        "pages": {"KDB/wiki/concepts/foo.md": {"slug": "foo", "status": "active"}},
+        "orphans": {},
+        "tombstones": {},
+    }
+    (state / "manifest.json").write_text(json.dumps(v1_manifest), encoding="utf-8")
+
+    ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
+    _write_cr(state, _cr(_RUN1_ID, "KDB/raw/paper.md", "summary-paper"))
+    result = compile(vault, run_ctx=ctx)
+    assert result.success is True
+
+    manifest = json.loads((state / "manifest.json").read_text())
+    assert "pages" not in manifest
+    assert "orphans" not in manifest
+    assert manifest["schema_version"] == "3.0"
+    assert manifest["kb_id"] == "joseph-kdb"
+    assert manifest["created_at"] == "2026-04-01T10:00:00-04:00"

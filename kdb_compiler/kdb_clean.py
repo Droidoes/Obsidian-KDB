@@ -45,7 +45,6 @@ For each `orphan_candidate` page it:
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 from datetime import datetime
@@ -54,7 +53,6 @@ from pathlib import Path
 import kuzu
 
 from kdb_compiler import atomic_io
-from kdb_compiler.manifest_update import assert_manifest_invariants
 from kdb_compiler.paths import slug_to_relpath
 from graphdb_kdb import default_graph_path
 from graphdb_kdb.queries import orphan_entities, outgoing_links
@@ -163,18 +161,6 @@ def reap_orphans_from_graph(conn: kuzu.Connection) -> dict:
     }
 
 
-def apply_reap_to_manifest(manifest: dict, report: dict) -> None:
-    """Remove reaped entries from manifest pages{} and orphans{}.
-
-    Transitional helper — manifest still has pages{} until Phase F strips it.
-    """
-    pages = manifest.get("pages", {})
-    orphans_dict = manifest.get("orphans", {})
-    for r in report["reaped"]:
-        pid = r["page_id"]
-        pages.pop(pid, None)
-        orphans_dict.pop(pid, None)
-
 
 def build_cleanup_artifacts(
     report: dict,
@@ -218,12 +204,12 @@ def build_cleanup_artifacts(
 def _cmd_orphans(args: argparse.Namespace) -> int:
     """`kdb-clean orphans` — archive + de-list orphan_candidate pages.
 
-    D50 Phase E: orphan enumeration reads from GraphDB (the ontology authority).
+    D50 Phase F: manifest no longer stores pages/orphans — cleanup only
+    archives files, writes a retraction journal, and live-syncs the graph.
     GraphDB is REQUIRED — if the graph is inaccessible, this command cannot run.
     """
     vault_root = Path(args.vault_root).resolve()
     state_root = vault_root / "KDB" / "state"
-    manifest_path = state_root / "manifest.json"
 
     # GraphDB is the authority for orphan candidates.
     from graphdb_kdb.graphdb import GraphDB
@@ -245,20 +231,13 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
           f"{len(report['dead_links'])} dead link(s)")
 
     if not args.apply:
-        print("\nDRY RUN — no files moved, manifest untouched. "
+        print("\nDRY RUN — no files moved. "
               "Re-run with --apply to commit.")
         return 0
 
     if not report["reaped"]:
         print("\nnothing to reap — already clean.")
         return 0
-
-    # Manifest is still written (transitional — Phase F removes pages{}).
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"ERROR  cannot read manifest {manifest_path}: {exc}")
-        return 1
 
     # Capture the clock ONCE (aware) so run_id and started_at can never disagree.
     now_dt = datetime.now().astimezone()
@@ -267,8 +246,7 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
     runs_root = state_root / "runs"
     archive_root = state_root / "orphan-archive" / run_id
 
-    # Write order is crash-consistency-critical (blueprint §6.1):
-    #   archive -> retraction sidecar -> manifest -> journal -> live-sync.
+    # Write order: archive -> retraction sidecar -> journal -> live-sync.
 
     # 1. archive the .md files
     for r in report["reaped"]:
@@ -278,32 +256,24 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
         if src.exists():
             shutil.move(str(src), str(dst))
         else:
-            print(f"note    {r['page_id']} — file already absent, manifest-only reap")
-
-    # 2. mutate manifest (transitional — Phase F removes)
-    apply_reap_to_manifest(manifest, report)
+            print(f"note    {r['page_id']} — file already absent, archive-only reap")
 
     finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
     journal, retraction = build_cleanup_artifacts(
         report, run_id, started_at, finished_at)
 
-    # 3. retraction sidecar — inert until the journal references it
+    # 2. retraction sidecar — inert until the journal references it
     sidecar_dir = runs_root / run_id
     sidecar_dir.mkdir(parents=True, exist_ok=True)
     atomic_io.atomic_write_json(sidecar_dir / "retraction.json", retraction,
                                 sort_keys=True)
 
-    # 4. atomic manifest write — commits live state
-    assert_manifest_invariants(manifest)
-    atomic_io.atomic_write_json(manifest_path, manifest, sort_keys=True)
-
-    # 5. atomic journal write — commits replay state (MUST follow the manifest)
+    # 3. atomic journal write — commits replay state
     atomic_io.atomic_write_json(runs_root / f"{run_id}.json", journal,
                                 sort_keys=True)
 
     print(f"\nAPPLIED — {len(report['reaped'])} page(s) archived to {archive_root}")
-    print(f"          manifest updated; cleanup journal at "
-          f"{runs_root / (run_id + '.json')}")
+    print(f"          cleanup journal at {runs_root / (run_id + '.json')}")
 
     # 6. live-sync the retraction into the graph (best-effort).
     try:

@@ -1,9 +1,9 @@
-"""source_state_update — source-meta-only ledger (D50 Phase D).
+"""source_state_update — source-meta-only manifest writer (D50 Phase F).
 
-Extracted from manifest_update.py as a make-before-break replacement.
-Owns the source lifecycle (sources{}, tombstones{}, runs{}, stats{}) with
-NO dependency on pages, orphans, links, or any ontology concept. GraphDB
-owns all ontology state; this module owns source-file metadata only.
+The sole writer of manifest.json (schema v3.0). Owns the source lifecycle
+(sources{}, tombstones{}, runs{}, stats{}) with NO dependency on pages,
+orphans, links, or any ontology concept. GraphDB owns all ontology state;
+this module owns source-file metadata only.
 
 Source record shape:
     Identity:   source_id, canonical_path, status
@@ -14,18 +14,36 @@ Source record shape:
                 schema_version_used
     History:    previous_versions[]
 
-Wired into the orchestrator in Phase F. Until then, tested in parallel
-with manifest_update.py which continues to own production writes.
+Migration: `migrate_manifest_to_source_state()` performs the one-time v1.0→v3.0
+strip (removes pages{}, orphans{}, page-derived stats). The orchestrator
+auto-migrates on first read if the loaded manifest has pages{}.
 """
 from __future__ import annotations
 
 import copy
 from typing import Any
 
-from .run_context import SCHEMA_VERSION, RunContext
+from .run_context import SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION, RunContext
 
 
 PREV_VERSIONS_CAP = 20
+
+# Fields on a v1.0 source record that belong to ontology (pages/links),
+# not source metadata. Stripped during migration.
+_ONTOLOGY_SOURCE_FIELDS = frozenset({
+    "summary_page", "outputs_created", "outputs_touched",
+    "concept_ids", "link_operations", "provenance",
+})
+
+# Source-metadata fields preserved through migration.
+_SOURCE_META_FIELDS = frozenset({
+    "source_id", "canonical_path", "status", "file_type",
+    "hash", "mtime", "size_bytes",
+    "first_seen_at", "last_seen_at", "last_compiled_at", "last_run_id",
+    "compile_state", "compile_count", "last_compiled_hash",
+    "summary_slug", "compiled_title", "parser", "compiler_version",
+    "schema_version_used", "previous_versions",
+})
 
 
 # ---- shape bootstrap ----
@@ -34,14 +52,14 @@ def ensure_source_state_shape(state: dict, *, ctx: RunContext) -> dict:
     """Seed top-level keys on a bootstrap (empty) state dict. Idempotent."""
     if not state:
         return {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": SOURCE_STATE_SCHEMA_VERSION,
             "updated_at": ctx.started_at,
             "sources": {},
             "tombstones": {},
             "runs": {"last_run_id": None, "last_successful_run_id": None},
             "stats": {"total_raw_files": 0, "total_runs": 0},
         }
-    state.setdefault("schema_version", SCHEMA_VERSION)
+    state.setdefault("schema_version", SOURCE_STATE_SCHEMA_VERSION)
     state.setdefault("updated_at", ctx.started_at)
     state.setdefault("sources", {})
     state.setdefault("tombstones", {})
@@ -291,13 +309,89 @@ def recompute_source_stats(state: dict, compile_result: dict, ctx: RunContext,
     return state
 
 
+# ---- v1.0 → v3.0 migration (Phase F) ----
+
+def _migrate_source_record(rec: dict) -> dict:
+    """Strip ontology fields from a v1.0 source record, add missing v3.0 fields."""
+    out = {k: v for k, v in rec.items() if k not in _ONTOLOGY_SOURCE_FIELDS}
+    # v1.0 had summary_page (path); v3.0 uses summary_slug (bare slug).
+    if "summary_slug" not in out and "summary_page" in rec:
+        sp = rec["summary_page"]
+        if sp:
+            from pathlib import PurePosixPath
+            out["summary_slug"] = PurePosixPath(sp).stem
+        else:
+            out["summary_slug"] = None
+    out.setdefault("compiled_title", None)
+    out.setdefault("parser", None)
+    out.setdefault("compiler_version", None)
+    out.setdefault("schema_version_used", None)
+    return out
+
+
+def migrate_manifest_to_source_state(old: dict) -> dict:
+    """One-time deterministic migration: v1.0 manifest → v3.0 source-state.
+
+    Strips pages{}, orphans{}, and page-derived stats. Preserves source
+    lineage (first_seen_at, previous_versions, compile_count, etc.),
+    tombstones, runs, settings, kb_id, and created_at.
+
+    Idempotent — safe to call on an already-migrated v3.0 dict.
+    """
+    if old.get("schema_version") == SOURCE_STATE_SCHEMA_VERSION:
+        return copy.deepcopy(old)
+
+    result: dict[str, Any] = {
+        "schema_version": SOURCE_STATE_SCHEMA_VERSION,
+        "kb_id": old.get("kb_id"),
+        "created_at": old.get("created_at"),
+        "updated_at": old.get("updated_at"),
+        "settings": copy.deepcopy(old.get("settings", {})),
+        "runs": copy.deepcopy(old.get("runs", {})),
+        "sources": {
+            sid: _migrate_source_record(rec)
+            for sid, rec in old.get("sources", {}).items()
+        },
+        "tombstones": copy.deepcopy(old.get("tombstones", {})),
+        "stats": {
+            "total_raw_files": old.get("stats", {}).get("total_raw_files", 0),
+            "total_runs": old.get("stats", {}).get("total_runs", 0),
+        },
+    }
+    return result
+
+
+class SourceStateInvariantError(AssertionError):
+    """Raised when assert_source_state_invariants() finds structural damage."""
+
+
+def assert_source_state_invariants(state: dict) -> None:
+    """Structural sanity checks for source-state-only manifest (v3.0)."""
+    if state.get("schema_version") != SOURCE_STATE_SCHEMA_VERSION:
+        raise SourceStateInvariantError(
+            f"schema_version mismatch: got {state.get('schema_version')!r}, "
+            f"expected {SOURCE_STATE_SCHEMA_VERSION!r}"
+        )
+    for sid, rec in state.get("sources", {}).items():
+        tomb = state.get("tombstones", {}).get(sid)
+        if tomb and tomb.get("status") == "deleted":
+            raise SourceStateInvariantError(
+                f"source {sid} appears in both sources{{}} and deleted-tombstones"
+            )
+        history = rec.get("previous_versions", [])
+        if len(history) > PREV_VERSIONS_CAP:
+            raise SourceStateInvariantError(
+                f"source {sid} previous_versions exceeds cap ({len(history)})"
+            )
+
+
 # ---- stage payload (for journal integration) ----
 
 def _build_stage_payload(prior: dict, next_state: dict, last_scan: dict) -> dict:
     """Compute delta payload for the run journal.
 
-    Flat shape (no nested deltas/counts). Phase F must reconcile with
-    RunJournalBuilder._build_summary which reads the old nested format.
+    Wraps source deltas in a `deltas` key for compatibility with
+    RunJournalBuilder._build_summary (which reads deltas.sources_added etc).
     """
     prior_sources = set(prior.get("sources", {}).keys()) if prior else set()
     next_sources = set(next_state.get("sources", {}).keys())
@@ -315,12 +409,16 @@ def _build_stage_payload(prior: dict, next_state: dict, last_scan: dict) -> dict
         )
 
     return {
-        "sources_added": sorted(next_sources - prior_sources),
-        "sources_removed": sorted(prior_sources - next_sources),
-        "sources_moved": moved_pairs,
-        "sources_changed": sources_changed,
-        "sources_after": len(next_state["sources"]),
-        "tombstones_after": len(next_state["tombstones"]),
+        "deltas": {
+            "sources_added": sorted(next_sources - prior_sources),
+            "sources_removed": sorted(prior_sources - next_sources),
+            "sources_moved": moved_pairs,
+            "sources_changed": sources_changed,
+        },
+        "counts": {
+            "sources_after": len(next_state["sources"]),
+            "tombstones_after": len(next_state["tombstones"]),
+        },
     }
 
 
