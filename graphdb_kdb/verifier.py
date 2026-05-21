@@ -1,7 +1,7 @@
 """Replay-to-temp structural equality verifier (D50 Phase G).
 
 Proves graph integrity by replaying journals into a temp Kuzu, then
-structurally diffing temp (expected) vs live (actual). Two layers:
+structurally diffing temp (expected) vs live (actual). Three layers:
 
   Layer 1 — source-state preflight: cheap manifest.sources{} vs graph
             Source nodes check. Catches obvious drift without a full rebuild.
@@ -10,14 +10,23 @@ structurally diffing temp (expected) vs live (actual). Two layers:
             diff ALL graph state (entities, sources, links, supports) between
             the replay graph (expected) and the live graph (actual).
 
-Divergence classes:
-  - missing_in_live   — present in replay, absent in live graph
-  - missing_in_replay — present in live, absent in replay
-  - attribute_mismatch — both present but tracked fields differ
+  Layer 3 — canonicalization invariants (#74.6): pure live-graph Cypher
+            checks for C1–C4 from docs/task74-canonicalization-blueprint.md
+            §9.1. No sidecar reads, no rebuild — cheapest of the three
+            layers and runs first so it gives feedback even when replay
+            cannot complete.
 
-Each divergence carries a `source` tag: 'source_state_preflight' or
-'replay_structural_diff', so consumers can separate cheap-check results
-from the authoritative replay proof.
+Divergence classes:
+  - missing_in_live      — present in replay, absent in live graph
+  - missing_in_replay    — present in live, absent in replay
+  - attribute_mismatch   — both present but tracked fields differ
+  - invariant_violation  — live graph violates a canonicalization invariant
+                           (#74.6); field carries the constraint code
+                           ('C1'|'C2'|'C3'|'C4')
+
+Each divergence carries a `source` tag: 'source_state_preflight',
+'replay_structural_diff', or 'canonicalization_invariants', so consumers
+can separate cheap-check results from the authoritative replay proof.
 """
 from __future__ import annotations
 
@@ -283,6 +292,119 @@ def verify_source_state(
     return _diff_sources_preflight(m_sources, l_sources)
 
 
+def verify_canonicalization_invariants(
+    live_conn: kuzu.Connection,
+) -> list[Divergence]:
+    """Layer 3 (#74.6): canonicalization invariants on the live graph.
+
+    Four invariants from docs/task74-canonicalization-blueprint.md §9.1.
+    All checks are pure Cypher against the live graph — no sidecar reads,
+    no replay. Divergences tagged source='canonicalization_invariants',
+    kind='invariant_violation', field={'C1'|'C2'|'C3'|'C4'}.
+
+    - **C1** — every `Entity` with `canonical_id IS NOT NULL` has a
+      matching `ALIAS_OF` edge to that canonical_id.
+    - **C2** — every `ALIAS_OF` edge's source has `canonical_id` equal
+      to the edge's destination slug.
+    - **C3** — `ALIAS_OF` is flat (D-R5-13): every `Entity.canonical_id`
+      points at an `Entity` with `canonical_id IS NULL` (no chains).
+    - **C4** — every `LINKS_TO` edge's destination has `canonical_id IS
+      NULL` (D-R5-12: LINKS_TO targets are always canonical).
+
+    Pre-#74 graphs (no aliases at all) trivially satisfy all four.
+    """
+    divs: list[Divergence] = []
+    src = "canonicalization_invariants"
+
+    # C1: alias entity (canonical_id set) without a matching ALIAS_OF edge.
+    r = live_conn.execute(
+        """
+        MATCH (a:Entity)
+        WHERE a.canonical_id IS NOT NULL
+          AND NOT EXISTS {
+              MATCH (a)-[:ALIAS_OF]->(c:Entity)
+              WHERE c.slug = a.canonical_id
+          }
+        RETURN a.slug, a.canonical_id
+        """
+    )
+    while r.has_next():
+        row = r.get_next()
+        divs.append(Divergence(
+            kind="invariant_violation",
+            category="entity",
+            key=row[0],
+            source=src,
+            field="C1",
+            expected_value=f"ALIAS_OF edge to {row[1]!r}",
+            actual_value="no matching ALIAS_OF edge",
+        ))
+
+    # C2: ALIAS_OF edge whose source's canonical_id != destination slug.
+    r = live_conn.execute(
+        """
+        MATCH (a:Entity)-[:ALIAS_OF]->(c:Entity)
+        WHERE a.canonical_id IS NULL OR a.canonical_id <> c.slug
+        RETURN a.slug, a.canonical_id, c.slug
+        """
+    )
+    while r.has_next():
+        row = r.get_next()
+        divs.append(Divergence(
+            kind="invariant_violation",
+            category="alias_of",
+            key=f"{row[0]}→{row[2]}",
+            source=src,
+            field="C2",
+            expected_value=row[2],   # destination slug
+            actual_value=row[1],     # source's canonical_id (may be None)
+        ))
+
+    # C3: chain — canonical_id points at an Entity that is itself an alias.
+    r = live_conn.execute(
+        """
+        MATCH (a:Entity), (target:Entity)
+        WHERE a.canonical_id IS NOT NULL
+          AND target.slug = a.canonical_id
+          AND target.canonical_id IS NOT NULL
+        RETURN a.slug, a.canonical_id, target.canonical_id
+        """
+    )
+    while r.has_next():
+        row = r.get_next()
+        divs.append(Divergence(
+            kind="invariant_violation",
+            category="entity",
+            key=row[0],
+            source=src,
+            field="C3",
+            expected_value=f"flat: {row[1]!r} should have canonical_id IS NULL",
+            actual_value=f"{row[1]!r} chains to {row[2]!r}",
+        ))
+
+    # C4: LINKS_TO destination is an alias (has canonical_id set).
+    r = live_conn.execute(
+        """
+        MATCH (a:Entity)-[:LINKS_TO]->(b:Entity)
+        WHERE b.canonical_id IS NOT NULL
+        RETURN a.slug, b.slug, b.canonical_id
+        """
+    )
+    while r.has_next():
+        row = r.get_next()
+        divs.append(Divergence(
+            kind="invariant_violation",
+            category="links_to",
+            key=f"{row[0]}→{row[1]}",
+            source=src,
+            field="C4",
+            expected_value=f"canonical target (canonical_id IS NULL)",
+            actual_value=f"alias for {row[2]!r}",
+        ))
+
+    return divs
+
+
 def verify(
     live_conn: kuzu.Connection,
     *,
@@ -309,6 +431,12 @@ def verify(
     # Layer 1: source-state preflight (if manifest provided)
     if manifest is not None:
         all_divs.extend(verify_source_state(live_conn, manifest))
+
+    # Layer 3 (#74.6): canonicalization invariants on the live graph.
+    # Runs before Layer 2 so even if rebuild fails downstream we still
+    # surface alias-state violations (the cheapest and most localized
+    # signal). Pre-#74 graphs trivially satisfy C1–C4 — zero divergences.
+    all_divs.extend(verify_canonicalization_invariants(live_conn))
 
     # Layer 2: replay structural diff
     adapter = ObsidianRunsAdapter()
@@ -368,6 +496,7 @@ def verify(
         "missing_in_live": sum(1 for d in all_divs if d.kind == "missing_in_live"),
         "missing_in_replay": sum(1 for d in all_divs if d.kind == "missing_in_replay"),
         "attribute_mismatch": sum(1 for d in all_divs if d.kind == "attribute_mismatch"),
+        "invariant_violation": sum(1 for d in all_divs if d.kind == "invariant_violation"),
         "replay_replayed": rebuild_result.replayed,
         "replay_skipped": rebuild_result.skipped,
     }

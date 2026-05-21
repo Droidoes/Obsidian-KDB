@@ -172,36 +172,54 @@ def cmd_verify(args: argparse.Namespace) -> int:
     --vault-root (preferred): derives state_root and manifest path.
     --state-root (advanced override): explicit state_root.
     --source-state-only: skip full replay, just run cheap preflight.
+    --canonicalization-only: skip full replay + manifest preflight, just
+        run cheap live-graph C1–C4 invariant checks (#74.6).
     """
     from graphdb_kdb import verifier
 
-    graph_dir = _resolve_graph_dir(args)
-
-    # Resolve state_root
-    if args.state_root:
-        state_root = Path(args.state_root)
-    elif args.vault_root:
-        state_root = Path(args.vault_root) / "KDB" / "state"
-    else:
+    if args.source_state_only and args.canonicalization_only:
         print(
-            "verify requires --vault-root <path> (or --state-root as advanced override).",
+            "verify: --source-state-only and --canonicalization-only are mutually exclusive.",
             file=sys.stderr,
         )
         return 2
 
-    journals_dir = state_root / "runs"
-    if not journals_dir.is_dir() and not args.source_state_only:
-        print(f"runs directory not found: {journals_dir}", file=sys.stderr)
-        return 2
+    graph_dir = _resolve_graph_dir(args)
 
-    # Load manifest for source-state preflight (optional)
+    # --canonicalization-only doesn't need state_root (pure live-graph check).
+    state_root: Path | None = None
+    if not args.canonicalization_only:
+        if args.state_root:
+            state_root = Path(args.state_root)
+        elif args.vault_root:
+            state_root = Path(args.vault_root) / "KDB" / "state"
+        else:
+            print(
+                "verify requires --vault-root <path> (or --state-root as advanced override).",
+                file=sys.stderr,
+            )
+            return 2
+
+        journals_dir = state_root / "runs"
+        if not journals_dir.is_dir() and not args.source_state_only:
+            print(f"runs directory not found: {journals_dir}", file=sys.stderr)
+            return 2
+
+    # Load manifest for source-state preflight (optional, irrelevant for
+    # --canonicalization-only).
     manifest: dict | None = None
-    manifest_path = state_root / "manifest.json"
-    if manifest_path.is_file():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if state_root is not None:
+        manifest_path = state_root / "manifest.json"
+        if manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     with GraphDB(graph_dir) as gdb:
-        if args.source_state_only:
+        if args.canonicalization_only:
+            divs = verifier.verify_canonicalization_invariants(gdb.conn)
+            result = verifier.VerifyResult(ok=not divs, divergences=divs, counts={
+                "invariant_violation": len(divs),
+            })
+        elif args.source_state_only:
             if manifest is None:
                 print(f"manifest not found for preflight: {manifest_path}", file=sys.stderr)
                 return 2
@@ -249,6 +267,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
         if d.kind == "attribute_mismatch":
             print(
                 f"  [{d.source}] [{d.kind}] {d.category}={d.key} field={d.field} "
+                f"expected={d.expected_value!r} actual={d.actual_value!r}"
+            )
+        elif d.kind == "invariant_violation":
+            print(
+                f"  [{d.source}] [{d.field}] {d.category}={d.key} "
                 f"expected={d.expected_value!r} actual={d.actual_value!r}"
             )
         else:
@@ -537,6 +560,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_v.add_argument(
         "--source-state-only", action="store_true",
         help="Skip full replay — only run cheap manifest-vs-graph source preflight.",
+    )
+    p_v.add_argument(
+        "--canonicalization-only", action="store_true",
+        help="Skip full replay — only run cheap canonicalization invariant "
+             "checks (#74.6 C1–C4) on the live graph.",
     )
     p_v.add_argument("--json", action="store_true", help="JSON output.")
 
