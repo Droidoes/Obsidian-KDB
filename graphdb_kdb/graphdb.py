@@ -11,6 +11,7 @@ from pathlib import Path
 import kuzu
 
 from graphdb_kdb.schema import (
+    MIGRATIONS,
     NODE_TABLE_DDL,
     REL_TABLE_DDL,
     SCHEMA_META_DDL,
@@ -76,13 +77,33 @@ class GraphDB:
         return False
 
     def _ensure_schema(self) -> None:
-        """Idempotent: create schema on first open; verify version on re-open."""
+        """Idempotent: create schema on first open; migrate or verify on re-open.
+
+        When the stored schema version differs from the current `SCHEMA_VERSION`,
+        the bootstrap looks up a migration in `schema.MIGRATIONS` keyed by
+        `(stored, SCHEMA_VERSION)`. If found, the migration is applied
+        in-place (non-destructive — adds tables/columns; never drops user
+        data). If no migration is registered for the pair, the DB is
+        incompatible and the user must `graphdb-kdb rebuild` to regenerate.
+        """
         if self._table_exists("_SchemaMeta"):
             stored = self._read_schema_version()
-            if stored != SCHEMA_VERSION:
+            if stored == SCHEMA_VERSION:
+                return
+            migration = MIGRATIONS.get((stored, SCHEMA_VERSION))
+            if migration is None:
                 raise GraphDBSchemaError(
-                    f"Schema version mismatch: stored={stored!r} expected={SCHEMA_VERSION!r}. "
+                    f"Schema version mismatch: stored={stored!r} expected={SCHEMA_VERSION!r}, "
+                    f"no migration registered for ({stored!r} → {SCHEMA_VERSION!r}). "
                     "Run `graphdb-kdb rebuild` to regenerate."
+                )
+            migration(self.conn)
+            # Post-migration sanity check: stored version must now match.
+            post = self._read_schema_version()
+            if post != SCHEMA_VERSION:
+                raise GraphDBSchemaError(
+                    f"Migration {stored!r} → {SCHEMA_VERSION!r} ran but "
+                    f"_SchemaMeta still reports {post!r}. Migration is buggy."
                 )
             return
         for ddl in NODE_TABLE_DDL:
@@ -122,6 +143,8 @@ class GraphDB:
             "sources":  count("MATCH (s:Source) RETURN COUNT(*)"),
             "links_to": count("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(*)"),
             "supports": count("MATCH ()-[r:SUPPORTS]->() RETURN COUNT(*)"),
+            # #74.1: ALIAS_OF added to schema v2.0.
+            "alias_of": count("MATCH ()-[r:ALIAS_OF]->() RETURN COUNT(*)"),
         }
 
     # ---- ingestion (#63.2) ----

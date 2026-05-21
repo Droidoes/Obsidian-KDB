@@ -382,7 +382,7 @@ def test_multiple_sources_in_one_run(graph_dir):
     assert res.sources_upserted == 2
     assert res.entities_upserted == 3
     assert res.supports_upserted == 3
-    assert stats == {"entities": 3, "sources": 2, "links_to": 0, "supports": 3}
+    assert stats == {"entities": 3, "sources": 2, "links_to": 0, "supports": 3, "alias_of": 0}
 
 
 # ---------- 10. timestamp offset round-trip (Codex C3) ----------
