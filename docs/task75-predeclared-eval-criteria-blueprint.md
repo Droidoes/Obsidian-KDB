@@ -1,7 +1,9 @@
 # Task #75 — Predeclared Evaluation Criteria for Step-3 Graph Operations
 
-**Status:** blueprint v1 — awaiting Codex + Gemini external review (mirrors the
-Task #74 pre-implementation review pattern).
+**Status:** blueprint v2 (2026-05-21) — Codex + Gemini external review applied
+(mirrors the Task #74 pre-implementation review pattern). Pending final user
+sign-off before Task #75 closure and step-3 implementation kick-off (Task
+#76 / #77 / #78+).
 
 **Lineage:** Round 5 §8.5/§8.6 (`docs/what-is-the-ontology-for.md`) named
 "predeclared eval criteria for step 3" as a **binding path-forward
@@ -38,6 +40,16 @@ This blueprint satisfies that precondition by:
 
 Nothing in this doc is code or a code constraint. It is the contract step-3
 implementation will be measured against.
+
+**v2 (2026-05-21) — what changed:** Codex + Gemini external reviews
+were applied as revisions R1–R8 (see §9 change log). The most material
+changes: §4.2 community-routing criteria are now algorithm-neutral
+(current code is Louvain only, not Leiden); the §6.1 `domain` blocker
+is **narrowed** — only the community/domain-ratio gate depends on it,
+not all of step 3; multi-hop is split into V0 existing (`graphdb-kdb
+path`) and V2 deferred (scored / explanatory); OQ-8's (a)→(b)→(c)
+ladder gains explicit stop conditions (HW-5 lock + iteration ceiling +
+post-pivot preservation clause).
 
 ---
 
@@ -146,10 +158,11 @@ size, curation method, and scoping are open questions (OQ-3).
 | # | Operation | Disposition | Rationale |
 |---|---|---|---|
 | 1 | **Personalized PageRank (PPR)** | **V1 — include** | The B-justifying primitive from HippoRAG. Tests "operations activate a local neighborhood rather than returning popularity" — the core claim that distinguishes a graph from a flat index. Without PPR we cannot test the B-claim. |
-| 2 | **Community routing (Leiden)** | **V1 — include** | The B-justifying primitive from GraphRAG. Tests "communities of the LLM-extracted graph correspond to themes, not just to (C2) domain tags." Without community routing we cannot test the C2 disposition (domain-as-coordinate). |
+| 2 | **Community routing** (Louvain now; Leiden TBD in #78) | **V1 — include** | The B-justifying primitive from GraphRAG. Tests "communities of the LLM-extracted graph correspond to themes, not just to (C2) domain tags." Without community routing we cannot test the C2 disposition (domain-as-coordinate). Algorithm choice is implementation-scope (§4.2); criteria are algorithm-neutral. |
 | 3 | **Typed traversal** | **V0 — already exists** | `graph_context_loader.py` (Tasks #70, #71) is essentially this. Document it as a roster member so the existing capability is part of the step-3 eval surface and benefits from the same predeclared-criteria discipline. |
 | 4 | **Subgraph extraction** | **V1 — include** | The retrieval glue between graph operations and any downstream LLM use. PPR / community routing return rankings; LLM synthesis needs the actual subgraph (entities + edges + supporting page text) as context. Cannot be skipped. |
-| 5 | **Multi-hop pathfinding** | **V2 — defer** | Answers "how are A and B related" — useful but not B-claim-load-bearing. Build only if V1 results justify the extension. |
+| 5a | **Shortest-path pathfinding** (existing `graphdb-kdb path <from> <to> --max-hops N` — see CODEBASE_OVERVIEW §8.6) | **V0 — already exists** | A directed-shortest-path primitive ships in the CLI today (CODEBASE_OVERVIEW line 414). Treat as a regression-guardrail member of the eval surface (gates: don't regress hop-count or runtime); do NOT re-build. |
+| 5b | **Scored / explanatory multi-hop workflow** (semantic-relevance ranking of path nodes; multi-path ranking; LLM-readable path explanation) | **V2 — defer** | Distinct from 5a: answers "*how* are A and B related in a way that's useful to the consumer" — requires scoring intermediate nodes for semantic relevance, ranking multiple paths, and producing consumer-shaped output. Useful but not B-claim-load-bearing. Build only if V1 results justify the extension. |
 
 **V0** = already built and in production. **V1** = build at step 3.
 **V2** = defer until V1 gate passes.
@@ -169,18 +182,27 @@ typed traversal**. The cut tracks the literal B-justifying surface:
   loading; including it in the eval surface ensures we don't regress the
   capability and gives us a third reference point alongside the two new
   ops.
-- Multi-hop pathfinding is genuinely interesting but answers a different
-  question ("how are A and B connected") than the B-claim ("does broad
-  ingestion + LLM extraction + graph operations produce useful retrieval");
-  deferring it is conservative, not lazy.
+- The shortest-path primitive (5a) is already in production as
+  `graphdb-kdb path` — including it in the eval surface protects against
+  regression but adds no new build. The *scored / explanatory* multi-hop
+  workflow (5b) answers a different question ("how are A and B connected
+  in a consumer-useful way") than the B-claim ("does broad ingestion +
+  LLM extraction + graph operations produce useful retrieval"); deferring
+  it is conservative, not lazy. Note also (per Gemini review): multi-hop
+  ranking assumes local-neighborhood containment is already solved by PPR
+  — running it before PPR gates pass would fall into the critical-density
+  hedge (paths hopping through generic structural hubs and returning
+  noise). Sequence is therefore PPR-first, multi-hop-later.
 
 ### 3.3 What this roster does *not* commit to
 
 - A specific PPR implementation library (NetworkX vs. native Kuzu vs.
   custom Cypher) — engineering decision for the implementation task.
-- A specific community detection algorithm (Leiden chosen as the stated
-  primitive but variants like Louvain are interchangeable for the
-  predeclared-criteria purpose).
+- A specific community detection algorithm. Louvain is the current
+  implementation (`graphdb_kdb/analytics.py`); Leiden adoption is a
+  Task #78 implementation-scope decision. The §4.2 criteria are
+  algorithm-neutral — they read off the partition, not the algorithm
+  that produced it.
 - A specific subgraph-extraction serialization format.
 - A specific number of operations beyond the V1 four — V2 multi-hop is
   reopen-able.
@@ -196,8 +218,11 @@ question.
 ### 4.1 PPR — Personalized PageRank
 
 **Operation contract**
-- Input: seed entity set (≥ 1 canonical_id), damping factor α (default
-  0.15), iteration cap (default 50).
+- Input: seed entity set (≥ 1 canonical-entity slug; *not* the
+  `Entity.canonical_id` foreign-key column, which is the alias→canonical
+  pointer and is NULL on canonical entities — see `graphdb_kdb/schema.py`
+  + Task #74 D-R5-13), damping factor α (default 0.15), iteration cap
+  (default 50).
 - Output: ranked list of entities with PPR scores, descending.
 
 **Pass test**
@@ -223,18 +248,50 @@ question.
 - **Seed sensitivity**: pairwise overlap of top-5 results between two
   different seeds **≤ 50%** averaged across probe pairs (proves seed
   dependence).
-- **Hub guard**: highest-degree entity in the graph appears in top-5
-  results in **≤ 30%** of probe seeds (proves PPR is local, not
-  popularity-biased).
+- **Hub guard**: highest-degree **structural / systemic hub** in the
+  graph appears in top-5 results in **≤ 30%** of probe seeds (proves PPR
+  is local, not popularity-biased). *Scope clarifier:* "structural /
+  systemic hub" = entities representing file-type / temporal / generic
+  scaffolding nodes (e.g., a generic `page` or `daily-note` concept,
+  date-tag nodes). It does **NOT** apply to legitimately high-degree
+  **semantic** hubs whose frequent surfacing is correct (e.g.,
+  `buffett` in an investing-domain query) — those should *not* be
+  guarded against. Probe set (OQ-3) names which entities are
+  structural for hub-guard scoring purposes.
 
-### 4.2 Community routing (Leiden)
+### 4.2 Community routing (algorithm-neutral)
+
+**Note on current vs target algorithm.** As of 2026-05-21 the codebase
+implements **Louvain** only (`graphdb_kdb/analytics.py:86` —
+`raise ValueError("unsupported community algorithm")` for any non-Louvain
+choice; `tests/test_analytics.py:136` enforces this contract). The
+predeclared criteria below are intentionally **algorithm-neutral**:
+modularity is conserved under both Louvain and Leiden, and the
+community-count / max-share / domain-ratio gates are read off the
+partition regardless of which algorithm produced it. Adoption of
+Leiden + a SUPPORTS-projected (rather than LINKS_TO-only) graph is an
+**implementation-scope decision for Task #78**, not a precondition this
+blueprint commits to.
 
 **Operation contract**
-- Pre-compute: Leiden community detection over the entity-entity edge
-  subgraph (LINKS_TO + SUPPORTS-projected), tunable resolution.
+- Pre-compute: community detection over the entity-entity edge subgraph.
+  - *Algorithm:* Louvain (current) or Leiden (Task #78 may swap).
+  - *Edge basis:* LINKS_TO only (current) or LINKS_TO + SUPPORTS-projected
+    (Task #78 may extend).
+  - *Resolution parameter:* tunable; see resolution-tuning note below.
 - Input (per query): free-text query OR seed entity set.
 - Output: ranked list of `(community_id, routing_score)` pairs; optionally
   within-top-community retrieval results.
+
+**Resolution-tuning note (personal-scale realism).** At personal-corpus
+scale (~70 canonical entities as of 2026-05-21), out-of-the-box
+community-detection parameters will almost certainly collapse the graph
+into 2–3 mega-clusters — which fails the community/domain-ratio gate
+trivially. Achieving the §4.2 gates **requires active resolution-parameter
+tuning as part of Task #78 setup** (not as a separate research task). The
+gate is the destination; tuning is the path. If after reasonable tuning
+the gates still fail, HW-4 (single-blob) and HW-5 (scale) fire — that's
+diagnostic information, not a tuning failure.
 
 **Pass test**
 - For a probe query with a clearly-themed answer ("What do I know about
@@ -256,8 +313,8 @@ question.
   domain tagging didn't already encode. This is the
   cross-domain-density hedge firing.
 - "**Single-blob community**": one community contains >50% of all
-  entities — Leiden resolution is too coarse, or the graph is too
-  dense for community structure to exist.
+  entities — resolution parameter is too coarse, or the graph is too
+  dense for community structure to exist at this scale.
 
 **Quantitative gates**
 - **Human-judged routing match**: for ≥ **70%** of probe queries, the
@@ -266,31 +323,57 @@ question.
 - **Community size distribution**: no single community exceeds 50% of
   entity count.
 
-### 4.3 Typed traversal (V0 — `graph_context_loader.py`)
+### 4.3 Typed traversal (V0 — query-time neighbors / BFS)
+
+**Scope clarifier (Codex P2.5).** §2.1 defined an "operation" as
+query-time. The query-time typed-traversal surface today is the
+`graphdb-kdb neighbors <slug> [--depth N] [--direction]` /
+`graphdb-kdb incoming <slug>` CLI (CODEBASE_OVERVIEW §8.6 lines
+411–413) — a BFS expansion with edge-direction filtering. That is the
+primitive this section predeclares against.
+
+The compile-time `graph_context_loader.py` consumer (Tasks #70 / #71)
+exercises the **same underlying graph traversal** at compile time
+(seed → typed-neighbor expansion with depth/cap). It is included as a
+**regression guardrail** below — not as the operation under test, but as
+proof that any future change to the traversal primitive does not
+regress the compile-time consumer that depends on it. (Task #73 removed
+manifest-as-ontology; the manifest-parity guardrail from v1 of this
+blueprint no longer applies and has been dropped.)
 
 **Operation contract**
-- Already implemented; see CODEBASE_OVERVIEW §8 + Tasks #70 / #71.
-- Input: seed entities + edge type set + depth limit.
-- Output: connected subgraph for compile-time context loading.
+- Input: seed entity slug + depth limit + (optional) edge-type filter +
+  direction (out / in / undirected).
+- Output: connected subgraph (entities + edges) reachable within depth
+  under the filters.
 
 **Pass test**
-- Steady-state regression: production `kdb-compile` runs continue to
-  produce the same compile output (binary parity at the
-  `compile_result.json` level for unchanged sources).
+- For a probe seed with a known small neighborhood (depth=1), the
+  returned entity set matches the expected neighborhood by inspection.
+- For depth=2, the returned set is a superset of depth=1 and includes
+  the expected second-hop entities.
+- Directional filters work — `--direction in` returns only incoming
+  neighbors.
 
 **Fail test**
-- Context-set parity vs manifest (cap ≥ 20) drifts.
-- Cold-start widening (#71) regresses — new sources receive < 5 seeds
-  again.
+- Returned set is empty for a seed with known SUPPORTS / LINKS_TO edges
+  (traversal broken).
+- Returned set ignores `--direction` filter (filter broken).
+- Edge-type filter passes through edges of disallowed types
+  (filter broken).
 
 **Quantitative gates**
-- **Production regression**: 0 unexpected changes in `kdb-compile` output
-  across the canonical corpus (already verified by Task #71 closure).
-- **Cold-start widening**: ≥ 5 seeds produced for any new source with
-  empty SUPPORTS edges (already verified).
+- **Probe-set correctness**: for ≥ **95%** of probe seeds, depth=1
+  neighbor set matches expected (exact set match).
+- **Regression guardrail (compile-time consumer):** production
+  `kdb-compile` continues to produce the same compile output (binary
+  parity at `compile_result.json` level for unchanged sources), and
+  cold-start widening (Task #71) still produces ≥ 5 seeds for new
+  sources with empty SUPPORTS edges.
 
-(Typed traversal is included in the roster for completeness and to
-guarantee its gates are not lost when step-3 work touches the graph.)
+(Typed traversal is included in the roster as both a query-time
+operation in its own right *and* a regression guardrail for the
+compile-time consumer that depends on the same primitive.)
 
 ### 4.4 Subgraph extraction
 
@@ -335,8 +418,8 @@ suspect-hedge mapping.
 |---|---|---|---|
 | HW-1 | PPR top-N is ~identical across seeds (popularity collapse, §4.1 fail test) | **Critical density** | Investigate graph density metrics (avg degree, max degree, clustering coefficient). If confirmed: consider PPR with degree-normalised damping, or sub-domain partitioning. Do not redesign the graph schema. |
 | HW-2 | PPR top-N dominated by hub nodes irrespective of seed (hub dominance, §4.1 fail test) | **Critical density** | Same as HW-1; specifically points at hub-node remediation (degree-cap on walk transitions). |
-| HW-3 | Community count = distinct-`domain` count, or communities map 1:1 to domains (domain re-discovery, §4.2 fail test) | **Cross-domain density** | Communities are rediscovering the (C2) `domain` attribute, not extracting themes. Tune Leiden resolution downward (more, smaller communities). If still degenerate after tuning: domain-stratified community detection (separate Leiden run per domain). |
-| HW-4 | One community contains > 50% of entities (single-blob community, §4.2 fail test) | **Critical density** | Same intuition as HW-1/HW-2 — graph is too connected for community structure to crystallise at this resolution. Tune Leiden resolution upward first. |
+| HW-3 | Community count = distinct-`domain` count, or communities map 1:1 to domains (domain re-discovery, §4.2 fail test) | **Cross-domain density** | Communities are rediscovering the (C2) `domain` attribute, not extracting themes. Tune resolution parameter downward (more, smaller communities). If still degenerate after tuning: domain-stratified community detection (separate run per domain). |
+| HW-4 | One community contains > 50% of entities (single-blob community, §4.2 fail test) | **Critical density** | Same intuition as HW-1/HW-2 — graph is too connected for community structure to crystallise at this resolution. Tune resolution parameter upward first. |
 | HW-5 | Probe queries return low recall (top-10 < 0.3) across multiple operations | **Scale** | Corpus is too small for the B-claim to hold yet. This is **not** a B-claim refutation — it is an n-too-low signal. Continue corpus growth; revisit gates after the next significant ingestion increment. |
 | HW-6 | PPR gate passes but downstream LLM synthesis from subgraph extraction is incoherent | **Not a hedge — different failure mode** | Investigate subgraph-extraction completeness (§4.4) OR downstream prompt OR LLM choice. Do not attribute to hedges. |
 | HW-7 | Per-op gates pass individually but composed query results (PPR → subgraph → LLM) are subjectively unhelpful | **Possible scale OR composition issue** | Trigger probe-set expansion (OQ-3) and / or compose-level criteria conversation (OQ-6). |
@@ -364,14 +447,30 @@ This was named as a Round-5 unblock but **has not shipped**. Grep
 confirms: no `domain` field in `kdb_compiler/schemas/`, no `Domain` node
 or `BELONGS_TO` in `graphdb_kdb/schema.py` (as of 2026-05-21).
 
-Several §4.2 community-routing criteria (community count vs distinct
-domain count) and §5 hedge-watch rule HW-3 depend on this field
-existing. **Step-3 implementation cannot proceed until the `domain`
-field ships.**
+**Scope of blocker (Codex P1.1 — narrowed from v1).** Only the
+**community/domain-ratio gate** in §4.2 (`n_communities ≥ 1.5 ×
+n_distinct_domains`) and §5 hedge-watch rule **HW-3** (domain
+re-discovery) require the `domain` field. The other Step-3 work
+streams can proceed **in parallel**:
+
+- **PPR (§4.1)** — depends only on entities + LINKS_TO / SUPPORTS edges,
+  which exist. No dependency on `domain`.
+- **Subgraph extraction (§4.4)** — depends on entities + edges + page
+  text. No dependency on `domain`.
+- **Typed traversal V0 regression (§4.3)** — depends on existing
+  primitive. No dependency on `domain`.
+- **Probe-set curation (§6.2 / OQ-3 / Task #77)** — can start
+  independently. The probe set itself may reference `domain` once that
+  ships, but its curation does not block on it.
+
+The narrowed claim: **the community/domain-ratio acceptance gate
+cannot close until the `domain` field ships.** Step-3 implementation
+as a whole is not blocked.
 
 **Action:** file as a successor task (likely Task #76 — "Implement
 Round 5 `domain` field + `Domain` node + `BELONGS_TO` edge"). Out of
-scope for #75; in scope for whatever opens step 3.
+scope for #75; required before the community/domain-ratio gate can be
+declared green.
 
 ### 6.2 Probe set (OQ-3)
 
@@ -422,20 +521,29 @@ symptom fires, run *this* diagnostic test next" guidance? Or does
 §8.3-spirit ("name it and watch for it; don't design against it") mean
 the disposition column is intentionally light?
 
-**OQ-5. Sequencing.** Does this blueprint, once landed, gate the first
-step-3 implementation task (call it Task #78 — "Implement PPR over
-GraphDB-KDB") *and* the preconditions in §6 (domain field, probe set)?
-The proposed flow is:
+**OQ-5. Sequencing (revised v2 — Codex P1.1 narrowing).** With the
+domain-blocker scope narrowed (§6.1), the proposed flow becomes
+**fully parallel** rather than serial:
 
 ```
 #75 (this blueprint, landed)
-   → #76 (domain field) + #77 (probe set)  [parallel]
-      → #78+ (per-op step-3 implementations)
+   ↓
+   ┌─────────────────────────────────────────────────────────┐
+   │ #76 (domain field)         all parallel                 │
+   │ #77 (probe set)            no blocking dependency       │
+   │ #78 (PPR impl)             between any pair             │
+   │ #78b (subgraph extr impl)                               │
+   │ #78c (typed traversal V0 regression suite formalised)   │
+   └─────────────────────────────────────────────────────────┘
+       ↓
+   Community/domain-ratio acceptance gate (§4.2) closes
+   only after #76 + #78 are both in.
 ```
 
-Is that sequencing right, or should #76 (domain) actually have been a
-step-2 (compile-pipeline) follow-up that should have shipped already and
-unblocks step 3 mechanically?
+Open: should #76 (domain field) actually have been a step-2
+(compile-pipeline) follow-up that should have shipped already and
+unblock step 3 mechanically, rather than being treated as a step-3
+sibling?
 
 **OQ-6. Composition criteria.** Each operation has individual criteria but
 step 3 in practice composes them (e.g., PPR seeds → subgraph extraction →
@@ -453,7 +561,12 @@ e.g., "each criterion-definition change invalidates prior probe-set
 results and a fresh probe-set run is required"?
 
 **OQ-8. Failure-to-pass disposition.** If the §4 gates fail after
-implementation, what's the project's response? Options:
+implementation, the project response is the **bounded (a)→(b)→(c)
+ladder** below. Codex flagged this exact risk in Q6 ("implementation
+momentum disguised as empiricism") — naming the ladder up-front, with
+explicit stop conditions, is part of avoiding it.
+
+**The ladder:**
 
 - (a) **Iterate on the operation** (tune parameters, change library, try
   alternate algorithm) until gates pass.
@@ -463,9 +576,50 @@ implementation, what's the project's response? Options:
   and (b), the B-claim is empirically refuted and the project pivots
   to an A-flavoured variant (per §8.5 narrowing of [8]).
 
-Which sequence does the project commit to? Codex flagged this exact
-risk in Q6 ("implementation momentum disguised as empiricism") — naming
-the (a)→(b)→(c) ladder up-front is part of avoiding it.
+**Stop conditions (Codex + Gemini v2 additions):**
+
+1. **HW-5 (scale hedge) lock.** If HW-5 fires — i.e., low recall is
+   diagnosed as an n-too-low signal — the ladder is **locked at state
+   (b)**: continue corpus growth. State **(c) is forbidden while HW-5
+   is active.** Philosophy B is a statistical claim about a sufficiently
+   dense corpus; it cannot be refuted on an N too low to support
+   density. (Concretely: if `n_canonical_entities < some-threshold`, (c)
+   is off the table — the threshold itself is OQ-9.)
+2. **Iteration ceiling.** To prevent infinite parameter tuning (a) or
+   infinite corpus reshaping (b), pre-commit to a hard ceiling:
+   - **State (a) ceiling:** ≤ **2** parameter-tuning cycles per
+     operation (e.g., resolution scaling, damping factors, transition
+     weights).
+   - **State (b) ceiling:** ≤ **1** corpus ingestion / canonicalisation
+     expansion cycle.
+   - If gates remain red after these ceilings, the transition to (c) is
+     triggered automatically (subject to the HW-5 lock above).
+   - **These specific numbers are provisional — see OQ-9.**
+3. **Post-pivot preservation clause (state (c) reality).** If (c)
+   triggers and the B-claim is refuted, the work in **Step 1
+   (Harvesters)** and **Step 2 (Canonicalization Engine)** is
+   *preserved*, not discarded. The pivot affects only **query-time
+   context assembly** — replacing stochastic graph operations with
+   schema-constrained, human-approved retrieval paths (the A-flavoured
+   variant per §8.5). The ingestion and canonicalisation infrastructure
+   is the same under either philosophy; only the consumer of the
+   resulting graph changes.
+
+**Project commitment:** the project commits to the ladder above with
+its stop conditions. (a) is tried first per operation, (b) follows if
+(a) ceiling hits and HW-5 is *not* active, (c) follows if both ceilings
+hit and HW-5 is *not* active. HW-5 active ⇒ stay in (b).
+
+**OQ-9. Iteration-ceiling values and HW-5 lock threshold.** The
+ceilings in OQ-8 ((a) ≤ 2 cycles, (b) ≤ 1 cycle) and the HW-5 lock
+threshold ("if `n_canonical_entities < X`, state (c) is forbidden")
+are **provisional** — defensible but not derived from prior data. Plan
+to revisit after the first step-3 run produces evidence on how many
+tuning cycles actually move the needle for each operation, and what
+corpus size starts to make recall gates achievable. **Disposition:**
+adopt the v2 provisional values; on Task #78's post-run debrief,
+re-evaluate and either confirm or revise. Do not block #75 closure on
+this.
 
 ---
 
@@ -491,3 +645,50 @@ the (a)→(b)→(c) ladder up-front is part of avoiding it.
 
 - **v1 (2026-05-21):** initial draft. Roster, per-op criteria, hedge-watch
   rules, preconditions, OQs. Awaiting Codex + Gemini external review.
+- **v2 (2026-05-21):** Codex + Gemini external review applied. Eight
+  revisions:
+  - **R1** (Codex P1.2): §4.2 community-routing criteria made
+    **algorithm-neutral**. Current code is Louvain only
+    (`graphdb_kdb/analytics.py:86` rejects non-Louvain); blueprint v1's
+    Leiden + SUPPORTS-projection assumptions were unimplementable. Leiden
+    adoption + SUPPORTS-projection moved to Task #78 implementation
+    scope. §3.1 roster entry, §3.3 non-commitments, §4.2 heading +
+    contract, HW-3 / HW-4 dispositions all reworded.
+  - **R2** (Codex P1.1): §6.1 `domain` blocker **narrowed**. Only the
+    community/domain-ratio gate (§4.2) and HW-3 (§5) require `domain`.
+    PPR (§4.1), subgraph extraction (§4.4), typed traversal regression
+    (§4.3), and probe-set curation can proceed in parallel. OQ-5
+    sequencing diagram updated to a fully parallel flow.
+  - **R3** (Codex P2.3): §4.1 PPR contract changed "canonical_id" →
+    "canonical entity slug". `Entity.canonical_id` is the alias→canonical
+    foreign-key pointer (NULL on canonicals); the PPR seed identifier is
+    the canonical entity's `slug` (per `graphdb_kdb/schema.py` + Task
+    #74 D-R5-13).
+  - **R4** (Codex P2.4): §3.1 multi-hop entry **split**. Row 5a =
+    shortest-path V0 (already exists as `graphdb-kdb path`, treated as
+    regression guardrail). Row 5b = scored / explanatory multi-hop
+    workflow V2 (defer). §3.2 rationale and OQ-1 framing adjusted.
+  - **R5** (Codex P2.5): §4.3 typed traversal **recast as query-time
+    primitive** (`graphdb-kdb neighbors` / `incoming` BFS). Manifest-parity
+    fail test dropped (Task #73 removed manifest-as-ontology). Compile-time
+    consumer (`graph_context_loader.py`, Tasks #70 / #71) retained as a
+    regression guardrail, not as the operation under test.
+  - **R6** (Codex + Gemini): OQ-8 (a)→(b)→(c) ladder gained three
+    explicit stop conditions: HW-5 (scale hedge) lock, iteration ceiling
+    ((a) ≤ 2, (b) ≤ 1), post-pivot preservation clause (Step 1 + Step 2
+    survive a pivot; only query-time context assembly changes). Project
+    commitment statement added.
+  - **R7** (Gemini): §4.1 Hub Guard scope clarified — applies to
+    structural / systemic hubs (file-type, temporal, generic-concept
+    nodes), NOT legitimate semantic hubs (e.g., `buffett` in an
+    investing query).
+  - **R8** (Gemini): §4.2 resolution-tuning realism note added — at
+    ~70-entity personal scale, out-of-the-box community-detection
+    parameters will collapse to 2–3 mega-clusters; active resolution
+    tuning is required as part of Task #78 setup, not as a separate
+    research task.
+  - **OQ-9 (new):** iteration-ceiling values (2 / 1) and HW-5 lock
+    threshold flagged as provisional; revisit after Task #78 post-run
+    debrief. Does not block #75 closure.
+  - **Status:** Codex + Gemini review cycle complete. Pending final
+    user sign-off before Task #75 closure.
