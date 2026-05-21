@@ -42,7 +42,7 @@ from graphdb_kdb.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 1
+SNAPSHOT_FORMAT_VERSION = 2  # #74.7: v2 adds Entity.canonical_id + alias_of.jsonl
 
 
 @dataclass(frozen=True)
@@ -99,6 +99,16 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "sha256": _sha256(supports_path),
             }
 
+            # #74.7 (format v2): ALIAS_OF edges serialized into their own
+            # JSONL file. Pre-#74 graphs produce an empty file with rows=0
+            # — back-compatible with existing snapshot consumers that
+            # didn't know about aliases.
+            alias_of_path = tmp_dir / "alias_of.jsonl"
+            files_meta["alias_of.jsonl"] = {
+                "rows": _write_alias_of(gdb.conn, alias_of_path),
+                "sha256": _sha256(alias_of_path),
+            }
+
             schema_path = tmp_dir / "schema.cypher"
             schema_ddl_sha256 = _write_schema(schema_path)
             files_meta["schema.cypher"] = {"sha256": schema_ddl_sha256}
@@ -108,6 +118,7 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "sources": files_meta["sources.jsonl"]["rows"],
                 "links_to": files_meta["links_to.jsonl"]["rows"],
                 "supports": files_meta["supports.jsonl"]["rows"],
+                "alias_of": files_meta["alias_of.jsonl"]["rows"],
             }
 
             manifest = {
@@ -179,10 +190,17 @@ def default_snapshot_dirname() -> str:
 
 
 def _write_entities(conn: kuzu.Connection, path: Path) -> int:
+    """#74.7 (format v2): adds canonical_id (NULL ⇒ canonical, str ⇒ alias).
+
+    Serialized as JSON null vs string. Pre-#74 snapshots always wrote
+    every entity without this field; future load-snapshot consumers
+    should default missing keys to None for format v1 compatibility.
+    """
     query = """
     MATCH (e:Entity)
     RETURN e.slug, e.title, e.page_type, e.status, e.confidence,
-           e.created_at, e.updated_at, e.first_run_id, e.last_run_id
+           e.created_at, e.updated_at, e.first_run_id, e.last_run_id,
+           e.canonical_id
     ORDER BY e.slug
     """
     n = 0
@@ -200,6 +218,7 @@ def _write_entities(conn: kuzu.Connection, path: Path) -> int:
                 "updated_at": row[6],
                 "first_run_id": row[7],
                 "last_run_id": row[8],
+                "canonical_id": row[9],   # None ⇒ canonical; str ⇒ alias
             }
             f.write(json.dumps(obj, sort_keys=True) + "\n")
             n += 1
@@ -281,6 +300,36 @@ def _write_supports(conn: kuzu.Connection, path: Path) -> int:
                 "role": row[3],
                 "hash_at_time": row[4],
                 "created_at": row[5],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_alias_of(conn: kuzu.Connection, path: Path) -> int:
+    """#74.7 (format v2): ALIAS_OF edges (Entity → Entity) with provenance.
+
+    Pre-#74 graphs have no aliases ⇒ emit an empty file (rows=0). Future
+    `load-snapshot` recreates aliases by upserting alias Entity rows with
+    `canonical_id` (from entities.jsonl) plus an ALIAS_OF edge per row
+    here — restores the full graph-side canonicalization state.
+    """
+    query = """
+    MATCH (a:Entity)-[r:ALIAS_OF]->(c:Entity)
+    RETURN a.slug, c.slug, r.run_id, r.algorithm, r.created_at
+    ORDER BY a.slug, c.slug, r.run_id, r.algorithm, r.created_at
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "alias_slug": row[0],
+                "canonical_slug": row[1],
+                "run_id": row[2],
+                "algorithm": row[3],
+                "created_at": row[4],
             }
             f.write(json.dumps(obj, sort_keys=True) + "\n")
             n += 1

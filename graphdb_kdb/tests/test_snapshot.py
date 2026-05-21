@@ -85,7 +85,10 @@ def test_snapshot_jsonl_files_parse(graph_dir, tmp_path):
     out = tmp_path / "snap"
     result = snapshot(graph_dir, out)
     assert out.is_dir()
-    for name in ("entities.jsonl", "sources.jsonl", "links_to.jsonl", "supports.jsonl"):
+    for name in (
+        "entities.jsonl", "sources.jsonl", "links_to.jsonl",
+        "supports.jsonl", "alias_of.jsonl",
+    ):
         path = out / name
         assert path.is_file()
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -113,9 +116,14 @@ def test_snapshot_manifest_counts_and_hashes_match_disk(graph_dir, tmp_path):
     assert manifest["counts"]["sources"] == manifest["files"]["sources.jsonl"]["rows"]
     assert manifest["counts"]["links_to"] == manifest["files"]["links_to.jsonl"]["rows"]
     assert manifest["counts"]["supports"] == manifest["files"]["supports.jsonl"]["rows"]
+    # #74.7 (format v2): alias_of count is recorded too
+    assert manifest["counts"]["alias_of"] == manifest["files"]["alias_of.jsonl"]["rows"]
 
     # Recorded sha256 matches what's actually on disk
-    for name in ("entities.jsonl", "sources.jsonl", "links_to.jsonl", "supports.jsonl", "schema.cypher"):
+    for name in (
+        "entities.jsonl", "sources.jsonl", "links_to.jsonl",
+        "supports.jsonl", "alias_of.jsonl", "schema.cypher",
+    ):
         recorded = manifest["files"][name]["sha256"]
         actual = _file_sha256(out / name)
         assert recorded == actual, f"{name}: manifest sha {recorded} != disk sha {actual}"
@@ -124,7 +132,10 @@ def test_snapshot_manifest_counts_and_hashes_match_disk(graph_dir, tmp_path):
     assert manifest["schema_ddl_sha256"] == _file_sha256(out / "schema.cypher")
 
     # Recorded row counts match actual line counts
-    for name in ("entities.jsonl", "sources.jsonl", "links_to.jsonl", "supports.jsonl"):
+    for name in (
+        "entities.jsonl", "sources.jsonl", "links_to.jsonl",
+        "supports.jsonl", "alias_of.jsonl",
+    ):
         recorded = manifest["files"][name]["rows"]
         actual = sum(1 for _ in (out / name).read_text(encoding="utf-8").splitlines() if _)
         assert recorded == actual
@@ -152,7 +163,10 @@ def test_two_snapshots_of_unchanged_graph_are_byte_identical(graph_dir, tmp_path
     out_b = tmp_path / "snap-b"
     snapshot(graph_dir, out_a)
     snapshot(graph_dir, out_b)
-    for name in ("entities.jsonl", "sources.jsonl", "links_to.jsonl", "supports.jsonl", "schema.cypher"):
+    for name in (
+        "entities.jsonl", "sources.jsonl", "links_to.jsonl",
+        "supports.jsonl", "alias_of.jsonl", "schema.cypher",
+    ):
         assert (out_a / name).read_bytes() == (out_b / name).read_bytes(), \
             f"{name} differs between snapshots of unchanged graph"
 
@@ -259,3 +273,117 @@ def test_cli_snapshot_writes_files(graph_dir, tmp_path, monkeypatch):
     assert (out_dir / "manifest.json").is_file()
     payload = json.loads(result.stdout)
     assert payload["counts"]["entities"] >= 1
+
+
+# ---------- 9. #74.7 — alias state serialization (format v2) ----------
+
+
+def _seed_graph_with_aliases(graph_dir: Path) -> None:
+    """Seed a graph that exercises every alias-state surface area: a
+    canonical entity, an alias entity, an ALIAS_OF edge, and a LINKS_TO
+    edge to the canonical. Goes through the full Phase 3 + 3.5 ingest
+    path so the data is shaped exactly as production would produce it."""
+    cr = {
+        "run_id": "alias-seed-run",
+        "compiled_sources": [
+            {
+                "source_id": "KDB/raw/equities.md",
+                "compile_meta": {"compile_state": "compiled"},
+                "pages": [
+                    {
+                        "slug": "apple-inc",
+                        "page_type": "concept",
+                        "title": "Apple Inc.",
+                        "status": "active",
+                        "confidence": "high",
+                        "outgoing_links": [],
+                    },
+                ],
+            },
+        ],
+        "canonical_meta": {
+            "algorithm_version": "1.0",
+            "ledger_snapshot_sha256": "deadbeef",
+            "aliases_emitted": [
+                {"alias_slug": "aapl",
+                 "canonical_slug": "apple-inc",
+                 "algorithm": "ledger"},
+            ],
+            "outgoing_link_remaps": [],
+            "merged_pages": [],
+        },
+    }
+    scan = {
+        "run_id": "alias-seed-run",
+        "files": [
+            {"path": "KDB/raw/equities.md", "current_hash": "sha256:eq",
+             "size_bytes": 1024, "file_type": "markdown"},
+        ],
+    }
+    with GraphDB(graph_dir) as gdb:
+        apply_compile_result(cr, scan, "alias-seed-run", conn=gdb.conn)
+
+
+def test_snapshot_serializes_canonical_id_on_alias_entity(
+    graph_dir, tmp_path,
+):
+    """#74.7 format v2: entities.jsonl rows carry canonical_id (None for
+    canonicals, str for aliases). Tier-2 recovery from snapshot alone
+    needs this column or alias identity is lost."""
+    _seed_graph_with_aliases(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = {
+        json.loads(line)["slug"]: json.loads(line)
+        for line in (out / "entities.jsonl").read_text("utf-8").splitlines()
+    }
+    assert rows["apple-inc"]["canonical_id"] is None
+    assert rows["aapl"]["canonical_id"] == "apple-inc"
+
+
+def test_snapshot_alias_of_jsonl_records_edge_with_provenance(
+    graph_dir, tmp_path,
+):
+    """#74.7 format v2: alias_of.jsonl carries one row per ALIAS_OF edge
+    with run_id + algorithm + created_at provenance. Pre-#74 graphs
+    produce an empty file with rows=0 (test below)."""
+    _seed_graph_with_aliases(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = [
+        json.loads(line)
+        for line in (out / "alias_of.jsonl").read_text("utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(rows) == 1
+    e = rows[0]
+    assert e["alias_slug"] == "aapl"
+    assert e["canonical_slug"] == "apple-inc"
+    assert e["algorithm"] == "ledger"
+    assert e["run_id"] == "alias-seed-run"
+    assert e["created_at"]  # non-empty timestamp string
+
+    # Manifest counts reflect it
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["alias_of"] == 1
+    assert manifest["files"]["alias_of.jsonl"]["rows"] == 1
+    # And format version is v2 (the bump that introduced this file)
+    assert manifest["snapshot_format_version"] == 2
+
+
+def test_snapshot_alias_of_empty_for_pre_74_graph(graph_dir, tmp_path):
+    """A graph with no aliases produces alias_of.jsonl with zero rows —
+    back-compat: pre-#74 ingest paths produce an empty file, not no file."""
+    _seed_graph(graph_dir)  # canonical-only seed (no canonical_meta)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    content = (out / "alias_of.jsonl").read_text("utf-8")
+    assert content == ""
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["alias_of"] == 0
+    # And every canonical entity has canonical_id=None in the snapshot
+    rows = [
+        json.loads(line)
+        for line in (out / "entities.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert all(r["canonical_id"] is None for r in rows)

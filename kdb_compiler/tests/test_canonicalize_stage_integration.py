@@ -376,3 +376,39 @@ class TestSchemaCompatibility:
         schema = json.loads(schema_path.read_text())
         # Should not raise — schema accepts canonical_meta + canonical_id
         validate(instance=canonical_cr, schema=schema)
+
+    def test_pre_74_compile_result_without_canonical_meta_validates(self):
+        """#74.7 back-compat (D-R5-7 single-schema strategy): a pre-#74
+        compile_result that lacks `canonical_meta` and `canonical_id`
+        still validates against the post-#74.4 schema. Locks in that
+        the schema additions are strictly optional — old journals replay
+        without hitting jsonschema rejection."""
+        from jsonschema import validate
+
+        schema_path = Path(__file__).parent.parent / "schemas" / "compile_result.schema.json"
+        schema = json.loads(schema_path.read_text())
+        pre_74_cr = {
+            "run_id": "pre-74-test",
+            "success": True,
+            "compiled_sources": [{
+                "source_id": "KDB/raw/paper.md",
+                "summary_slug": "summary-paper",
+                "concept_slugs": [],
+                "article_slugs": [],
+                "pages": [{
+                    "slug": "summary-paper",
+                    "page_type": "summary",
+                    "title": "Summary Paper",
+                    "status": "active",
+                    "body": "Pre-#74 body — no canonical_id field on the page.",
+                    "supports_page_existence": ["KDB/raw/paper.md"],
+                    "outgoing_links": [],
+                    "confidence": "high",
+                }],
+            }],
+            "log_entries": [],
+        }
+        assert "canonical_meta" not in pre_74_cr
+        assert "canonical_id" not in pre_74_cr["compiled_sources"][0]["pages"][0]
+        # Should not raise — the post-#74.4 schema accepts pre-#74 shapes
+        validate(instance=pre_74_cr, schema=schema)

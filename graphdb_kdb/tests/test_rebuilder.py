@@ -47,6 +47,7 @@ def _write_run(
     sources: list[tuple[str, list[str]]] | None = None,
     skip_sidecar: bool = False,
     invalid_journal: bool = False,
+    canonical_meta: dict | None = None,
 ) -> Path:
     """Write a synthetic kdb-compile run tree:
         <journals_dir>/<run_id>.json          — the run journal
@@ -55,6 +56,10 @@ def _write_run(
 
     `sources` is a list of (source_id, [page_slugs]); each becomes a
     compiled_source entry. Defaults: one source 's' with two pages a, b.
+
+    `canonical_meta` (#74.7): when provided, embedded verbatim into the
+    sidecar's compile_result.json (post-#74 journals). Default None is
+    the pre-#74 shape — no canonical_meta key in the cr.
     """
     journals_dir.mkdir(parents=True, exist_ok=True)
     journal_path = journals_dir / f"{run_id}.json"
@@ -85,7 +90,9 @@ def _write_run(
         make_compiled_source(sid, [make_page(s) for s in slugs])
         for sid, slugs in sources
     ]
-    mutation = make_compile_result(compiled_sources, run_id=run_id)
+    mutation = make_compile_result(
+        compiled_sources, run_id=run_id, canonical_meta=canonical_meta,
+    )
     scan = make_scan([make_scan_entry(sid) for sid, _ in sources])
 
     (sidecar_dir / "compile_result.json").write_text(json.dumps(mutation))
@@ -714,3 +721,132 @@ def test_rebuild_slug_safe_when_slug_survives_under_another_page(tmp_path, graph
     with GraphDB(graph_dir) as gdb:
         assert gdb.get_entity("foo") is not None    # slug-safe — must survive
         assert gdb.get_entity("solo") is None       # genuinely retracted
+
+
+# ============================================================================
+# 7. #74.7 — canonical_meta replay (D-R5-7 / D-R5-10 / blueprint §8.4)
+# ============================================================================
+#
+# Rebuild's correctness guarantee for post-#74 journals: a journal whose
+# sidecar carries `canonical_meta` replays into a graph with the exact
+# alias Entity rows + ALIAS_OF edges the original compile produced. Pre-#74
+# journals replay untouched (canonical_id NULL throughout). Mixed journal
+# sequences are the realistic scenario for any vault that pre-dated #74.
+
+def _canonical_meta_with(aliases: list[tuple[str, str, str]]) -> dict:
+    return {
+        "algorithm_version": "1.0",
+        "ledger_snapshot_sha256": "deadbeef",
+        "aliases_emitted": [
+            {"alias_slug": a, "canonical_slug": c, "algorithm": algo}
+            for (a, c, algo) in aliases
+        ],
+        "outgoing_link_remaps": [],
+        "merged_pages": [],
+    }
+
+
+def test_rebuild_post_74_journal_reproduces_alias_state(graph_dir, tmp_path):
+    """A v2.2 journal whose sidecar carries canonical_meta.aliases_emitted
+    rebuilds into a graph with the alias Entity rows + ALIAS_OF edges
+    (D-R5-10 + blueprint §8.4)."""
+    journals = tmp_path / "runs"
+    _write_run(
+        journals,
+        "2026-05-20T01-00-00Z",
+        started_at="2026-05-20T01:00:00",
+        schema_version="2.2",
+        sources=[("KDB/raw/equities.md", ["apple-inc"])],
+        canonical_meta=_canonical_meta_with([
+            ("aapl", "apple-inc", "ledger"),
+        ]),
+    )
+    result = rebuild(
+        graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+        journals_dir=journals, confirm=False,
+    )
+    assert result.replayed == 1
+    assert result.failed == 0
+    with GraphDB(graph_dir) as gdb:
+        canonical = gdb.get_entity("apple-inc")
+        alias = gdb.get_entity("aapl")
+        stats = gdb.stats()
+    assert canonical is not None and canonical.canonical_id is None
+    assert alias is not None and alias.canonical_id == "apple-inc"
+    assert stats["alias_of"] == 1
+
+
+def test_rebuild_pre_74_journal_leaves_no_alias_state(graph_dir, tmp_path):
+    """A v2.0 journal (pre-#74, no canonical_meta) rebuilds with every
+    entity at canonical_id IS NULL and zero ALIAS_OF edges. Back-compat
+    for the existing #63 corpus per blueprint §8.3."""
+    journals = tmp_path / "runs"
+    _write_run(
+        journals,
+        "2026-04-10T00-00-00Z",
+        started_at="2026-04-10T00:00:00",
+        schema_version="2.0",
+        sources=[("KDB/raw/paper.md", ["alpha", "beta"])],
+        # canonical_meta intentionally None — pre-#74 shape
+    )
+    result = rebuild(
+        graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+        journals_dir=journals, confirm=False,
+    )
+    assert result.replayed == 1
+    with GraphDB(graph_dir) as gdb:
+        alpha = gdb.get_entity("alpha")
+        beta = gdb.get_entity("beta")
+        stats = gdb.stats()
+    assert alpha.canonical_id is None
+    assert beta.canonical_id is None
+    assert stats["alias_of"] == 0
+
+
+def test_rebuild_mixed_pre_74_and_post_74_journal_sequence(graph_dir, tmp_path):
+    """The realistic upgrade scenario: a pre-#74 v2.0 journal followed by
+    a post-#74 v2.2 journal that introduces aliases. The pre-#74 entity
+    remains canonical; the post-#74 alias state attaches correctly.
+    Verify by chronological replay order (#74.7 must not regress
+    chronological semantics)."""
+    journals = tmp_path / "runs"
+    # Pre-#74 journal — establishes apple-inc as a canonical
+    _write_run(
+        journals,
+        "2026-04-10T00-00-00Z",
+        started_at="2026-04-10T00:00:00",
+        schema_version="2.0",
+        sources=[("KDB/raw/equities.md", ["apple-inc"])],
+    )
+    # Post-#74 journal — adds the aapl alias for the same canonical.
+    # The compile_result includes apple-inc in pages[] (because Stage 6
+    # merged the alias page intent into the canonical), so the alias
+    # Entity gets created with canonical_id pointing at apple-inc.
+    _write_run(
+        journals,
+        "2026-05-20T01-00-00Z",
+        started_at="2026-05-20T01:00:00",
+        schema_version="2.2",
+        sources=[("KDB/raw/equities.md", ["apple-inc"])],
+        canonical_meta=_canonical_meta_with([
+            ("aapl", "apple-inc", "ledger"),
+        ]),
+    )
+    result = rebuild(
+        graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+        journals_dir=journals, confirm=False,
+    )
+    assert result.replayed == 2
+    with GraphDB(graph_dir) as gdb:
+        canonical = gdb.get_entity("apple-inc")
+        alias = gdb.get_entity("aapl")
+        stats = gdb.stats()
+    # Canonical survives through both journals — first_run_id pins the
+    # pre-#74 chronology, last_run_id reflects the most recent touch.
+    assert canonical is not None and canonical.canonical_id is None
+    assert canonical.first_run_id == "2026-04-10T00-00-00Z"
+    assert canonical.last_run_id == "2026-05-20T01-00-00Z"
+    # Alias attached by the second journal
+    assert alias is not None and alias.canonical_id == "apple-inc"
+    assert alias.first_run_id == "2026-05-20T01-00-00Z"
+    assert stats["alias_of"] == 1
