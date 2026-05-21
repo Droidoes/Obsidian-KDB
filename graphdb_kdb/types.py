@@ -17,6 +17,7 @@ class SyncResult:
     edges_upserted: int = 0       # LINKS_TO edges present after replacement (Phase 3)
     sources_upserted: int = 0     # Source MERGE ops in Phase 1 (scan refresh)
     supports_upserted: int = 0    # SUPPORTS edges present after replacement (Phase 3)
+    alias_of_upserted: int = 0    # ALIAS_OF edges created this run by Phase 3.5 (#74.5); accumulator across aliases_emitted entries, mirrors supports_upserted convention
     entities_deleted: int = 0     # Entity DETACH DELETE ops in apply_cleanup (#68)
     orphans_detected: list[str] = field(default_factory=list)  # newly orphan_candidate slugs
 
@@ -25,13 +26,14 @@ class SyncResult:
 class Entity:
     slug: str
     title: str
-    page_type: str       # values still Obsidian-flavored: 'summary'|'concept'|'article' (D-A2: rename of values deferred to producer #2)
+    page_type: str       # values still Obsidian-flavored: 'summary'|'concept'|'article' (D-A2: rename of values deferred to producer #2); #74.5 adds 'alias' for graph-only alias rows
     status: str
     confidence: str
     created_at: str
     updated_at: str
     first_run_id: str
     last_run_id: str
+    canonical_id: str | None = None  # #74.5 D-R5-5: NULL ⇒ self is canonical; otherwise points at the (chain-flattened, D-R5-13) root canonical slug
 
 
 @dataclass(frozen=True)

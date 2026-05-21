@@ -76,6 +76,11 @@ def apply_compile_result(
             _replace_supports_for_source(conn, cs, run_id, now, result)
             _update_source_ingest_state(conn, cs, run_id, now)
 
+        # Phase 3.5 (#74.5): materialize alias Entity rows + ALIAS_OF edges
+        # from canonical_meta.aliases_emitted. Runs after Phase 3 so the
+        # canonical entities exist for the ALIAS_OF endpoints to MATCH.
+        _upsert_alias_entities_and_edges(conn, cr, run_id, now, result)
+
         # Phase 4: orphan detection (mark orphans + revive previously-orphaned pages
         # that have regained SUPPORTS)
         result.orphans_detected = _detect_and_mark_orphans(conn, run_id, now)
@@ -241,6 +246,14 @@ def _upsert_entity(
     """Phase 3: upsert an Entity node. `created_at` and `first_run_id` set on first
     INSERT and never overwritten (per §4 design note).
 
+    #74.5 additions for the alias-promoted-to-canonical re-classification case
+    (a slug that was an alias is now being declared canonical by appearing in
+    pages[]):
+      - `canonical_id` is explicitly reset to NULL.
+      - Any stale outgoing ALIAS_OF edges are dropped.
+    Without these, C1 (`canonical_id IS NOT NULL` ⇔ ALIAS_OF edge exists) and
+    C3 (no chains/cycles) would be violated by the lingering alias state.
+
     Naming note: parameter `page` is a producer-side dict (kdb-compile's term);
     graph-side stores it as an Entity node per D-A1.
     """
@@ -252,7 +265,8 @@ def _upsert_entity(
         MERGE (p:Entity {slug: $slug})
         ON CREATE SET p.created_at=$ts, p.first_run_id=$run_id
         SET p.title=$title, p.page_type=$ptype, p.status=$status,
-            p.confidence=$conf, p.updated_at=$ts, p.last_run_id=$run_id
+            p.confidence=$conf, p.updated_at=$ts, p.last_run_id=$run_id,
+            p.canonical_id=NULL
         """,
         {
             "slug": slug,
@@ -263,6 +277,11 @@ def _upsert_entity(
             "status": page.get("status", _DEFAULT_ENTITY_STATUS),
             "conf": page.get("confidence", _DEFAULT_CONFIDENCE),
         },
+    )
+    # Promotion safety: drop any outgoing ALIAS_OF — this slug is canonical now.
+    conn.execute(
+        "MATCH (p:Entity {slug: $slug})-[r:ALIAS_OF]->() DELETE r",
+        {"slug": slug},
     )
     result.entities_upserted += 1
 
@@ -382,6 +401,101 @@ def _update_source_ingest_state(
     )
 
 
+# ---------- Phase 3.5: alias Entity + ALIAS_OF writes (#74.5) ----------
+
+def _upsert_alias_entities_and_edges(
+    conn: kuzu.Connection,
+    cr: dict,
+    run_id: str,
+    now: str,
+    result: SyncResult,
+) -> None:
+    """Phase 3.5 (#74.5): materialize alias Entity rows + ALIAS_OF edges from
+    canonical_meta.aliases_emitted.
+
+    For each entry:
+      1. MERGE an Entity row for the alias slug with `canonical_id` set to
+         the (chain-flattened, D-R5-13) canonical slug. `status` and
+         `page_type` are 'alias' so canonical-taxonomy queries naturally
+         skip these rows.
+      2. Drop any existing outgoing ALIAS_OF (D-R5-13 flat invariant: at
+         most one ALIAS_OF per alias).
+      3. CREATE one fresh ALIAS_OF edge carrying run_id + algorithm
+         provenance from canonical_meta.
+
+    Self-loops (alias_slug == canonical_slug) are skipped defensively —
+    Stage 6 should never emit them but the adapter is a graph-invariant
+    guardian, not a Stage 6 client.
+
+    Missing-canonical case (canonical not in the graph): the MATCH-then-CREATE
+    pattern silently no-ops the edge; the alias Entity still carries
+    `canonical_id` so #74.6's C1 verifier will catch the inconsistency.
+    Mirrors how `_replace_outgoing_links` handles dangling targets.
+
+    Idempotency: re-applying the same `canonical_meta` produces the same
+    graph state — one ALIAS_OF per alias, with the most recent run's
+    `run_id`/`created_at`. Older provenance lives in the per-run sidecar
+    `state/runs/<run_id>/compile_result.json` (archived by Stage 10).
+    """
+    canonical_meta = cr.get("canonical_meta") or {}
+    aliases = canonical_meta.get("aliases_emitted") or []
+    for entry in aliases:
+        alias_slug = entry.get("alias_slug")
+        canonical_slug = entry.get("canonical_slug")
+        algorithm = entry.get("algorithm") or "ledger"
+        if not alias_slug or not canonical_slug:
+            continue
+        if alias_slug == canonical_slug:
+            # Self-loop defense — Stage 6 shouldn't emit these.
+            continue
+
+        # 1. Upsert alias Entity with canonical_id pointing at root canonical.
+        conn.execute(
+            """
+            MERGE (a:Entity {slug: $alias})
+            ON CREATE SET a.created_at=$ts, a.first_run_id=$run_id,
+                          a.title='', a.page_type='alias',
+                          a.confidence=''
+            SET a.canonical_id=$canonical, a.status='alias',
+                a.updated_at=$ts, a.last_run_id=$run_id
+            """,
+            {
+                "alias": alias_slug, "canonical": canonical_slug,
+                "ts": now, "run_id": run_id,
+            },
+        )
+        result.entities_upserted += 1
+
+        # 2. Drop any existing outgoing ALIAS_OF — flat invariant (D-R5-13).
+        conn.execute(
+            "MATCH (a:Entity {slug: $alias})-[r:ALIAS_OF]->() DELETE r",
+            {"alias": alias_slug},
+        )
+
+        # 3. Fresh ALIAS_OF with run_id + algorithm provenance. Count from
+        # the graph (mirrors _replace_outgoing_links / _replace_supports_for_source
+        # convention: report the count of edges this pass actually created).
+        # MATCH-then-CREATE silently no-ops if the canonical is absent, so
+        # we query post-CREATE for the truth.
+        conn.execute(
+            """
+            MATCH (a:Entity {slug: $alias}), (c:Entity {slug: $canonical})
+            CREATE (a)-[:ALIAS_OF {run_id: $run_id, created_at: $ts,
+                                   algorithm: $algo}]->(c)
+            """,
+            {
+                "alias": alias_slug, "canonical": canonical_slug,
+                "run_id": run_id, "ts": now, "algo": algorithm,
+            },
+        )
+        r = conn.execute(
+            "MATCH (a:Entity {slug: $alias})-[r:ALIAS_OF]->() RETURN COUNT(r)",
+            {"alias": alias_slug},
+        )
+        if r.has_next():
+            result.alias_of_upserted += int(r.get_next()[0])
+
+
 # ---------- Phase 4: orphan detection + revival ----------
 
 def _detect_and_mark_orphans(
@@ -391,12 +505,20 @@ def _detect_and_mark_orphans(
 ) -> list[str]:
     """Phase 4: mark Entities with zero SUPPORTS as orphan_candidate; revive
     previously-orphaned entities that have regained SUPPORTS. Returns the
-    list of NEWLY orphan_candidate slugs (not revivals)."""
-    # Find newly-orphaned pages (no SUPPORTS, not already marked).
+    list of NEWLY orphan_candidate slugs (not revivals).
+
+    #74.5 scope: only canonical entities (`canonical_id IS NULL`) are
+    eligible for orphan flagging. Aliases (OQ-E direct-to-canonical) never
+    receive SUPPORTS by design — flagging them would mass-orphan every
+    alias on first compile. Aliases are graph-level identity assertions,
+    not support-bearing pages.
+    """
+    # Find newly-orphaned pages (no SUPPORTS, not already marked, canonical only).
     r = conn.execute(
         """
         MATCH (p:Entity)
-        WHERE NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
+        WHERE p.canonical_id IS NULL
+          AND NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
           AND p.status <> 'orphan_candidate'
         RETURN p.slug
         """

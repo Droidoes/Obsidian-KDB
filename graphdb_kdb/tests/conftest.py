@@ -55,15 +55,29 @@ def make_compiled_source(
     }
 
 
-def make_compile_result(compiled_sources: list[dict], *, run_id: str = "test-run") -> dict:
-    """Construct a minimal compile_result dict."""
-    return {
+def make_compile_result(
+    compiled_sources: list[dict],
+    *,
+    run_id: str = "test-run",
+    canonical_meta: dict | None = None,
+) -> dict:
+    """Construct a minimal compile_result dict.
+
+    `canonical_meta` (#74.5) is included verbatim when provided. Pass a
+    full dict shaped like Stage 6's emit: {algorithm_version,
+    ledger_snapshot_sha256, aliases_emitted, outgoing_link_remaps,
+    merged_pages}.
+    """
+    cr = {
         "run_id": run_id,
         "success": True,
         "compiled_sources": compiled_sources,
         "errors": [],
         "warnings": [],
     }
+    if canonical_meta is not None:
+        cr["canonical_meta"] = canonical_meta
+    return cr
 
 
 def make_scan_entry(

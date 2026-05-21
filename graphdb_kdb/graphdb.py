@@ -174,7 +174,8 @@ class GraphDB:
             """
             MATCH (e:Entity {slug: $slug})
             RETURN e.slug, e.title, e.page_type, e.status, e.confidence,
-                   e.created_at, e.updated_at, e.first_run_id, e.last_run_id
+                   e.created_at, e.updated_at, e.first_run_id, e.last_run_id,
+                   e.canonical_id
             """,
             {"slug": slug},
         )
@@ -185,6 +186,7 @@ class GraphDB:
             slug=row[0], title=row[1], page_type=row[2], status=row[3],
             confidence=row[4], created_at=row[5], updated_at=row[6],
             first_run_id=row[7], last_run_id=row[8],
+            canonical_id=row[9],
         )
 
     def get_source(self, source_id: str) -> Source | None:
