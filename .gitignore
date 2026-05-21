@@ -12,6 +12,9 @@ venv/
 # Codex CLI marker
 .codex
 
+# Antigravity (Gemini) CLI session state
+.antigravitycli/
+
 # Env / secrets
 .env
 .env.*
