@@ -89,13 +89,18 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 
 ### Pipeline stages
 
+`kdb_compile.py` orchestrates a 10-stage pipeline (post-#74 — Task #74 inserted Stage [6] canonicalize between reconcile and build_source_state, renumbering downstream stages). Stage numbers below match the `# ----- [N] name -----` markers in `kdb_compile.py`.
+
 1. **Scan** (`kdb_scan.py`) — walks `raw/`, computes SHA-256, compares to `manifest.json`, emits `last_scan.json` with `to_compile` + `to_reconcile` lists. Compile eligibility is the single honest comparison `current_hash != last_compiled_hash` (D46) — `compile_state` plays no part, and there is no force-recompile flag. Handles symlinks (skip), binaries (flag metadata-only), two-pass rename detection. Atomic write.
-2. **Plan** (`planner.py`) — reads `last_scan.json`, chunks `to_compile` into 10–20-source batches, builds per-source context snapshot from manifest.
-3. **Compile** (`compiler.py`) — for each source: calls `call_model_with_retry` with source content + manifest snapshot + `KDB-Compiler-System-Prompt.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
-4. **Validate** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
-5. **Compute next manifest (pure)** (`manifest_update.build_manifest_update`) — in-memory only; no writes. Produces `next_manifest` + `journal`.
-6. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`). Never writes state files.
-7. **Persist manifest** (`manifest_update.write_outputs`) — writes `runs/<run_id>.json` journal first, then `manifest.json` atomically (D15, journal-then-pointer). Runs **after** page writes so a failed vault write leaves state unchanged and the user re-runs cleanly.
+2. **Validate scan** — schema-gates `last_scan.json` shape before plan/compile consume it.
+3. **Compile** (`compiler.py`) — for each source via `planner`-chunked 10–20-source batches: calls `call_model_with_retry` with source content + graph-derived context snapshot + `KDB-Compiler-System-Prompt.md`; receives `compiled_sources[]` entry (slugs + page bodies, no paths/metadata); accumulates into `compile_result.json`.
+4. **Validate compile_result** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts run with no vault writes if malformed.
+5. **Reconcile compile_result** — unconditional `reconcile_slug_lists` + `reconcile_body_links` (D45 / Task #65 + Task #57): `concept_slugs`/`article_slugs` rebuilt from `pages[].page_type`; body wikilinks reconciled against `pages[]`. Pairing-class defects are made structurally impossible before downstream stages observe them.
+6. **Canonicalize** (`kdb_compiler/canonicalize/`, Task #74, see `docs/task74-canonicalization-blueprint.md`) — loads `state/canonicalization/aliases.json` (missing ⇒ empty + warning, D-R5-8), resolves alias surface forms to canonical slugs (chain-flattened to root, D-R5-13), rewrites `pages[].outgoing_links`, `pages[].body` wikilinks, drops alias entries from `pages[]` (canonical-only, D-R5-12), emits `canonical_meta` (`aliases_emitted`, `outgoing_link_remaps`, `algorithm`), atomically overwrites `state/compile_result.json` (D-R5-10). Algorithmic failures (circular aliases, malformed ledger, ambiguous v2, sha mismatch) are **fatal** — failure journal written, pipeline halts before patch_applier (D-R5-9). Wiki ≡ graph at the naming layer.
+7. **Build manifest update (pure)** (`manifest_update.build_manifest_update`) — in-memory only; no writes. Produces `next_manifest` + `journal`. Reads the canonicalized `compile_result.json`.
+8. **Apply page intents** (`patch_applier.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter from `next_manifest` (`run_context.py`), writes markdown files atomically (`atomic_io.py`). No canonicalization-awareness required (D-R5-12): `pages[]` is already canonical and body wikilinks already remapped. Never writes state files.
+9. **Persist state** (`manifest_update.write_outputs`) — writes `runs/<run_id>.json` journal first (schema_version `2.2` post-#74), then `manifest.json` atomically (D15, journal-then-pointer). Runs **after** page writes so a failed vault write leaves state unchanged and the user re-runs cleanly.
+10. **Graph sync** — see §8.3. Archives sidecar at `state/runs/<run_id>/{compile_result,last_scan}.json` (preserves `canonical_meta` for D39 replay), then routes the canonicalized compile_result through `ObsidianRunsAdapter().sync_current_run(...)` to update the live GraphDB ontology authority (D50/D51). Fatal for non-dry-run compiles (D50; revokes D38).
 
 ---
 
@@ -106,14 +111,14 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 | Layer | Path | Role |
 |---|---|---|
 | **Source corpus** | `KDB/raw/` | Human-authored raw sources |
-| **Live ontology authority** | `GraphDB-KDB/` (Kuzu) | Primary. Updated immediately on every compile (Stage 9). Owns Entity, LINKS_TO, SUPPORTS, orphan status |
+| **Live ontology authority** | `GraphDB-KDB/` (Kuzu) | Primary. Updated immediately on every compile (Stage 10 `graph_sync` post-#74). Owns Entity, LINKS_TO, SUPPORTS, ALIAS_OF, canonical_id, orphan status |
 | **Reconstruction material** | `KDB/state/runs/<run_id>/` sidecars | Backup. Durable compile_result + scan snapshots. Enables `graphdb-kdb rebuild` if GraphDB is lost/corrupted |
 | **Audit log** | `KDB/state/runs/<run_id>.json` journals | What happened, when, with which model, what failed |
 | **Source-file lifecycle** | `KDB/state/source_state.json` | Source metadata ledger (hashes, compile state, timestamps). Not an ontology index (D50) |
 | **Per-page provenance** | Frontmatter in each `.md` file | Human-readable (`raw_path`, `raw_hash`, `compiled_at`) |
 | **Rendered view** | `KDB/wiki/` | Markdown output for Obsidian consumption |
 
-**Primary data flow:** `raw/ → kdb-compile → Stage 9 immediate GraphDB update`. Runs are not in this hot path — they are written as audit records whose sidecars happen to also serve as reconstruction material.
+**Primary data flow:** `raw/ → kdb-compile → Stage [6] canonicalize → Stage 10 immediate GraphDB update`. Runs are not in this hot path — they are written as audit records whose sidecars happen to also serve as reconstruction material.
 
 **Rebuild/verify:** Proves the live authority matches what a clean reconstruction from sidecars would produce. Operational safety net, not the normal data flow.
 
@@ -300,9 +305,10 @@ graphdb_kdb/                                ← producer-agnostic ontology layer
 CREATE NODE TABLE Entity (
     slug          STRING PRIMARY KEY,    -- producer-emitted identifier; bare per D-S1 grandfather for Obsidian
     title         STRING,
-    page_type     STRING,                -- summary | concept | article  (values still Obsidian-flavored, per D-A2 deferred)
-    status        STRING,                -- active | stale | archived | orphan_candidate
+    page_type     STRING,                -- summary | concept | article | alias  (values still Obsidian-flavored, per D-A2 deferred)
+    status        STRING,                -- active | stale | archived | orphan_candidate | alias
     confidence    STRING,                -- low | medium | high
+    canonical_id  STRING,                -- Task #74: NULL ⇒ self is canonical; otherwise root canonical slug (chain-flattened, D-R5-13)
     created_at    STRING,                -- ISO with local offset (no UTC normalization per feedback_local_time_everywhere)
     updated_at    STRING,
     first_run_id  STRING,
@@ -328,40 +334,56 @@ CREATE NODE TABLE Source (
 
 CREATE REL TABLE LINKS_TO ( FROM Entity TO Entity, run_id STRING, created_at STRING );
 CREATE REL TABLE SUPPORTS ( FROM Source TO Entity, role STRING, hash_at_time STRING, run_id STRING, created_at STRING );
+CREATE REL TABLE ALIAS_OF ( FROM Entity TO Entity, run_id STRING, created_at STRING, algorithm STRING );  -- Task #74
 ```
+
+**Canonicalization invariants** (Task #74, enforced by `graphdb-kdb verify` Layer 3 / C1–C4):
+
+- **C1** — every `Entity` with `canonical_id IS NOT NULL` has a matching `ALIAS_OF` edge to that canonical_id.
+- **C2** — every `ALIAS_OF` edge's source `Entity` has `canonical_id` equal to the edge's destination.
+- **C3** — `ALIAS_OF` is acyclic AND **flat** (D-R5-13): every `Entity.canonical_id` points at an `Entity` with `canonical_id IS NULL` — no chains, no cycles.
+- **C4** — every `LINKS_TO` edge's destination has `canonical_id IS NULL`: LINKS_TO never points at an alias (D-R5-12; alias→canonical remap happens at Stage [6], before graph_sync).
+
+Aliases are exempt from orphan detection (no `SUPPORTS` edges by OQ-E; canonical-only routing); `_detect_and_mark_orphans` is scoped to `canonical_id IS NULL`.
 
 **Naming history**: `Entity` was originally `Page` (renamed per D-A1 2026-05-14); `ingest_*` fields were originally `compile_*` (renamed per D-A2). Producer payloads (`compile_result.json`) retain the older names — the Obsidian adapter translates. The verifier's `_SOURCE_DIRECT_FIELDS` tuples are the alias bridge: `("compile_state", "ingest_state")` etc.
 
-### 8.3 Pipeline integration — Stage 9 via adapter (D-S0)
+### 8.3 Pipeline integration — Stage 10 via adapter (D-S0)
 
-`kdb-compile`'s 9-stage pipeline ends with **Stage 9 `graph_sync`**:
+`kdb-compile`'s 10-stage pipeline ends with **Stage 10 `graph_sync`** (was Stage 9 pre-#74; canonicalize at Stage [6] renumbered downstream stages):
 
 ```
-Stages 1–8 (existing): scan → validate scan → compile → validate compile_result →
-                       reconcile → build manifest → apply pages → persist state
+Stages 1–9 (post-#74): scan → validate scan → compile → validate compile_result →
+                       reconcile → canonicalize → build source_state →
+                       apply pages → persist state
 
-Stage 9 graph_sync (per D38 non-fatal):
-  9a. Archive sidecar: atomic-copy state/{compile_result,last_scan}.json
-      → state/runs/<run_id>/{compile_result,last_scan}.json
-  9b. Live sync: graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter()
-      .sync_current_run(cr, scan_dict, run_id)
+Stage 10 graph_sync (D50: fatal for non-dry-run; revokes D38 non-fatal):
+  10a. Archive sidecar: atomic-copy state/{compile_result,last_scan}.json
+       → state/runs/<run_id>/{compile_result,last_scan}.json
+       (compile_result is the CANONICALIZED version per D-R5-10, so the
+        sidecar preserves canonical_meta for D39 replay)
+  10b. Live sync: graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter()
+       .sync_current_run(cr, scan_dict, run_id)
 ```
 
 Two architectural properties of the wiring:
 
 1. **`kdb_compile.py` imports ONLY `ObsidianRunsAdapter`** (D-S0). Never `GraphDB`, never `apply_compile_result` directly. The adapter is the single producer→graph entry point — same code path as `graphdb-kdb rebuild` uses.
-2. **Sidecar archival runs *before* the live sync.** If the sync fails (D38 non-fatal: warning + journal entry; overall run still success=true), the sidecar still exists — so `graphdb-kdb rebuild` is a real recovery path.
+2. **Sidecar archival runs *before* the live sync.** If the sync fails, the sidecar still exists — so `graphdb-kdb rebuild` is a real recovery path. (Per D50, graph_sync failure is now fatal for non-dry-run compiles since GraphDB is the live ontology authority; D38 non-fatal semantics were revoked for ontology writes.)
+
+**Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `graphdb_kdb/ingestor.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
 
 ### 8.4 Replay / rebuild path (D39 — the independence proof)
 
 `graphdb-kdb rebuild --vault-root <P>` drops all Kuzu tables and replays the eligible subset of `state/runs/*.json` chronologically:
 
-- **Eligibility filter** (D39): `success=true AND dry_run=false AND payload_present`. Payload = per-run sidecar at `state/runs/<run_id>/{compile_result,last_scan}.json`. Adapters declare which producer journal `schema_version` they support (D-S3) — version mismatches return structured skip reasons (`'unsupported_version'`), not silent corruption.
+- **Eligibility filter** (D39): `success=true AND dry_run=false AND payload_present`. Payload = per-run sidecar at `state/runs/<run_id>/{compile_result,last_scan}.json`. Adapters declare which producer journal `schema_version` they support (D-S3) — version mismatches return structured skip reasons (`'unsupported_version'`), not silent corruption. The Obsidian adapter declares `supported_journal_versions = ["2.0", "2.1", "2.2"]`: `2.0` = compile runs (pre-cleanup, pre-#74), `2.1` = `kdb-clean` cleanup runs, `2.2` = post-#74 runs carrying `canonical_meta` in the sidecar `compile_result.json`.
 - **B-lite split** (D-B1): `rebuilder.py` is producer-agnostic (drop-all + chronological iterate + per-run try/except); the adapter (`adapters/obsidian_runs.py`) supplies discover_runs / is_eligible / load_payload / apply. No producer-specific code in the core.
 - **Blast radius v1** (D-S2, L8): whole-DB drop only; producer-scoped rebuild deferred until producer #2 ships. CLI prints a warning before the drop unless `--yes`.
+- **Canonicalization replay** (Task #74): rebuild reads `canonical_meta.aliases_emitted` from each post-#74 sidecar and reproduces the exact `Entity.canonical_id` + `ALIAS_OF` edges the original compile produced. No re-execution of the canonicalization algorithm during rebuild — output is replayed from the journal, preserving D-R5-4 purity under replay. Pre-#74 journals (no `canonical_meta`) leave `canonical_id IS NULL` for all entities (matches their original state).
 - **Baton-backfill** (one-shot, opt-in via `--backfill-baton`): synthesizes a `RunDescriptor` pointing at `state/{compile_result,last_scan}.json` baton files using `manifest.runs.last_successful_run_id` as the synthetic run_id; sorts before all real runs (`sort_key="0000-pre-63-backfill"`); idempotent — silently skipped if a sidecar already exists at `state/runs/<run_id>/`. The one-time migration entry for the latest pre-#63 run, per #63.0 outcome (d) — the other 9 pre-#63 runs are unrecoverable.
 
-Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap; `graphdb-kdb rebuild` regenerates either store from the post-#63 run history.
+Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap (Layer 1 source-state preflight + Layer 2 replay structural diff + Layer 3 C1–C4 canonicalization invariants); `graphdb-kdb rebuild` regenerates either store from the post-#63 run history. `graphdb-kdb snapshot` (#63.9) writes a JSONL+manifest+schema export under `state/graph-snapshots/<run_id>/` — Task #74 bumped `snapshot_format_version` to `2` to include per-Entity `canonical_id` and an `alias_of.jsonl` file with full ALIAS_OF provenance, so Tier-2 OneDrive recovery preserves alias state.
 
 **Maintenance — `kdb-clean orphans`:** `--apply` archives orphan pages, removes
 them from `manifest.json`, and emits a replayable `cleanup` run journal +
@@ -380,6 +402,7 @@ The blueprint + companion docs are the durable architecture record. This section
 | [`docs/graphdb-kdb-extraction-roadmap.md`](graphdb-kdb-extraction-roadmap.md) | 5-stage path from monorepo to standalone PyPI package; invariants PR1–PR10; anti-patterns |
 | [`docs/manifest-succession-arc.md`](manifest-succession-arc.md) | M0–M4 transition arc: manifest.json from swiss-knife (source meta + ontology) to source-meta-only ledger; EXISTING CONTEXT switches to GraphDB at M1 |
 | [`docs/task63-phase3-implementation-blueprint.md`](task63-phase3-implementation-blueprint.md) | Implementation plan for #63.5b + #63.6 + #63.7-pre (the three sub-tasks landed 2026-05-14) |
+| [`docs/task74-canonicalization-blueprint.md`](task74-canonicalization-blueprint.md) | Stage [6] canonicalize blueprint: locked decisions D-R5-1..D-R5-13; algorithm (string-norm → ledger → embedding v2 → llm-judge v2); schema delta (`Entity.canonical_id`, `ALIAS_OF`); C1–C4 verify invariants; rebuild semantics |
 
 ### 8.6 CLI surface (current)
 
@@ -485,6 +508,7 @@ When cold-start AND `|widened_T2| < 5` (the `_MIN_SEED_THRESHOLD`), T3 expands f
 | D49 | 2026-05-17 (Task #70 closure) | **GraphDB is the only supported EXISTING CONTEXT authority.** `manifest.json` must not be used for context generation. `KDB_CONTEXT_SOURCE` env var removed; planner always uses `graph_context_loader`. If GraphDB is missing/empty/corrupt, context planning fails loud → operator runs `graphdb-kdb rebuild`. `context_loader.py` retained as legacy reference only (not operator-facing). | Manifest is the wrong substrate for ontology/context — a flat index cannot encode graph relationships. Keeping it as rollback implies it is an acceptable competing source of truth; it is not. Graph outperforms manifest on both cold-start (17–23 vs 0–8 pages) and steady-state. Recovery path is rebuild from run journals (D39), not fallback to a weaker substrate. |
 | D50 | 2026-05-17 (Task #73) | **`manifest.json` is no longer an ontology store.** GraphDB owns Entity, LINKS_TO, SUPPORTS, orphan status, graph topology. Manifest becomes source-file metadata ledger only (hashes, compile state, timestamps). Stage 9 `graph_sync` becomes fatal for non-dry-run compiles (revokes D38 non-fatal semantics for ontology writes). No piecemeal removal — pages, outgoing_links, source_refs, orphan status stripped together once consumers migrate. | Dual-write is architecturally confusing (two "sources of truth" invite drift) and blocks manifest slimming. Piecemeal removal (e.g., outgoing_links only) creates half-stale state — worse than either extreme. GraphDB is deterministically regenerable from run journals (D39); manifest cannot serve as fallback once it stops tracking ontology. See `docs/task73-manifest-ontology-removal-blueprint.md`. |
 | D51 | 2026-05-17 (Task #73 closure) | **GraphDB is the live ontology authority; `state/runs/` sidecars are reconstruction material, not the primary data flow.** Layer model: `raw/` = source corpus; `GraphDB-KDB/` = live ontology authority (primary); `state/runs/` = audit log + reconstruction material (backup); `source_state.json` = source-file lifecycle metadata; `wiki/` = markdown rendering. Primary path: `kdb-compile → Stage 9 immediate GraphDB update` — runs are not in this hot path. Rebuild/verify use sidecars as backup to prove or restore consistency. `source_state` must not carry replay-selection pointers — replay eligibility belongs to the adapter/rebuilder, not the source metadata ledger. | Rejected: (a) event-sourcing framing where runs/ IS the ontology authority and GraphDB is "just a projection" — technically correct but cognitively misleading (implies the normal path goes through runs/; it doesn't). (b) `ontology_sources/*.json` per-source durable layer — redundant with sidecars, adds a third consistency surface, re-introduces coupling removed by D50. The current architecture already matches the compiler mental model (source → distill → update GraphDB); the naming just needed to make that explicit. |
+| D52 | 2026-05-21 (Task #74 closure) | **Canonicalization is a top-level compile stage (new Stage [6]), not a side-effect of patch_applier or graph_sync.** Both downstream renderings — `patch_applier` (wiki .md files) and `graph_sync` (live GraphDB) — consume the canonicalized `compile_result`, so wiki and graph agree on entity names at the rendering layer. Algorithmic failure is fatal (D-R5-9; pipeline halts before patch_applier writes anything). Run journal `schema_version` bumps `2.1 → 2.2` to carry `canonical_meta` for D39 replay (D-R5-7). GraphDB gains `Entity.canonical_id` + `ALIAS_OF` rel table; alias entities are `canonical_id IS NOT NULL` + chain-flattened to root (D-R5-13). C1–C4 invariants are checkable from the live graph alone (no sidecar reads). Full locked-decision register (D-R5-1..D-R5-13) and algorithm details live in `docs/task74-canonicalization-blueprint.md`. | If canonicalization ran only inside `graph_sync`, the vault would show `[[AAPL.md]]` while the graph stored `apple-inc` — a divergence the human sees in Obsidian. Single source of canonical truth, consumed identically by both renderings, is the only way wiki ≡ graph at the naming layer. v1 implementation = string-norm + manual ledger (`state/canonicalization/aliases.json`); embedding-similarity + LLM-judge layers reserved for v2 (L9 in blueprint §14). |
 | D-A1 | 2026-05-14 (Round 1 Codex) | Schema rename: `Page → Entity` node-table label. | `Node` would collide with Kuzu's NODE keyword + universal graph-theory term. `Entity` signals abstract identity. Free upgrade while schema is empty/small. |
 | D-A2 | 2026-05-14 (Round 1 Codex) | Source field renames: `compile_state → ingest_state`, `compile_count → ingest_count`, `last_compiled_at → last_ingested_at`. Page enum values (page_type/status/confidence) retained — *values* are Obsidian-flavored; renaming names without revisiting values is cosmetic. | Pipeline-specific field NAMES become pipeline-neutral now. Pipeline-specific VALUES wait for producer #2 to inform the right abstraction. Verifier carries an alias map bridging the manifest side (still `compile_*`) and graph side. |
 | D-B1 | 2026-05-14 (Round 1 Codex) | Rebuilder is **B-lite (adapter split)**: thin generic core in `graphdb_kdb/rebuilder.py` (drop+recreate, chronological iter, error reporting) + producer-specific logic in `graphdb_kdb/adapters/obsidian_runs.py`. Rule: `graphdb_kdb/` MUST NOT `import kdb_compiler.*`. Public function name `rebuild_from_obsidian_runs(...)`. | Pure-C (core imports producer types) would silently weaken D34 independence. B-lite preserves it by structure, not convention. Cost: ≤200 LOC adapter; verified by grep invariant. |
@@ -550,6 +574,13 @@ Task #63 — refoundation as raw-text → knowledge-graph compiler. Supersedes #
 - **#63.7 live validation arc (2026-05-14):** A1 no-op scan → Stage 9 archives sidecar, 0 entities upserted; A2 haiku-4.5 recompile of EP1 → 1 page (summary only); A3 gemini-3.1-flash-lite recompile of Howard-Marks → 7 pages + 10 edges (new default validated); A4 deepseek-v4-flash recompile of Buffett → JSON gate fail, D38 non-fatal contract held (graph not corrupted). Surfaced bugs fixed inline: D-S4 (`last_run_id` Phase 1 semantic), D-S5 (`KDB_GRAPH_PATH` test isolation). New feature: D-S6 (`--model` flag with shared registry). Deferred follow-ups: `raw_response_text=None` capture bug in alibaba extract-failure path (separate from #63.7 scope); deepseek-v4-flash single-trial regression observation parked for ~2026-05-18 retest.
 - **3-tier recovery story now complete:** (1) Kuzu corrupted → `graphdb-kdb rebuild` from journals; (2) journals + Kuzu both lost → restore from snapshot (load-snapshot is a future v2 — write-only is the #63.9 scope cut); (3) all three lost → re-run `kdb-compile` on the live vault.
 - **Test surface:** 106 graphdb_kdb tests (96 pre-#63.9 + 10 snapshot tests) + 6 Stage-9 integration tests in kdb_compiler/tests/ (550 total kdb-relevant tests).
+
+### M4 — Canonicalization layer (#74) ✅ DONE — sub-tasks #74.1 through #74.8
+Task #74 — Stage [6] canonicalize lands as a top-level compile stage between reconcile and build_source_state; wiki and graph see the same canonical names. Locked decisions D-R5-1..D-R5-13 + D52. See §5 (pipeline), §8.2 (schema delta), §8.3 (adapter alias-write pass), §8.4 (rebuild + snapshot v2), and the full blueprint at `docs/task74-canonicalization-blueprint.md`.
+- **Sub-tasks shipped:** #74.1 schema delta (Entity.canonical_id + ALIAS_OF + migration); #74.2 `aliases.json` ledger loader; #74.3 `canonicalize.run()` algorithm; #74.4 `kdb_compile.py` Stage [6] wiring + journal `2.1 → 2.2` bump + `compile_result.schema.json` whitelist; #74.5 adapter Phase 3.5 — writes alias Entity + ALIAS_OF + `canonical_id`; #74.6 `graphdb-kdb verify` Layer 3 (C1–C4 invariants on the live graph); #74.7 snapshot format v2 + canonical_meta replay tests + back-compat tests; #74.8 docs (this section).
+- **Round 5 external review:** Antigravity + Codex parallel reviews on the blueprint (see `docs/round5-external-review-{antigravity,codex,prompt}.md`); locked OQ-E (direct-to-canonical SUPPORTS), OQ-F (canonical-wins + longest + UNION merge), OQ-G (JSON ledger format) before implementation.
+- **Test surface delta:** +14 alias-ingestion tests + 11 canonicalization-invariant tests + 3 snapshot-v2 tests + 3 rebuilder canonical_meta tests + 1 schema back-compat test.
+- **Half-wire closure:** between #74.4 and #74.5, the adapter accepted v2.2 journals but ignored `canonical_meta`; #74.5 closed this. Wiki ≡ graph at the naming layer (verified by Layer 3 invariants).
 
 ### M3+ (deferred)
 - [ ] Track 2 (`llm-linker`) — separate sub-project
