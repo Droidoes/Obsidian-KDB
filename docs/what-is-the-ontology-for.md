@@ -1,6 +1,6 @@
 # What Is the Ontology For? — Foundational Discussion
 
-**Status:** Original A/B question RESOLVED (Exchange 4 → B + X6; graph = executable substrate). New fork open: domain/schema vs. domain-general. See §6.4.
+**Status:** RESOLVED across all rounds. Original A/B question → **B + X6** (Exchange 4, §6.4). Domain/schema fork → **B with (C1) LLM-extracted not human-defined + (C2) domain as coordinate not gate** (Exchange 5, §7.3). Post-external-takes closeout → **B committed; canonicalization-first into blueprint; hedges remain empirical watch-fors only** (§8). Round 5 closed.
 **Started:** 2026-05-17
 **Participants:** Joseph (human) + Claude Opus 4.7 (staff architect)
 
@@ -441,6 +441,523 @@ And the under-credit: **you have already answered this once.** The 10x "Adaptive
 
 ---
 
-## 7. Discussion (continues here)
+## 7. Exchange 5 — Domain-schema vs. domain-general (Round 5)
 
-_(to be filled as the discussion proceeds — this is the live section)_
+Round 5 substantively engages the fork Round 4 opened (§6.4). Joseph's 8-point
+challenge surfaces a **latent Philosophy A** at the structural tier in Round 4's
+closing synthesis (§6.3 ¶419 — "everything powerful draws its power from
+structured extraction"), recalibrates the 10x credit, and presses the existential
+question — *does the project justify itself if A is right?*
+
+### 7.1 Joseph's framing (verbatim)
+
+> Round 5 — let's deliberate domain-schema vs domain-general
+>
+> [1] why don't we define a list of domains and ask LLM to tag the sources with
+> domains on the list... etc.. im ok with making it domain specific...
+>
+> [2] you have mentioned 10x a few times in positve light... 10x is a project
+> mainly still in the planning stage... u can think of it as a deliberation
+> process for A/B discussing we are having right now... when I was on 10x, I was
+> unable to get as close to articulate the A/B problem statement until Sun
+> 5/17/2026... I started working on some kind of database for investing in dec
+> 2025...essentially searching for the same answer (acturally strike that),
+> searching for the same A/B problem... with Obsidian KDB project, I think i
+> have get much closer to the actual problem statement, although you convinced
+> by the solution is combination of hopes&dreams plus some practicle
+> implementation... obviously we are a little too early on what we want to
+> accomplish here
+>
+> [3] going back to 10x... if you feel 10x architecture and design are much
+> more valuable than I think, let's review it in details and see how much we
+> can carry over to our KDB project
+>
+> [4] having a domain or not to main nothing more than have another attribute
+> for the source, we have article, concept, summary... we can have another
+> attribute domain... if you want we can even have a sub-domain... again I'm
+> fine with domain specific as long as it is being handled by llm
+>
+> [5] talking about domain specific, the entire obsidian vault itself is domain
+> specific... at some point we'll need to consider this specific ingestion
+> pipeline
+>
+> [6] one thing that is again more on the AI, graphDB research areas, is that
+> do we need to define the domain of the sources in order for the graphDB to be
+> domain specific?  you latest answer on the surface is coming closer to B but
+> it seems your underline assumption is still very much rooted in A, and that
+> is we need human intervention to currate the source before giving it to the
+> llm in order to produce meaningful GraphDB... and again this is essentially
+> saying we need to give meaning to the LLM for it to produce meaning... I,
+> from the ventage of B, feel strongly that LLM and graphDB structure are
+> extremely powerful.. they should be able to turn randomness into meaning and
+> chaos into order... I'm being overly dramatic here to make my point...
+>
+> [7] so overall great discussions so far but I don't think you and I are
+> converging from where we have started... and I think that's perfectly fine...
+> it's possible A is right, B is wrongw, or vice versa, it's also possible that
+> both A and B are right or they are both wrong...
+>
+> [8] the other point I want to make is that if A is right B is wrong.. then I
+> dont see the reason to do this project... not sure what you think
+
+### 7.2 Claude's response (verbatim)
+
+**On [8] — does the project justify itself?**
+
+**Yes.** B is viable enough to warrant building, and Joseph is right that
+A-correctness would gut the project's reason for being. If meaning has to be
+human-conferred before storage, then KDB is just a fancier Anki + Obsidian and
+the architectural novelty doesn't matter. The reason to build this *is* to test
+whether LLM + graph operations can do non-trivial work on broadly-captured
+input. So the project lives or dies on B being at least partially right.
+
+That conviction is not symmetric. Joseph feels B strongly; Claude feels B
+*plausibly*. That asymmetry is honest and revisited in the convergence note
+below.
+
+**On the latent Philosophy A Joseph caught [6] — concede.**
+
+Round 4 §6.3 closed with *"everything powerful draws its power from structured
+extraction — typed entities, controlled relationship vocabulary"* — and then
+waved it off as a "new fork." That sentence was **Philosophy A surfacing at the
+structural tier**: the same gatekeeping rejected at the ingestion door, smuggled
+back in at the schema door. Caught and conceded.
+
+**On 10x [2] — recalibrating.**
+
+Over-credited. The prior memory note literally said *"the 10x 'Adaptive
+Synthetic Munger Engine' docs are already a complete answer to 'what is the
+ontology for' — for the domain of investing"* — that is treating a fellow
+deliberation-stage project as a finished blueprint. It is not. It is the
+**prior incarnation of the same A/B struggle**, dressed in investing
+vocabulary. Reframe: 10x and KDB are **parallel attempts at the same kernel
+question** — 10x committing to a domain first, KDB starting domain-general.
+Parallel experiments, not parent/child.
+
+**On [3] — review 10x in detail? Not yet.**
+
+Lifting 10x's architecture wholesale would itself be a Philosophy-A move —
+assuming investing's typed schema (`supplies`, `is_bottleneck_for`)
+generalizes. What is worth carrying from 10x is *domain-independent*: the
+**delta protocol** (new/contradicts/reinforces classification), and the
+**operations vocabulary** (community detection, PPR, link prediction). Those do
+not require 10x's schema. If KDB later stalls and 10x's domain-specific moves
+look like an answer, revisit then.
+
+**The schema reconciliation — option (b): reframe what "schema" means.**
+
+Round 4's claim *"structured extraction = schema = power"* was wrong as
+stated. The precise version:
+
+- **HippoRAG is schemaless.** Noun-phrase entities, noun-phrase predicates,
+  no controlled vocabulary. Personalized PageRank works on the resulting
+  graph. The operations that justify the "second brain" claim **do not need a
+  schema**.
+- **GraphRAG is schemaless-ish.** Open-vocab entity+relation extraction,
+  Leiden community detection, LLM-written community summaries. Sensemaking
+  works on the resulting graph.
+- **10x's typed schema** (`supplies`, `is_bottleneck_for`, `competes_with`)
+  buys it *domain-specific algorithms* — supply-chain risk traversal, moat
+  analysis. **A different class of operation** than what justifies KDB.
+
+So: schema is not a prerequisite for the operations KDB cares about. KDB can
+be schemaless and still get GraphRAG sensemaking + HippoRAG recall. What 10x's
+typed schema enables, KDB should not try to replicate without committing to a
+domain.
+
+Current KDB is already structurally B-aligned: entities are noun phrases,
+relations are `LINKS_TO` (one type), no controlled vocabulary.
+
+**Domain-as-coordinate, not domain-as-gate — [1]+[4] is B-compatible.**
+
+Joseph's [1] and [4] propose: have the LLM tag sources/pages with a `domain`
+attribute, treat it as another field like `article` / `concept` / `summary`.
+**This is B-compatible if and only if domain is an output of compilation, not
+a gate on ingestion.** The distinction:
+
+- **A-flavored domain:** "only ingest sources matching domain ∈ {investing,
+  AI/ML, history}; reject the rest." Domain is a filter at the door.
+- **B-flavored domain:** "ingest everything that survives X6 mechanical
+  exclusion. LLM tags each page with the domain(s) it touches. Queries can
+  filter or partition by domain *at query time*." Domain is a **coordinate**,
+  not a **gate**.
+
+[5] is the structural exhibit for this: the vault is domain-specific
+*emergently*, by virtue of what Joseph saved. Nobody declared the vault's
+domain upfront. The Droidoes-docs harvester will be naturally cohesive
+because Joseph writes code in particular areas. **Each harvester carries
+emergent domain cohesion without anyone gating on domain.** That is B.
+
+Concrete consequence for the blocked ingestion items:
+
+- **F2 (raw/ namespace):** namespace by *harvester*
+  (`raw/droidoes-docs/`, `raw/vault/`, `raw/chats/`), not by *domain*.
+  Mechanical axis, not semantic.
+- **DD1 (selection scope):** include broadly; exclude only by X6 mechanical
+  role (`.venv`, `node_modules`, prior harvest output).
+- **Compilation:** add LLM-extracted `domain` + optional `sub_domain` field
+  to pages. No controlled vocabulary; the LLM names the domain in plain
+  language.
+- **Queries (later):** domain becomes a filter dimension on the graph —
+  `MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain {name: 'investing'})` etc.
+
+**Where uncertainty remains — honoring [7], not papering over.**
+
+Position: B with two calibrations (LLM-extracted not human-defined; coordinate
+not gate). Two empirical hedges hold the position short of Joseph's strong
+B-claim:
+
+1. **Scale.** GraphRAG and HippoRAG benchmarks run on 1M+ tokens, hundreds of
+   thousands of entities. Current KDB has ~7 sources, ~80 pages, ~70
+   entities. The "operations self-partition signal from noise" claim has
+   empirical support *at scale*. At personal scale, community detection on
+   70 entities may simply tell us nothing. This is not A-vs-B; it is "does
+   B work for *us*."
+2. **Cross-domain density.** With Buffett + AI/ML + Chinese history + dev
+   logs in one graph, do communities form by *theme* (B's promise) or by
+   *domain* (degenerate clusters re-discovering the obvious — "the investing
+   pages cluster together")? If the latter, we get a pretty visualization
+   and nothing else.
+
+These are **empirical** not philosophical. Path forward is therefore not more
+A/B deliberation but:
+
+1. **Unblock the ingestion brainstorm** with the calibrated-B answer
+   (namespace-by-harvester, X6-only exclusion, LLM-tagged domain as
+   coordinate).
+2. **Build the harvesters** so heterogeneous content exists at meaningful
+   (not 1M-token, but ~10× current) scale.
+3. **Run the operations** — GraphRAG community detection, HippoRAG PPR — and
+   observe whether they produce non-trivial output on a heterogeneous
+   personal-scale corpus.
+4. **Re-open A/B if operations degenerate.** Honest commitment: if
+   communities are just domain re-discovery, surface it and revisit; do not
+   hide it.
+
+**On [7] — convergence not performed.**
+
+We moved, but did not converge. Joseph: B-strong-claim ("LLM + graph turn
+chaos into order"). Claude: B-viable-hypothesis-worth-testing. The honest gap
+is that Joseph is more willing than Claude to commit before evidence. Both
+stances are defensible; refusing to perform synthesis. If the harvesters get
+built and the operations work on heterogeneous personal-scale content,
+Claude's position moves to Joseph's. If they do not, revisit. **Either way,
+the project is the way we settle it.**
+
+### 7.3 Where Round 5 landed
+
+**Resolved:**
+
+1. **Latent Philosophy A in Round 4 §6.3 ¶419 conceded.** "Structured
+   extraction = schema = power" was wrong as stated. HippoRAG is schemaless;
+   GraphRAG is schemaless-ish; KDB's justifying operations do not need a
+   typed schema.
+2. **10x recalibrated.** Parallel deliberation-stage project (Dec 2025–
+   present), not finished blueprint. Same A/B kernel question, domain-first
+   commitment. Detailed 10x architectural review deferred — not yet
+   warranted.
+3. **B confirmed with two calibrations:**
+   - **(C1) LLM-extracted, not human-defined.** Entities, relations, and
+     domain attributes are produced by the compiler, not declared upfront.
+   - **(C2) Domain as coordinate, not gate.** Domain is an output of
+     compilation (LLM-tagged on pages), not a filter on ingestion. Queries
+     partition the graph by domain *at query time*.
+4. **Project existence ([8]) acknowledged: B-viability is load-bearing.**
+   If A is right (meaning must be human-conferred before storage), KDB
+   collapses to "fancier Anki + Obsidian" and the architectural novelty
+   evaporates. The project's reason for being *is* to test whether
+   broadly-captured input + LLM extraction + graph operations produce
+   non-trivial value.
+
+**Unblocked ingestion items (consequence of (C1)+(C2)):**
+
+- **F2** — `raw/` namespace by harvester (`raw/droidoes-docs/`,
+  `raw/vault/`, `raw/chats/`), not by domain.
+- **F3** — stable raw-file identity follows the harvester namespace; no
+  domain-based path structure.
+- **DD1** — broad selection scope; exclude only by X6 mechanical roles.
+- **Compilation contract amendment** — pages gain LLM-extracted `domain`
+  (and optional `sub_domain`) field. Plain-language values, no controlled
+  vocabulary. Graph schema picks up a `Domain` node and `BELONGS_TO` edge
+  (or equivalent — to be decided in implementation).
+
+**Empirical hedges (not philosophical):**
+
+- **Scale gap.** Current ~70 entities is far below GraphRAG/HippoRAG
+  benchmark scales. The B-claim "operations self-partition signal from
+  noise" has support at scale; at personal scale this is unverified.
+- **Cross-domain density.** Heterogeneous corpora may produce
+  theme-communities (B's promise) or merely domain-rediscovery clusters
+  (degenerate). Empirical question — answered by running the operations on
+  multi-harvester content.
+
+**Convergence status:** non-convergent and acknowledged as such (per [7]).
+Joseph at B-strong; Claude at B-viable-hypothesis. Project execution is the
+arbiter.
+
+**Next step (separate from this doc):** propose F2/F3/DD1 unblock in the
+ingestion brainstorm (`docs/ingestion-subsystem-brainstorm.md` §4.1 / §4.2),
+and amend the producer contract to add the `domain` field at compile output.
+
+### 7.4 External takes — Codex + Antigravity (Gemini 3.5 Flash), 2026-05-19
+
+After §7.3 landed, the Round 5 resolution was forwarded to two external
+agents via the reusable prompt at `docs/round5-external-review-prompt.md`.
+Full responses:
+
+- `docs/round5-external-review-codex.md`
+- `docs/round5-external-review-antigravity.md`
+
+#### Convergence (light signal — confirmatory)
+
+Both reviewers land at **B-viable, not B-strong** — matching Claude's
+position relative to Joseph's stronger claim. Both confirm: latent-A
+diagnosis correct (§6.3 ¶419); C1 and C2 are B-aligned with the
+no-leak-into-ingestion caveat; schema reframe sound (HippoRAG schemaless,
+GraphRAG schemaless-ish, schema buys *domain-specific algorithms* rather
+than the operations that justify KDB); 10x recalibration sound;
+convergence-by-execution path is correct.
+
+Small framing difference on C1: **Codex** flags the LLM as *not neutral* —
+it performs compression and salience selection — so C1 stays B *only if*
+outputs are auditable, revisable, provenance-linked, and not treated as
+canonical truth. **Antigravity** is more permissive: C1 is "Genuine B"
+because the LLM acts as a "stochastic pattern matcher, not a rule-follower."
+Both end at the same operational place; Codex's framing is more careful
+about how the LLM's output is *treated downstream*, which becomes
+load-bearing once canonicalization (below) enters the picture.
+
+#### Substantive adds (heavy signal — material new to the deliberation)
+
+**(a) Entity Resolution / Canonicalization — Antigravity Q5 (central),
+Codex Q5 + Q8 (parallel, lighter). Promoted to load-bearing engineering
+concern.**
+
+> "The biggest threat is not 'noise' (junk files) but **Entropy**. If 'Apple
+> Inc' and 'AAPL' are separate nodes, the 'emergent order' fails. B-Strong
+> requires a heavy-duty **Canonicalization Engine** to prevent the graph
+> from becoming a 'word soup.'" — Antigravity Q5
+
+**Both reviewers raised the same concept — different weight.** Antigravity
+elevated it to *the* central failure mode with the explicit `Apple Inc.`
+↔ `AAPL` example. Codex independently flagged it in two places without
+the same emphasis: Q5 lists *"entity resolution/canonicalization"* as one
+of nine "missing hedges" (alongside extraction consistency, relation
+drift, provenance quality, evaluation metrics, etc.); Q8 names
+*"canonicalization selection"* as one of five selection layers. Same
+problem (distinct surface forms must unify into one canonical entity
+node); same engineering domain; Antigravity gave it the weight and the
+worked example.
+
+**Joseph's read:** real issue; open question whether research-frontier or
+engineering-tractable. **Claude's read:** mostly engineering at our scale
+and use case. Standard toolkit is well-understood — string normalization,
+embedding-similarity dedup, LLM-as-judge for ambiguous cases, alias
+tracking, provenance. Research-frontier parts (cross-domain
+disambiguation, temporal entity drift, hierarchical entities) hit at
+scales we don't have.
+
+**Resolution:** canonicalization is **promoted from "missed hedge" to
+"load-bearing engineering concern"** — it must be designed as a
+first-class compile-stage component, not bolted on after. Retroactive
+canonicalization on a 500-entity naive-duplication graph gets ugly fast.
+
+**(b) Critical Density / Global Giant Component — Antigravity Q8. Added as
+third empirical hedge; does NOT reshape path forward.**
+
+> "As you ingest heterogeneous data (investing + history + logs), the graph
+> will eventually hit a Critical Density where everything connects to
+> everything. At that point, schemaless PPR/PageRank might stop providing
+> useful local activation and instead just return the most 'popular' nodes
+> in the whole graph."
+
+**Joseph's sharpening:** *critical density argues against domain-specific
+attributes.* Tagging pages with `domain` doesn't change connectivity — at
+critical density the labels are decoration; the giant component is still
+giant. C2 (domain-as-coordinate) is a **paper-tiger mitigation** for this
+particular failure mode.
+
+**Claude's reconciliation:** Joseph is correct. The *only* interventions
+that mitigate critical density are structural, not labeling-based:
+ingestion-time partitioning (A-flavored), domain-aware operations
+(B-aligned but more complex), or accept degraded operations (use
+GraphRAG/HippoRAG within-domain only). C2 does not solve critical
+density. The B-defense is empirical, not architectural: critical density
+may not occur at personal scale (<100K entities); GraphRAG/HippoRAG
+papers don't characterize it at our scale. We watch for it at step 3 of
+the path forward and choose intervention contingent on what we see.
+
+**Resolution:** critical density is a **third empirical hedge** (alongside
+scale + cross-domain-density) — a known failure mode to watch for. It
+does *not* invalidate C2 (domain-as-coordinate is still the right
+B-compatible labeling intervention at compile time) but it *narrows* what
+C2 claims to solve.
+
+**(c) Predeclared evaluation criteria — Codex Q6. Adopted.**
+
+> "'Build harvesters, run operations, revisit if degenerate' is pragmatic.
+> But without success/failure tests, it risks becoming implementation
+> momentum disguised as empiricism."
+
+**Resolution:** eval criteria for step 3 of the path forward (run the
+operations) must be **defined before building**, not after. Specifics
+deferred to Round 5 implementation planning, but the gate is binding:
+"would this produce a useful answer?" needs to be answered in advance,
+not "did this produce some answer?" measured after.
+
+#### Pushback on Joseph's [8] — both reviewers
+
+- **Codex:** load-bearing but *overstated*. "A-flavored systems can still
+  be worth building: automated curation, high-recall personal search,
+  contradiction tracking, source-grounded synthesis, and maintenance of a
+  human-approved knowledge base. They are less novel than B, not
+  worthless."
+- **Antigravity:** load-bearing; accepts the claim *for this project's
+  identity*. "There is a defensible A-flavored project (e.g., 'AI-Automated
+  Zettelkasten' that helps you curate better). However, Joseph is correct
+  that *KDB specifically* is built on the premise of the Compiler. So for
+  this project's identity, the claim is correct."
+
+**Resolution:** Round 5 position on [8] **holds with narrowing**. The
+correct reading is *not* "no A-flavored project is worth building"; it
+is "no A-flavored project would be *this* project." A-flavored knowledge
+work is legitimate — it just isn't KDB.
+
+#### What changes in the Round 5 position
+
+| Item | Status | Source |
+|---|---|---|
+| **Position:** B-viable with two calibrations (C1, C2) | unchanged | §7.3 |
+| **Empirical hedges:** scale, cross-domain density | +1 → **3 hedges** (add critical density) | Antigravity Q8 |
+| **Load-bearing engineering concern:** canonicalization | **new** | Antigravity Q5 + Joseph [2] |
+| **Path-forward precondition:** predeclared eval criteria for step 3 | **new** | Codex Q6 |
+| **[8] reading:** narrowed — "no A-flavored project is *this* project" | refined | Codex + Antigravity |
+
+**Updated position summary:** B-viable with **two calibrations (C1, C2) +
+three empirical hedges (scale, cross-domain density, critical density) +
+one load-bearing engineering concern (canonicalization) + one
+path-forward precondition (predeclared eval criteria)**. Joseph's
+project-existence claim [8] narrowed to KDB-specific.
+
+---
+
+## 8. Round 5 closeout — post-external-takes resolution (2026-05-20)
+
+After §7.4 (Codex + Antigravity folded in), Joseph closed the open items
+from the external takes.
+
+### 8.1 Path forward — committed to B
+
+The non-convergence noted in §7.3 ("Joseph at B-strong-claim; Claude at
+B-viable-hypothesis-worth-testing") is closed at the **decision level**:
+the path forward **is B**. The strong/viable distinction was a description
+of conviction, not a fork in action — both stances lead to the same next
+moves. Convergence-by-execution (§7.3) remains the arbiter; B is the
+operating posture until evidence at step 3 says otherwise.
+
+### 8.2 Canonicalization-first into the blueprint
+
+§7.4 (a) is **promoted from concern to blueprint mandate**. Canonicalization
+is a **first-class compile-stage component**, designed up front, owning:
+
+- string normalization (case, whitespace, punctuation)
+- alias tracking (`AAPL` ↔ `Apple Inc.` ↔ `Apple`)
+- embedding-similarity dedup for near-matches the LLM did not unify
+- LLM-as-judge for ambiguous cases
+- provenance — which raw surface forms map to which canonical node
+
+It sits between extraction (LLM names entities in free text) and graph
+write (canonical entities become nodes), and it is a contracted stage with
+its own inputs/outputs — not a post-hoc script. Retroactive
+canonicalization against an already-polluted graph is expensive (edges
+to merge, provenance to reconcile, communities to re-cluster); paying for
+it up front is the cheap direction.
+
+Implementation belongs to the GraphDB-KDB ingestion/compile blueprint
+(Task #63 family). This section names the architectural decision; the
+mechanism is engineered there.
+
+### 8.3 Critical density — no action
+
+The §7.4 (b) hedge stays *as a hedge*. **No code, no architectural
+intervention, no design constraint is added now.** The disposition is
+exactly: "if at step 3 the operations return junk and the symptom looks
+like 'PPR is returning popularity rankings rather than activating a
+local neighborhood,' suspect critical density as one possible cause;
+otherwise ignore." It is one item on the "things to watch for" list, not
+a thing to design against. Joseph flagged that the depth of analysis
+in §7.4 (b) was disproportionate to the action item — true, and noted —
+but the content stays as background for the empirical step.
+
+### 8.4 Selection-layers reframe — adopted as blueprint vocabulary
+
+Codex Q8 (`docs/round5-external-review-codex.md` §8) reframes "selection"
+as happening at five distinct layers, and observes that *"B only rejects
+the first kind"*: B rejects **ingestion** selection (the door), but the
+other four layers still exist and B still depends on them. The vocabulary
+was initially set aside; after Claude's walk-through (2026-05-20), Joseph
+adopted it as the organizing structure for the compile pipeline blueprint.
+
+| # | Layer | What gets selected | Status in KDB |
+|---|---|---|---|
+| 1 | **Ingestion** | Which files enter the corpus | Settled: B + X6 (mechanical role exclusion only — `.venv`, `node_modules`, generated artifacts; no value/taste curation) |
+| 2 | **Extraction** | Which entities/relations the LLM emits from each text | Compile-pipeline stage; quality depends on prompt + model + extraction contract |
+| 3 | **Canonicalization** | Which surface forms unify into one entity node | First-class compile-pipeline stage (§8.2) — string norm, alias tracking, embedding dedup, LLM-as-judge, provenance |
+| 4 | **Query-time** | Which subgraph activates for a given query | Runtime — PPR / community routing (HippoRAG / GraphRAG) |
+| 5 | **Human interpretation** | Which surfaced output the human believes | Outside the compile boundary — UX / output presentation concern |
+
+**Implication for the blueprint.** The compile pipeline is structured as
+**a sequence of selection stages with explicit contracts** — not a
+monolithic "compile" step. Layers 2 and 3 become named, contracted
+stages in the GraphDB-KDB ingestion/compile blueprint (Task #63 family).
+Layer 1 is the harvester/X6 boundary already settled. Layer 4 is the
+query architecture (separate spec). Layer 5 is out of compile scope.
+
+**Why this matters past vocabulary.** Naming the layers makes future
+deliberation precise: when someone proposes a "selection" change, the
+question becomes *"at which layer?"* — and the design implications differ
+sharply (layer 1 is philosophical; layers 2–3 are engineering; layer 4
+is operational; layer 5 is UX). The framing also makes it explicit that
+B does not abolish selection — it relocates it from layer 1 down to
+layers 2–4, where the LLM + graph operations carry the load.
+
+### 8.5 Round 5 final position summary
+
+**Decision:** **B**, with **(C1)** LLM-extracted not human-defined and
+**(C2)** domain-as-coordinate not gate.
+
+**Blueprint mandate:** **canonicalization as first-class compile-stage
+component** (§8.2). Belongs to Task #63 family.
+
+**Blueprint vocabulary:** **5-layer selection structure** (§8.4) —
+ingestion, extraction, canonicalization, query-time, human
+interpretation. Layers 2 and 3 are named, contracted compile stages;
+layer 1 is the harvester/X6 boundary; layer 4 is query architecture;
+layer 5 is out of compile scope.
+
+**Empirical hedges (watch-for at step 3, not design constraints):**
+scale, cross-domain density, critical density.
+
+**Path-forward precondition:** predeclared eval criteria for step 3 (set
+before building, not measured after).
+
+**Project-existence claim [8]:** narrowed — KDB-specific (A-flavored
+projects exist and can be worthwhile; they just aren't KDB).
+
+### 8.6 Consultation concluded
+
+External review with Codex and Antigravity (Gemini 3.5 Flash) is **closed**.
+All four material adds from §7.4 have been resolved into the Round 5
+position:
+
+| Material add | Source | Resolution |
+|---|---|---|
+| Canonicalization as load-bearing engineering concern | Antigravity Q5 (central) + Codex Q5/Q8 (parallel) | Adopted — blueprint mandate (§8.2) |
+| Critical density as 3rd empirical hedge | Antigravity Q8 | Adopted as watch-for; no architectural action (§8.3) |
+| Predeclared eval criteria for step 3 | Codex Q6 | Adopted as path-forward precondition |
+| 5-layer selection vocabulary | Codex Q8 | Adopted as blueprint vocabulary (§8.4) |
+
+Next: design the GraphDB-KDB compile pipeline blueprint (Task #63 family)
+on the architecture established here.
+
+Round 5 closed.
