@@ -887,6 +887,287 @@ def test_run_compile_result_passes_aggregate_validator(
     assert validation.is_valid, validation.detail_strings()
 
 
+# ---------- failure_* triplet wiring (Task #25) ----------
+
+def _failure_fields(state_root: Path, run_id: str) -> tuple:
+    """Helper: read the (single) resp-stats record and return the
+    (failure_stage, failure_exception_type, failure_exception_message)
+    triplet."""
+    files = _resp_stats_files(state_root, run_id)
+    assert len(files) == 1, files
+    record = json.loads(files[0].read_text(encoding="utf-8"))
+    return (
+        record["failure_stage"],
+        record["failure_exception_type"],
+        record["failure_exception_message"],
+    )
+
+
+def test_failure_triplet_source_read_populates_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    # SOURCE_A raw file deliberately NOT written → FileNotFoundError (OSError)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        lambda _req: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "source_read"
+    assert etype == "FileNotFoundError"  # OSError subclass
+    assert "No such file" in msg or "Errno 2" in msg
+
+
+def test_failure_triplet_prompt_build_populates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    def boom(**_kwargs):
+        raise RuntimeError("prompt build exploded")
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.prompt_builder.build_prompt", boom
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "prompt_build"
+    assert etype == "RuntimeError"
+    assert msg == "prompt build exploded"
+
+
+def test_failure_triplet_model_call_populates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    def blow_up(_req):
+        raise ValueError("transport broke")
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: blow_up}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "model_call"
+    assert etype == "ValueError"
+    assert msg == "transport broke"
+
+
+def test_failure_triplet_truncation_uses_synthetic_token_overrun(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Truncation is not an exception — we use the synthetic stage name
+    'truncation' and synthetic exception_type 'TokenOverrun'. The message
+    encodes the actual stop_reason and max_tokens for grouping."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    truncated = ModelResponse(
+        text=json.dumps(_good_response(SOURCE_A)),
+        input_tokens=100, output_tokens=4096, latency_ms=10,
+        model="m", provider="anthropic", attempts=1,
+        stop_reason="max_tokens",
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: truncated}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="m", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "truncation"
+    assert etype == "TokenOverrun"
+    assert "stop_reason='max_tokens'" in msg
+    assert "max_tokens=4096" in msg
+
+
+def test_failure_triplet_extract_populates_valueerror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    bad = ModelResponse(
+        text="sure, here you go:\n{\"source_id\": \"x\"}\n cheers!",
+        input_tokens=10, output_tokens=5, latency_ms=10,
+        model="m", provider="anthropic", attempts=1,
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: bad}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "extract"
+    assert etype == "ValueError"
+    assert msg  # non-empty (extract_json_text raises a specific msg)
+
+
+def test_failure_triplet_parse_populates_jsondecodeerror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    bad = ModelResponse(
+        text='{"source_id": "x",,}',  # passes extract (bare {}), fails json.loads
+        input_tokens=10, output_tokens=5, latency_ms=10,
+        model="m", provider="anthropic", attempts=1,
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: bad}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "parse"
+    assert etype == "JSONDecodeError"
+    assert msg  # str(JSONDecodeError) includes line/col info
+
+
+def test_failure_triplet_all_none_on_happy_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Success path: no failure_* fields populated. Regression guard
+    against accidental leakage from earlier compile_one invocations."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage is None and etype is None and msg is None
+
+
+def test_failure_triplet_stays_none_for_schema_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Schema validation has its own structured surface (schema_errors).
+    The failure_* triplet is scoped to non-validation halts and must NOT
+    overlap with schema/semantic — they're querying different things."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    bad_payload = _good_response(SOURCE_A)
+    bad_payload["pages"][0]["slug"] = "INVALID SLUG"
+    bad_payload["summary_slug"] = "INVALID SLUG"
+    bad = ModelResponse(
+        text=json.dumps(bad_payload),
+        input_tokens=10, output_tokens=5, latency_ms=10,
+        model="m", provider="anthropic", attempts=1,
+    )
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: bad}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage is None and etype is None and msg is None
+    # schema_errors still populated on the same record.
+    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
+    assert record["schema_ok"] is False
+    assert len(record["schema_errors"]) > 0
+
+
+def test_failure_message_truncated_at_2000_chars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Long exception messages (HTTP error dumps, etc.) are capped to
+    2000 chars + '...[truncated]' so the resp-stats artifact stays small."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    long_msg = "x" * 5000
+
+    def boom(_req):
+        raise RuntimeError(long_msg)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: boom}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
+        ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "model_call"
+    assert etype == "RuntimeError"
+    assert msg.endswith("...[truncated]")
+    assert len(msg) == 2000 + len("...[truncated]")
+
+
+# ---------- _truncate_msg helper (Task #25) ----------
+
+def test_truncate_msg_below_cap_unchanged() -> None:
+    assert compiler._truncate_msg("hello") == "hello"
+
+
+def test_truncate_msg_at_exact_cap_unchanged() -> None:
+    s = "x" * 2000
+    assert compiler._truncate_msg(s) == s
+
+
+def test_truncate_msg_above_cap_truncated() -> None:
+    s = "x" * 2001
+    out = compiler._truncate_msg(s)
+    assert out == "x" * 2000 + "...[truncated]"
+
+
 # ---------- CLI ----------
 
 def test_cli_missing_scan_fails(

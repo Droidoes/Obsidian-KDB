@@ -32,7 +32,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal, NamedTuple
 
 from kdb_compiler import (
     planner,
@@ -55,6 +55,50 @@ from kdb_compiler.types import (
     PageIntent,
     RespStatsRecord,
 )
+
+
+FailureStage = Literal[
+    "source_read", "prompt_build", "model_call",
+    "truncation", "extract", "parse",
+]
+
+_FAILURE_MSG_CAP = 2000
+
+
+class FailureTelemetry(NamedTuple):
+    """Task #25 — pre-validation failure capture for RespStatsRecord.
+
+    Co-presence enforced by construction: stage / exception_type / message
+    are always all three populated. Schema/semantic validation failures
+    use schema_errors / semantic_errors instead — they have structured
+    list surfaces and are out of scope for the failure_* triplet.
+    """
+    stage: FailureStage
+    exception_type: str
+    message: str
+
+
+def _truncate_msg(s: str) -> str:
+    """Cap exception messages at 2000 chars + '...[truncated]' so HTTP
+    error dumps don't bloat the resp-stats artifact."""
+    if len(s) <= _FAILURE_MSG_CAP:
+        return s
+    return s[:_FAILURE_MSG_CAP] + "...[truncated]"
+
+
+def _set_failure(
+    state: dict,
+    stage: FailureStage,
+    exception_type: str,
+    message: str,
+) -> None:
+    """Centralized failure-capture: builds the FailureTelemetry NamedTuple
+    and stashes it in state['failure'] for the finally block to read."""
+    state["failure"] = FailureTelemetry(
+        stage=stage,
+        exception_type=exception_type,
+        message=_truncate_msg(message),
+    )
 
 
 def source_text_for(job: CompileJob) -> str:
@@ -182,6 +226,7 @@ def compile_one(
         "log_entries": [],
         "warnings": [],
         "source_words": 0,
+        "failure": None,
     }
 
     try:
@@ -189,6 +234,7 @@ def compile_one(
         try:
             source_text = source_text_for(job)
         except (OSError, UnicodeDecodeError) as e:
+            _set_failure(state, "source_read", type(e).__name__, str(e))
             state["error"] = (
                 f"{source_id}: source read failed: {type(e).__name__}: {e}"
             )
@@ -204,6 +250,7 @@ def compile_one(
                 context_snapshot=job.context_snapshot,
             )
         except Exception as e:
+            _set_failure(state, "prompt_build", type(e).__name__, str(e))
             state["error"] = (
                 f"{source_id}: prompt build failed: {type(e).__name__}: {e}"
             )
@@ -225,6 +272,7 @@ def compile_one(
             )
             state["raw_response_text"] = state["model_response"].text
         except Exception as e:
+            _set_failure(state, "model_call", type(e).__name__, str(e))
             state["error"] = (
                 f"{source_id}: model call failed: {type(e).__name__}: {e}"
             )
@@ -236,6 +284,12 @@ def compile_one(
         # unclosed JSON fence — surface the real cause instead.
         sr = state["model_response"].stop_reason
         if sr in ("max_tokens", "length"):
+            _set_failure(
+                state,
+                "truncation",
+                "TokenOverrun",
+                f"stop_reason={sr!r}; max_tokens={max_tokens}",
+            )
             state["error"] = (
                 f"{source_id}: truncated at max_tokens={max_tokens} "
                 f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
@@ -249,6 +303,7 @@ def compile_one(
             )
             state["extract_ok"] = True
         except ValueError as e:
+            _set_failure(state, "extract", type(e).__name__, str(e))
             state["error"] = f"{source_id}: extract failed: {e}"
             return (None, [], [], state["error"])
 
@@ -257,6 +312,7 @@ def compile_one(
             state["parsed_json"] = json.loads(json_text)
             state["parse_ok"] = True
         except json.JSONDecodeError as e:
+            _set_failure(state, "parse", type(e).__name__, str(e))
             state["error"] = (
                 f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
             )
@@ -363,6 +419,7 @@ def compile_one(
             semantic_ok=state["semantic_ok"],
             semantic_errors=state["semantic_errors"],
             source_words=state["source_words"],
+            failure=state["failure"],
         )
         resp_stats_path = write_resp_stats(record, state_root)
         if stats_record_sink is not None:

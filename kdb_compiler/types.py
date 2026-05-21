@@ -325,6 +325,15 @@ class RespStatsRecord:
     (pre-response failure). prompt_hash == 'sha256:none' indicates the
     prompt itself could not be built. These sentinels distinguish missing
     data from empty-string data.
+
+    Task #25 failure_* triplet: when the compile halts at a non-validation
+    stage (source_read | prompt_build | model_call | truncation | extract
+    | parse), all three fields are populated together; otherwise all three
+    are None. Schema/semantic failures keep using schema_errors /
+    semantic_errors — those have structured list surfaces and are out of
+    the failure_* triplet's scope. exception_type is the Python class name
+    (or the synthetic "TokenOverrun" for truncation); message is the
+    exception's str(e), truncated to 2000 chars + '...[truncated]'.
     """
     run_id: str
     source_id: str
@@ -350,6 +359,9 @@ class RespStatsRecord:
     stop_reason: Optional[str] = None
     token_overrun: bool = False
     source_words: int = 0
+    failure_stage: Optional[str] = None
+    failure_exception_type: Optional[str] = None
+    failure_exception_message: Optional[str] = None
 
     def to_dict(self) -> dict:
         d = asdict(self)

@@ -516,3 +516,108 @@ def test_model_response_overrides_requested_provider_model(tmp_path: Path) -> No
     )
     assert record.provider == "anthropic"
     assert record.model == "claude-opus-4-7"
+
+
+# ---------- failure_* triplet (Task #25) ----------
+
+def test_failure_none_leaves_all_three_fields_none(tmp_path: Path) -> None:
+    """Success path: build_resp_stats called without `failure` kwarg leaves
+    all three failure_* fields as None. Verifies the all-or-none invariant
+    holds for the default-success case."""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True, parse_ok=True, parsed_json={},
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+    )
+    assert record.failure_stage is None
+    assert record.failure_exception_type is None
+    assert record.failure_exception_message is None
+
+
+def test_failure_triplet_populated_from_telemetry(tmp_path: Path) -> None:
+    """Passing a FailureTelemetry NamedTuple populates all three flat
+    fields on the record. Uses a duck-typed stand-in to avoid taking a
+    compiler import into the resp_stats_writer test surface."""
+    from typing import NamedTuple
+
+    class _FakeFailure(NamedTuple):
+        stage: str
+        exception_type: str
+        message: str
+
+    ctx = _ctx(tmp_path)
+    failure = _FakeFailure(
+        stage="source_read",
+        exception_type="OSError",
+        message="[Errno 13] Permission denied: '/x'",
+    )
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=None, raw_response_text="",
+        model_response=None,
+        extract_ok=False, parse_ok=False, parsed_json=None,
+        schema_ok=False, schema_errors=[],
+        semantic_ok=False, semantic_errors=[],
+        failure=failure,
+    )
+    assert record.failure_stage == "source_read"
+    assert record.failure_exception_type == "OSError"
+    assert record.failure_exception_message == "[Errno 13] Permission denied: '/x'"
+
+
+def test_failure_triplet_serializes_to_json_round_trip(tmp_path: Path) -> None:
+    """Failure fields appear in the on-disk JSON with their string values.
+    Confirms the dataclass -> asdict -> atomic_write_json -> json.loads
+    round trip preserves the triplet."""
+    from typing import NamedTuple
+
+    class _FakeFailure(NamedTuple):
+        stage: str
+        exception_type: str
+        message: str
+
+    ctx = _ctx(tmp_path)
+    failure = _FakeFailure(
+        stage="model_call",
+        exception_type="APIConnectionError",
+        message="connection reset by peer",
+    )
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="", model_response=None,
+        extract_ok=False, parse_ok=False, parsed_json=None,
+        schema_ok=False, schema_errors=[],
+        semantic_ok=False, semantic_errors=[],
+        failure=failure,
+    )
+    out = resp_stats_writer.write_resp_stats(record, tmp_path / "state")
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["failure_stage"] == "model_call"
+    assert data["failure_exception_type"] == "APIConnectionError"
+    assert data["failure_exception_message"] == "connection reset by peer"
+
+
+def test_failure_fields_serialize_as_null_when_absent(tmp_path: Path) -> None:
+    """Success-path record persists failure_* triplet as JSON nulls (not
+    omitted) — so downstream consumers can rely on the keys existing."""
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text='{"x": 1}',
+        model_response=_model_response(),
+        extract_ok=True, parse_ok=True, parsed_json={"x": 1},
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+    )
+    out = resp_stats_writer.write_resp_stats(record, tmp_path / "state")
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert "failure_stage" in data and data["failure_stage"] is None
+    assert "failure_exception_type" in data and data["failure_exception_type"] is None
+    assert "failure_exception_message" in data and data["failure_exception_message"] is None
