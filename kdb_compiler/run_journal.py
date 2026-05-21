@@ -33,22 +33,30 @@ from typing import Any
 
 from kdb_compiler.run_context import RunContext, now_iso
 
-JOURNAL_SCHEMA_VERSION = "2.0"
+JOURNAL_SCHEMA_VERSION = "2.2"  # 2.2 introduced by #74.4 — canonicalize stage
 
 
 # Stage names mirror kdb_compile._STAGES (1-based). Kept here so
 # downstream tools can introspect the journal without importing the
 # orchestrator module.
+#
+# Version history:
+#   2.0 — original 9-stage layout (#63.7-pre added graph_sync as Stage 9).
+#   2.1 — cleanup journal track (separate flow; kdb_clean.py).
+#   2.2 — added Stage 6 "canonicalize" (#74.4); subsequent stages shifted
+#         one slot up: build manifest update → 7, apply pages → 8,
+#         persist state → 9, graph_sync → 10. 10-stage layout.
 STAGE_NAMES: tuple[str, ...] = (
     "scan",
     "validate scan",
     "compile",
     "validate compile_result",
     "reconcile compile_result",
+    "canonicalize",          # #74.4 — Stage 6: canonicalization (D-R5-1..13)
     "build manifest update",
     "apply pages",
     "persist state",
-    "graph_sync",  # #63.7-pre — Stage 9: GraphDB-KDB sync via Obsidian adapter (D-S0)
+    "graph_sync",            # #63.7-pre — GraphDB-KDB sync via Obsidian adapter (D-S0)
 )
 
 
@@ -72,7 +80,7 @@ class RunJournalBuilder:
         b.finish_stage(1, ok=True, scan_summary=..., files_total=..., ...)
         ...
         b.record_source({...})                  # stage 3, once per job
-        b.set_apply_stage_payload(payload_dict)  # stage 6
+        b.set_apply_stage_payload(payload_dict)  # stage 8 (was 6 pre-#74.4)
         b.mark_failure(idx, name, "ValidationError", "..."  # on failure
         journal = b.finalize(
             success=True, compile_success=True,
@@ -231,17 +239,20 @@ class RunJournalBuilder:
         finished_at = now_iso()
         duration_ms = self._duration_ms(finished_at)
 
-        # Fold manifest-stage payload into stage 6 entry if present.
+        # Fold manifest-stage payload into stage 7 entry if present.
+        # (Was stage 6 pre-#74.4; canonicalize stage inserted at 6 shifted
+        # build-manifest-update to 7.)
         if self._manifest_stage_payload is not None:
             for entry in self._stages:
-                if entry["index"] == 6:
+                if entry["index"] == 7:
                     entry.update(self._manifest_stage_payload)
                     break
 
-        # Fold apply-stage payload into stage 7 entry if present.
+        # Fold apply-stage payload into stage 8 entry if present.
+        # (Was stage 7 pre-#74.4.)
         if self._apply_stage_payload is not None:
             for entry in self._stages:
-                if entry["index"] == 7:
+                if entry["index"] == 8:
                     entry.update(self._apply_stage_payload)
                     break
 

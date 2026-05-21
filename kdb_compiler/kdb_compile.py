@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from kdb_compiler import (
     atomic_io,
+    canonicalize,
     compiler,
     kdb_scan,
     patch_applier,
@@ -390,8 +391,93 @@ def compile(
     )
     _emit("reconcile_done", actions=len(reconciler_actions))
 
-    # ----- [6] build manifest update -----
+    # ----- [6] canonicalize -----
+    # Round 5 §8.2 + Task #74 blueprint §6/§7. Stage [6] resolves alias
+    # surface forms to canonical entity slugs so wiki pages and graph
+    # entities agree on names (D-R5-12: wiki ≡ graph on entity names).
+    #
+    # Reads:  state/canonicalization/aliases.json (D-R5-8 — missing → empty)
+    # Writes: state/compile_result.json overwritten atomically with the
+    #         canonicalized payload (D-R5-10) so Stages 7-10 + per-run
+    #         sidecar archival see the canonical version.
+    # Fatal:  CircularAliasError (D-R5-13 cycle) or LedgerLoadError
+    #         (malformed JSON / shape errors) — halts before patch_applier
+    #         so the vault and graph stay on the previous state (D-R5-9).
     _stage_open(6)
+    ledger_path = state_root / "canonicalization" / "aliases.json"
+    ledger_missing_warning: str | None = None
+
+    import warnings as _warnings
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always", UserWarning)
+        try:
+            ledger = canonicalize.load_or_empty(ledger_path)
+        except canonicalize.LedgerLoadError as exc:
+            note = f"LedgerLoadError: {exc}"
+            _stage_close(
+                6, ok=False, note=note,
+                ledger_path=ledger_path.as_posix(),
+            )
+            return _fail(
+                [note], stage_index=6, stage_name=_STAGES[5],
+                failure_type="LedgerLoadError",
+            )
+        for w in caught:
+            if issubclass(w.category, UserWarning):
+                ledger_missing_warning = str(w.message)
+
+    try:
+        canon_result = canonicalize.run(cr, ledger, run_id)
+    except canonicalize.CircularAliasError as exc:
+        note = f"CircularAliasError: {exc}"
+        _stage_close(
+            6, ok=False, note=note,
+            ledger_path=ledger_path.as_posix(),
+            ledger_snapshot_sha256=ledger.snapshot_sha256,
+        )
+        return _fail(
+            [note], stage_index=6, stage_name=_STAGES[5],
+            failure_type="CircularAliasError",
+        )
+
+    # D-R5-10: write back the canonicalized compile_result so subsequent
+    # stages and per-run sidecar archival see the canonical version.
+    if not dry_run:
+        try:
+            canonicalize.write_canonicalized(
+                cr, state_root / "compile_result.json",
+            )
+        except OSError as exc:
+            note = f"canonicalized write-back failed: {type(exc).__name__}: {exc}"
+            _stage_close(
+                6, ok=False, note=note,
+                ledger_path=ledger_path.as_posix(),
+            )
+            return _fail(
+                [note], stage_index=6, stage_name=_STAGES[5],
+                failure_type=type(exc).__name__,
+            )
+
+    if ledger_missing_warning:
+        _emit("canonicalize_ledger_missing", path=ledger_path.as_posix())
+    _stage_close(
+        6, ok=True,
+        ledger_path=ledger_path.as_posix(),
+        ledger_present=ledger.path is not None and ledger_path.exists(),
+        ledger_snapshot_sha256=ledger.snapshot_sha256,
+        aliases_emitted=canon_result.stats["aliases_emitted"],
+        pages_merged=canon_result.stats["pages_merged"],
+        outgoing_link_remaps=canon_result.stats["outgoing_link_remaps"],
+        note=ledger_missing_warning,
+    )
+    _emit(
+        "canonicalize_done",
+        aliases_emitted=canon_result.stats["aliases_emitted"],
+        pages_merged=canon_result.stats["pages_merged"],
+    )
+
+    # ----- [7] build manifest update -----
+    _stage_open(7)
     manifest_path = state_root / "manifest.json"
     prior: dict = {}
     prior_manifest_loaded = False
@@ -401,10 +487,10 @@ def compile(
             prior_manifest_loaded = True
         except (json.JSONDecodeError, OSError) as exc:
             note = f"manifest.json unreadable: {exc}"
-            _stage_close(6, ok=False, note=note,
+            _stage_close(7, ok=False, note=note,
                          prior_manifest_loaded=False)
             return _fail(
-                [note], stage_index=6, stage_name=_STAGES[5],
+                [note], stage_index=7, stage_name=_STAGES[6],
                 failure_type=type(exc).__name__,
             )
 
@@ -419,20 +505,20 @@ def compile(
         )
     except Exception as exc:
         note = f"{type(exc).__name__}: {exc}"
-        _stage_close(6, ok=False, note=note,
+        _stage_close(7, ok=False, note=note,
                      prior_manifest_loaded=prior_manifest_loaded)
         return _fail(
             [f"build_source_state_update failed: {note}"],
-            stage_index=6, stage_name=_STAGES[5],
+            stage_index=7, stage_name=_STAGES[6],
             failure_type=type(exc).__name__,
         )
 
     manifest_stage["prior_manifest_loaded"] = prior_manifest_loaded
     builder.set_manifest_stage_payload(manifest_stage)
-    _stage_close(6, ok=True)
+    _stage_close(7, ok=True)
 
-    # ----- [7] apply pages -----
-    _stage_open(7)
+    # ----- [8] apply pages -----
+    _stage_open(8)
     try:
         apply_result = patch_applier.apply(
             vault_root,
@@ -443,13 +529,13 @@ def compile(
         )
     except Exception as exc:
         note = f"{type(exc).__name__}: {exc}"
-        _stage_close(7, ok=False, note=note)
+        _stage_close(8, ok=False, note=note)
         return _fail(
             [f"patch_applier.apply failed: {note}"],
-            stage_index=7, stage_name=_STAGES[6],
+            stage_index=8, stage_name=_STAGES[7],
             failure_type=type(exc).__name__,
         )
-    _stage_close(7, ok=True)
+    _stage_close(8, ok=True)
 
     _emit(
         "pages_done",
@@ -457,11 +543,11 @@ def compile(
         dry_run=dry_run,
     )
 
-    # ----- [8] persist state -----
-    # Under v2 the journal is written LAST so its stage-8 entry reflects
+    # ----- [9] persist state -----
+    # Under v2 the journal is written LAST so its stage-9 entry reflects
     # the real manifest_written outcome. This inverts the old "journal
     # then pointer" order — still atomic per-file via atomic_io.
-    _stage_open(8)
+    _stage_open(9)
     manifest_written = False
     # v2: journal is ALWAYS written (success, failure, dry-run). The file
     # itself declares `dry_run: true` when applicable; downstream tooling
@@ -478,7 +564,7 @@ def compile(
         except Exception as exc:
             note = f"manifest write failed: {type(exc).__name__}: {exc}"
             _stage_close(
-                8, ok=False, note=note,
+                9, ok=False, note=note,
                 journal_written=journal_written,
                 manifest_written=False,
                 journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
@@ -486,13 +572,13 @@ def compile(
                 skipped_manifest_write_reason="failure",
             )
             return _fail(
-                [note], stage_index=8, stage_name=_STAGES[7],
+                [note], stage_index=9, stage_name=_STAGES[8],
                 failure_type=type(exc).__name__,
             )
 
     note = "skipped (dry-run)" if dry_run else None
     _stage_close(
-        8, ok=True, note=note,
+        9, ok=True, note=note,
         journal_written=journal_written,
         manifest_written=manifest_written,
         journal_path=(state_root / "runs" / f"{run_id}.json").as_posix(),
@@ -500,7 +586,7 @@ def compile(
         skipped_manifest_write_reason=skipped_reason,
     )
 
-    # ----- [9] graph_sync -----
+    # ----- [10] graph_sync -----
     # D-S0: route through Obsidian adapter; no direct GraphDB/apply_compile_result
     # import in this file.
     #
@@ -510,10 +596,10 @@ def compile(
     # Two sub-steps: (a) archive sidecar FIRST so the run is replayable by
     # `graphdb-kdb rebuild` even if the live sync fails; (b) live-sync via
     # adapter. On sync failure: write failure journal with replayable_payload=True.
-    _stage_open(9)
+    _stage_open(10)
     replayable_payload = False
     if dry_run:
-        _stage_close(9, ok=True, note="skipped (dry-run)")
+        _stage_close(10, ok=True, note="skipped (dry-run)")
     else:
         sidecar_archived = False
         sync_payload: dict[str, Any] = {}
@@ -543,11 +629,11 @@ def compile(
                 "sidecar_archived":    sidecar_archived,
                 "sidecar_path":        sidecar_dir.as_posix(),
             }
-            _stage_close(9, ok=True, **sync_payload)
+            _stage_close(10, ok=True, **sync_payload)
         except Exception as exc:
             note = f"{type(exc).__name__}: {exc}"
             _stage_close(
-                9, ok=False, note=note,
+                10, ok=False, note=note,
                 sidecar_archived=sidecar_archived,
                 recovery_hint=f"run: graphdb-kdb rebuild --vault-root {vault_root}",
             )

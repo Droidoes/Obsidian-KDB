@@ -29,6 +29,10 @@
     "warnings": {
       "type": "array",
       "items": { "type": "string" }
+    },
+    "canonical_meta": {
+      "$ref": "#/$defs/canonicalMeta",
+      "description": "Stage 6 (canonicalize) output (#74). Absent on raw extraction (pre-Stage 6); present post-Stage 6. Optional per D-R5-7 so the same schema validates both pre- and post-canonicalized payloads."
     }
   },
   "$defs": {
@@ -89,7 +93,11 @@
           "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
           "items": { "$ref": "#/$defs/slug" }
         },
-        "confidence": { "$ref": "#/$defs/confidence" }
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "canonical_id": {
+          "type": ["string", "null"],
+          "description": "Stage 6 (canonicalize) output (#74). NULL means this page is canonical; a non-null slug means this page is an alias of the referenced canonical (D-R5-5). Optional per D-R5-7 — absent on raw extraction; populated post-Stage 6."
+        }
       }
     },
     "logEntry": {
@@ -148,6 +156,72 @@
             "attempts": { "type": "integer", "minimum": 1 },
             "ok": { "type": "boolean" },
             "error": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "canonicalMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Stage 6 canonicalization output (#74). Records every alias resolution, link remap, and page merge that happened so `graphdb-kdb rebuild` can reconstruct the same state from this run's sidecar.",
+      "required": ["algorithm_version", "ledger_snapshot_sha256", "aliases_emitted", "outgoing_link_remaps", "merged_pages"],
+      "properties": {
+        "algorithm_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Version of the canonicalize algorithm. Bumps when the algorithm changes in a way that affects output; replay tolerates older versions iff backward-compatible."
+        },
+        "ledger_snapshot_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "description": "sha256 of the aliases.json bytes at compile time (D-R5-7). Sentinel 'empty' when the ledger was absent. Rebuild verifies this matches the current ledger before applying aliases."
+        },
+        "aliases_emitted": {
+          "type": "array",
+          "description": "Aliases actually used in this run (resolved from a page-slug, outgoing_link, or body wikilink position). Drives graph_sync alias-Entity row creation in #74.5.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["alias_slug", "canonical_slug", "algorithm"],
+            "properties": {
+              "alias_slug": { "$ref": "#/$defs/slug" },
+              "canonical_slug": { "$ref": "#/$defs/slug" },
+              "algorithm": {
+                "type": "string",
+                "enum": ["ledger", "string_norm", "embedding", "llm_judge"],
+                "description": "Mechanism that produced this alias mapping. v1 emits 'ledger' only; v2 gates add 'embedding' and 'llm_judge'."
+              }
+            }
+          }
+        },
+        "outgoing_link_remaps": {
+          "type": "array",
+          "description": "Deduped (from, to) pairs of every link-position remap (outgoing_links metadata + body [[wikilink]] tokens).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "$ref": "#/$defs/slug" }
+            }
+          }
+        },
+        "merged_pages": {
+          "type": "array",
+          "description": "Per-merge log for OQ-F page-intent merges. One entry per alias page intent that was folded into a canonical.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["alias_page_slug", "merged_into_canonical", "merge_strategy"],
+            "properties": {
+              "alias_page_slug": { "type": "string", "minLength": 1 },
+              "merged_into_canonical": { "$ref": "#/$defs/slug" },
+              "merge_strategy": {
+                "type": "string",
+                "enum": ["alias-singleton-rename", "canonical-wins", "longest-wins"]
+              }
+            }
           }
         }
       }

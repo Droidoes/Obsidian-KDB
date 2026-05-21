@@ -536,8 +536,9 @@ def test_fixture_branch_does_not_invoke_compiler(
 _EXPECTED_STAGES = (
     "scan", "validate scan", "compile",
     "validate compile_result", "reconcile compile_result",
+    "canonicalize",                                       # #74.4 — Stage 6
     "build manifest update", "apply pages", "persist state",
-    "graph_sync",  # #63.7-pre — Stage 9
+    "graph_sync",                                         # #63.7-pre — now Stage 10
 )
 _STAGE_COUNT = len(_EXPECTED_STAGES)
 
@@ -551,9 +552,9 @@ def _capture_progress() -> tuple[list[tuple[str, dict]], "object"]:
 
 
 def test_stage_events_emit_in_order_wet_run(tmp_path: Path) -> None:
-    """All nine stage_start/stage_done pairs arrive in the correct sequence
+    """All ten stage_start/stage_done pairs arrive in the correct sequence
     for a happy-path wet run with monotonic indices and names from _STAGES.
-    Stage 9 (graph_sync) added by #63.7-pre."""
+    Stage 6 (canonicalize) added by #74.4 — graph_sync is now Stage 10."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nSome content.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -664,7 +665,7 @@ def test_compile_writes_journal_on_stage_2_failure(
     assert result.manifest_written is False
 
     journal = _load_journal(state, ctx.run_id)
-    assert journal["schema_version"] == "2.0"
+    assert journal["schema_version"] == "2.2"
     assert journal["success"] is False
     assert journal["compile_success"] is None  # stage 3 never ran
     assert journal["manifest_written"] is False
@@ -944,7 +945,8 @@ def test_stage4_gate_error_bypasses_reconciler(tmp_path: Path) -> None:
 
 def test_stage_names_public_contract() -> None:
     """STAGE_NAMES is the source of truth for stage ordering — downstream
-    tools depend on it. Pin the exact 9 entries (Stage 9 added by #63.7-pre)."""
+    tools depend on it. Pin the exact 10 entries (Stage 6 canonicalize
+    inserted by #74.4; graph_sync shifted from index 9 to index 10)."""
     from kdb_compiler.run_journal import STAGE_NAMES
     assert STAGE_NAMES == (
         "scan",
@@ -952,6 +954,7 @@ def test_stage_names_public_contract() -> None:
         "compile",
         "validate compile_result",
         "reconcile compile_result",
+        "canonicalize",
         "build manifest update",
         "apply pages",
         "persist state",
@@ -962,11 +965,11 @@ def test_stage_names_public_contract() -> None:
 def test_full_journal_contains_all_stages_with_folded_payloads(
     tmp_path: Path,
 ) -> None:
-    """Happy-path wet run: the journal has stage entries 1..9, and
+    """Happy-path wet run: the journal has stage entries 1..10, and
     finalize()'s index-based payload folding lands the manifest deltas on
-    stage 6 (not stage 5) and the apply pages_written on stage 7 (not 6).
-    Stage 9 (graph_sync) added by #63.7-pre — non-fatal per D38; expected
-    to land in the journal regardless of outcome."""
+    stage 7 (not 6) and the apply pages_written on stage 8 (not 7).
+    Stage 6 (canonicalize) was inserted by #74.4; Stage 10 (graph_sync,
+    added by #63.7-pre) lands regardless of canonicalization activity."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\ncontent", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -977,25 +980,31 @@ def test_full_journal_contains_all_stages_with_folded_payloads(
 
     journal = _load_journal(state, ctx.run_id)
     indices = [s["index"] for s in journal["stages"]]
-    assert indices == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert indices == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     by_idx = {s["index"]: s for s in journal["stages"]}
 
-    # Stage 6 carries the manifest-update payload (fold target moved from 5→6).
-    stage6 = by_idx[6]
-    assert "deltas" in stage6
-    assert "prior_manifest_loaded" in stage6
-
-    # Stage 7 carries the apply-pages payload (fold target moved from 6→7).
+    # Stage 7 carries the manifest-update payload (fold target moved from 6→7).
     stage7 = by_idx[7]
-    assert "pages_written" in stage7
-    assert "KDB/wiki/summaries/summary-paper.md" in stage7["pages_written"]
-    assert stage7["pages_written_count"] == 1
+    assert "deltas" in stage7
+    assert "prior_manifest_loaded" in stage7
+
+    # Stage 8 carries the apply-pages payload (fold target moved from 7→8).
+    stage8 = by_idx[8]
+    assert "pages_written" in stage8
+    assert "KDB/wiki/summaries/summary-paper.md" in stage8["pages_written"]
+    assert stage8["pages_written_count"] == 1
 
     # Stage 4/5 split is preserved in the journal even on a clean run.
     assert by_idx[4]["measure_findings"] == []
     assert by_idx[5]["reconciler_actions"] == []
     assert by_idx[5]["actions_count"] == 0
+
+    # Stage 6 (canonicalize) ran with no ledger file — empty-ledger path
+    # taken; no aliases emitted (D-R5-8).
+    assert by_idx[6]["aliases_emitted"] == 0
+    assert by_idx[6]["pages_merged"] == 0
+    assert by_idx[6]["ledger_snapshot_sha256"] == "empty"
 
 
 def test_pairing_omission_repair_flows_through_to_disk_wet_run(
@@ -1024,12 +1033,13 @@ def test_pairing_omission_repair_flows_through_to_disk_wet_run(
     assert by_idx[5]["actions_count"] == 1
     assert by_idx[5]["reconciler_actions"][0]["finding_type"] == "pairing_omission"
 
-    # Stage 6 deltas include the source as added (D50: no page deltas).
-    sources_added = by_idx[6]["deltas"]["sources_added"]
+    # Stage 7 (was 6 pre-#74.4) deltas include the source as added
+    # (D50: no page deltas).
+    sources_added = by_idx[7]["deltas"]["sources_added"]
     assert "KDB/raw/paper.md" in sources_added
 
-    # Stage 7 pages_written matches.
-    written = by_idx[7]["pages_written"]
+    # Stage 8 (was 7 pre-#74.4) pages_written matches.
+    written = by_idx[8]["pages_written"]
     assert "KDB/wiki/concepts/mencius.md" in written
 
 
@@ -1058,7 +1068,7 @@ def test_stage9_lands_in_journal_with_sync_payload(tmp_path: Path) -> None:
     journal = _load_journal(state, ctx.run_id)
     by_idx = {s["index"]: s for s in journal["stages"]}
     assert 9 in by_idx
-    stage9 = by_idx[9]
+    stage9 = by_idx[10]   # graph_sync — was index 9 pre-#74.4, now index 10
     assert stage9["ok"] is True
     assert stage9["entities_upserted"] >= 1
     assert stage9["sources_upserted"] >= 1
@@ -1102,7 +1112,7 @@ def test_stage9_graph_sync_failure_is_fatal(
 
     # Stage 9 records the failure detail.
     by_idx = {s["index"]: s for s in journal["stages"]}
-    stage9 = by_idx[9]
+    stage9 = by_idx[10]   # graph_sync — was index 9 pre-#74.4, now index 10
     assert stage9["ok"] is False
     assert "simulated graph_sync failure" in stage9["note"]
     assert "graphdb-kdb rebuild" in stage9["recovery_hint"]
@@ -1152,7 +1162,7 @@ def test_stage9_dry_run_is_no_op(tmp_path: Path) -> None:
 
     journal = _load_journal(state, ctx.run_id)
     by_idx = {s["index"]: s for s in journal["stages"]}
-    stage9 = by_idx[9]
+    stage9 = by_idx[10]   # graph_sync — was index 9 pre-#74.4, now index 10
     assert stage9["ok"] is True
     assert stage9["note"] == "skipped (dry-run)"
     # No sidecar dir created under dry-run.

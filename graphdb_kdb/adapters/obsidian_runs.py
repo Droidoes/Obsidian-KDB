@@ -35,7 +35,12 @@ class ObsidianRunsAdapter:
 
     source_type:                ClassVar[str]        = "obsidian-kdb-raw"
     entity_id_namespace:        ClassVar[str | None] = None       # grandfathered per D-S1
-    supported_journal_versions: ClassVar[list[str]]  = ["2.0", "2.1"]  # +cleanup #68
+    # +cleanup #68 added 2.1; +canonicalize #74.4 added 2.2 (run journals
+    # with a Stage 6 entry + compile_result carrying canonical_meta).
+    # The adapter accepts 2.2 journals for replay; alias-Entity / ALIAS_OF
+    # writes from canonical_meta land in #74.5 — until then a 2.2 journal
+    # replays identically to a 2.0 journal (canonical_meta block ignored).
+    supported_journal_versions: ClassVar[list[str]]  = ["2.0", "2.1", "2.2"]
 
     # ── discovery ─────────────────────────────────────────────────────────────
 
