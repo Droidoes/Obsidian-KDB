@@ -374,6 +374,8 @@ def compile_one(
                     outgoing_links=list(p.get("outgoing_links", [])),
                     confidence=p["confidence"],
                     supports_page_existence=[source_id],
+                    domain=p.get("domain"),
+                    sub_domain=p.get("sub_domain"),
                 )
                 for p in parsed["pages"]
             ],

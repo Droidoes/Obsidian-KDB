@@ -10,7 +10,7 @@ dataclass field names already match the JSON shape.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 FileType = Literal["markdown", "binary", "unknown"]
 ScanAction = Literal["NEW", "CHANGED", "UNCHANGED", "MOVED"]  # DELETED lives in ReconcileOp only
@@ -179,6 +179,8 @@ class PageIntent:
     supports_page_existence: list[str] = field(default_factory=list)
     outgoing_links: list[str] = field(default_factory=list)
     confidence: Confidence = "medium"
+    domain: Optional[Union[str, list[str]]] = None
+    sub_domain: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

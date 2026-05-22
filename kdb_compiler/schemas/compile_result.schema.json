@@ -97,6 +97,21 @@
         "canonical_id": {
           "type": ["string", "null"],
           "description": "Stage 6 (canonicalize) output (#74). NULL means this page is canonical; a non-null slug means this page is an alias of the referenced canonical (D-R5-5). Optional per D-R5-7 — absent on raw extraction; populated post-Stage 6."
+        },
+        "domain": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 5 },
+            { "type": "null" }
+          ],
+          "description": "Knowledge domain(s) for this page. Omit or null when unknown. Max 5 items if array. Python normalises to kebab-case at ingest."
+        },
+        "sub_domain": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ],
+          "description": "Narrower label within the primary domain. Valid only when domain is a single string; omitted (null) when domain is an array or absent."
         }
       }
     },
