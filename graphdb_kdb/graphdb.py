@@ -79,32 +79,35 @@ class GraphDB:
     def _ensure_schema(self) -> None:
         """Idempotent: create schema on first open; migrate or verify on re-open.
 
-        When the stored schema version differs from the current `SCHEMA_VERSION`,
-        the bootstrap looks up a migration in `schema.MIGRATIONS` keyed by
-        `(stored, SCHEMA_VERSION)`. If found, the migration is applied
-        in-place (non-destructive — adds tables/columns; never drops user
-        data). If no migration is registered for the pair, the DB is
-        incompatible and the user must `graphdb-kdb rebuild` to regenerate.
+        When the stored schema version differs from `SCHEMA_VERSION`, this method
+        walks the migration chain registered in `schema.MIGRATIONS`, applying each
+        step in sequence until the current version is reached. Raises
+        GraphDBSchemaError if no registered step exists from the current stored
+        version (i.e. there is a gap in the chain) — the user must then run
+        `graphdb-kdb rebuild` to regenerate from scratch.
         """
         if self._table_exists("_SchemaMeta"):
             stored = self._read_schema_version()
-            if stored == SCHEMA_VERSION:
-                return
-            migration = MIGRATIONS.get((stored, SCHEMA_VERSION))
-            if migration is None:
-                raise GraphDBSchemaError(
-                    f"Schema version mismatch: stored={stored!r} expected={SCHEMA_VERSION!r}, "
-                    f"no migration registered for ({stored!r} → {SCHEMA_VERSION!r}). "
-                    "Run `graphdb-kdb rebuild` to regenerate."
+            while stored != SCHEMA_VERSION:
+                # Find the next registered migration step from `stored`.
+                step = next(
+                    (fn for (fr, _to), fn in MIGRATIONS.items() if fr == stored),
+                    None,
                 )
-            migration(self.conn)
-            # Post-migration sanity check: stored version must now match.
-            post = self._read_schema_version()
-            if post != SCHEMA_VERSION:
-                raise GraphDBSchemaError(
-                    f"Migration {stored!r} → {SCHEMA_VERSION!r} ran but "
-                    f"_SchemaMeta still reports {post!r}. Migration is buggy."
-                )
+                if step is None:
+                    raise GraphDBSchemaError(
+                        f"Schema version mismatch: stored={stored!r} expected={SCHEMA_VERSION!r}, "
+                        f"no migration registered from {stored!r}. "
+                        "Run `graphdb-kdb rebuild` to regenerate."
+                    )
+                step(self.conn)
+                new = self._read_schema_version()
+                if new == stored:
+                    raise GraphDBSchemaError(
+                        f"Migration from {stored!r} ran but _SchemaMeta still "
+                        f"reports {stored!r}. Migration is buggy."
+                    )
+                stored = new
             return
         for ddl in NODE_TABLE_DDL:
             self.conn.execute(ddl)
@@ -139,12 +142,15 @@ class GraphDB:
                 return int(r.get_next()[0])
             return 0
         return {
-            "entities": count("MATCH (e:Entity) RETURN COUNT(*)"),
-            "sources":  count("MATCH (s:Source) RETURN COUNT(*)"),
-            "links_to": count("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(*)"),
-            "supports": count("MATCH ()-[r:SUPPORTS]->() RETURN COUNT(*)"),
+            "entities":  count("MATCH (e:Entity) RETURN COUNT(*)"),
+            "sources":   count("MATCH (s:Source) RETURN COUNT(*)"),
+            "links_to":  count("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(*)"),
+            "supports":  count("MATCH ()-[r:SUPPORTS]->() RETURN COUNT(*)"),
             # #74.1: ALIAS_OF added to schema v2.0.
-            "alias_of": count("MATCH ()-[r:ALIAS_OF]->() RETURN COUNT(*)"),
+            "alias_of":  count("MATCH ()-[r:ALIAS_OF]->() RETURN COUNT(*)"),
+            # #76.2: Domain node + BELONGS_TO rel added to schema v2.1.
+            "domains":   count("MATCH (d:Domain) RETURN COUNT(*)"),
+            "belongs_to": count("MATCH ()-[r:BELONGS_TO]->() RETURN COUNT(*)"),
         }
 
     # ---- ingestion (#63.2) ----

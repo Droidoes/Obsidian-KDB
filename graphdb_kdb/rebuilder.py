@@ -27,13 +27,15 @@ from graphdb_kdb.adapters.base import (
 from graphdb_kdb.graphdb import GraphDB
 
 # Order matters: rel tables reference node tables. Drop rels first.
-# ALIAS_OF added in #74.1 (schema v2.0).
+# ALIAS_OF added in #74.1 (schema v2.0). BELONGS_TO + Domain added in #76.2 (schema v2.1).
 _DROP_ORDER: tuple[str, ...] = (
     "LINKS_TO",
     "SUPPORTS",
     "ALIAS_OF",
+    "BELONGS_TO",
     "Entity",
     "Source",
+    "Domain",
     "_SchemaMeta",
 )
 

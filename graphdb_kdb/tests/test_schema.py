@@ -13,24 +13,30 @@ from graphdb_kdb.graphdb import GraphDB
 def test_schema_constants_exist():
     """Schema module exposes SCHEMA_VERSION + DDL lists + MIGRATIONS registry."""
     assert isinstance(schema.SCHEMA_VERSION, str)
-    assert schema.SCHEMA_VERSION == "2.0"  # #74.1 bump
-    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 2
-    assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 3
+    assert schema.SCHEMA_VERSION == "2.1"  # #76.2 bump
+    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 3
+    assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 4
     node_text = " ".join(schema.NODE_TABLE_DDL)
     assert "CREATE NODE TABLE Entity" in node_text
     assert "CREATE NODE TABLE Source" in node_text
     # #74.1: Entity gains canonical_id property (D-R5-5).
     assert "canonical_id" in node_text
+    # #76.2: Domain node table.
+    assert "CREATE NODE TABLE Domain" in node_text
     rel_text = " ".join(schema.REL_TABLE_DDL)
     assert "CREATE REL TABLE LINKS_TO" in rel_text
     assert "CREATE REL TABLE SUPPORTS" in rel_text
     # #74.1: ALIAS_OF rel table with `algorithm` provenance (D-R5-6).
     assert "CREATE REL TABLE ALIAS_OF" in rel_text
     assert "algorithm" in rel_text
-    # #74.1: 1 migration registered (1.0 → 2.0).
+    # #76.2: BELONGS_TO rel table with sub_domain property.
+    assert "CREATE REL TABLE BELONGS_TO" in rel_text
+    assert "sub_domain" in rel_text
+    # 2 migrations registered: 1.0→2.0 and 2.0→2.1.
     assert isinstance(schema.MIGRATIONS, dict)
-    assert set(schema.MIGRATIONS.keys()) == {("1.0", "2.0")}
+    assert set(schema.MIGRATIONS.keys()) == {("1.0", "2.0"), ("2.0", "2.1")}
     assert callable(schema.MIGRATIONS[("1.0", "2.0")])
+    assert callable(schema.MIGRATIONS[("2.0", "2.1")])
 
 
 def test_graphdb_init_creates_schema(graph_dir):
@@ -40,10 +46,11 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert v == "2.0"
-    # #74.1: alias_of counter joins the stats dict.
+    assert v == "2.1"
+    # #76.2: domains + belongs_to counters join the stats dict.
     assert stats == {
-        "entities": 0, "sources": 0, "links_to": 0, "supports": 0, "alias_of": 0
+        "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
+        "alias_of": 0, "domains": 0, "belongs_to": 0,
     }
 
 
@@ -56,7 +63,8 @@ def test_graphdb_init_is_idempotent(graph_dir):
         stats = gdb.stats()
     assert v1 == v2 == schema.SCHEMA_VERSION
     assert stats == {
-        "entities": 0, "sources": 0, "links_to": 0, "supports": 0, "alias_of": 0
+        "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
+        "alias_of": 0, "domains": 0, "belongs_to": 0,
     }
 
 
@@ -164,15 +172,15 @@ def _create_v1_db(graph_dir):
     del db
 
 
-def test_migration_v1_to_v2_applies(graph_dir):
-    """#74.1: opening a v1.0 DB with v2.0 code applies the registered
-    migration in place. Existing entity survives; canonical_id column +
-    ALIAS_OF rel table become available."""
+def test_migration_v1_to_v2_1_applies(graph_dir):
+    """Opening a v1.0 DB with v2.1 code chains migrations 1.0→2.0→2.1.
+    Existing entity survives; canonical_id, ALIAS_OF, Domain, BELONGS_TO all
+    become available."""
     _create_v1_db(graph_dir)
 
     with GraphDB(graph_dir) as gdb:
-        # Schema version now reports v2.0 (migration ran).
-        assert gdb.schema_version() == "2.0"
+        # Schema version now reports v2.1 (chained migrations ran).
+        assert gdb.schema_version() == "2.1"
         # The pre-migration entity survived.
         stats = gdb.stats()
         assert stats["entities"] == 1
@@ -182,12 +190,17 @@ def test_migration_v1_to_v2_applies(graph_dir):
         )
         assert result.has_next()
         row = result.get_next()
-        # Existing entities default to canonical_id = NULL (i.e. they are
-        # canonical by construction per blueprint §8.3).
+        # Existing entities default to canonical_id = NULL (canonical by construction).
         assert row[0] is None
         # ALIAS_OF table is queryable (empty).
         ar = gdb.conn.execute("MATCH ()-[r:ALIAS_OF]->() RETURN COUNT(*)")
         assert int(ar.get_next()[0]) == 0
+        # #76.2: Domain node table is queryable (empty).
+        dr = gdb.conn.execute("MATCH (d:Domain) RETURN COUNT(*)")
+        assert int(dr.get_next()[0]) == 0
+        # #76.2: BELONGS_TO rel table is queryable (empty).
+        br = gdb.conn.execute("MATCH ()-[r:BELONGS_TO]->() RETURN COUNT(*)")
+        assert int(br.get_next()[0]) == 0
 
 
 def test_migration_unknown_version_raises(graph_dir, monkeypatch):
