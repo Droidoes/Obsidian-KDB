@@ -448,3 +448,156 @@ class TestColdStart2HopExpansion:
         # hub-node (T1) -> deep-leaf (1-hop T3) — should be reachable.
         assert "deep-leaf" in slugs  # 1-hop from hub-node (T1)
         # This just confirms non-cold-start still finds 1-hop normally.
+
+
+# ---------- #81: Step-3 V0 ops regression foundation (compile-time strand) ----------
+
+
+class TestT3NeighborsRegression:
+    """#81: lock the `_t3_neighbors` primitive's contract so any future
+    refactor must preserve it. Direct unit tests — independent of the
+    higher-level `build_context_snapshot` wiring. Per Task #75 §4.3 V0
+    regression-guardrail scope (formerly #78c)."""
+
+    def test_t3_neighbors_is_deterministic(self, cold_start_gdb):
+        """Same inputs twice → identical output. Locks the function's
+        order-independence; future query-shape changes that introduce
+        nondeterminism will trip this guard."""
+        from kdb_compiler.graph_context_loader import _t3_neighbors
+
+        seeds = {"margin-of-safety"}
+        candidates = {
+            "margin-of-safety", "legalism", "value", "ai",
+            "hub-node", "deep-leaf",
+        }
+        a = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        b = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        assert a == b
+
+    def test_t3_neighbors_expands_outgoing_and_incoming(self, cold_start_gdb):
+        """The primitive walks both directions (per §4.3 contract — "in+out
+        neighbors"). Regression guard against a future change that
+        accidentally drops one direction."""
+        from kdb_compiler.graph_context_loader import _t3_neighbors
+
+        # legalism: outgoing → hub-node; incoming ← margin-of-safety
+        seeds = {"legalism"}
+        candidates = {"margin-of-safety", "hub-node"}
+        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        assert "hub-node" in result, "outgoing neighbor dropped"
+        assert "margin-of-safety" in result, "incoming neighbor dropped"
+
+    def test_t3_neighbors_respects_candidate_filter(self, cold_start_gdb):
+        """Neighbors outside the candidate set are filtered out — the
+        `candidate_slugs` parameter is honored, not advisory."""
+        from kdb_compiler.graph_context_loader import _t3_neighbors
+
+        # legalism reaches both hub-node and margin-of-safety; restrict
+        # candidates to hub-node only.
+        seeds = {"legalism"}
+        candidates = {"hub-node"}
+        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        assert result == {"hub-node"}
+
+    def test_t3_neighbors_excludes_seeds_from_output(self, cold_start_gdb):
+        """The seed slugs themselves never appear in the output set —
+        traversal excludes the starting frontier."""
+        from kdb_compiler.graph_context_loader import _t3_neighbors
+
+        seeds = {"legalism", "hub-node"}
+        candidates = {
+            "margin-of-safety", "legalism", "hub-node", "deep-leaf",
+        }
+        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        assert "legalism" not in result
+        assert "hub-node" not in result
+
+
+@pytest.fixture
+def cold_start_gdb_rich(tmp_path: Path):
+    """#81: cold-start fixture with ≥5 reachable entities for the
+    Task #71 widening invariant test (§4.3 V0 regression gate).
+
+    8 entities, all with eligible titles (≥6 chars single-token or
+    multi-token), all reachable from each other via LINKS_TO so 2-hop
+    widening can fan out. Source `src-new` has no SUPPORTS edges
+    (cold-start)."""
+    with GraphDB(tmp_path / "cold-start-rich-graph") as g:
+        conn = g.conn
+        entities = [
+            ("margin-of-safety", "Margin of Safety", "concept"),
+            ("intrinsic-value", "Intrinsic Value", "concept"),
+            ("circle-of-competence", "Circle of Competence", "concept"),
+            ("economic-moat", "Economic Moat", "concept"),
+            ("mr-market", "Mr Market", "concept"),
+            ("compound-interest", "Compound Interest", "concept"),
+            ("opportunity-cost", "Opportunity Cost", "concept"),
+            ("benjamin-graham", "Benjamin Graham", "person"),
+        ]
+        for slug, title, ptype in entities:
+            conn.execute(
+                "CREATE (e:Entity {slug: $s, title: $t, page_type: $pt, "
+                "status: 'active', confidence: 'medium', "
+                "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                "first_run_id: 'r1', last_run_id: 'r1'})",
+                {"s": slug, "t": title, "pt": ptype},
+            )
+
+        # Cold-start source
+        conn.execute(
+            "CREATE (s:Source {source_id: 'src-new', source_type: 'raw', "
+            "canonical_path: 'src-new', status: 'active', file_type: 'markdown', "
+            "hash: 'sha256:new', size_bytes: 200, "
+            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
+            "last_ingested_at: '', ingest_state: 'pending', "
+            "ingest_count: 0, last_run_id: '', moved_to: ''})"
+        )
+
+        # Hub-and-spoke topology around margin-of-safety, with 2-hop
+        # reach to economic-moat / mr-market / compound-interest.
+        edges = [
+            ("margin-of-safety", "intrinsic-value"),
+            ("margin-of-safety", "circle-of-competence"),
+            ("intrinsic-value", "economic-moat"),
+            ("circle-of-competence", "mr-market"),
+            ("benjamin-graham", "margin-of-safety"),
+            ("benjamin-graham", "compound-interest"),
+            ("compound-interest", "opportunity-cost"),
+        ]
+        for f, t in edges:
+            conn.execute(
+                "MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t}) "
+                "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)",
+                {"f": f, "t": t},
+            )
+        yield g
+
+
+class TestColdStartWideningInvariant:
+    """#81: lock the Task #71 ≥5-seed invariant for cold-start widening.
+    §4.3 quantitative gate — 'cold-start widening still produces ≥5
+    seeds for new sources with empty SUPPORTS edges.'"""
+
+    def test_cold_start_widening_produces_at_least_five_seeds(
+        self, cold_start_gdb_rich,
+    ):
+        """Given a cold-start source whose text mentions a small number
+        of seed entities (Margin of Safety + Benjamin Graham), #71's
+        title-match + 2-hop expansion widens the snapshot to ≥5 unique
+        entities. Locks the primary value of #71: a new source without
+        SUPPORTS edges still gets meaningful graph context."""
+        snapshot = graph_context_loader.build_context_snapshot(
+            cold_start_gdb_rich.conn,
+            source_id="src-new",
+            source_text=(
+                "This essay discusses Margin of Safety as taught by "
+                "Benjamin Graham — the foundational concept of value "
+                "investing."
+            ),
+            page_cap=50,
+        )
+        slugs = {p.slug for p in snapshot.pages}
+        assert len(slugs) >= 5, (
+            f"cold-start widening produced only {len(slugs)} seeds "
+            f"({slugs!r}); #71 invariant requires ≥5"
+        )

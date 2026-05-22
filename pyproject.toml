@@ -48,5 +48,8 @@ kdb_benchmark = ["models.json"]
 [tool.pytest.ini_options]
 testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "graphdb_kdb/tests"]
 python_files = ["test_*.py"]
-addopts      = "-ra -q"
-markers      = ["uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)"]
+addopts      = "-ra -q -m 'not bench'"
+markers      = [
+    "uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)",
+    "bench: latency / runtime regression test — opt-in via `pytest -m bench`; not run by default",
+]

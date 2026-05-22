@@ -96,6 +96,31 @@ def test_neighbors_direction_both(graph_dir):
     assert [p.slug for p in n] == ["b", "d"]
 
 
+def test_neighbors_out_direction_excludes_inbound(graph_dir):
+    """#81 (§4.3 fail test ii): direction='out' must NOT return inbound
+    neighbors. Linear chain a→b→c→d: out-traversal from 'c' yields only
+    'd', never 'b'. Regression guard against a future change that
+    accidentally widens 'out' to 'both'."""
+    with GraphDB(graph_dir) as gdb:
+        _seed_linear_chain(gdb)
+        n = gdb.neighbors("c", direction="out", depth=1)
+    slugs = [p.slug for p in n]
+    assert slugs == ["d"]
+    assert "b" not in slugs, "out direction leaked inbound neighbor 'b'"
+
+
+def test_neighbors_in_direction_excludes_outbound(graph_dir):
+    """#81 (§4.3 fail test ii): symmetric guard — direction='in' must
+    NOT return outbound neighbors. Linear chain a→b→c→d: in-traversal
+    from 'c' yields only 'b', never 'd'."""
+    with GraphDB(graph_dir) as gdb:
+        _seed_linear_chain(gdb)
+        n = gdb.neighbors("c", direction="in", depth=1)
+    slugs = [p.slug for p in n]
+    assert slugs == ["b"]
+    assert "d" not in slugs, "in direction leaked outbound neighbor 'd'"
+
+
 def test_neighbors_empty_for_isolated_node(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_star(gdb)
@@ -302,3 +327,28 @@ def test_cypher_empty_result(graph_dir):
         _seed_linear_chain(gdb)
         rows = gdb.cypher("MATCH (p:Entity {slug: 'ghost'}) RETURN p.slug")
     assert rows == []
+
+
+# ---------- #81: marked bench tests (opt-in via `pytest -m bench`) ----------
+
+@pytest.mark.bench
+def test_shortest_path_runtime_guard(graph_dir):
+    """#81 (§3.1 row 5a regression-guardrail): shortest_path on a small
+    graph completes well under a runtime ceiling tight enough to catch
+    gradual drift, loose enough to absorb host-load jitter. Opt-in via
+    `pytest -m bench`. Threshold 100 ms on a 4-node linear chain —
+    production-realistic operations finish in single-digit ms; 100 ms
+    is ~50x the typical observed runtime, which catches order-of-
+    magnitude regressions while staying robust against transient load."""
+    import time
+
+    with GraphDB(graph_dir) as gdb:
+        _seed_linear_chain(gdb)
+        t0 = time.perf_counter()
+        path = gdb.shortest_path("a", "d")
+        elapsed = time.perf_counter() - t0
+    assert path == ["a", "b", "c", "d"]
+    assert elapsed < 0.1, (
+        f"shortest_path('a','d') on 4-node chain took {elapsed:.3f}s "
+        f"(threshold 0.1s) — runtime regression"
+    )
