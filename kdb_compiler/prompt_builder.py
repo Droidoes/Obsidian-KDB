@@ -135,7 +135,7 @@ def build_prompt(
     user = (
         f"source_name: {source_name}\n\n"
         f"## SOURCE CONTENT\n{source_text}\n\n"
-        f"## EXISTING CONTEXT (manifest snapshot)\n{context_json}\n\n"
+        f"## EXISTING CONTEXT (graph snapshot)\n{context_json}\n\n"
         f"## RESPONSE SCHEMA\n{schema_text}\n\n"
         f"## EXAMPLE RESPONSE\n{exemplar_json}"
     )
