@@ -961,3 +961,144 @@ Next: design the GraphDB-KDB compile pipeline blueprint (Task #63 family)
 on the architecture established here.
 
 Round 5 closed.
+
+---
+
+## 9. Round 6 — What does "Learn" mean, operationally? (2026-05-22)
+
+Round 5 closed with the decision to commit to **B + (C1) + (C2)** and to design
+canonicalization as a first-class compile-stage component (§8.2). Round 5's
+path forward — *convergence by execution* (§7.3) — pointed the project toward
+building V0/V1 retrieval operations on the live ontology (typed traversal,
+shortest-path, PPR, community routing, subgraph extraction). All of those
+operations serve the **Remember** axis of §6.1's three-fold goal
+(remember / learn / create).
+
+Round 6 reopens the goal discussion at §6.1's [B] — **what does "Learn" mean
+operationally for a personal knowledge graph meant to function as a second
+brain?** — because that discussion never completed in Round 4. The §6.3
+synthesis named one slice (the "10x delta protocol") and treated it as the
+whole; Joseph accepted it at the time but flagged it on revisit (2026-05-22)
+as an over-reach. Round 6 is the proper unpacking, on the path back toward
+connecting the foundation (live GraphDB, V0 ops, schema v2.1) to the goals it
+was built to serve.
+
+### 9.1 Joseph's framing (verbatim — session 2026-05-22)
+
+> Let's continue with our objective... Last night we paused and reflected on
+> our journey through the project (`docs/JOURNEY.md`)... with a good night of
+> sleep I feel that I should add a few points that I missed last night:
+>
+> **[1]** The goal — or my aspiration here — has always been the same as
+> articulated in §6.1: *"so why we want to build ontology or what's the
+> purpose of building ontology... I think it's for it to become a 'second
+> brain of mine'... this 'second brain of mine' will be able to **[A]
+> remember**, **[B] to learn**, **[C] to create knowledge**..."*
+>
+> **[2]** The calibration of the goal — your response §6.3 ("Remember /
+> learn / create, mapped onto what's real"): Learn? "solid." Create?
+> "frontier." Big *BUT* here is that we never got a chance to expand on
+> what Learn means because you over-reached by saying:
+>
+> > *"Learn — solid, and you already designed it. The 10x 'delta protocol':
+> > classify each input as genuinely-new / contradicts-prior /
+> > reinforces-consensus, version beliefs, decay stale ones. That **is**
+> > learning, in the only concrete sense the word supports."*
+>
+> I still don't know what that means... so our goal discussion has never
+> completed.
+>
+> **[3]** Then there was this discussion about setting up the ingestion
+> pipeline... we talked about docs in all the Droidoes projects... we
+> talked about the Obsidian vault itself as a pipeline... but I think we
+> sort of got ourselves into a corner by digging in on whether we should
+> have domain/sub-domain as part of the graphDB connections, etc.
+>
+> **[4]** I guess what I'm trying to say here is that we've made good
+> progress laying the foundation to GraphDB, but we still need to clarify
+> our goals and what we really want to do, and connect the foundation we
+> have laid to the goals in order to move forward.
+>
+> **[5]** A minor point to [4]: although we still need further
+> clarification of what we want to do and what learning means, we are
+> clear about what we **DON'T** want to do — and that is **not** to just
+> create an Obsidian graph with thousands of connections to show off and
+> to impress others.
+
+### 9.1.1 Working hypothesis (Claude, 2026-05-22) — to be stress-tested by §9.2, not ratified
+
+In the session that opened Round 6, Claude proposed a **4-mechanism
+decomposition** of "Learn." It is recorded here as the **input to §9.2's
+research grounding** — explicitly *not* as the conclusion the round is here
+to ratify. Two of its mechanisms have internal tension with their own
+framing (called out below) and Round 6 depends on the literature, not
+internal consistency, to settle the cut.
+
+| # | Mechanism | What it does for a second brain | Graph operation that delivers it | Schema status |
+|---|---|---|---|---|
+| 1 | **Belief tracking** (narrow "delta protocol") | Versions claims as sources arrive. *"You used to believe X; the last 5 sources contradict it"*; *"this claim has 7 corroborations and 1 contradiction."* | Edge weights + source-count aggregation on assertion-type relations; possibly a `Claim` / `Assertion` node distinct from `Entity`. | **Not in schema v2.1** — would require extension. |
+| 2 | **Connection discovery** | Surfaces links between nodes you never explicitly drew. *"These two notes share an intermediate chain you didn't notice."* | Link prediction; structural-hole detection (we already ship `graphdb-kdb structural-holes`). | Supported by current schema. |
+| 3 | **Pattern emergence** | Names themes/clusters you never declared. *"You've been circling a theme connecting margin-of-safety and Zheng He's voyages."* | Community detection (Leiden/Louvain — we already ship `graphdb-kdb communities`). | Supported by current schema. |
+| 4 | **Concept refinement** | Sharpens an entity's identity as mentions accumulate. *"Buffett-1990s and Buffett-2020s are diverging in your corpus."* | Canonicalization with temporal/contextual splits + entity-property aggregation. | Partially supported via Task #74; temporal/contextual splits would extend. |
+
+**Two reframes the working hypothesis attempts:**
+
+- **Learn ≠ Remember.** Remember = one-shot retrieval against a frozen graph
+  (PPR, GraphRAG community summaries). Learn = *how the graph state evolves
+  as the corpus grows*. Orthogonal axes.
+- **Create is the same engine seen one step further.** Mechanisms 2 + 3,
+  surfaced to the human (or LLM collaborator) at the right moment, *provoke*
+  creation. The graph never creates by itself; it makes raw material legible
+  enough to be worked on.
+
+**Two acknowledged internal tensions** (caught at draft-time, surfaced to
+keep §9.2 honest):
+
+- **T1 — Mechanisms 2 and 3 may not actually be Learn under the
+  state-evolution definition.** Link prediction and community detection both
+  operate on *frozen* graph snapshots — they're retrieval-with-novelty, not
+  graph-state evolution. By the working hypothesis's own definition of
+  Learn, only Mechanisms 1 and 4 qualify; 2 and 3 collapse back into
+  Remember-with-novelty. This is the central question §9.2's literature
+  survey must adjudicate: *does the literature classify link prediction and
+  community detection as learning operations or analysis operations?*
+- **T2 — Joseph's anti-goal [5] is a sharp discriminator the working
+  hypothesis is not fully using.** Mechanisms 2 and 3 *in isolation* are
+  precisely what the vanity graph does — they surface structure but don't
+  change the user's beliefs or capacity to think. Mechanism 1 is the only
+  one that genuinely makes the user *smarter at the next question* (by
+  surfacing what their thinking should change). If [5] is binding, it may
+  pre-select which mechanisms count.
+
+**Slots the working hypothesis may be missing** (to probe in §9.2):
+
+- **Forgetting / decay / continual learning** — claims that age out, beliefs
+  that lose weight as evidence withdraws, an active "what should I
+  un-learn" axis.
+- **Compression / abstraction (instance → principle)** — extracting a
+  general principle from N concrete instances. Not the same as community
+  detection, which surfaces clusters but not their abstracted form.
+- **AGM-style belief revision** — the foundational philosophical frame for
+  "knowledge state changes under new input." Mechanism 1 may be one
+  engineering instantiation of AGM, or AGM may decompose into something
+  different.
+
+### 9.2 Research grounding — multi-model literature survey (commissioned + returned 2026-05-22)
+
+Per Joseph's call to commission deep research, four frontier models were
+dispatched in parallel (Joseph added GPT as a fourth target alongside the
+originally planned three). The literature-survey prompt is at
+`docs/round6-research-prompt.md`. Responses are filed at:
+
+- `docs/round6-research-gemini.md` (Gemini 3.1 Pro)
+- `docs/round6-research-gpt.md` (GPT — added by Joseph)
+- `docs/round6-research-grok.md` (Grok 4.3)
+- `docs/round6-research-opus.md` (Opus 4.7)
+
+§9.3 synthesis follows from these returns, mirroring the Task #11 pattern
+(parallel drafts → synthesis → install) and the §7.4 precedent (flag
+convergence and disagreement explicitly).
+
+### 9.3 Synthesis — pending §9.2 returns
+
+### 9.4 Where Round 6 lands — pending §9.3
