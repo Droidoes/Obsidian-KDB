@@ -463,6 +463,33 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_domains(args: argparse.Namespace) -> int:
+    """#76.4: list Domain nodes sorted by entity count (blueprint §6.6)."""
+    graph_dir = _resolve_graph_dir(args)
+    with GraphDB(graph_dir) as gdb:
+        result = gdb.conn.execute(
+            """
+            MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain)
+            RETURN d.name AS domain, count(e) AS entities, d.first_run_id AS first_run
+            ORDER BY entities DESC
+            """
+        )
+        rows = []
+        while result.has_next():
+            r = result.get_next()
+            rows.append({"domain": r[0], "entities": int(r[1]), "first_run": r[2]})
+    if args.json:
+        _print_json(rows)
+        return 0
+    if not rows:
+        print("(no domain nodes)")
+        return 0
+    print(f"  {'domain':<30}  {'entities':>8}  first_run")
+    for row in rows:
+        print(f"  {row['domain']:<30}  {row['entities']:>8}  {row['first_run']}")
+    return 0
+
+
 def cmd_cypher(args: argparse.Namespace) -> int:
     graph_dir = _resolve_graph_dir(args)
     params: dict[str, Any] = {}
@@ -594,6 +621,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rb.add_argument("--json", action="store_true", help="JSON output.")
 
+    p_dom = sub.add_parser(
+        "domains",
+        help="#76.4: list Domain nodes sorted by entity count.",
+    )
+    p_dom.add_argument("--json", action="store_true", help="JSON output.")
+
     p_snap = sub.add_parser(
         "snapshot",
         help="#63.9: export graph state to JSONL+manifest under "
@@ -627,6 +660,7 @@ _DISPATCH = {
     "subgraph-by-source": cmd_subgraph_by_source,
     "verify": cmd_verify,
     "rebuild": cmd_rebuild,
+    "domains": cmd_domains,
     "snapshot": cmd_snapshot,
 }
 
