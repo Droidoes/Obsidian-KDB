@@ -1099,6 +1099,708 @@ originally planned three). The literature-survey prompt is at
 (parallel drafts → synthesis → install) and the §7.4 precedent (flag
 convergence and disagreement explicitly).
 
-### 9.3 Synthesis — pending §9.2 returns
+### 9.3 Synthesis — cross-model verdicts (2026-05-22)
 
-### 9.4 Where Round 6 lands — pending §9.3
+Four frontier models (Gemini 3.1 Pro, GPT, Grok 4.3, Opus 4.7) responded
+independently to the §9.2 prompt without seeing each other's drafts. The
+convergence pattern is strong; the live disagreements are about *slot
+packaging*, not about literature-grounded substance.
+
+#### 9.3.1 At-a-glance verdict matrix
+
+| Working-hypothesis mechanism | Gemini | GPT | Grok | Opus |
+|---|---|---|---|---|
+| **M1** Belief tracking | Keep + AGM-refine | Keep, refine | Keep, refine | Keep, refine |
+| **M2** Connection discovery (link prediction) | Replace with Logical Rule Mining | Reclassify Hypothesis Generation; Learn on promote | Reclassify Remember / analysis | Reclassify Analysis; Learn on commit-back |
+| **M3** Pattern emergence (community detection) | Replace with Hierarchical Consolidation (GraphRAG community-summary-with-commit) | Reclassify Sensemaking / Abstraction-Input | Reclassify Remember / analysis | Reclassify Analysis |
+| **M4** Concept refinement | Keep + merge with schema induction | Keep as Identity Learning / Representation Hygiene | Keep + merge with canonical / temporal | **Split**: canonicalization = hygiene (not Learn); temporal/contextual splits = Learn |
+| Compression / abstraction (missing) | Folded into M2-replacement (Rule Mining) + M3-replacement (Consolidation) | **New slot** | **New slot** | **New slot** |
+| Forgetting / decay (missing) | Sub-operation of M1 | **New slot** (combined Temporal + Forgetting) | Sub-operation of M1 | Sub-operation of M1 |
+| Hypothesis promotion / commit-back (missing) | Built into replacement-slot definitions | **New slot** | Folded under "analysis that feeds Learn" | Implicit (commit-back is the universal boundary) |
+| **Recommended slot count** | **4** (restructured) | **5** | **3** | **3** |
+
+#### 9.3.2 Convergent findings (across all four)
+
+1. **Learn = persistent state evolution.** All four define learning as a
+   *persistent change* in the graph's epistemic state — what the system
+   takes to be the case, not what it shows to the user. Operations whose
+   output is consumed once and discarded are Remember (retrieval) or
+   Analysis (computation over a frozen snapshot). **The commit-back step
+   is the literature's actual Learn/Analysis boundary.**
+
+2. **M1 (Belief tracking) is the cleanest Learn mechanism.** All four
+   keep it. The "delta protocol" maps onto AGM's expansion / contraction
+   / revision operators (Alchourrón, Gärdenfors & Makinson, *J. Symbolic
+   Logic* 50, 1985) at the operator level, though classical AGM's
+   deductive-closure machinery is intractable for an expanding graph.
+   The engineering-tractable form is **belief-base revision** (finite,
+   syntactic — Falakh, Rudolph & Sauerwald, 2021) over edge-weight +
+   version state. Forgetting (decay, contraction, source withdrawal)
+   folds in as a sub-operation of belief revision (3/4 models;
+   GPT separates it).
+
+3. **M2 (link prediction) and M3 (community detection) fail "Learn =
+   state evolution" in default form.** All four reclassify them as
+   Analysis / Inference. The *training* of a link-prediction model is
+   learning (in the representation-learning sense); the *scoring* of
+   candidates on a frozen graph is inference. Louvain / Leiden / Infomap
+   produce partitions on a frozen snapshot — derived artifacts, not
+   state updates. Primary-source basis: Bordes et al. 2013 (TransE);
+   Trouillon et al. 2016 (ComplEx); Sun et al. 2019 (RotatE);
+   Blondel et al. 2008 (Louvain); Traag et al. 2019 (Leiden);
+   Rosvall & Bergstrom 2008 (Infomap); Edge et al. 2024 (GraphRAG —
+   positioned as retrieval-augmented generation, not learning).
+
+4. **Abstraction / principle induction is the major missing slot.** All
+   four add it. The mechanism takes N concrete instances and *commits*
+   a general statement back to the graph as a first-class element.
+   Three literature paths: rule mining (AMIE — Galárraga et al. 2013;
+   AnyBURL — Meilicke et al. 2020), schema induction (DL-Learner —
+   Bühmann & Lehmann 2013), and LLM-driven summary-with-commit-back
+   (GraphRAG community summaries are the *non-committing* version;
+   committed variants are increasingly common but lack a canonical
+   reference yet).
+
+5. **T1 is correct.** Under the working hypothesis's own state-evolution
+   definition, M2 and M3 belong on the Analysis side, not Learn.
+   Confirmed by all four against primary-source classifications.
+
+#### 9.3.3 Substantive disagreements — three forks
+
+**Fork A — Mechanism count: 3 vs 4 vs 5.** The four models propose
+three different packagings of the same underlying material:
+
+- **3 slots** (Grok, Opus): Belief revision / Identity refinement /
+  Abstraction. M2 and M3 are Analysis primitives whose outputs *feed*
+  the three Learn slots. "Hypothesis promotion" is the universal
+  commit-back operator that defines the Analysis/Learn boundary — not
+  a slot of its own.
+- **4 slots** (Gemini, restructured): Belief Revision / Concept &
+  Schema Induction / Logical Rule Mining / Hierarchical Consolidation.
+  Gemini *replaces* M2 and M3 entirely rather than reclassifying — its
+  Rule Mining slot replaces M2; its Hierarchical Consolidation slot
+  (Leiden + LLM-summary-with-commit) replaces M3. Promotion is built
+  into the slot definitions.
+- **5 slots** (GPT): Belief revision / Identity refinement /
+  Compression-abstraction / Temporal-forgetting / Hypothesis promotion.
+  GPT pulls out hypothesis promotion and temporal-forgetting as
+  standalone slots.
+
+The substantive question driving the spread is whether **hypothesis
+promotion** (the act of committing an analysis output back to the
+graph) is a *slot* (a mechanism of its own) or a *property* (a
+boundary operator that every real Learn mechanism instantiates). The
+3-slot answer says property; the 5-slot answer says slot; the 4-slot
+answer ducks the question by re-naming M2 and M3 into their
+"after-promotion" forms. **§9.4 must choose between (a) 3 slots +
+named commit-back boundary operator, and (b) 4 slots with Hypothesis
+Promotion first-class.** See §9.3.6 for the side-by-side.
+
+**Fork B — Does M4 split?** Opus alone (1/4) says yes:
+*canonicalization-as-hygiene is NOT Learn* (it changes identity, not
+epistemic state — it is preprocessing); *temporal/contextual splits
+ARE Learn* (committing the graph to "Buffett-1990s ≠ Buffett-2020s"
+is a genuine epistemic update). Gemini, GPT, and Grok keep M4 as a
+single slot.
+
+The Opus position carries weight beyond the 1/4 vote because of an
+**architecture-coherence argument the other three did not have
+visibility into**: Task #74 (the Canonicalization-First blueprint
+from Round 5 §8.2) **already ships canonicalization as a
+compile-pipeline hygiene stage** between [5] reconcile and renumbered
+[7] build_source_state (commits `94b0018` through `1697d6c`). Calling
+canonicalization "Learn" now would retroactively reclassify a shipped
+architectural decision — and would entangle the compile-stage
+contract with the §9 Learn-mechanism taxonomy. Adopting the Opus
+split preserves architectural coherence without re-litigating Task #74.
+This is an architecture-coherence argument, not a literature
+argument; named explicitly so the choice is not cherry-picking.
+
+**Fork C — Does T2 (anti-goal) sharpen the cut, or is it
+value-alignment?** Three models (Gemini, GPT, Grok) say T2 sharpens
+the literature's classification. Opus says T2 sharpens the
+*user-facing* cut but **not the literature's** cut — the literature
+does not exclude analysis-with-commit-back from "learning"
+categorically (HippoRAG frames itself as *long-term memory*, not
+belief revision; GraphRAG as *retrieval-augmented generation*,
+neither learning nor not-learning), but the user's value criterion
+("vanity surfacing without behavioral change is not learning for a
+second brain") aligns with the literature's deepest framing of
+*capacity-change*.
+
+The 3:1 split is shallower than it looks: all four end at the same
+operational place — operations whose effects *persist* earn the Learn
+label cleanly; operations whose outputs are one-shot are Analysis.
+The **Opus framing is the more defensible reading** because it
+preserves the literature's full toolbox (analysis operations remain
+useful for second-brain work even when they don't count as Learn)
+while still naming the criterion that drives the project's design
+choices.
+
+**§9.4 adopts:** T2 is a **value-alignment criterion** for selecting
+which operations are most worth building first, not a philosophical
+disqualifier of analysis operations.
+
+#### 9.3.4 Devil's Advocate gate — surfacing the retreat
+
+Per the memory rule [[feedback_devils_advocate_gate]], retreating
+from the working hypothesis under pressure (research pressure rather
+than user pressure, but the gate applies in spirit) deserves a
+structured callout before convergence is accepted:
+
+- **Original position (§9.1.1, 2026-05-22, ≈2 hours before the
+  returns landed):** Four mechanisms, all classified as Learn under
+  "Learn = state evolution." Two internal tensions (T1, T2) hedged
+  as the open questions the research should adjudicate.
+
+- **Concessions accepted under research:** (i) M2 + M3 reclassified
+  as Analysis across all four models; (ii) M4 split per Opus minority
+  — canonicalization = hygiene, temporal/contextual splits = Learn;
+  (iii) Abstraction / principle induction added as a missing slot
+  endorsed by all four; (iv) the four-mechanism count survives only
+  by replacing two of the original slots wholesale and splitting a
+  third. The original-vs-synthesis overlap is M1 (kept), half of M4
+  (temporal splits), and the §9.1.1 sub-claim about Create (kept and
+  *strengthened* — see §9.3.5).
+
+- **Failure modes the concessions risk:**
+  (a) **Vanity-graph mode** — if the commit-back operator (hypothesis
+  promotion) is weakly designed, M2/M3 outputs surface in the UI but
+  never enter the graph state, exactly the failure the anti-goal [5]
+  warns against. *Mitigation:* §9.4's slot-count choice (Fork A)
+  decides whether commit-back gets a first-class architectural
+  contract or is left implicit. The vanity-graph mode is more likely
+  under candidate (a) — 3 slots — if the named boundary operator does
+  not get its own engineering attention.
+  (b) **Stranded-summary mode** — if Abstraction lacks a committed
+  back-step, the system produces GraphRAG-style community summaries
+  that get *indexed but never become graph elements*. Both Gemini
+  and Opus flag this explicitly; LLM-driven-summary-with-commit is
+  endorsed but the literature lacks a canonical reference, making it
+  an engineering blank.
+  (c) **Under-counted-Learn-surface mode** — the Opus M4 split risks
+  under-counting Learn surface area *if* canonicalization turns out
+  to host genuine epistemic decisions in practice (e.g., when an
+  alias merge changes downstream beliefs in a way that's
+  indistinguishable from an explicit belief revision). The shipped
+  Task #74 architecture treats alias merges as deterministic chain
+  flattening, which keeps them on the hygiene side — but the
+  boundary is empirically thin.
+
+#### 9.3.5 Positive finding — the [C] Create reframe is *strengthened*
+
+The §9.1.1 working hypothesis included a sub-claim: *"Create is the
+same engine seen one step further. Mechanisms 2 + 3, surfaced to the
+human or LLM collaborator at the right moment, provoke creation."*
+Opus picked this up directly and turned it from sub-claim into
+positive output:
+
+> "Connection discovery and pattern emergence are *exactly* the
+> mechanisms that provoke Create. Calling them Analysis acknowledges
+> what they actually do (decompose the frozen graph to surface novel
+> structure) and clarifies their role in the architecture (input to
+> Create, not constituent of Learn)."
+
+This is a **substantive product of Round 6, not a side-effect of the
+retreat**. The reclassification of M2 and M3 from "Learn (state
+evolution)" to "Analysis that feeds [C] Create" gives the project
+its first articulated operational position on [C] Create — a
+question the project has only gestured at since §6.1 (April 2026).
+
+**[C] Create, as of Round 6:**
+> Create is the surfacing of latent structure (via Analysis
+> operations — link prediction, community detection, structural-hole
+> detection, traversal) to the human or LLM collaborator at the
+> right moment, such that the collaborator authors new knowledge that
+> may then be ingested back into the graph as raw text (closing the
+> loop through ingestion + the Learn mechanisms above).
+
+This is not a separate mechanism that the project will *build*; it
+is a *role assignment* for existing graph operations. Round 6 has
+nothing further to ratify on [C] beyond naming this role.
+
+#### 9.3.6 Two candidate decompositions for §9.4 to choose between
+
+Both decompositions are literature-defensible. The choice is about
+**architectural framing** — whether commit-back is a *slot* or a
+*boundary operator*. §9.4 must pick one.
+
+**Candidate (a) — 3 slots + named commit-back boundary operator**
+(Grok + Opus convergence):
+
+| # | Mechanism | What it operates on |
+|---|---|---|
+| 1 | **Belief revision** | Edge / assertion weight + version state. Forgetting + temporal validity fold in as sub-operations. |
+| 2 | **Identity refinement** (temporal/contextual splits only) | Identity state — committing the graph to claims like "Buffett-1990s ≠ Buffett-2020s." Canonicalization stays in Task #74 as hygiene. |
+| 3 | **Abstraction / principle induction** | Symbolic-abstraction state — rules, schema axioms, summary-nodes committed back to the graph as first-class elements. |
+
+Plus an explicit **Hypothesis Promotion** boundary operator naming
+the gate that converts Analysis outputs (link-prediction candidates,
+community-detection partitions, structural-hole signals) into one of
+the three Learn slots' state updates. The operator has its own
+provenance + confidence + supporting-paths contract but is *not* a
+mechanism of its own.
+
+**Candidate (b) — 4 slots, Hypothesis Promotion as a Learn mechanism
+in its own right** (GPT slotting, with forgetting folded into Belief
+revision):
+
+| # | Mechanism | What it operates on |
+|---|---|---|
+| 1 | **Belief revision** | Edge / assertion weight + version state |
+| 2 | **Identity refinement** (temporal/contextual splits only) | Identity state |
+| 3 | **Abstraction / principle induction** | Symbolic-abstraction state |
+| 4 | **Hypothesis promotion** | The boundary operator made first-class — takes Analysis outputs (M2 link predictions, M3 communities, structural-hole signals) and persists them as belief edges, identity claims, or abstractions with provenance + confidence + supporting paths |
+
+**Trade-off named:**
+
+- *Candidate (a)* is **conceptually cleaner**. Promotion is not a
+  kind of learning — it is the act of committing that every kind of
+  learning entails. Calling it a slot mixes kinds (a mechanism that
+  changes a *kind* of state vs. an operator that mediates every
+  state change). The 3 slots map cleanly to three distinct kinds of
+  graph state (beliefs, identities, abstractions); promotion sits
+  *across* them.
+- *Candidate (b)* is **architecturally more first-class**.
+  Hypothesis promotion gets its own contract, its own acceptance
+  gates, its own predeclared eval criteria (§7.4(c) precedent), and
+  the project does not risk under-investing in it by treating it as
+  "just a property of the other three." Candidate (a) leaves
+  promotion as an implementation detail that any of the three slots
+  may handle differently; candidate (b) forces uniformity.
+
+The vanity-graph failure mode (§9.3.4 (a)) is more likely under
+candidate (a) if the named-but-not-slotted boundary operator does
+not get equal engineering attention. The simplicity advantage of
+candidate (a) is real but cashes out only if the project disciplines
+itself to give the boundary operator its own design pass.
+
+#### 9.3.7 External reviews — Codex + Antigravity (2026-05-22)
+
+After §9.3.6 landed, the two-candidate fork was forwarded to Codex and
+Antigravity (Gemini-as-reviewer, distinct from the Gemini 3.1 Pro
+research return in §9.2). Mirroring the Round 5 §7.4 pattern.
+
+Full reviews:
+- `docs/task82-learn-architectural-options-codex.md`
+- `docs/task82-learn-architectural-options-gemini.md`
+
+##### Convergence (heavy signal)
+
+Both reviewers converge on the **engineering risk** and on **rejecting
+candidate (c)** outright. Specifically:
+
+1. **The boundary operator is load-bearing and must not be left as an
+   implementation detail.** Both reviewers identify the same failure
+   mode named in §9.3.4(a) (vanity-graph leakage) and both elevate
+   "Hypothesis Promotion must have its own contract, provenance gates,
+   confidence thresholds, conflict checks, predeclared evals" to the
+   level of a non-negotiable architectural requirement.
+
+2. **Candidate (c) is rejected as the top-level taxonomy.** Codex:
+   *"'Logical Rule Mining' and 'Hierarchical Consolidation' are methods
+   or committed forms; they belong under Abstraction / Principle
+   Induction, not beside Belief Revision as peer categories."*
+   Antigravity: 🔴 across all four trade-off criteria (taxonomy
+   orthogonality / anti-goal protection / auditability /
+   extensibility). Candidate (c) survives only as **implementation
+   vocabulary** under Abstraction, not as the primary architecture.
+
+##### Divergence (the live fork)
+
+The reviewers disagree on *how* to give the boundary operator
+engineering teeth:
+
+**Codex → adopt (a+): hardened candidate (a).** Three Learn slots
+(Belief Revision / Identity Refinement / Abstraction), with Hypothesis
+Promotion treated as a **first-class boundary contract** — its own
+task, its own blueprint, its own predeclared eval criteria mirroring
+Task #75's pattern — but explicitly **not** a fourth slot. Reasoning:
+adopting (b) "mixes 'type of state changed' with 'gate that authorizes
+change.' Once that move is accepted, Forgetting has an equally strong
+claim to become its own slot, then review, decay, retraction, and
+provenance start wanting slot status too. That path bloats the
+taxonomy."
+
+Codex also makes a **sequencing claim**: *"Make that task define
+[contract] first. Only after that, design the individual Learn
+mechanisms."* This reverses the natural read of candidate (a): under
+(a), one might design the slots first and let promotion be implied;
+under (a+), promotion is designed first.
+
+**Antigravity → adopt (b): Hypothesis Promotion as a fourth slot.**
+Three state-changing slots + Hypothesis Promotion elevated to a
+first-class peer mechanism. Reasoning: *"In a personal knowledge
+graph functioning as a second brain, epistemic trust is the absolute
+rate-limiter… Option A is theoretically more elegant, but it treats
+the most complex and risk-prone interface — the transition from
+uncertainty to committed fact — as an implementation detail. Option B
+acknowledges that the Hypothesis Promotion Subsystem is a massive,
+load-bearing gatekeeper that deserves its own independent contract,
+independent validation rules, and explicit evaluation metrics."*
+
+Antigravity scores (b) over (a) on **anti-goal protection** (🟢 vs 🟡)
+and **audit trails & lineage** (🟢 centralized vs 🟡 distributed).
+
+##### How the candidates stack after external review
+
+The choice is now **4-way, not 2-way**:
+
+| | (a) | (a+) | (b) | (c) |
+|---|---|---|---|---|
+| Slot count | 3 | 3 | 4 | 4 (method-named) |
+| Promotion is… | implicit boundary | first-class **contract** (own task) | first-class **slot** | absent (each slot handles its own commit) |
+| Codex says | risk: under-investment | **recommended** | reject (taxonomy bloat) | reject (mixes state + method) |
+| Antigravity says | risk: implementation-detail framing | not named separately, but conceptually closer to A than B | **recommended** | reject (🔴 across all criteria) |
+| Convergent score | Below (a+) and (b) | Strong (Codex) | Strong (Antigravity) | Eliminated by both reviewers |
+
+(a) and (c) are effectively eliminated. The **live fork is now (a+)
+vs (b)** — a sharper choice than the original §9.3.6 (a) vs (b)
+because (a+) closes the under-investment risk that motivated (b) in
+the first place.
+
+##### What changes in the §9.3 position
+
+| Item | Before reviews | After reviews |
+|---|---|---|
+| Candidate count actively considered | 3 — (a), (b), (c) | 2 — (a+), (b) |
+| Treatment of (c) | Live option | Eliminated as primary taxonomy; vocabulary survives under Abstraction |
+| Treatment of pure (a) | Lean / recommended | Superseded by (a+) — the case for (a) was always conditional on the boundary operator getting strong engineering attention; (a+) makes that explicit |
+| Hypothesis Promotion engineering | Open question for §9.4 | **Mandatory first-class contract** under either surviving candidate — only the *organizational* placement (slot vs separate task) is live |
+| Sequencing | Implicit (design slots, then operator) | Codex (a+) reverses this: design operator first |
+
+§9.4 must therefore choose between (a+) and (b), with the
+understanding that the *engineering work* on the promotion contract
+is nearly identical under either choice — what differs is whether
+that work lives inside the Learn taxonomy as slot #4 or beside it as
+a peer-architectural component.
+
+#### 9.3.8 Synthesizer's lean — (a+) with parallel-design sequencing (Claude, 2026-05-22) — *not yet ratified*
+
+The staff-architect read after both external reviews. Recorded here
+so the §9.3 deliberation lineage carries the rationale, not as a
+decision — Joseph's §9.4 call remains live.
+
+**Lean: candidate (a+), with one nuance to Codex's sequencing claim.**
+
+##### Four reasons the lean is (a+)
+
+1. **Project pattern.** The project has a consistent track record of
+   treating cross-cutting architectural contracts as **distinct
+   artifacts with their own task + blueprint + predeclared evals**,
+   integrated cleanly into other workflows but not elevated to peer
+   status inside their host taxonomy:
+   - **Task #74 (Canonicalization)** — own blueprint, own predeclared
+     decisions (D-R5-1 through D-R5-13), own Codex + Gemini review
+     loop. Integrates into the compile pipeline as stage [6] but is
+     not framed as a peer of `kdb_compiler` or `graphdb-kdb`.
+   - **Task #75 (predeclared eval criteria for step-3 ops)** — meta-
+     task that frames how operations get evaluated; not a slot in
+     the V0 / V1 / V2 operations roster.
+   - **Task #19 (M1–M5 metrics framework)** — predeclared KPIs
+     landed in `CODEBASE_OVERVIEW §7`; not slots in the compile
+     pipeline.
+
+   The (a+) shape follows this pattern. Candidate (b) would break it
+   by making Promotion a peer slot in the Learn taxonomy.
+
+2. **Slot-inflation is structurally compelling.** If Promotion gets
+   slot status because it is load-bearing, then **Forgetting** has
+   the same claim (GPT's research return elevated it to a slot for
+   exactly this reason). Then **Decay**. Then **Retraction**. Then
+   **Provenance**. Then **Review**. The (b) taxonomy has no natural
+   stopping point. Under (a+), these are all sub-operations of
+   Belief Revision, gated uniformly by the Promotion contract.
+
+3. **Taxonomy hygiene.** The three (a+) slots answer *"what kind of
+   graph state changes?"* (beliefs, identities, abstractions).
+   Promotion answers *"how do changes get gated?"* Different
+   question, different artifact, different versioning cadence.
+   Mixing them is a category error that compounds across future
+   rounds — every time someone proposes a new state-change
+   mechanism, they will ask "is it a slot or a gate?", and the
+   answer under (b) is genuinely ambiguous.
+
+4. **The under-investment risk for (a+) is mitigable.** Antigravity's
+   case for (b) rests on *"treating Promotion as an implementation
+   detail is structurally unsafe."* That is true if the boundary
+   operator is **implicit**. (a+) makes it **explicit** — same
+   engineering teeth as (b), just located *beside* the Learn taxonomy
+   rather than inside it. The mitigation is on-rails for this
+   project: a dedicated task with a blueprint + predeclared evals
+   (Task #75 pattern). The project has shipped this discipline three
+   times. It is not wish-thinking.
+
+##### Where the lean nuances Codex
+
+Codex recommends *"design the Hypothesis Promotion Contract first,
+only after that design the individual Learn mechanisms."* Strict
+serialization is over-disciplined. Per memory rule
+[[feedback_concrete_first_extract_later]] (build 2+ concrete
+implementations before extracting the shared framework), designing
+Promotion in isolation risks baking in assumptions about candidate
+shapes that the actual Learn-slot work would refine.
+
+**Refined sequencing:** design the Promotion contract **in parallel**
+with the first Learn mechanism. Belief Revision is the natural first
+slot — cleanest match to AGM-philosophy + continual-KGE-engineering,
+and M1's working-hypothesis form already has the most internal
+momentum from §9.1.1. Let the contract crystallize from one concrete
+case; formalize after. Codex's "promotion-first" survives in spirit
+(the contract is a load-bearing artifact that must not be hidden
+behind any specific slot's implementation) but not in letter
+(parallel design beats strict serialization for a contract no team
+has built before).
+
+This is a §9.4 / blueprint-level sequencing detail, not a Fork-A
+question — it lands the same under (a+) or (b).
+
+##### Devil's-advocate self-check
+
+Per memory rule [[feedback_devils_advocate_gate]] — guard against
+LLM accommodation bias toward the most recently seen reviewer
+recommendation (Codex's review landed last in this session's flow).
+
+> *If Antigravity had argued for (a+) and Codex for (b), would the
+> lean still be (a+)?*
+
+Yes. The four reasons above are independent of reviewer attribution.
+Reasons #1 (project pattern), #2 (slot inflation), and #3 (taxonomy
+hygiene) are claims about the project and the literature, not about
+which reviewer endorsed which option. Reason #4 (mitigable risk)
+responds to (b)'s strongest argument regardless of who made it.
+
+The lean is not accommodation bias toward Codex; it is the
+project-pattern + taxonomy-hygiene case landing where it would
+have landed regardless of attribution.
+
+##### Honest residual uncertainty
+
+Antigravity's framing is correct on its own terms: **epistemic trust
+is the rate-limiter for second-brain utility**. The open question is
+whether *slot status* is the only structural mechanism that delivers
+discipline. The project's track record (three precedents above)
+suggests no — separate artifacts with predeclared evals do the same
+work without taxonomy distortion.
+
+But this is a **track-record-based claim**. If the discipline has
+slipped before — on cross-cutting contracts that lived beside rather
+than inside their host taxonomies — that is a signal toward (b) the
+synthesizer cannot see from the inside. Joseph carries that signal;
+the synthesizer does not.
+
+That residual uncertainty is the genuine reason §9.4 is Joseph's
+call, not the synthesizer's. The lean is recorded so it can be
+overridden honestly, not deferred to without examination.
+
+#### 9.3.9 Caveats
+
+- **Training-data overlap.** Four frontier LLMs on a body of
+  literature they have all seen (AGM, AMIE, AnyBURL, TransE family,
+  GraphRAG, HippoRAG) is not perfectly independent. The convergence
+  pattern is supported by primary-source citations across all four
+  responses, so the signal is real even if not fully independent.
+  Worth noting; not worth re-running with non-LLM reviewers.
+- **Resolution limit at personal scale** (Opus, citing Fortunato &
+  Barthélemy, *PNAS* 2007). Modularity-based community detection has
+  a known degenerate behavior below ~10K edges — communities merge
+  below a scale threshold determined by edge count. This sharpens
+  the case for M3 → Analysis-feeding-Learn: M3's output at our
+  scale needs LLM re-clustering or threshold tuning before
+  commit-back is meaningful.
+- **Rule mining at personal scale.** Classical AMIE / AnyBURL
+  benchmarks run on Freebase / YAGO scale (millions of triples).
+  At 1K–10K entities, classical statistical rule mining finds few
+  rules with high confidence. The viable path at personal scale is
+  **LLM-assisted rule induction** — endorsed by 3/4 models, but the
+  literature lacks a canonical reference, so engineering is closer
+  to frontier than to recipe.
+- **HippoRAG framing nuance.** HippoRAG positions itself as
+  *long-term memory*, not belief revision. The non-parametric
+  continual-learning framing in HippoRAG 2 (Gutiérrez et al., 2025)
+  is about *retrieval over an evolving index*, not state-evolving
+  belief tracking. The project should not over-import HippoRAG's
+  "learning" framing as a model for the M1 slot — it's a model for
+  PPR-based retrieval over a graph that the other slots evolve.
+
+### 9.4 Where Round 6 lands — closeout (2026-05-22)
+
+§9.3.7 narrowed the Fork-A choice from three candidates to two
+((a+) vs (b)) after Codex + Antigravity external review. Joseph
+adopted **(a+)** on 2026-05-22 after reading §9.3.8 (the
+synthesizer's lean, four-reasons-with-devil's-advocate-self-check,
+and honest residual uncertainty), accepting the project-pattern +
+taxonomy-hygiene case and the parallel-design sequencing nuance to
+Codex's "promotion-first" claim.
+
+#### 9.4.1 Path forward — (a+) ratified
+
+Round 6 commits to **three Learn mechanisms + Hypothesis Promotion
+as a first-class boundary contract**, organized as a dedicated
+follow-up task and not as a fourth slot.
+
+| # | Learn mechanism | What state it changes |
+|---|---|---|
+| 1 | **Belief Revision** | Edge / assertion weight + version state. AGM-philosophy + continual-KGE-engineering. Forgetting + temporal validity + decay + contraction fold in as sub-operations. |
+| 2 | **Identity Refinement** | Identity state — temporal/contextual entity splits ("Buffett-1990s ≠ Buffett-2020s") committed as graph claims. Canonicalization-as-hygiene is **not** Learn; it stays in Task #74 as compile-pipeline stage [6]. |
+| 3 | **Abstraction / Principle Induction** | Symbolic-abstraction state — rules (AMIE / AnyBURL paradigms), schema axioms, summary-nodes committed back to the graph as first-class elements. |
+
+Plus the **Hypothesis Promotion Contract** as a separate
+architectural artifact (Task #83) that mediates every transition
+from an Analysis output to a Learn state change. No Analysis output
+may mutate graph state except through this contract.
+
+#### 9.4.2 Blueprint mandates — Tasks #83 → #86
+
+Each commitment is filed as its own task with its own blueprint +
+predeclared eval criteria (Task #75 pattern):
+
+1. **Task #83 — Hypothesis Promotion Contract.** First-class
+   boundary contract. Owns:
+   - input candidate shape from Analysis ops (link-prediction
+     candidates, community-detection partitions, structural-hole
+     signals, LLM-emitted contradiction / reinforcement signals)
+   - output mutation types (belief-edge update, identity-split,
+     abstraction-node-or-rule)
+   - confidence + provenance + supporting-path requirements
+   - conflict checks against existing graph state
+   - human-review thresholds (auto-promote vs. surface-for-review)
+   - predeclared eval criteria mirroring Task #75
+2. **Task #84 — Belief Revision** (first Learn slot). AGM-philosophy
+   + continual-KGE-engineering, over edge / assertion weight +
+   version state. **Designed in parallel with #83** per §9.3.8
+   sequencing.
+3. **Task #85 — Identity Refinement** (second Learn slot;
+   **deferred** until #83 + #84 land). Temporal / contextual entity
+   splits. Architectural separation from #74 canonicalization
+   preserved per §9.4.3 reclassification.
+4. **Task #86 — Abstraction / Principle Induction** (third Learn
+   slot; **deferred** until #83 + #84 land). Three literature paths
+   to evaluate (§9.3.2 finding #4): rule mining (LLM-assisted at
+   personal scale), schema induction, LLM-driven
+   summary-with-commit. Stranded-summary failure mode
+   (§9.4.7 hedge #2) must be explicitly mitigated.
+
+#### 9.4.3 Reclassifications adopted
+
+Per §9.3 cross-model convergence:
+
+1. **M2 (Connection discovery — link prediction + structural-hole
+   detection) → Analysis-feeding-[C] Create.** Remains an operation
+   in the system; not a Learn mechanism. Outputs feed Task #83's
+   Promotion Contract; on accepted promotion, they update one of
+   the three Learn slots' state.
+2. **M3 (Pattern emergence — community detection) →
+   Analysis-feeding-[C] Create.** At our scale (1K–10K entities)
+   needs LLM re-clustering or threshold tuning before commit-back
+   is meaningful (Fortunato & Barthélemy 2007 resolution limit).
+   Same trajectory as M2.
+3. **M4 (Concept refinement) split per Opus minority view
+   (§9.3.3 Fork B):** canonicalization-as-hygiene stays in Task
+   #74 (compile-pipeline stage [6]); temporal / contextual splits
+   become Task #85 (Identity Refinement as Learn).
+
+#### 9.4.4 Sequencing — parallel design of #83 + #84
+
+Per §9.3.8 nuance to Codex's "promotion-first" claim and memory
+rule [[feedback_concrete_first_extract_later]]:
+
+- Tasks #83 (Promotion Contract) and #84 (Belief Revision) are
+  designed in **parallel**, not serially.
+- Belief Revision is the natural first Learn slot — cleanest
+  AGM match, most internal momentum from §9.1.1 working hypothesis.
+- The contract crystallizes from the concrete Belief-Revision case;
+  formalized after.
+- Tasks #85 + #86 are filed but **deferred** until #83 + #84 land
+  — they inherit the formalized contract rather than spawning
+  parallel-design overhead in three dimensions at once.
+
+Codex's "promotion-first" claim survives in spirit (the contract
+is a load-bearing artifact, not a property of any one slot's
+implementation) but not in letter (parallel design beats strict
+serialization for a contract no team has built before).
+
+#### 9.4.5 Anti-goal [5] — value-alignment criterion, not philosophical disqualifier
+
+Per §9.3.3 Fork-C resolution: anti-goal [5] (*"not just an
+Obsidian graph with thousands of connections to show off"*) is
+adopted as a **value-alignment criterion** for selecting which
+operations to build first, **not** as a philosophical disqualifier
+of Analysis operations.
+
+Analysis operations (link prediction, community detection,
+structural-hole detection) remain valuable for second-brain work —
+they are the mechanisms feeding [C] Create per §9.4.6. They are
+just not classified as Learn under the §9.3 definition. The
+literature endorses both classes; the anti-goal sharpens which
+class earns *this project's* architectural priority.
+
+#### 9.4.6 [C] Create — first articulated position
+
+Per §9.3.5, Round 6 produces the project's first operational
+position on the §6.1 third goal:
+
+> **[C] Create** is the surfacing of latent structure (via Analysis
+> operations — link prediction, community detection, structural-
+> hole detection, traversal) to the human or LLM collaborator at
+> the right moment, such that the collaborator authors new
+> knowledge that may then be ingested back into the graph as raw
+> text — closing the loop through ingestion + the Round 6 Learn
+> mechanisms.
+
+This is a **role assignment for existing graph operations**, not
+a separate mechanism the project will build. Round 6 has nothing
+further to ratify on [C] beyond naming this role.
+
+#### 9.4.7 Empirical hedges (watch-for at implementation, not design constraints)
+
+Per §9.3.4 Devil's Advocate gate:
+
+1. **Vanity-graph failure mode.** If Task #83's Promotion Contract
+   ships with weak gates, M2/M3 outputs surface but never enter
+   graph state — exactly the failure anti-goal [5] warned against.
+   *Mitigation:* predeclared evals on the contract (Task #75
+   pattern). *Watch rule:* "if Analysis surfaces N candidates and
+   Promotion accepts M ≪ N over a sustained window, audit gate
+   thresholds."
+2. **Stranded-summary failure mode.** If Task #86's Abstraction
+   slot lacks commit-back, GraphRAG-style summaries get indexed
+   but never become graph elements — Gemini and Opus both flagged
+   this. *Mitigation:* Task #86's blueprint must specify
+   summary→graph-element materialization as a first-class step,
+   not an optional output.
+3. **Under-counted-Learn-surface failure mode.** If canonicalization-
+   as-hygiene (Task #74) turns out to host genuine epistemic
+   decisions in practice (alias merges that materially change
+   downstream beliefs), the Opus M4 split becomes under-counted.
+   *Mitigation:* empirical — review canonicalization merge events
+   for downstream-belief impact at the first convenient audit.
+
+#### 9.4.8 Round 6 final position summary
+
+**Decision:** (a+) — three Learn mechanisms (Belief Revision /
+Identity Refinement / Abstraction & Principle Induction) plus the
+**Hypothesis Promotion Contract** as a first-class boundary
+artifact.
+
+**Blueprint mandates:** Tasks #83 (Promotion Contract) + #84
+(Belief Revision) **parallel-designed** (per
+[[feedback_concrete_first_extract_later]]); Tasks #85
+(Identity Refinement) + #86 (Abstraction / Principle Induction)
+**deferred** until #83 + #84 land.
+
+**Reclassifications:** M2 + M3 → Analysis-feeding-[C] Create. M4
+split: canonicalization stays in Task #74 as hygiene; temporal /
+contextual splits become Task #85.
+
+**Anti-goal [5]:** adopted as value-alignment criterion, not
+philosophical disqualifier.
+
+**[C] Create:** role assignment for Analysis operations; first
+articulated project position recorded in §9.4.6.
+
+**Empirical hedges:** vanity-graph / stranded-summary / under-
+counted-Learn-surface — all watch-for-at-implementation, not
+design constraints.
+
+#### 9.4.9 Round 6 closed.

@@ -21,6 +21,7 @@ Dated architectural inflection points. Full retrospective and three-iteration hi
 - **2026-05-20** — **Canonicalization layer lands.** Stage 6 `canonicalize` inserted; `Entity.canonical_id` + `ALIAS_OF` edges shipped (Task #74).
 - **2026-05-21** — **V0 step-3 ops regression suite locked.** Typed traversal + shortest-path direct-unit-guarded; `@pytest.mark.bench` opt-in pattern established (Task #81). **Schema v2.1 Domain field** shipped: `Domain` node + `BELONGS_TO` edge (Task #76).
 - **2026-05-22** — **Three-iteration retrospective filed** ([`docs/JOURNEY.md`](JOURNEY.md)). This changelog itself is the mitigation for Lessons §5 (milestone-level signal was missing pre-this-doc).
+- **2026-05-22** — **Round 6 closes — "Learn" operationalized.** Three Learn mechanisms ratified (Belief Revision / Identity Refinement / Abstraction & Principle Induction) + Hypothesis Promotion as first-class boundary contract per **(a+)** decision; M2 + M3 reclassified as Analysis-feeding-[C] Create; project's first articulated position on [C] Create recorded ([`docs/what-is-the-ontology-for.md`](what-is-the-ontology-for.md) §9.4; Task #82 closure; Tasks #83–#86 filed).
 
 ---
 
