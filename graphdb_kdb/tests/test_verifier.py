@@ -325,3 +325,109 @@ def test_supports_edge_divergence_detected(graph_dir, tmp_path):
     assert not result.ok
     supports_divs = [d for d in result.divergences if d.category == "supports"]
     assert len(supports_divs) >= 1
+
+
+# ---------- 11. #79 — Domain + BELONGS_TO coverage (schema v2.1) ----------
+
+def test_perfect_agreement_with_domains(graph_dir, tmp_path):
+    """Domain-tagged pages: replay==live, counts include domains_checked +
+    belongs_to_checked, zero divergences."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        pages = [
+            make_page("alpha", domain="Investing", sub_domain="Value Investing"),
+            make_page("beta", domain=["Investing", "Macro"]),
+        ]
+        cr = make_compile_result([make_compiled_source(SRC_ID, pages)])
+        scan = make_scan([make_scan_entry(SRC_ID)])
+        gdb.apply_compile_result(cr, scan, "run-1")
+        _write_journal(journals_dir, "run-1", compile_result=cr, scan=scan)
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert result.ok
+    assert result.divergences == []
+    assert result.counts["domains_checked"] == 2     # "investing", "macro"
+    assert result.counts["belongs_to_checked"] == 3  # alpha→investing, beta→investing, beta→macro
+
+
+def test_missing_domain_in_live_detected(graph_dir, tmp_path):
+    """Journal produces a Domain that live doesn't have → missing_in_live."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        # Live: alpha with no domain
+        pages_live = [make_page("alpha")]
+        cr_live = make_compile_result([make_compiled_source(SRC_ID, pages_live)])
+        scan = make_scan([make_scan_entry(SRC_ID)])
+        gdb.apply_compile_result(cr_live, scan, "run-1")
+        # Journal: alpha tagged with "Investing"
+        pages_journal = [make_page("alpha", domain="Investing")]
+        cr_journal = make_compile_result([make_compiled_source(SRC_ID, pages_journal)])
+        _write_journal(journals_dir, "run-1", compile_result=cr_journal, scan=scan)
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert not result.ok
+    domain_divs = [d for d in result.divergences if d.category == "domain"]
+    assert any(d.kind == "missing_in_live" and d.key == "investing" for d in domain_divs)
+    belongs_divs = [d for d in result.divergences if d.category == "belongs_to"]
+    assert any(
+        d.kind == "missing_in_live" and d.key == "alpha→investing"
+        for d in belongs_divs
+    )
+
+
+def test_extra_domain_in_live_detected(graph_dir, tmp_path):
+    """Live has a Domain that replay doesn't produce → missing_in_replay."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        # Live: alpha tagged with "Investing"
+        pages_live = [make_page("alpha", domain="Investing")]
+        cr_live = make_compile_result([make_compiled_source(SRC_ID, pages_live)])
+        scan = make_scan([make_scan_entry(SRC_ID)])
+        gdb.apply_compile_result(cr_live, scan, "run-1")
+        # Journal: alpha with no domain
+        pages_journal = [make_page("alpha")]
+        cr_journal = make_compile_result([make_compiled_source(SRC_ID, pages_journal)])
+        _write_journal(journals_dir, "run-1", compile_result=cr_journal, scan=scan)
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert not result.ok
+    domain_divs = [d for d in result.divergences if d.category == "domain"]
+    assert any(d.kind == "missing_in_replay" and d.key == "investing" for d in domain_divs)
+    belongs_divs = [d for d in result.divergences if d.category == "belongs_to"]
+    assert any(
+        d.kind == "missing_in_replay" and d.key == "alpha→investing"
+        for d in belongs_divs
+    )
+
+
+def test_belongs_to_sub_domain_mismatch_detected(graph_dir, tmp_path):
+    """Same (entity,domain) edge but different sub_domain → attribute_mismatch."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        # Live: alpha → investing with sub_domain "value-investing"
+        pages_live = [make_page("alpha", domain="Investing", sub_domain="Value Investing")]
+        cr_live = make_compile_result([make_compiled_source(SRC_ID, pages_live)])
+        scan = make_scan([make_scan_entry(SRC_ID)])
+        gdb.apply_compile_result(cr_live, scan, "run-1")
+        # Journal: alpha → investing with sub_domain "macro" (different)
+        pages_journal = [make_page("alpha", domain="Investing", sub_domain="Macro")]
+        cr_journal = make_compile_result([make_compiled_source(SRC_ID, pages_journal)])
+        _write_journal(journals_dir, "run-1", compile_result=cr_journal, scan=scan)
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert not result.ok
+    mismatches = [
+        d for d in result.divergences
+        if d.category == "belongs_to" and d.kind == "attribute_mismatch"
+        and d.key == "alpha→investing" and d.field == "sub_domain"
+    ]
+    assert len(mismatches) == 1
+    assert mismatches[0].expected_value == "macro"
+    assert mismatches[0].actual_value == "value-investing"
+
+
+def test_no_domain_pages_still_pass(graph_dir, tmp_path):
+    """Pre-#76 shape (no domain field) → zero Domain/BELONGS_TO state, no divergences."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)  # plain pages, no domain
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert result.ok
+    assert result.counts["domains_checked"] == 0
+    assert result.counts["belongs_to_checked"] == 0

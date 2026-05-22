@@ -45,8 +45,8 @@ from graphdb_kdb.graphdb import GraphDB
 @dataclass(frozen=True)
 class Divergence:
     kind: str       # 'missing_in_live' | 'missing_in_replay' | 'attribute_mismatch'
-    category: str   # 'entity' | 'source' | 'links_to' | 'supports'
-    key: str        # slug | source_id | 'a→b' | 'sid→slug'
+    category: str   # 'entity' | 'source' | 'links_to' | 'supports' | 'domain' | 'belongs_to'
+    key: str        # slug | source_id | 'a→b' | 'sid→slug' | domain name | 'slug→domain'
     source: str     # 'source_state_preflight' | 'replay_structural_diff'
     field: str | None = None
     expected_value: Any = None
@@ -141,6 +141,40 @@ def _graph_supports(conn: kuzu.Connection) -> set[tuple[str, str]]:
     while r.has_next():
         row = r.get_next()
         out.add((row[0], row[1]))
+    return out
+
+
+# #79: schema v2.1 — Domain nodes + BELONGS_TO edges (#76 follow-up).
+# Domain is existence-only (created_at/first_run_id are provenance, skipped
+# per the same pattern that skips Entity.created_at/Source.first_seen_at).
+# BELONGS_TO tracks sub_domain as a real data field; run_id is provenance
+# (set ON MATCH on every re-write) and follows the SUPPORTS pattern of not
+# being tracked in attribute diffs.
+
+def _graph_domains(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+    r = conn.execute("MATCH (d:Domain) RETURN d.name")
+    out: dict[str, dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[row[0]] = {"name": row[0]}
+    return out
+
+
+def _graph_belongs_to(
+    conn: kuzu.Connection,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    r = conn.execute(
+        "MATCH (e:Entity)-[r:BELONGS_TO]->(d:Domain) "
+        "RETURN e.slug, d.name, r.sub_domain"
+    )
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[(row[0], row[1])] = {
+            "entity_slug": row[0],
+            "domain_name": row[1],
+            "sub_domain": row[2],
+        }
     return out
 
 
@@ -275,6 +309,48 @@ def _diff_edge_set(
         divs.append(Divergence(kind="missing_in_live", category=category, key=f"{a}{arrow}{b}", source=src))
     for a, b in sorted(actual_set - expected_set):
         divs.append(Divergence(kind="missing_in_replay", category=category, key=f"{a}{arrow}{b}", source=src))
+    return divs
+
+
+def _diff_domains(
+    expected: dict[str, dict],
+    actual: dict[str, dict],
+) -> list[Divergence]:
+    divs: list[Divergence] = []
+    src = "replay_structural_diff"
+    for name in sorted(expected.keys() - actual.keys()):
+        divs.append(Divergence(kind="missing_in_live", category="domain", key=name, source=src))
+    for name in sorted(actual.keys() - expected.keys()):
+        divs.append(Divergence(kind="missing_in_replay", category="domain", key=name, source=src))
+    return divs
+
+
+def _diff_belongs_to(
+    expected: dict[tuple[str, str], dict],
+    actual: dict[tuple[str, str], dict],
+) -> list[Divergence]:
+    divs: list[Divergence] = []
+    src = "replay_structural_diff"
+    for slug, name in sorted(expected.keys() - actual.keys()):
+        divs.append(Divergence(
+            kind="missing_in_live", category="belongs_to",
+            key=f"{slug}→{name}", source=src,
+        ))
+    for slug, name in sorted(actual.keys() - expected.keys()):
+        divs.append(Divergence(
+            kind="missing_in_replay", category="belongs_to",
+            key=f"{slug}→{name}", source=src,
+        ))
+    for k in sorted(expected.keys() & actual.keys()):
+        slug, name = k
+        divs.extend(_diff_attrs(
+            category="belongs_to",
+            key=f"{slug}→{name}",
+            source=src,
+            expected_row=expected[k],
+            actual_row=actual[k],
+            fields=(("sub_domain", "sub_domain"),),
+        ))
     return divs
 
 
@@ -473,11 +549,15 @@ def verify(
             r_sources = _graph_sources(replay_gdb.conn)
             r_links = _graph_links(replay_gdb.conn)
             r_supports = _graph_supports(replay_gdb.conn)
+            r_domains = _graph_domains(replay_gdb.conn)
+            r_belongs_to = _graph_belongs_to(replay_gdb.conn)
 
     l_entities = _graph_entities(live_conn)
     l_sources = _graph_sources(live_conn)
     l_links = _graph_links(live_conn)
     l_supports = _graph_supports(live_conn)
+    l_domains = _graph_domains(live_conn)
+    l_belongs_to = _graph_belongs_to(live_conn)
 
     all_divs.extend(_diff_entities(r_entities, l_entities))
     all_divs.extend(_diff_sources_replay(r_sources, l_sources))
@@ -487,12 +567,16 @@ def verify(
     all_divs.extend(_diff_edge_set(
         category="supports", expected_set=r_supports, actual_set=l_supports,
     ))
+    all_divs.extend(_diff_domains(r_domains, l_domains))
+    all_divs.extend(_diff_belongs_to(r_belongs_to, l_belongs_to))
 
     counts = {
         "entities_checked": len(r_entities.keys() | l_entities.keys()),
         "sources_checked": len(r_sources.keys() | l_sources.keys()),
         "links_checked": len(r_links | l_links),
         "supports_checked": len(r_supports | l_supports),
+        "domains_checked": len(r_domains.keys() | l_domains.keys()),
+        "belongs_to_checked": len(r_belongs_to.keys() | l_belongs_to.keys()),
         "missing_in_live": sum(1 for d in all_divs if d.kind == "missing_in_live"),
         "missing_in_replay": sum(1 for d in all_divs if d.kind == "missing_in_replay"),
         "attribute_mismatch": sum(1 for d in all_divs if d.kind == "attribute_mismatch"),
