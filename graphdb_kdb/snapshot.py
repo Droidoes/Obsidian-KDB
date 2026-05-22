@@ -42,7 +42,13 @@ from graphdb_kdb.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 2  # #74.7: v2 adds Entity.canonical_id + alias_of.jsonl
+SNAPSHOT_FORMAT_VERSION = 3
+# v1: original (entities/sources/links_to/supports + schema.cypher)
+# v2 (#74.7): adds Entity.canonical_id + alias_of.jsonl
+# v3 (#80): adds domain.jsonl + belongs_to.jsonl (Domain nodes + BELONGS_TO
+#           edges from schema v2.1 / #76). Writer-only: snapshot.py has no
+#           reader today, so format-version dispatch is a future load-snapshot
+#           concern; v3 is purely additive (all v2 files still emitted).
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,21 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "sha256": _sha256(alias_of_path),
             }
 
+            # #80 (format v3): Domain nodes + BELONGS_TO edges from schema
+            # v2.1 (#76). Pre-#76 graphs produce empty files with rows=0
+            # — additive bump, no breaking change to v2 file layout.
+            domain_path = tmp_dir / "domain.jsonl"
+            files_meta["domain.jsonl"] = {
+                "rows": _write_domains(gdb.conn, domain_path),
+                "sha256": _sha256(domain_path),
+            }
+
+            belongs_to_path = tmp_dir / "belongs_to.jsonl"
+            files_meta["belongs_to.jsonl"] = {
+                "rows": _write_belongs_to(gdb.conn, belongs_to_path),
+                "sha256": _sha256(belongs_to_path),
+            }
+
             schema_path = tmp_dir / "schema.cypher"
             schema_ddl_sha256 = _write_schema(schema_path)
             files_meta["schema.cypher"] = {"sha256": schema_ddl_sha256}
@@ -119,6 +140,8 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "links_to": files_meta["links_to.jsonl"]["rows"],
                 "supports": files_meta["supports.jsonl"]["rows"],
                 "alias_of": files_meta["alias_of.jsonl"]["rows"],
+                "domain": files_meta["domain.jsonl"]["rows"],
+                "belongs_to": files_meta["belongs_to.jsonl"]["rows"],
             }
 
             manifest = {
@@ -329,6 +352,62 @@ def _write_alias_of(conn: kuzu.Connection, path: Path) -> int:
                 "canonical_slug": row[1],
                 "run_id": row[2],
                 "algorithm": row[3],
+                "created_at": row[4],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_domains(conn: kuzu.Connection, path: Path) -> int:
+    """#80 (format v3): Domain nodes (name-keyed) with creation provenance.
+
+    Pre-#76 graphs have no Domain rows ⇒ emit an empty file (rows=0).
+    Stable ordering: lexical by `name` (the primary key).
+    """
+    query = """
+    MATCH (d:Domain)
+    RETURN d.name, d.created_at, d.first_run_id
+    ORDER BY d.name
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "name": row[0],
+                "created_at": row[1],
+                "first_run_id": row[2],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_belongs_to(conn: kuzu.Connection, path: Path) -> int:
+    """#80 (format v3): BELONGS_TO edges (Entity → Domain) with sub_domain
+    (nullable) + run_id + created_at provenance.
+
+    Pre-#76 graphs have no edges ⇒ emit an empty file (rows=0). Total-order
+    by `(entity_slug, domain_name, run_id, created_at)` so two snapshots
+    of an unchanged graph are byte-identical.
+    """
+    query = """
+    MATCH (e:Entity)-[r:BELONGS_TO]->(d:Domain)
+    RETURN e.slug, d.name, r.sub_domain, r.run_id, r.created_at
+    ORDER BY e.slug, d.name, r.run_id, r.created_at
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "entity_slug": row[0],
+                "domain_name": row[1],
+                "sub_domain": row[2],
+                "run_id": row[3],
                 "created_at": row[4],
             }
             f.write(json.dumps(obj, sort_keys=True) + "\n")

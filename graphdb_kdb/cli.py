@@ -458,7 +458,9 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
         print(f"  counts: entities={result.counts['entities']}  "
               f"sources={result.counts['sources']}  "
               f"links_to={result.counts['links_to']}  "
-              f"supports={result.counts['supports']}")
+              f"supports={result.counts['supports']}  "
+              f"domain={result.counts['domain']}  "
+              f"belongs_to={result.counts['belongs_to']}")
         print(f"  latest pointer: {latest_path}")
     return 0
 

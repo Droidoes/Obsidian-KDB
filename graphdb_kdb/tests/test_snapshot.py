@@ -88,6 +88,7 @@ def test_snapshot_jsonl_files_parse(graph_dir, tmp_path):
     for name in (
         "entities.jsonl", "sources.jsonl", "links_to.jsonl",
         "supports.jsonl", "alias_of.jsonl",
+        "domain.jsonl", "belongs_to.jsonl",
     ):
         path = out / name
         assert path.is_file()
@@ -118,11 +119,15 @@ def test_snapshot_manifest_counts_and_hashes_match_disk(graph_dir, tmp_path):
     assert manifest["counts"]["supports"] == manifest["files"]["supports.jsonl"]["rows"]
     # #74.7 (format v2): alias_of count is recorded too
     assert manifest["counts"]["alias_of"] == manifest["files"]["alias_of.jsonl"]["rows"]
+    # #80 (format v3): domain + belongs_to counts
+    assert manifest["counts"]["domain"] == manifest["files"]["domain.jsonl"]["rows"]
+    assert manifest["counts"]["belongs_to"] == manifest["files"]["belongs_to.jsonl"]["rows"]
 
     # Recorded sha256 matches what's actually on disk
     for name in (
         "entities.jsonl", "sources.jsonl", "links_to.jsonl",
-        "supports.jsonl", "alias_of.jsonl", "schema.cypher",
+        "supports.jsonl", "alias_of.jsonl",
+        "domain.jsonl", "belongs_to.jsonl", "schema.cypher",
     ):
         recorded = manifest["files"][name]["sha256"]
         actual = _file_sha256(out / name)
@@ -135,6 +140,7 @@ def test_snapshot_manifest_counts_and_hashes_match_disk(graph_dir, tmp_path):
     for name in (
         "entities.jsonl", "sources.jsonl", "links_to.jsonl",
         "supports.jsonl", "alias_of.jsonl",
+        "domain.jsonl", "belongs_to.jsonl",
     ):
         recorded = manifest["files"][name]["rows"]
         actual = sum(1 for _ in (out / name).read_text(encoding="utf-8").splitlines() if _)
@@ -165,7 +171,8 @@ def test_two_snapshots_of_unchanged_graph_are_byte_identical(graph_dir, tmp_path
     snapshot(graph_dir, out_b)
     for name in (
         "entities.jsonl", "sources.jsonl", "links_to.jsonl",
-        "supports.jsonl", "alias_of.jsonl", "schema.cypher",
+        "supports.jsonl", "alias_of.jsonl",
+        "domain.jsonl", "belongs_to.jsonl", "schema.cypher",
     ):
         assert (out_a / name).read_bytes() == (out_b / name).read_bytes(), \
             f"{name} differs between snapshots of unchanged graph"
@@ -367,8 +374,9 @@ def test_snapshot_alias_of_jsonl_records_edge_with_provenance(
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["counts"]["alias_of"] == 1
     assert manifest["files"]["alias_of.jsonl"]["rows"] == 1
-    # And format version is v2 (the bump that introduced this file)
-    assert manifest["snapshot_format_version"] == 2
+    # Format-version assertion lives in test_snapshot_format_version_is_v3
+    # so this test's intent ("alias_of edge content + provenance") stays
+    # focused on the alias surface introduced in #74.7 (format v2).
 
 
 def test_snapshot_alias_of_empty_for_pre_74_graph(graph_dir, tmp_path):
@@ -387,3 +395,117 @@ def test_snapshot_alias_of_empty_for_pre_74_graph(graph_dir, tmp_path):
         for line in (out / "entities.jsonl").read_text("utf-8").splitlines()
     ]
     assert all(r["canonical_id"] is None for r in rows)
+
+
+# ---------- 10. #80 — Domain + BELONGS_TO serialization (format v3) ----------
+
+
+def _seed_graph_with_domains(graph_dir: Path) -> None:
+    """Seed a graph that exercises the domain pipeline: one page with a
+    single-string domain + sub_domain, one page with an array domain.
+    Mirrors the production ingest path so post-normalize state is what
+    snapshot reads back."""
+    cr = {
+        "run_id": "domain-seed-run",
+        "compiled_sources": [
+            {
+                "source_id": "KDB/raw/markets.md",
+                "compile_meta": {"compile_state": "compiled"},
+                "pages": [
+                    {
+                        "slug": "alpha",
+                        "page_type": "concept",
+                        "title": "Alpha",
+                        "status": "active",
+                        "confidence": "high",
+                        "outgoing_links": [],
+                        "domain": "Investing",
+                        "sub_domain": "Value Investing",
+                    },
+                    {
+                        "slug": "beta",
+                        "page_type": "concept",
+                        "title": "Beta",
+                        "status": "active",
+                        "confidence": "high",
+                        "outgoing_links": [],
+                        "domain": ["Investing", "Macro"],
+                    },
+                ],
+            },
+        ],
+    }
+    scan = {
+        "run_id": "domain-seed-run",
+        "files": [
+            {"path": "KDB/raw/markets.md", "current_hash": "sha256:mk",
+             "size_bytes": 256, "file_type": "markdown"},
+        ],
+    }
+    with GraphDB(graph_dir) as gdb:
+        apply_compile_result(cr, scan, "domain-seed-run", conn=gdb.conn)
+
+
+def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
+    """#80 (format v3): domain.jsonl carries one row per Domain node with
+    name + provenance (created_at, first_run_id)."""
+    _seed_graph_with_domains(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = {
+        json.loads(line)["name"]: json.loads(line)
+        for line in (out / "domain.jsonl").read_text("utf-8").splitlines()
+    }
+    # _normalize_domain: "Investing"→"investing", "Macro"→"macro"
+    assert set(rows.keys()) == {"investing", "macro"}
+    for r in rows.values():
+        assert r["first_run_id"] == "domain-seed-run"
+        assert r["created_at"]  # non-empty timestamp
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["domain"] == 2
+    assert manifest["snapshot_format_version"] == 3
+
+
+def test_snapshot_belongs_to_jsonl_records_edges(graph_dir, tmp_path):
+    """#80 (format v3): belongs_to.jsonl carries one row per BELONGS_TO
+    edge with entity_slug + domain_name + sub_domain (nullable) + run_id."""
+    _seed_graph_with_domains(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = [
+        json.loads(line)
+        for line in (out / "belongs_to.jsonl").read_text("utf-8").splitlines()
+    ]
+    by_key = {(r["entity_slug"], r["domain_name"]): r for r in rows}
+    # alpha→investing carries sub_domain "value-investing" (R12 normalized);
+    # beta's domain is plural so sub_domain is omitted (None) on both edges.
+    assert by_key[("alpha", "investing")]["sub_domain"] == "value-investing"
+    assert by_key[("beta", "investing")]["sub_domain"] is None
+    assert by_key[("beta", "macro")]["sub_domain"] is None
+    for r in rows:
+        assert r["run_id"] == "domain-seed-run"
+        assert r["created_at"]
+
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["belongs_to"] == 3
+    assert manifest["files"]["belongs_to.jsonl"]["rows"] == 3
+
+
+def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
+    """A graph with no domains produces empty domain.jsonl + belongs_to.jsonl
+    (parity with alias_of empty-for-pre-#74 test)."""
+    _seed_graph(graph_dir)  # plain seed (no domain field on pages)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    assert (out / "domain.jsonl").read_text("utf-8") == ""
+    assert (out / "belongs_to.jsonl").read_text("utf-8") == ""
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["domain"] == 0
+    assert manifest["counts"]["belongs_to"] == 0
+    assert manifest["snapshot_format_version"] == 3
+
+
+def test_snapshot_format_version_is_v3():
+    """#80: snapshot bumped from v2 (alias_of) to v3 (domain + belongs_to)."""
+    assert SNAPSHOT_FORMAT_VERSION == 3
