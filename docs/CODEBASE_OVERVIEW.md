@@ -1,14 +1,32 @@
 # Obsidian-KDB — Codebase Overview (North Star)
 
 **Status:** v1 architecture locked; M0 → M2 landed (compiler + validator + reconciler + benchmark engine all live)
-**Last updated:** 2026-05-08
+**Last updated:** 2026-05-22
 **Owners:** Joseph (human) + Claude Opus 4.7 (staff architect) + GPT 5.4 / Codex 5.3 (external review)
 
 This is the **single source of truth** for the Obsidian-KDB project. All design rationale, decisions, and open questions live here. External AI consultation artifacts (Grok / Gemini Pro / GPT 5.4 / Codex 5.3) are referenced but not authoritative — they fed into the consensus captured below.
 
 ---
 
+## Milestone Changelog
+
+Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
+
+- **2026-04-18** — **M0 scaffold.** KDB compiler architecture + schema-gated prompt/response contract (Task #4 family).
+- **2026-04-21** — **Validator + reconciler live on real vault.** `pairing_omission` auto-heal proven on two back-to-back live runs (Task #65 / M1.7).
+- **2026-05-10** — **Iteration #2 begins.** Kuzu reframed as architectural primitive; KDB becomes raw-text → knowledge-graph compiler (Task #63 family).
+- **2026-05-14** — **GraphDB-KDB operational.** Schema v2 (`Entity` / `LINKS_TO` / `SUPPORTS`) + ingestor + verifier + snapshot + rebuilder + analytics (PageRank / Louvain / structural-holes) all green (Task #63 closure).
+- **2026-05-16** — **Graph context loader lands.** `kdb_compiler.graph_context_loader` reads context from GraphDB (Task #70.1).
+- **2026-05-17** — **LOOP CLOSED.** Manifest → graph substitution complete: D49 removes `manifest.json` as context authority; D50 strips ontology data from `manifest.json` (file-meta only); D51 establishes GraphDB as live ontology authority. Empirical proof via cold-start widening (graph 17–23 pages vs manifest 0–8) (Tasks #70, #71, #73).
+- **2026-05-20** — **Canonicalization layer lands.** Stage 6 `canonicalize` inserted; `Entity.canonical_id` + `ALIAS_OF` edges shipped (Task #74).
+- **2026-05-21** — **V0 step-3 ops regression suite locked.** Typed traversal + shortest-path direct-unit-guarded; `@pytest.mark.bench` opt-in pattern established (Task #81). **Schema v2.1 Domain field** shipped: `Domain` node + `BELONGS_TO` edge (Task #76).
+- **2026-05-22** — **Three-iteration retrospective filed** ([`docs/JOURNEY.md`](JOURNEY.md)). This changelog itself is the mitigation for Lessons §5 (milestone-level signal was missing pre-this-doc).
+
+---
+
 ## 1. Vision
+
+> **Architectural history — required warm-up reading.** For the *why we walked this way* across three iterations (compiler+wiki → GraphDB refoundation → loop closure + step-3 ops), see [`docs/JOURNEY.md`](JOURNEY.md). This Overview captures *what is true today*; JOURNEY captures *how we got here and what we learned*.
 
 A Karpathy-style LLM-compiled knowledge base (KDB) that lives inside Joseph's Obsidian vault without disturbing its existing human-curated structure.
 
