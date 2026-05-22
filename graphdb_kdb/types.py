@@ -18,6 +18,8 @@ class SyncResult:
     sources_upserted: int = 0     # Source MERGE ops in Phase 1 (scan refresh)
     supports_upserted: int = 0    # SUPPORTS edges present after replacement (Phase 3)
     alias_of_upserted: int = 0    # ALIAS_OF edges created this run by Phase 3.5 (#74.5); accumulator across aliases_emitted entries, mirrors supports_upserted convention
+    domains_upserted: int = 0     # Domain MERGE ops in Phase 3.6 (#76.3); counts upsert operations (not only new nodes)
+    belongs_to_upserted: int = 0  # BELONGS_TO MERGE ops in Phase 3.6 (#76.3); mirrors supports_upserted convention
     entities_deleted: int = 0     # Entity DETACH DELETE ops in apply_cleanup (#68)
     orphans_detected: list[str] = field(default_factory=list)  # newly orphan_candidate slugs
 
