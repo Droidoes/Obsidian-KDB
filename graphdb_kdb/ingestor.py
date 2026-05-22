@@ -459,7 +459,11 @@ def _ingest_page_domains(
 
     if isinstance(raw_domain, str):
         domain_list = [raw_domain]
-        sub_domain_raw: str | None = page.get("sub_domain")
+        sub_raw = page.get("sub_domain")
+        # R12 (blueprint §6.3): same normalizer applied to sub_domain so
+        # "Value Investing" stored as "value-investing", not verbatim.
+        sub_norm = _normalize_domain(sub_raw) if sub_raw else ""
+        sub_domain_raw: str | None = sub_norm or None
     else:
         domain_list = list(raw_domain)
         sub_domain_raw = None  # omit-when-plural per R5

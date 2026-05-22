@@ -177,6 +177,32 @@ def test_normalization_applied_at_ingest(graph_dir):
     assert dc == 1
 
 
+def test_sub_domain_normalized_at_ingest(graph_dir):
+    """R12 (blueprint §6.3): sub_domain runs through _normalize_domain at
+    ingest, not stored verbatim. 'Value Investing' → 'value-investing'."""
+    page = make_page_with_domain("alpha", domain="investing", sub_domain="Value Investing")
+    cr = make_compile_result([make_compiled_source("KDB/raw/a.md", [page])])
+    scan = make_scan([make_scan_entry("KDB/raw/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        edge = _belongs_to_edge(gdb, "alpha", "investing")
+    assert edge is not None
+    assert edge["sub_domain"] == "value-investing"
+
+
+def test_sub_domain_empty_string_becomes_null(graph_dir):
+    """Defensive: an LLM-emitted empty/whitespace sub_domain normalizes to
+    empty string, which we coerce to None so the edge property stays NULL."""
+    page = make_page_with_domain("alpha", domain="investing", sub_domain="   ")
+    cr = make_compile_result([make_compiled_source("KDB/raw/a.md", [page])])
+    scan = make_scan([make_scan_entry("KDB/raw/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        edge = _belongs_to_edge(gdb, "alpha", "investing")
+    assert edge is not None
+    assert edge["sub_domain"] is None
+
+
 def test_post_normalize_deduplication(graph_dir):
     """['Investing', 'investing'] normalizes to the same name → only one edge."""
     page = make_page_with_domain("alpha", domain=["Investing", "investing"])
