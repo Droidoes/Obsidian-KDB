@@ -73,7 +73,7 @@ Four scenarios chosen to maximize template stress and coverage diversity:
 
 ---
 
-## 3. Spike scenarios
+## 3. Probe scenarios
 
 > **Notation conventions:**
 > - All ISO timestamps include explicit local offset (per `feedback_local_time_everywhere`).
@@ -81,6 +81,8 @@ Four scenarios chosen to maximize template stress and coverage diversity:
 > - `claim_family_id` is `<subject_slug>__<predicate_class_canonical>__<predicate_scope_slugs_joined>` (delimiter guard: components are kebab-case, no `__` substring).
 > - `Claim.confidence` placeholder values appear where OQ-26 aggregation formula isn't resolved yet (flagged inline as `# OQ-26-dependent`).
 > - Floating-point equality uses `abs_diff < 1e-9` per #87 OQ-15 lean.
+
+> **Origin:** §§3.1–3.4 (S1–S4) are the **spike** scenarios drafted 2026-05-22 before §6 ratification. §§3.5+ are **expansion** scenarios written against the ratified template shape (D-87.1-1..10). All scenarios are equally first-class probes; the spike/expansion distinction is historical, not functional.
 
 ### 3.1 S1 — O1 `contradicts` (Buffett 2020 tech-pivot)
 
@@ -249,14 +251,14 @@ expected_post_state:
 expected_invariants_hold: true
 expected_op_to_invoke: O1
 exercised_criteria:
-  - P-O1-1  # determinism: re-running this scenario should yield same classification
-  - P-O1-2  # Claim-creating path: contradicts cell
-  - P-O1-3  # idempotency (verified by retry pass)
-  - P-O1-4  # drift signals false
-  - P-O1-5  # evidence cardinality (1 entry → 1 EVIDENCES edge)
-  - P-O1-6  # aggregate confidence (placeholder; OQ-26-blocked)
-  - P-O1-7  # disposition auto_promote
-  - F-O1-4  # invariant preservation (verifier clean post-mutation)
+  - {id: P-O1-1, expected: pass, note: "determinism: re-running this scenario should yield same classification"}
+  - {id: P-O1-2, expected: pass, note: "Claim-creating path: contradicts cell"}
+  - {id: P-O1-3, expected: pass, note: "idempotency (verified by retry pass)"}
+  - {id: P-O1-4, expected: pass, note: "drift signals false"}
+  - {id: P-O1-5, expected: pass, note: "evidence cardinality (1 entry → 1 EVIDENCES edge)"}
+  - {id: P-O1-6, expected: pass, note: "aggregate confidence (placeholder; OQ-26-blocked)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (verifier clean post-mutation)"}
 ```
 
 ### 3.2 S2 — O1 `no_counterpart` (new entity)
@@ -356,12 +358,12 @@ expected_post_state:
 expected_invariants_hold: true
 expected_op_to_invoke: O1
 exercised_criteria:
-  - P-O1-2  # topology-only path (zero Claim writes asserted explicitly)
-  - P-O1-3  # idempotency
-  - P-O1-4  # drift signals false
-  - P-O1-7  # disposition auto_promote
-  - F-O1-2  # negative: would fail if Claim were written
-  - F-O1-4  # invariant preservation
+  - {id: P-O1-2, expected: pass, note: "topology-only path (zero Claim writes asserted explicitly)"}
+  - {id: P-O1-3, expected: pass, note: "idempotency"}
+  - {id: P-O1-4, expected: pass, note: "drift signals false"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if Claim were written"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
 ```
 
 ### 3.3 S3 — O2 upgrade-from-LINKS_TO, Tier-1
@@ -540,15 +542,15 @@ expected_post_state:
 expected_invariants_hold: true
 expected_op_to_invoke: O2
 exercised_criteria:
-  - P-O2-1  # both Claims created
-  - P-O2-2  # OLD-Claim EVIDENCES provenance_type=reconstructed_from_run_payload
-  - P-O2-3  # NULL-fields permitted on Tier-1 EVIDENCES
-  - P-O2-4  # ABOUT edges on both Claims
-  - P-O2-5  # LINKS_TO unchanged (additive)
-  - P-O2-6  # idempotency
-  - F-O2-1  # negative: would fail if LINKS_TO mutated
-  - F-O2-3  # negative: would fail if OLD-Claim EVIDENCES were analysis_emitted
-  - F-O1-4  # invariant preservation
+  - {id: P-O2-1, expected: pass, note: "both Claims created"}
+  - {id: P-O2-2, expected: pass, note: "OLD-Claim EVIDENCES provenance_type=reconstructed_from_run_payload"}
+  - {id: P-O2-3, expected: pass, note: "NULL-fields permitted on Tier-1 EVIDENCES"}
+  - {id: P-O2-4, expected: pass, note: "ABOUT edges on both Claims"}
+  - {id: P-O2-5, expected: pass, note: "LINKS_TO unchanged (additive)"}
+  - {id: P-O2-6, expected: pass, note: "idempotency"}
+  - {id: F-O2-1, expected: not_fire, note: "would fail if LINKS_TO mutated"}
+  - {id: F-O2-3, expected: not_fire, note: "would fail if OLD-Claim EVIDENCES were analysis_emitted"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
 ```
 
 ### 3.4 S4 — O3 aliased-subject read + lazy rewrite
@@ -662,14 +664,708 @@ expected_read_result:
 expected_invariants_hold: true
 expected_op_to_invoke: O3
 exercised_criteria:
-  - P-O3-1  # tuple-granularity (Claim returned, not LINKS_TO fallback)
-  - P-O3-2  # aliased-subject resolution through ALIAS_OF
-  - P-O3-3  # default-mode read; no retracted Claims in fixture
-  - P-O3-4  # decayed-below-threshold filtering (Claim is above T_scenario)
-  - P-O3-5  # lazy rewrite triggered iff stale (stale present → rewrite fires; touches only the stale Claim)
-  - F-O3-1  # negative: would fail if subject-granularity contamination
-  - F-O3-2  # negative: would fail if alias miss
-  - F-O3-4  # negative: would fail if lazy rewrite produces malformed claim_family_id
+  - {id: P-O3-1, expected: pass, note: "tuple-granularity (Claim returned, not LINKS_TO fallback)"}
+  - {id: P-O3-2, expected: pass, note: "aliased-subject resolution through ALIAS_OF"}
+  - {id: P-O3-3, expected: pass, note: "default-mode read; no retracted Claims in fixture"}
+  - {id: P-O3-4, expected: pass, note: "decayed-below-threshold filtering (Claim is above T_scenario)"}
+  - {id: P-O3-5, expected: pass, note: "lazy rewrite triggered iff stale (stale present → rewrite fires; touches only the stale Claim)"}
+  - {id: F-O3-1, expected: not_fire, note: "would fail if subject-granularity contamination"}
+  - {id: F-O3-2, expected: not_fire, note: "would fail if alias miss"}
+  - {id: F-O3-4, expected: not_fire, note: "would fail if lazy rewrite produces malformed claim_family_id"}
+```
+
+---
+
+### 3.5 S5 — O1 `reinforces` (corroboration crosses threshold N, triggers upgrade)
+
+**Stress purpose:** Exercises the corroboration-threshold-crossing branch of D-83/84-2 — `reinforces` action with corroboration count = N triggers upgrade. Single Claim consolidates multiple SUPPORTS sources (consensus path; no contradiction, no Claim-Claim edge).
+
+```yaml
+scenario_id: s5-buffett-long-term-holding-reinforces-threshold
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+      kind: person
+    - slug: long-term-holding-strategy
+      kind: concept
+
+  links_to:
+    # Two prior LINKS_TO from independent runs — candidate is the 3rd corroboration (= N)
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2010-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2015-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2015-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims: []
+  edges: []
+  about_edges: []
+  alias_of_edges: []
+
+  run_payloads:
+    - run_id: run-2010-buffett-letter
+      compile_result_path: KDB/runs/run-2010-buffett-letter/compile_result.json
+      reconstructible_quote: "I prefer to hold investments indefinitely; my favorite holding period is forever."
+    - run_id: run-2015-buffett-letter
+      compile_result_path: KDB/runs/run-2015-buffett-letter/compile_result.json
+      reconstructible_quote: "Time is the friend of the wonderful business."
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-long-term-holding-3
+    subject_slug: warren-buffett
+    predicate_class_raw: "practices_strategy"
+    predicate_class_canonical: practices_strategy
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    # Dispatch derivation (per D-87.1-5): candidate_counterpart_found + null claim_id + non-null LINKS_TO ref → O2-eligible.
+    # But relation_kind=reinforces + corroboration_count reaches N → upgrade triggered, routes through O1's upgrade-from-reinforces branch.
+    counterpart_status: candidate_counterpart_found
+    relation_kind: reinforces
+    refines_truth_conditions: false
+    counterpart_claim_id: null
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+    doxastic_fingerprint:
+      state_hash: "sha256:reinforces_threshold..."
+      classifier_input_scope:
+        - "links_to_subject_mentions(warren-buffett, long-term-holding-strategy)"
+        - "supports_cardinality_for_predicate(practices_strategy)"
+    confidence:
+      bucket: high
+      score: 0.80
+      score_source: config_map
+      map_version: confidence_map_v1
+    evidence:
+      - source_id: KDB/raw/2020-buffett-letter.md
+        quoted_text: "Our preferred holding period remains forever."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  entities: unchanged
+  links_to: unchanged   # additive; not deleted on upgrade per D-83/84-7 Part A
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-letter.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      # SINGLE Claim — consensus path consolidates all three corroborating sources
+      - claim_id: "warren-buffett__practices_strategy__global__v1"
+        claim_family_id: "warren-buffett__practices_strategy__global"
+        subject_slug: warren-buffett
+        predicate_class_canonical: practices_strategy
+        predicate_scope_slugs: ["global"]
+        version: 1
+        state: active
+        polarity: affirms
+        modality: declarative
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        confidence_spread: <placeholder-pending-OQ-26>
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges: []   # no Claim-Claim edges — consensus, not contradiction
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__practices_strategy__global__v1"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      # 3 EVIDENCES — 2 reconstructed via Tier-1 + 1 analysis_emitted from current candidate
+      - source_id: KDB/raw/2010-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "I prefer to hold investments indefinitely; my favorite holding period is forever."
+        provenance_type: reconstructed_from_run_payload
+        confidence: 0.80
+      - source_id: KDB/raw/2015-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "Time is the friend of the wonderful business."
+        provenance_type: reconstructed_from_run_payload
+        confidence: 0.80
+      - source_id: KDB/raw/2020-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "Our preferred holding period remains forever."
+        provenance_type: analysis_emitted
+        confidence: 0.80
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  upgrade_trigger: corroboration_threshold_crossed
+  corroboration_count_at_upgrade: 3   # equals corroboration_threshold_n
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "reinforces-above-threshold (Claim-creating consensus path)"}
+  - {id: P-O1-5, expected: pass, note: "3 unique evidence sources → 3 EVIDENCES edges (mixed Tier-1 + analysis_emitted)"}
+  - {id: P-O1-6, expected: pass, note: "aggregate confidence over 3 sources (placeholder; OQ-26-blocked)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if reinforces with corroboration < N wrote a Claim"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (single Claim; no Claim-Claim edge)"}
+```
+
+---
+
+### 3.6 S6 — O1 `qualifies_or_extends` with `refines_truth_conditions=true` (triggers upgrade)
+
+**Stress purpose:** Refining truth conditions across predicate-scope variation. Creates NEW Claim family (different `predicate_scope_slugs`); OLD family Claim preserved; Claim-Claim `QUALIFIES` edge written.
+
+```yaml
+scenario_id: s6-buffett-apple-investment-qualified-by-valuation
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: apple-inc
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: apple-inc
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      claim_family_id: "warren-buffett__invests_in__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: apple-inc
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2023-buffett-apple-valuation-qualifier
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in"
+    predicate_class_canonical: invests_in
+    predicate_scope_slugs: ["valuation_constrained"]   # DIFFERENT scope → different family
+    polarity: affirms
+    modality: declarative
+    counterpart_status: candidate_counterpart_found
+    relation_kind: qualifies_or_extends
+    refines_truth_conditions: true   # KEY: refines → Claim-creating
+    counterpart_claim_id: "warren-buffett__invests_in__global__v1"
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:qualifies_truth..."
+      classifier_input_scope:
+        - "claim_family(warren-buffett__invests_in__global)"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-valuation-discipline.md
+        quoted_text: "We only invest in great businesses when the price is reasonable."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2023-buffett-valuation-discipline.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      - claim_id: "warren-buffett__invests_in__valuation_constrained__v1"
+        claim_family_id: "warren-buffett__invests_in__valuation_constrained"
+        subject_slug: warren-buffett
+        predicate_class_canonical: invests_in
+        predicate_scope_slugs: ["valuation_constrained"]
+        version: 1
+        state: active
+        polarity: affirms
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges:
+    add:
+      - from_claim_id: "warren-buffett__invests_in__valuation_constrained__v1"
+        to_claim_id: "warren-buffett__invests_in__global__v1"
+        kind: QUALIFIES
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__invests_in__valuation_constrained__v1"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      - source_id: KDB/raw/2023-buffett-valuation-discipline.md
+        claim_id: "warren-buffett__invests_in__valuation_constrained__v1"
+        provenance_type: analysis_emitted
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "qualifies-with-truth (Claim-creating + Claim-Claim QUALIFIES edge)"}
+  - {id: P-O1-5, expected: pass, note: "single evidence entry → single EVIDENCES edge"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if no Claim created OR if QUALIFIES edge missing"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (OLD Claim untouched; two-Claim ABOUT integrity)"}
+```
+
+---
+
+### 3.7 S7 — O1 `qualifies_or_extends` with `refines_truth_conditions=false` (topology-only)
+
+**Stress purpose:** Exercises the qualifies-without-truth → topology-only branch. Zero Claim/EVIDENCES writes despite engaging an existing Claim counterpart. New topology (LINKS_TO + SUPPORTS) for a different object on same predicate.
+
+```yaml
+scenario_id: s7-buffett-amex-extends-without-refining
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      claim_family_id: "warren-buffett__invests_in__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: tech-industry
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2023-buffett-amex-investment
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in"
+    predicate_class_canonical: invests_in
+    predicate_scope_slugs: ["global"]   # SAME scope as existing Claim — not a refinement
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: qualifies_or_extends
+    refines_truth_conditions: false   # KEY: extends without refining → topology-only
+    counterpart_claim_id: "warren-buffett__invests_in__global__v1"
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: tech-industry
+    doxastic_fingerprint:
+      state_hash: "sha256:qualifies_no_truth..."
+      classifier_input_scope:
+        - "claim_family(warren-buffett__invests_in__global)"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-amex-stake.md
+        quoted_text: "Berkshire also continues to hold its American Express position."
+
+expected_post_state:
+  entities:
+    add:
+      - slug: american-express
+        kind: organization
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: american-express
+        run_id: <runtime-assigned>
+        predicate_class_canonical: invests_in
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2023-buffett-amex-stake.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged       # NO Claim writes — topology-only path
+  edges: unchanged        # no new Claim-Claim edges
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged    # no new EVIDENCES (no new Claim to attach to)
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "qualifies-without-truth (topology-only — zero Claim writes)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were written for this cell"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation — confirms topology-only is authorized for this disposition"}
+```
+
+---
+
+### 3.8 S8 — O1 `supersedes` (mandatory upgrade + state transition + SUPERSEDES edge)
+
+**Stress purpose:** Exercises the `supersedes` row — mandatory upgrade. Side effect: predecessor Claim transitions `active → superseded` per D-83/84-11 state machine. Claim-Claim `SUPERSEDES` edge written with temporal metadata.
+
+```yaml
+scenario_id: s8-buffett-apple-stake-supersedes-2023
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: apple-inc
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: apple-inc
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+      subject_slug: warren-buffett
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: apple-inc
+      object_qualifier: "5%"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2023-buffett-apple-stake-update
+    subject_slug: warren-buffett
+    predicate_class_raw: "owns_stake_percentage"
+    predicate_class_canonical: owns_stake_percentage
+    predicate_scope_slugs: ["t=2023"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: supersedes
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: apple-inc
+    doxastic_fingerprint:
+      state_hash: "sha256:supersedes..."
+    object_slug: apple-inc
+    object_qualifier: "8%"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+        quoted_text: "Apple now represents 8% of the Berkshire portfolio."
+
+expected_post_state:
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    update:
+      # Predecessor transitions active → superseded per D-83/84-11
+      - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+        state: superseded
+        superseded_by: "warren-buffett__owns_stake_percentage__t=2023__v2"
+    add:
+      - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+        claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+        subject_slug: warren-buffett
+        predicate_class_canonical: owns_stake_percentage
+        predicate_scope_slugs: ["t=2023"]
+        version: 2
+        state: active
+        polarity: affirms
+        object_slug: apple-inc
+        object_qualifier: "8%"
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        supersedes: "warren-buffett__owns_stake_percentage__t=2020__v1"
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges:
+    add:
+      - from_claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+        to_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+        kind: SUPERSEDES
+        temporal:
+          superseded_at: "2026-06-01T00:00:00+09:00"
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+        claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+        provenance_type: analysis_emitted
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  state_transition:
+    claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+    from: active
+    to: superseded
+    via: supersedes_action
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "supersedes (mandatory upgrade + predecessor state transition + SUPERSEDES edge)"}
+  - {id: P-O1-5, expected: pass, note: "evidence cardinality"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if supersedes skipped Claim creation or skipped predecessor state transition"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (state machine + SUPERSEDES edge integrity)"}
+```
+
+---
+
+### 3.9 S9 — O1 `orthogonal` (topology-only, no Claim engagement)
+
+**Stress purpose:** Exercises the `orthogonal` row — candidate touches a subject with existing Claims but its predicate is unrelated. Topology-only writes; existing Claims untouched. Distinguishes from `no_counterpart` (S2) by the existence of subject-overlap without semantic engagement.
+
+```yaml
+scenario_id: s9-buffett-senate-meeting-orthogonal
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Existing contested-family Claim — unrelated to the candidate's predicate
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      claim_family_id: "warren-buffett__invests_in__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: tech-industry
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2010-buffett-senate-meeting
+    subject_slug: warren-buffett
+    predicate_class_raw: "met_with"
+    predicate_class_canonical: met_with   # entirely different predicate
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: orthogonal
+    relation_kind: null   # orthogonal → no relation_kind dispatch per D-83/84-2
+    refines_truth_conditions: null
+    counterpart_claim_id: null
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:orthogonal..."
+      classifier_input_scope:
+        - "subject_mentions(warren-buffett)"
+        - "predicate_class(met_with) — no overlap with existing predicates"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2010-buffett-senate-testimony.md
+        quoted_text: "Buffett testified before the Senate Banking Committee on financial regulation."
+
+expected_post_state:
+  entities:
+    add:
+      - slug: senate-banking-committee
+        kind: organization
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: senate-banking-committee
+        run_id: <runtime-assigned>
+        predicate_class_canonical: met_with
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2010-buffett-senate-testimony.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged       # NO Claim writes — orthogonal path
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "orthogonal (topology-only; existing Claims untouched)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were written for the orthogonal cell"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation"}
 ```
 
 ---
@@ -789,20 +1485,20 @@ These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is sm
 
 ## 7. Expansion plan (post-ratification of §6 decisions)
 
-Remaining ~14 scenarios to write:
+**Progress (2026-05-23):** Batch 1 complete — 5 action-table-cell scenarios landed (S5–S9). Batches 2–4 remaining (~10 scenarios).
 
-| Axis | Spike covers | Expansion adds |
-|---|---|---|
-| Action-table cells (7) | `contradicts`, `no_counterpart` (2) | `reinforces`, `qualifies-with-truth`, `qualifies-without-truth`, `supersedes`, `orthogonal` (5) |
-| Upgrade tiers (3) | Tier 1 (1) | Tier 2, Tier 3 (2) |
-| Drift cells (4) | `(false, false)` only — implicit in all spike (1) | `(true, false)`, `(false, true)`, `(true, true)` (3) |
-| State transitions (1 — `active → superseded`) | Not covered | 1 dedicated scenario |
-| Aliasing (1) | S4 (1) | Subject-canonicalized-between-runs variant (1) |
-| Retracted-counterpart (2) | Not covered | 2 (sibling-active and no-active-sibling) |
-| Sequential-interaction (1) | Not covered | 1 dedicated scenario |
-| **Total expansion** | **4 spike** | **~14 expansion** = ~18 full coverage |
+| Axis | Spike covers | Expansion adds | Status |
+|---|---|---|---|
+| Action-table cells (7) | `contradicts`, `no_counterpart` (S1, S2) | `reinforces` (S5), `qualifies-with-truth` (S6), `qualifies-without-truth` (S7), `supersedes` (S8), `orthogonal` (S9) | ✅ **Complete** |
+| Upgrade tiers (3) | Tier 1 (S3) | Tier 2, Tier 3 (2 scenarios — batch 2) | 🔄 Pending |
+| Drift cells (4) | `(false, false)` only — implicit in all spike + S5–S9 | `(true, false)`, `(false, true)`, `(true, true)` (3 scenarios — batch 3) | 🔄 Pending |
+| State transitions (1 — `active → superseded`) | Implicit in S8 as side effect; dedicated scenario pending | 1 dedicated scenario (batch 4) | 🔄 Pending |
+| Aliasing (1) | S4 (1) | Subject-canonicalized-between-runs variant (1 — batch 4) | 🔄 Pending |
+| Retracted-counterpart (2) | Not covered | 2 (sibling-active and no-active-sibling — batch 4) | 🔄 Pending |
+| Sequential-interaction (1) | Not covered | 1 dedicated scenario (batch 4) | 🔄 Pending |
+| **Total expansion** | **4 spike + 5 batch 1** | **~10 remaining** = ~19 full coverage | |
 
-Expansion ratification gate: §6 decisions ratified → 14 scenarios written → spot-check pass → #87.1 v1 ratified → unblocks #83/#84 implementation start.
+Expansion ratification gate: §6 decisions ratified → all scenarios written → spot-check pass → #87.1 v1 ratified → unblocks #83/#84 implementation start.
 
 ---
 
@@ -810,3 +1506,4 @@ Expansion ratification gate: §6 decisions ratified → 14 scenarios written →
 
 - **2026-05-22** — v1 spike-phase draft. 4 scenarios (S1 O1 contradicts, S2 O1 no_counterpart, S3 O2 Tier-1 upgrade, S4 O3 aliased read). Template-stress observations + 6 OQs (OQ-S1..S6) + 10 decision gates (D-87.1-1..10) surfaced. Expansion to ~18 scenarios blocked on D-87.1-1..9 ratification.
 - **2026-05-22** — §6 decisions D-87.1-1..10 **ratified**. D-87.1-5 ratified with vocabulary correction: `implied_by_links_to` is not a valid `counterpart_status` enum value per #83/#84 D-83/84-2; canonical enum is `no_counterpart` | `candidate_counterpart_found` | `orthogonal`. O2 dispatch is derived (not enum-named): `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. S3 input field corrected accordingly. **OQ-S7 added** (should dispatch path be explicit or stay derived — current lean: stay derived). Expansion to 14 more scenarios now unblocked.
+- **2026-05-23** — §3 renamed from "Spike scenarios" → "Probe scenarios" with origin note distinguishing spike (§§3.1–3.4) from expansion (§§3.5+). **Batch 1 expansion landed**: 5 action-table-cell scenarios — S5 reinforces (corroboration crosses N), S6 qualifies-with-truth (Claim-creating + QUALIFIES edge), S7 qualifies-without-truth (topology-only), S8 supersedes (mandatory upgrade + state transition + SUPERSEDES edge), S9 orthogonal (topology-only with subject-overlap). S1–S4 `exercised_criteria` retroactively patched to D-87.1-9 annotated form (`{id, expected: pass|not_fire, note}`). Action-table-cell axis now complete (7/7).
