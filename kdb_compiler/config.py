@@ -43,6 +43,7 @@ class Settings:
     qwen_us_api_key: str = ""
     ollama_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"
+    deepseek_api_key: str = ""
     llm_timeout_seconds: int = 300
 
     @classmethod
@@ -60,6 +61,9 @@ class Settings:
             # Local Ollama (provider=ollama-local) does not require a key.
             ollama_api_key=os.getenv("OLLAMA_API_KEY", ""),
             ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            # DeepSeek direct OpenAI-compat endpoint (provider=deepseek).
+            # Replaces the Alibaba-routed access dropped 2026-05-15 for re-test.
+            deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
         )
 

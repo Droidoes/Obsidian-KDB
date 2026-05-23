@@ -113,5 +113,27 @@
     "max_output_tokens": 65536,
     "price_in": 0.25,
     "price_out": 1.50
+  },
+  {
+    "id": "deepseek-v4-flash:direct",
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "ctx_window": 1000000,
+    "max_output_tokens": 384000,
+    "price_in": 0.14,
+    "price_out": 0.28,
+    "extra_body": {"thinking": {"type": "disabled"}}
+  },
+  {
+    "id": "deepseek-v4-pro:direct",
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "ctx_window": 1000000,
+    "max_output_tokens": 384000,
+    "price_in": 0.435,
+    "price_out": 0.87,
+    "extra_body": {"thinking": {"type": "disabled"}},
+    "dropped": true,
+    "dropped_reason": "Strictly dominated by deepseek-v4-flash:direct on the canonical corpus (2026-05-23): identical quality measures (S0/M1-M5=1.000 both), but Pro is 3.2x more expensive ($0.0019 vs $0.0006/1Kw) and 2.7x slower (9760ms vs 3578ms/1Kw). DeepSeek's pricing page indicates the 75% discount ends 2026-05-31 with the post-discount rate set to '1/4 of the original price' = $0.435/$0.87 per 1M tokens, i.e. the discounted rate continues permanently under a re-labeled tier (cross-verified by user). Dominance is structural, not promo-bounded. The +17% pages_per_1k delta is not currently a scored quality dimension."
   }
 ]

@@ -11,6 +11,7 @@ Providers:
     gemini       → openai SDK, base_url=generativelanguage.googleapis.com/v1beta/openai/
     xai          → openai SDK, base_url=https://api.x.ai/v1
     alibaba      → openai SDK, base_url=https://dashscope-us.aliyuncs.com/compatible-mode/v1
+    deepseek     → openai SDK, base_url=https://api.deepseek.com
     ollama-local → openai SDK, base_url=http://localhost:11434/v1 (or OLLAMA_BASE_URL)
     ollama-cloud → openai SDK, base_url=https://ollama.com/v1 (Ollama Cloud)
 
@@ -29,7 +30,7 @@ from openai import OpenAI
 from kdb_compiler.config import settings
 
 Provider = Literal[
-    "anthropic", "openai", "gemini", "xai", "alibaba", "ollama-local", "ollama-cloud"
+    "anthropic", "openai", "gemini", "xai", "alibaba", "deepseek", "ollama-local", "ollama-cloud"
 ]
 
 
@@ -94,6 +95,12 @@ def call_model(req: ModelRequest) -> ModelResponse:
             req,
             base_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1",
             api_key=settings.qwen_us_api_key,
+        )
+    elif req.provider == "deepseek":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
+            req,
+            base_url="https://api.deepseek.com",
+            api_key=settings.deepseek_api_key,
         )
     elif req.provider == "ollama-local":
         text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
