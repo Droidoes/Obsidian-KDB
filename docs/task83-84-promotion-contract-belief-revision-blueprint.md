@@ -1,10 +1,12 @@
 # Task #83 + #84 — Hypothesis Promotion Contract + Belief Revision (Joint Blueprint)
 
-**Status:** v1 in progress
-**Started:** 2026-05-22
+**Status:** **v2** — v1 holistic review folded 2026-05-22 (D-83/84-1 through -8 + amendments + new D-83/84-9 through -12)
+**Started:** 2026-05-22 (v1)
+**v2 dated:** 2026-05-22 (same session, post-v1-review synthesis)
 **Lineage:** Round 6 §9.4.2 mandate; (a+) decision via Joseph ratification 2026-05-22
 **Parallel-design rationale:** `docs/what-is-the-ontology-for.md` §9.3.8 + [[feedback_concrete_first_extract_later]]
-**Reviewers (planned, post-v1):** Codex + Antigravity (mirroring Task #74 / #75 / #76 pattern)
+**Reviewer panel** (active post-2026-05-22, see `docs/external-review-panel.md`): Codex + Deepseek + Qwen. Antigravity (Gemini) deselected per one-strike rule.
+**v1 review files:** `docs/task83-84-blueprint-v1-review-{codex,deepseek,qwen}.md`
 **Anchors:**
 - `docs/what-is-the-ontology-for.md` §9.4 (Round 6 closeout)
 - `docs/TASKS.md` #83, #84
@@ -244,11 +246,13 @@ Classifier verdict: `contradicts` → upgrade to Claim (mandatory per D-83/84-2)
 **F1 — `claim_id` format (family/instance split):**
 
 - `claim_family_id` = `<subject_slug>__<predicate_class_canonical>__<scope-slug-set>` — the *what is this claim about* identity
-- `claim_id` = `<claim_family_id>__<polarity>__v<N>` — the *specific version of this claim* identity
+- `claim_id` = `<claim_family_id>__v<N>` — the *specific version of this claim* identity. **Polarity is NOT part of `claim_id`** (amended per Codex v1 review Finding 1) — polarity remains a Claim node attribute that consumers query directly. Embedding polarity in `claim_id` was a v1 draft mistake that would have caused collisions for two `qualifies_or_extends` candidates sharing `(family, polarity)` but differing in `condition_text`.
 - `scope-slug-set` is deterministically serialized: sort + join with `+`; empty set uses `<none>` sentinel
-- **Delimiter guard:** `__` is the field separator; subjects / predicate_class / scope-slugs must be kebab-case with no `__` substring (enforced at canonicalization time per D-83/84-5)
-- Example single-scope: `buffett__tech-investing-stance__tech-investing__rejects__v1`
-- Example multi-scope: `buffett__tech-investing-stance__consumer-electronics+tech-investing__affirms__v1`
+- **Version allocation:** `N` is monotonic **per `claim_family_id`** — all versioned Claims within a family share the version counter regardless of polarity, modality, or condition_text. Distinct claims within the same family are distinguished by Claim node attributes (polarity, modality, condition_text), not by `claim_id`. A contradictory claim (opposing polarity) in the same family gets the next sequential version (v2, v3, …) even though it semantically opposes prior versions; `CONTRADICTS` edges connect them as belief-level facts (D-83/84-6 F2).
+- **Delimiter guard:** `__` is the field separator; subjects / predicate_class / scope-slugs must be kebab-case with no `__` substring (enforced at canonicalization time per D-83/84-5).
+- **Parseability validation** (amended per Qwen v1 review F5): the Promotion Contract validates `claim_id` parseability before write — rejects candidates with malformed `claim_id`. Belt-and-suspenders check; canonicalization should prevent it, but the write path must not trust upstream.
+- Example single-scope: `buffett__tech-investing-stance__tech-investing__v1`
+- Example multi-scope: `buffett__tech-investing-stance__consumer-electronics+tech-investing__v1`
 
 **F2 — State machine + Claim-to-Claim relation edges:**
 
@@ -262,6 +266,10 @@ States: `active | superseded | retracted`.
 | `retracted → *` | Terminal — no path out. If the same claim needs to return, new instance with new version. |
 
 **Decay ≠ retraction.** Decay reduces `confidence` over time (per a decay function operating on the field); state remains `active`. Retraction marks the claim invalid. Decayed claims are still part of the belief state, weighted lower; retracted claims are filtered from default retrieval.
+
+**Decay threshold behavior** (amended per Qwen v1 review F3): when `confidence` decays below threshold T (configurable, analogous to OQ-6's corroboration threshold), the Claim remains `active` but is **excluded from default retrieval**. Audit/revision queries can still surface decayed-but-active Claims explicitly. Threshold T is OQ-level — see OQ-26 (confidence aggregation rule) which shares this surface.
+
+**Retraction-edge propagation: see D-83/84-11.** This blueprint's v1 review (all three reviewers — Codex, Deepseek, Qwen) flagged that the state machine was silent on what happens to outgoing/incoming Claim-Claim edges when a Claim transitions to `retracted`. D-83/84-11 (filed below) specifies the default contract; OQ-21 captures the cascade/audit-filter variants.
 
 New edge types (v1):
 
@@ -278,7 +286,7 @@ Edge attributes on `EVIDENCES`:
 | Attribute | Purpose |
 |---|---|
 | `quoted_text` | Source-text excerpt supporting the claim |
-| `confidence_score` | Analysis op's confidence in *this specific evidence* (distinct from Claim's aggregated confidence) |
+| `score` | Analysis op's confidence in *this specific evidence* (distinct from Claim's aggregated confidence). Renamed from `confidence_score` per D-83/84-8 Part C. |
 | `run_id` | Which compile run created this evidence link |
 | `created_at` | Timestamp |
 
@@ -287,6 +295,8 @@ Putting evidence metadata on the edge — not the Claim node — lets multiple s
 **F4 — Meta-claims (`Claim—ABOUT→Claim`) deferred to v2.**
 
 In v1: `Claim—ABOUT→Entity` only. Meta-claims (`Claim—ABOUT→Claim`) added in v2 if concrete demand surfaces.
+
+**Claim domain membership** (amended per Codex v1 review OQ + Deepseek v1 review Finding 2): the Claim node has **no `domain` field**. Domain membership is reachable via the traversal `Claim—ABOUT→Entity—BELONGS_TO→Domain` (using the existing `BELONGS_TO` edge from Task #76). This is intentional — domain is an Entity property; Claims about an Entity share its domain by **association, not by duplication**. Belief-sensitive domain queries traverse two hops; this prevents `Claim.domain` denormalization drift if the entity's domain changes. Future Task #86 may need Claim-level domain tagging; defer until then.
 
 **Resulting Kuzu schema (v1 — to ship as a future schema version, exact bump TBD in implementation):**
 
@@ -313,7 +323,7 @@ CREATE NODE TABLE Claim (
 CREATE REL TABLE EVIDENCES (
   FROM Source TO Claim,
   quoted_text STRING,
-  confidence_score DOUBLE,
+  score DOUBLE,                                -- renamed from confidence_score per D-83/84-8 Part C naming alignment
   provenance_type STRING,                    -- D-83/84-7: analysis_emitted | reconstructed_from_run_payload | reconstructed_from_supports_overlap
   run_id STRING,
   created_at TIMESTAMP
@@ -345,13 +355,13 @@ CREATE REL TABLE QUALIFIES (
 );
 ```
 
-**OQ-12 resolution (implicit):** the original `provenance.supporting_path` field on the candidate envelope is no longer needed. Persistent provenance lives on `Source—EVIDENCES→Claim` (quoted_text + confidence_score + run_id + created_at). The Analysis-op's graph-walk that surfaced the candidate is a transient artifact — operational info, not durable graph state. The candidate envelope's `supporting_path` field is dropped.
+**OQ-12 resolution (implicit):** the original `provenance.supporting_path` field on the candidate envelope is no longer needed. Persistent provenance lives on `Source—EVIDENCES→Claim` (quoted_text + score + run_id + created_at). The Analysis-op's graph-walk that surfaced the candidate is a transient artifact — operational info, not durable graph state. The candidate envelope's `supporting_path` field is dropped.
 
 **Resolves:** OQ-3 (Claim attribute set), OQ-5 (meta-claims), OQ-12 (supporting_path).
 
 **Opens:**
 
-- **OQ-14** — How to aggregate multiple `EVIDENCES.confidence_score` values into the Claim's single `confidence` field (max, mean, Bayesian fusion, log-odds sum, etc.). Implementation-level question; deferred to the Belief Revision module work but flagged so it gets explicit attention.
+- **OQ-14** — How to aggregate multiple `EVIDENCES.score` values into the Claim's single `confidence` field (max, mean, Bayesian fusion, log-odds sum, etc.). **Promoted from implementation-deferred to structural per Codex/Qwen v1 review consensus — see OQ-26 below**; this OQ-14 placeholder kept for cross-reference, with resolution path being OQ-26.
 
 ### D-83/84-7 — Upgrade mechanism: additive on Claim layer; LINKS_TO untouched; three-tier provenance — 2026-05-22
 
@@ -365,13 +375,14 @@ CREATE REL TABLE QUALIFIES (
 - **Semantic contract (post-#83/#84):**
   - `LINKS_TO` = corpus topology layer (which entities are associated in the corpus)
   - Claim space = belief layer (polarity, version, provenance, contradiction)
-  - **Belief-sensitive reads must consult Claim space when a Claim family exists for the subject.** Topology-only reads (`graph_context_loader`, V0 ops, PageRank, communities, structural-holes) consume `LINKS_TO` unchanged.
+  - **Belief-sensitive reads must consult Claim space at tuple granularity** (amended per Codex v1 review Finding 6 + Qwen v1 review F1): for a queried `(subject_slug, predicate_class_canonical, predicate_scope_slugs)` tuple, if a `claim_family_id` exists in Claim space, read belief from Claim space; otherwise read from `LINKS_TO`. **Subject-presence is not sufficient** to trigger Claim-space consultation — only the specific tuple's family. This prevents forcing Claim-space reads on uncontested edges of a subject that has contested claims for *other* predicates.
+  - Topology-only reads (`graph_context_loader`, V0 ops, PageRank, communities, structural-holes) consume `LINKS_TO` unchanged.
 
 #### Part B — OQ-4 resolution: three-tier provenance reconstruction (α+)
 
 When upgrading an existing belief into a Claim, populate `EVIDENCES` via this fallback chain:
 
-- **Tier 1 (preferred): Run-payload reconstruction.** Use `LINKS_TO.run_id` to locate the run sidecar / `compile_result.json` that emitted the edge; extract the source page(s) + structured output. Provides specific source attribution.
+- **Tier 1 (preferred): Run-payload candidate reconstruction** (renamed per Codex v1 review Finding 4). Use `LINKS_TO.run_id` to locate the run sidecar / `compile_result.json` that emitted the edge; extract the source page(s) + structured output. **Precision disclaimer:** this provides source attribution but **not** quote-level evidence — the run payload identifies *which page* emitted the link, not the specific *predicate-level assertion* now being reconstructed as a Claim. `provenance_type=reconstructed_from_run_payload` is weaker than `analysis_emitted` even when source IDs are recovered cleanly. `quoted_text` may remain NULL.
 - **Tier 2 (fallback): SUPPORTS-overlap.** Walk `Source—SUPPORTS→Entity` for both subject and scope/object entities; intersection yields candidate sources. Honestly weaker — co-mention ≠ predicate-evidencing.
 - **Tier 3 (escape hatch): synthesized marker.** If neither Tier 1 nor Tier 2 yields a source, create the OLD Claim with no `EVIDENCES` edges; record attempted-and-failed reconstruction in operational metadata.
 
@@ -379,9 +390,9 @@ When upgrading an existing belief into a Claim, populate `EVIDENCES` via this fa
 
 | Value | Source | Required attributes |
 |---|---|---|
-| `analysis_emitted` | Analysis-op surfaced the candidate | `quoted_text` + `confidence_score` REQUIRED (unless candidate rejected or sent to human review) |
-| `reconstructed_from_run_payload` | Tier 1 reconstruction | `quoted_text` + `confidence_score` MAY be NULL |
-| `reconstructed_from_supports_overlap` | Tier 2 reconstruction | `quoted_text` + `confidence_score` MAY be NULL — weakest variant |
+| `analysis_emitted` | Analysis-op surfaced the candidate | `quoted_text` + `score` REQUIRED (unless candidate rejected or sent to human review) |
+| `reconstructed_from_run_payload` | Tier 1 reconstruction | `quoted_text` + `score` MAY be NULL |
+| `reconstructed_from_supports_overlap` | Tier 2 reconstruction | `quoted_text` + `score` MAY be NULL — weakest variant |
 
 Schema update applied to D-83/84-6's `EVIDENCES` definition (provenance_type column added in-line above).
 
@@ -425,7 +436,11 @@ doxastic_fingerprint:
                                          # last_run_id, first_run_id) EXCLUDED to prevent
                                          # false drift on re-compile
 
-  counterpart: null                      # for no_counterpart / orthogonal cases
+  counterpart:                           # ALWAYS an object; kind discriminates (amended per Qwen v1 review F4)
+    kind: no_counterpart | orthogonal    # for no-comparison-target cases
+    context_key:                         # disambiguates same-subject candidates with no counterpart
+      predicate_class_canonical: <slug>  # avoids null-counterpart fingerprint collision
+      scope_slugs: [<sorted_canonical_slugs>]
   # OR:
   counterpart:
     kind: LINKS_TO
@@ -472,6 +487,8 @@ confidence:
                                          # config changes
 ```
 
+**Naming alignment** (amended per Qwen v1 review F7): the EVIDENCES edge's `confidence_score` column is **renamed to `score`** to match the candidate's `confidence.score` field. Schema update applied to D-83/84-6's `EVIDENCES` definition. The mapping at promotion time is now `candidate.evidence[i].confidence.score → EVIDENCES.score` — consistent both directions.
+
 **Config layer (off-candidate, versioned):**
 
 ```yaml
@@ -495,6 +512,17 @@ promotion_audit:
 
 The two are distinct signals: fingerprint can drift without classification changing (an irrelevant graph mutation in the subject's procedural fields, though our excluded-fields spec in Part A reduces this); classification can drift without fingerprint changing (caught by always-re-classify per D-83/84-3 #3 — e.g., a newly-relevant Claim that didn't exist at analysis-time). Recording both makes the audit explainable.
 
+**Drift action matrix** (amended per Qwen v1 review F2): the Promotion Contract acts on the 4-cell combination of `fingerprint_drift` × `classification_drift` per the following defaults. Promotion-time classification is always authoritative (per D-83/84-3 #3) — the matrix governs *auto-promote vs human-review*, not which classification to apply.
+
+| `fingerprint_drift` | `classification_drift` | Default action |
+|---|---|---|
+| `false` | `false` | **Auto-promote.** Both Analysis-time and promotion-time agree; expected case. |
+| `true` | `false` | **Auto-promote with drift note.** Graph state changed but classification unaffected; drift was orthogonal to this candidate's classification surface. |
+| `false` | `true` | **Investigate before promotion.** Same fingerprint should mean same input — different classification suggests either (a) classifier non-determinism, (b) `classifier_version` stale, or (c) **coupling-as-invariant violation** (fingerprint scope doesn't cover all classifier inputs). Flag for review. |
+| `true` | `true` | **Human review.** Drift caused (or correlated with) the classification change. Exercise caution — the new classification is based on more current state, but the divergence is the signal worth a human look. |
+
+Defaults are configurable knobs — see OQ-27. Audit data accumulates per-promotion, enabling empirical calibration over time.
+
 **Resolves:** OQ-8 (Doxastic Fingerprint hash content), OQ-10 (confidence representation).
 
 **Opens:**
@@ -502,54 +530,309 @@ The two are distinct signals: fingerprint can drift without classification chang
 - **OQ-18** — Aggregation distortion (Qwen's catch): when OQ-14 (confidence aggregation rule) lands, must handle bucketed/mapped aggregation edge cases — `low + high → mean(0.3, 0.8) = 0.55` rounds back to medium, losing the polarization signal. Flag `spread`/`variance` field, or `mode(bucket) + mean(score)` as a possible signal pair. **OQ-14 concern, not D-83/84-8.**
 - **OQ-19** — Candidate envelope JSON-Schema (Deepseek's follow-up): create a JSON-Schema validating analysis-op emissions. Mirrors `compile_result.schema.json` pattern. Implementation-level follow-up.
 - **OQ-20** — Confidence map empirical calibration: defaults `{0.3, 0.5, 0.8}` have no empirical basis. Belongs in Task #75 predeclared eval criteria territory (or its #83/#84 analog).
+- **OQ-25** (filed v1 review per Deepseek F5) — Coupling-as-invariant enforcement mechanism. The "fingerprint = classifier-input-surface" contract (D-83/84-8 Part B) is currently manually-enforced — depends on a human PR author remembering to bump `hash_scope` when modifying the classifier's read surface. Options: (a) manual review checklist, (b) introspection test that walks the classifier read paths and verifies fingerprint coverage, (c) lint rule on the classifier module. Implementation-form question; not blueprint-level.
+- **OQ-27** (filed v1 review per Part D matrix) — Default action thresholds for the 4-cell drift matrix are configurable; specific knob values + the per-cell behavior under heterogeneous confidence levels are empirical-tuning territory analogous to OQ-6/OQ-9 (predeclared eval criteria for #83/#84).
+
+### D-83/84-9 — Claim identity under canonicalization: ABOUT-is-authoritative + denormalized lookup keys — 2026-05-22
+
+**Decision:** Amends D-83/84-6 F1 and the D-83/84-7 Part D semantic contract. Per Codex v1 review Finding 2 + Deepseek v1 review Finding 3 — 2-reviewer convergence on a structural gap. Ratified by Joseph 2026-05-22.
+
+**Authority binding:** `Claim—ABOUT→Entity` is the **authoritative subject binding**. The Claim's identity, for the purpose of "who is this claim about," is determined by the Entity node the ABOUT edge points at, **NOT** by the `subject_slug` field stored on the Claim.
+
+**Denormalized lookup keys:** `Claim.subject_slug` and the `subject_slug` component of `claim_family_id` are **denormalized lookup keys** — derived from the authoritative ABOUT-target at claim-creation time. They are NOT the source of truth; they are cached identifiers used for fast lookup and human-readable IDs.
+
+**Rewrite behavior under Task #74 entity canonicalization** (when aliases merge, e.g., `buffett` → `warren-buffett`):
+
+- **Authoritative binding is unchanged.** `Claim—ABOUT→Entity` continues to point at the (now-canonical) Entity. The relation doesn't need rewriting — canonicalization updates the Entity node's `canonical_id`; the ABOUT edge still hits the right node by node identity.
+- **Denormalized keys** (`Claim.subject_slug`, `claim_family_id`, `claim_id`) are **stale until rewritten**. Rewrite happens at two points:
+  - **Rebuild path:** `graphdb-kdb rebuild` regenerates `claim_family_id` + `claim_id` from current canonical state. Authoritative.
+  - **Incremental path:** the Promotion Contract performs **lazy rewrite** on Claims it touches during normal operation. When a Claim is read for matching, contradiction-check, or update, its `subject_slug` is reconciled to the canonical Entity via `ABOUT` traversal. Stale `claim_family_id` keys are accepted as input (for lookup) but corrected on write. Full incremental sweep is OQ-22's territory.
+- **Alias-forwarding table is NOT introduced in v1.** Aliased lookups use the existing `ALIAS_OF` traversal pattern:
+  ```cypher
+  MATCH (c:Claim)-[:ABOUT]->(e:Entity)
+  WHERE e.canonical_id = $slug OR exists((:Entity {slug: $slug})-[:ALIAS_OF]->(e))
+  ```
+  This is the v1 query pattern for "claims about X under any alias."
+
+**Implication for OQ-22 (rebuild contract):** the rebuild path's role expands — rebuild must (a) replay compilations to restore LINKS_TO + SUPPORTS, (b) re-run Promotion Contract to restore Claims + Claim-Claim edges + EVIDENCES, **(c) regenerate all denormalized Claim keys from canonical state.** This is a load-bearing constraint on the OQ-22 resolution path.
+
+**Resolves:** Codex v1 review Finding 2, Deepseek v1 review Finding 3.
+
+**Opens:**
+
+- **OQ-22** (filed v1 review per Deepseek F4) — Rebuild contract for Promotion-Contract-created data. `graphdb-kdb rebuild` currently replays `compile_result.json` payloads through the ingestor to reconstruct LINKS_TO + SUPPORTS. But Claim nodes, Claim-Claim edges, and EVIDENCES edges are **post-compilation artifacts** created by the Promotion Contract — they are NOT represented in `compile_result.json`. Resolution options: (a) store promotion decisions in the run payload as `promoted_candidates` so rebuild replays them, (b) re-run the Promotion Contract during rebuild after all compilations are replayed (default lean per D-83/84-9 above), (c) separate sidecar indexed by run_id. Affects snapshot contract too. Architectural question.
+
+### D-83/84-10 — Promotion idempotency contract — 2026-05-22
+
+**Decision:** Per Codex v1 review Finding 5 + Deepseek v1 review OQ-23/24 batch concerns. Ratified by Joseph 2026-05-22.
+
+The Promotion Contract is a state-changing boundary. To support safe retry-after-partial-failure and avoid duplicate state from re-emission, every write the contract performs has an explicit uniqueness constraint.
+
+**Uniqueness constraints:**
+
+| Entity | Unique by | Behavior on collision |
+|---|---|---|
+| `Claim` node | `claim_id` (primary key) | Upsert — re-promoting the same candidate is a no-op |
+| `Source—EVIDENCES→Claim` edge | `(source_id, claim_id, quoted_text_hash, provenance_type)` | Upsert — same source emitting the same evidence twice is a no-op; different quotes from the same source are separate evidences |
+| `Claim—CONTRADICTS→Claim` edge | `(from_claim_id, to_claim_id)` | Upsert |
+| `Claim—SUPERSEDES→Claim` edge | `(from_claim_id, to_claim_id)` | Upsert |
+| `Claim—QUALIFIES→Claim` edge | `(from_claim_id, to_claim_id)` | Upsert |
+| `Claim—ABOUT→Entity` edge | `(from_claim_id, to_entity_slug)` | Upsert |
+
+`quoted_text_hash` is the SHA-256 of the normalized `quoted_text` string. Inclusion in the EVIDENCES uniqueness key lets the same source page evidence the same Claim with multiple distinct quotes (different paragraphs supporting different facets) while preventing exact-duplicate writes.
+
+**Retry-after-partial-failure semantics:** the Promotion Contract is **safe to retry** at any point. If a partial write occurred (Claim created, EVIDENCES not yet written), retry will:
+
+1. Find the existing Claim by `claim_id` (no-op on upsert).
+2. Insert the missing EVIDENCES edges (no-op on already-present ones).
+3. Complete the remaining Claim-Claim edges (no-op on already-present ones).
+
+**Write ordering** (ensures partial state is queryable):
+
+1. Create `Claim` nodes.
+2. Create `Source—EVIDENCES→Claim` edges.
+3. Create `Claim—ABOUT→Entity` edges.
+4. Create `Claim—Claim` edges (`CONTRADICTS`, `SUPERSEDES`, `QUALIFIES`).
+5. Update state attributes on existing Claims (e.g., `active → superseded` when a `SUPERSEDES` relation is established).
+
+**Batch semantics** (resolves the immediate part of Deepseek v1 review OQ-23): the Promotion Contract processes candidates **sequentially** in v1. Each candidate runs through the full classify-promote pipeline before the next candidate begins. The promotion-time classification of candidate N sees the state after candidate N-1's promotion. Batch-parallel or batch-order-independence semantics are deferred — see OQ-23 (filed below).
+
+**Resolves:** Codex v1 review Finding 5 (idempotency contract).
+**Partially resolves:** Deepseek v1 review OQ-23 (sequential is the v1 default; parallel deferred).
+
+**Opens:**
+
+- **OQ-23** (filed v1 review per Deepseek) — Batch parallel / order-independence semantics. v1 is sequential per above. Future variants: parallel-with-deferred-classification (all candidates classified against pre-batch state, then committed) vs. pipeline-batched-with-conflict-detection. Implementation-level performance question.
+- **OQ-28** (filed v1 review per Deepseek OQ-24) — Multi-candidate deduplication within a single Analysis-op emission. Can one Analysis op emit multiple candidates engaging the same counterpart? If so, is there a pre-gate dedup step? Or does each independently cross with the second seeing the first's result? Affects what "idempotency" means for batched analysis output.
+
+### D-83/84-11 — Retraction edge-cleanup contract — 2026-05-22
+
+**Decision:** Per 3-reviewer convergence (Codex v1 review OQ on retracted Claims as contradiction targets, Deepseek v1 review Finding 1, Qwen v1 review F6). Ratified by Joseph 2026-05-22.
+
+When a Claim transitions to `state=retracted`:
+
+**Default contract:**
+
+- **Outgoing edges preserved.** The retracted Claim's `CONTRADICTS` / `SUPERSEDES` / `QUALIFIES` edges remain in the graph. They are **historical facts** — the Claim asserted this contradiction/supersession/qualification at one point, and that fact remains audit-valuable.
+- **Incoming edges preserved.** Edges from other Claims pointing at the retracted Claim are preserved. Other Claims' state is **NOT** automatically changed by the target's retraction. Example: if Claim A `CONTRADICTS` Claim C and C is retracted, Claim A remains `active`. A's assertion (the contradiction) hasn't changed — only the target has been withdrawn.
+- **No cascade.** Retracting Claim C does **NOT** auto-retract / auto-supersede / auto-revive any other Claim. Cascade effects are application-level decisions, not state-machine defaults.
+- **Default-retrieval filter.** Retracted Claims are filtered out of default Claim-space retrieval (consistent with D-83/84-6 F2 retracted-filter rule). Audit / revision / contradiction-traversal queries can include retracted Claims explicitly via a query flag.
+
+**SUPERSEDES revival cascade refinement** (per Deepseek v1 review Finding 1 sub-point + Qwen v1 review F6): the revival query (D-83/84-6 F2 `superseded → active` transition) walks `SUPERSEDES` chain backward to find the nearest non-retracted ancestor. **Coherence-check refinement:** the revived predecessor is checked for incoming `CONTRADICTS` edges from currently-`active` Claims. If any exist, revival is **gated for human review** rather than automatic. Prevents reviving a Claim whose belief is already contested by other live Claims.
+
+**Resolves:** Deepseek v1 review Finding 1, Qwen v1 review F6, Codex v1 review OQ on retracted-as-contradiction-target.
+
+**Opens:**
+
+- **OQ-21** (filed v1 review) — Retraction cascade variants. Default is "no cascade." Specific cascade behaviors are opt-in operators that may be added in v2: (a) retracting a `QUALIFIES` source flags the qualifier for re-evaluation; (b) retracting a `SUPERSEDES`-source triggers auto-revival of the superseded predecessor (with coherence check); (c) batch retraction of a contradiction pair (both sides) when their `CONTRADICTS` evidence is itself retracted. None default in v1.
+
+### D-83/84-12 — Confidence aggregation rule for Claim.confidence — 2026-05-22
+
+**Decision:** Promotes OQ-14 + OQ-18 from "implementation-deferred" to structural per Codex v1 review OQ + Qwen v1 review OQ. Ratified by Joseph 2026-05-22.
+
+**Why structural now:** the Claim node has a `confidence DOUBLE` field. The aggregation function that produces this from multiple `EVIDENCES.score` values **defines the field's semantics** at the contract level. Without specifying the function, the field is implementation-defined and can't be reasoned about by readers.
+
+**v1 aggregation function:** **bounded mean of scores, weighted by source recency.**
+
+```
+confidence = Σ(evidence_i.score * w_i) / Σ(w_i)
+  where w_i = decay(now() - evidence_i.created_at, tau)
+        decay(t, tau) = exp(-t / tau)
+```
+
+- Bounded mean (vs unbounded sum) keeps `confidence ∈ [0, 1]` — matches `score`'s domain.
+- Recency-weighted (vs uniform) so older evidence loses weight over time — implements decay-as-claim-property per D-83/84-6 F2 without modifying individual EVIDENCES rows.
+- `tau` is a configurable knob (default: ~365 days; tuning is OQ-29).
+
+**Aggregate spread/variance** (per Qwen v1 review F2 + OQ-18): an additional field `confidence_spread DOUBLE` is added to the Claim node, computed as the **standard deviation** of `evidence_i.score` (unweighted). Captures polarization signal — `low + high = mean 0.55` rounds back to medium, but spread=0.35 flags polarization. `confidence_spread` is informational, not used in the auto-promote action table.
+
+**Schema update (applies to D-83/84-6):**
+
+```cypher
+-- Claim node table gains:
+confidence_spread DOUBLE   -- stdev of EVIDENCES.score values; informational
+```
+
+**Resolves:** OQ-14 (confidence aggregation rule), OQ-18 (aggregation distortion / polarization signal).
+
+**Opens:**
+
+- **OQ-26** (filed v1 review, replaces OQ-14 placeholder) — Aggregation function tuning. The bounded-mean-with-recency-decay default is an architectural choice; the `tau` parameter and decay-function shape are empirical-tuning territory. Belongs in Task #75 predeclared eval analog for #83/#84.
+- **OQ-29** — `tau` default value calibration. ~365 days is a guess; needs empirical work on the actual corpus.
 
 ---
 
-## 4. Candidate envelope — settled and open fields
+## 4. Candidate envelope — fully specified (post-v1 review restructure)
 
-D-83/84-4 settled `proposed_claim`'s structured form. D-83/84-6 settled the persistent provenance representation (`Source—EVIDENCES→Claim` edge with attributes), which made the previously-open `supporting_path` field on the candidate envelope unnecessary (OQ-12 resolved by dropping the field). The full envelope crossing the #83 gate:
+Per Codex v1 review Finding 3, the candidate envelope's `provenance.*` parallel fields are restructured into an **`evidence[]` array of objects**, mirroring the cardinality of `Source—EVIDENCES→Claim` edges. Each evidence object carries its own `source_id`, `quoted_text`, and `confidence` — eliminating the ambiguity of multiple sources sharing parallel arrays of source_paths / quoted_texts / scores.
 
-| Field | Source | Specified by | Status |
-|---|---|---|---|
-| `proposed_claim` | Analysis op + shared classifier (predicate-canon) | **D-83/84-4** | Settled. |
-| `provenance.source_paths` | Analysis op | This blueprint | Settled — list of `raw/...` source paths supporting the claim. |
-| `provenance.quoted_text` | Analysis op | This blueprint | Settled — source-text excerpts (become `EVIDENCES.quoted_text` on promotion per D-83/84-6). |
-| `confidence` | Analysis op | **D-83/84-8** | Bucketed enum (`low`/`medium`/`high`) + system-derived `score` + `score_source` + `map_version`. Score becomes `EVIDENCES.confidence_score` on promotion per D-83/84-6. |
-| `analysis_classification` | Analysis op + shared classifier | D-83/84-3 | Settled — 2-step result per D-83/84-2. |
-| `counterpart_ref` | Analysis op | This blueprint | Settled — existing edge or Claim ID being engaged (null if `no_counterpart` / `orthogonal`). |
-| `doxastic_fingerprint` | Analysis op | D-83/84-3, **D-83/84-8** | Targeted: hashes subject (canonical-form attributes only) + specific counterpart state. Coupling-as-invariant: scope expands with classifier-input-surface. |
+**Full envelope:**
 
-**At promotion-time** the contract re-runs the shared classifier (D-83/84-3 #3), produces `promotion_classification` (same shape as `analysis_classification`), compares fingerprint freshness, sets `classification_drift: bool` with reason. These fields are added to the candidate envelope (or to a per-candidate audit record) by the Promotion Contract — not emitted by the Analysis op.
+```yaml
+candidate:
+  proposed_claim:                      # D-83/84-4 — structured predicate form
+    subject_slug: <canonical>
+    predicate_class_canonical: <slug>
+    predicate_class_raw: <LLM-emitted>
+    predicate_scope_slugs: [<sorted canonical slugs>]
+    object_slugs: [<canonical slugs>]
+    polarity: affirms | rejects | neutral
+    modality: unconditional | conditional
+    condition_text: <optional string>
+    assertion_text: <LLM-emitted free-text>
+
+  evidence:                            # D-83/84-8 + Codex v1 review F3 restructure
+    - source_id: <KDB/raw/... source-page path>
+      quoted_text: <source-text excerpt>
+      confidence:                      # D-83/84-8
+        bucket: low | medium | high
+        score: 0.3 | 0.5 | 0.8         # system-derived from bucket
+        score_source: config_map
+        map_version: confidence_map_v1
+    # ...one entry per source supporting the candidate;
+    # each maps 1:1 to a Source—EVIDENCES→Claim edge on promotion
+
+  analysis_classification:             # D-83/84-3 + D-83/84-2
+    counterpart_status: no_counterpart | candidate_counterpart_found | orthogonal
+    relation_kind: reinforces | contradicts | qualifies_or_extends | supersedes | null
+    refines_truth_conditions: bool      # only when relation_kind=qualifies_or_extends
+
+  counterpart_ref:                     # this blueprint — what counterpart was engaged
+    kind: LINKS_TO | Claim | no_counterpart | orthogonal
+    # for LINKS_TO:        { from_slug, to_slug }  (per D-83/84-8 Part A)
+    # for Claim:           claim_id                (per D-83/84-6 F1 + D-83/84-9)
+    # for no_counterpart / orthogonal: context_key (per D-83/84-8 Part A)
+
+  doxastic_fingerprint:                # D-83/84-3 + D-83/84-8 (coupling-as-invariant)
+    hash_scope: targeted-v1
+    hash_algorithm: sha256
+    classifier_version: <version-string>
+    subject:
+      slug: <canonical>
+      state_hash: <sha256-hash>
+    counterpart:                       # always an object; kind discriminates per D-83/84-8 Part A
+      kind: LINKS_TO | Claim | no_counterpart | orthogonal
+      # additional fields per kind (see D-83/84-8 Part A)
+```
+
+**At promotion-time** the contract:
+
+1. Re-runs the shared classifier (D-83/84-3 #3) against current graph state, produces `promotion_classification`.
+2. Recomputes fingerprint against current state; sets `fingerprint_drift = (analysis-time hash ≠ promotion-time hash)`.
+3. Sets `classification_drift = (analysis-time classification ≠ promotion-time classification)`.
+4. Applies the 4-cell action matrix (D-83/84-8 Part D) — auto-promote vs human-review.
+5. If auto-promote: executes the D-83/84-2 action against current state, with idempotency constraints from D-83/84-10. Each `evidence[]` entry materializes as a `Source—EVIDENCES→Claim` edge.
+6. Records `promotion_audit: {fingerprint_drift, classification_drift, drift_explanation}` for downstream observability.
+
+**Evidence → EVIDENCES mapping** (one-to-one on promotion):
+
+| Candidate field | EVIDENCES edge attribute |
+|---|---|
+| `evidence[i].source_id` | `(Source.source_id)` — the FROM-side node identity |
+| `evidence[i].quoted_text` | `EVIDENCES.quoted_text` |
+| `evidence[i].confidence.score` | `EVIDENCES.score` |
+| `evidence[i].confidence.map_version` | preserved on edge or in run journal for audit |
+| (constant) `'analysis_emitted'` | `EVIDENCES.provenance_type` |
+
+**Reconstructed evidence** (Tier 1/2 of D-83/84-7 Part B) is added by the *upgrade* operation, not by the Analysis op — those EVIDENCES rows have `provenance_type` set to `reconstructed_from_run_payload` or `reconstructed_from_supports_overlap`, and `quoted_text`/`score` may be NULL.
 
 ---
 
-## 5. Blueprint v1 status — structurally complete pending external v1 review
+## 5. Blueprint v2 status — v1 review folded; ready for predeclared-eval task + implementation
 
-With D-83/84-8 ratified, the **structural** decisions for #83 (Promotion Contract) and #84 (Belief Revision) are complete:
+The v1 review (2026-05-22, Codex + Deepseek + Qwen — first round under the post-Gemini panel) surfaced 12 substantive findings convergent across 2–3 reviewers. All folded into this v2 blueprint:
 
-| Layer | Decision | Status |
+| v1 review finding | Severity | Resolution |
+|---|---|---|
+| Claim retraction edge-cleanup (3-reviewer) | Structural | D-83/84-11 + OQ-21 |
+| Canonicalization vs Claim identity (2-reviewer) | Structural | D-83/84-9 + OQ-22 |
+| Tuple-granularity read-path (2-reviewer) | Structural | D-83/84-7 Part A amendment |
+| Idempotency / batch / dedup (2-reviewer) | Structural | D-83/84-10 + OQ-23 + OQ-28 |
+| Claim domain via traversal (2-reviewer) | Doc gap | D-83/84-6 amendment (after F4) |
+| Confidence aggregation rule (2-reviewer) | Promoted to structural | D-83/84-12 + OQ-26 + OQ-29 |
+| Claim version allocation under qualifiers | Structural | D-83/84-6 F1 amendment |
+| Candidate envelope as evidence[] objects | Restructure | §4 fully rewritten |
+| Tier-1 reconstruction overclaims precision | Cosmetic+ | D-83/84-7 Part B rename + disclaimer |
+| Rebuild contract for Claims | Architectural Q | OQ-22 filed (inside D-83/84-9) |
+| Coupling-as-invariant enforcement | Process Q | OQ-25 filed (inside D-83/84-8) |
+| Fingerprint × classification drift matrix | Specificity | D-83/84-8 Part D amendment |
+| Decay threshold behavior | Semantic gap | D-83/84-6 F2 amendment |
+| `no_counterpart` fingerprint collision | Specificity | D-83/84-8 Part A `context_key` |
+| `claim_id` parseability validation | Defense | D-83/84-6 F1 amendment |
+| Naming collision (score vs confidence_score) | Polish | D-83/84-8 Part C alignment (EVIDENCES.score) |
+
+**v2 structural decisions** (now 12, up from 8):
+
+| Layer | Decisions | Status |
 |---|---|---|
 | Schema placement | D-83/84-1 (+ D-83/84-7 amendment) | ✅ |
 | Relation typology + triggers | D-83/84-2 | ✅ |
 | Classifier role + Doxastic Fingerprint pattern | D-83/84-3 | ✅ |
 | Predicate representation | D-83/84-4 | ✅ |
 | Predicate-class canonicalization | D-83/84-5 | ✅ |
-| Claim node schema | D-83/84-6 | ✅ |
-| Upgrade mechanism | D-83/84-7 | ✅ |
-| Candidate envelope details | D-83/84-8 | ✅ |
+| Claim node schema (+ amendments) | D-83/84-6 + v1 amendments | ✅ |
+| Upgrade mechanism (+ amendments) | D-83/84-7 + v1 amendments | ✅ |
+| Candidate envelope (+ amendments) | D-83/84-8 + v1 amendments | ✅ |
+| **Claim identity under canonicalization** (NEW) | D-83/84-9 | ✅ |
+| **Promotion idempotency contract** (NEW) | D-83/84-10 | ✅ |
+| **Retraction edge-cleanup contract** (NEW) | D-83/84-11 | ✅ |
+| **Confidence aggregation rule** (NEW) | D-83/84-12 | ✅ |
 
-**Remaining open questions** are all either implementation-level (OQ-13 canonicalization form; OQ-14 confidence aggregation; OQ-15/16/17 upgrade-mechanism details; OQ-19 candidate-envelope JSON-Schema) or predeclared-eval territory analogous to Task #75 (OQ-6 corroboration threshold; OQ-9 drift eval thresholds; OQ-18 aggregation-distortion signal; OQ-20 confidence map calibration). None block structural v1.
+**Remaining OQs:** all either implementation-level (OQ-13 / OQ-15 / OQ-16 / OQ-17 / OQ-19) or predeclared-eval territory analogous to Task #75 (OQ-6 / OQ-9 / OQ-20 / OQ-26 / OQ-27 / OQ-29) or architectural-question-tracking (OQ-21 / OQ-22 / OQ-25 / OQ-28). None block implementation start.
 
-**Recommended next steps** (decision for Joseph):
+**Recommended next steps** (post-v2):
 
-1. **Fire blueprint v1 holistically at the post-Gemini reviewer panel** (Codex + Deepseek + Qwen — see `docs/external-review-panel.md`) for v1 review. Mirrors Tasks #74 / #75 / #76 pattern (per-decision review during draft → holistic v1 review → v2 → implementation).
-2. **File a separate task for predeclared eval criteria for #83/#84** (analogous to Task #75 for step-3 ops). OQ-6 / OQ-9 / OQ-18 / OQ-20 live there, not in this blueprint.
-3. **Begin implementation** on Task #83 (Promotion Contract) and Task #84 (Belief Revision) in parallel per the §9.4.4 parallel-design sequencing.
-
-Once v1 is reviewed and any blocking feedback addressed (→ v2), Tasks #85 (Identity Refinement) and #86 (Abstraction) can be unblocked since they inherit the formalized contract.
+1. **File the predeclared eval criteria task** for #83/#84 (analogous to Task #75 for step-3 ops). OQ-6, OQ-9, OQ-20, OQ-26, OQ-27, OQ-29 live there.
+2. **Begin parallel implementation** on Task #83 (Promotion Contract) and Task #84 (Belief Revision) per the Round 6 §9.4.4 parallel-design sequencing.
+3. Once #83 + #84 land, **unblock Tasks #85 (Identity Refinement) + #86 (Abstraction)** — they inherit the formalized contract from this blueprint.
 
 ---
 
-## 6. References
+## 6. GraphDB contract delta (Codex v1 review Finding 7)
 
-To be populated. Primary sources: AGM (Alchourrón, Gärdenfors & Makinson 1985); continual-KGE literature (BAKE 2025); HippoRAG (Gutiérrez et al. 2024); Round 6 research returns (`docs/round6-research-*.md`). External reviewer files at `docs/task83-84-promotion-contract-belief-revision-blueprint-{codex,gemini}.md`.
+The Claim layer introduces new persistence invariants. The GraphDB layer (`graphdb_kdb/`) treats verifier / rebuilder / snapshot as architectural safety rails (D35-D39). Claim space requires explicit updates to each:
+
+**Schema migration:**
+
+- New node type: `Claim` (with all D-83/84-6 + D-83/84-12 attributes + the post-rename `confidence_spread`)
+- New rel types: `EVIDENCES`, `ABOUT`, `SUPERSEDES`, `CONTRADICTS`, `QUALIFIES`
+- `EVIDENCES.score` rename (post D-83/84-8 Part C) — applies to the new edge, not a migration of existing edges (Claim space is new)
+- Schema version bump (TBD — implementation chooses v2.2 / v2.3 / v3.0 per its existing migration discipline)
+
+**Snapshot contract delta** (analogous to Task #80 for Domain/BELONGS_TO):
+
+- Snapshot must export all Claim nodes + EVIDENCES / ABOUT / SUPERSEDES / CONTRADICTS / QUALIFIES edges in JSONL form
+- Snapshot format version bumps when this lands (current v3 → v4 per snapshot.py convention)
+- Per-edge attributes preserved (provenance_type, score, quoted_text, etc.)
+
+**Rebuild contract delta** (the load-bearing one per OQ-22, scoped by D-83/84-9):
+
+- Rebuild replays compilations to restore LINKS_TO + SUPPORTS (existing behavior)
+- Rebuild re-runs the Promotion Contract against the restored compilation state to regenerate Claims + Claim-Claim edges + EVIDENCES
+- Rebuild regenerates all denormalized Claim keys from canonical state (per D-83/84-9 — authoritative ABOUT-binding remains; subject_slug + claim_family_id + claim_id are re-derived)
+- See OQ-22 for the implementation-form choice (re-run-Promotion vs replay-from-compile_result.json vs sidecar-by-run_id)
+
+**Verifier contract delta** (analogous to Task #79 for Domain/BELONGS_TO):
+
+New `graphdb-kdb verify` invariants for the Claim layer:
+
+| Invariant | Description |
+|---|---|
+| Every `Claim` has an `ABOUT` edge | No orphan Claims; every Claim must be about an Entity |
+| `Claim—ABOUT→Entity` targets exist | No dangling ABOUT references |
+| `Source—EVIDENCES→Claim` sources exist | No EVIDENCES from nonexistent sources |
+| Every `EVIDENCES` row has valid `provenance_type` | Enum constraint (per D-83/84-7) |
+| `analysis_emitted` EVIDENCES rows have non-NULL `quoted_text` + `score` | Per D-83/84-7 Part C contract |
+| Claim-Claim edges (CONTRADICTS / SUPERSEDES / QUALIFIES) target existing Claims | No dangling edges |
+| State machine invariants | Terminal `retracted` Claims have no `retracted → active` history; `superseded` chains via SUPERSEDES are acyclic |
+| `claim_id` parseability | Per D-83/84-6 F1 + Qwen v1 review F5 — Claim node's `claim_id` parses cleanly into `claim_family_id + v<N>` |
+| Denormalized-key coherence | `Claim.subject_slug` matches `Claim—ABOUT→Entity.canonical_id` (or via ALIAS_OF) per D-83/84-9 |
+| `claim_family_id` consistency | Two Claims with the same `claim_family_id` share `subject_slug`, `predicate_class_canonical`, and `predicate_scope_slugs` |
+
+Verifier deviations may be flagged at severity tiers (`error` / `warning` / `info`) per existing verifier discipline.
+
+---
+
+## 7. References
+
+To be populated. Primary sources: AGM (Alchourrón, Gärdenfors & Makinson 1985); continual-KGE literature (BAKE 2025); HippoRAG (Gutiérrez et al. 2024); Round 6 research returns (`docs/round6-research-*.md`). External reviewer files at `docs/task83-84-promotion-contract-belief-revision-blueprint-codex.md` (D-83/84-2/3 round) and `docs/task83-84-promotion-contract-belief-revision-blueprint-gemini.md` (D-83/84-2/3 round, overreach record). v1 holistic review files at `docs/task83-84-blueprint-v1-review-{codex,deepseek,qwen}.md`. Reviewer panel context at `docs/external-review-panel.md` + `docs/gemini-review-hard-cap-prompt.md`.
