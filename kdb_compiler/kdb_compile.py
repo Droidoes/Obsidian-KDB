@@ -48,7 +48,7 @@ _DEFAULT_MAX_TOKENS = 32768
 # is the canonical list of (provider, model, knobs) tuples; kdb-compile
 # resolves `--model <id>` against it to avoid copy-paste mismatches.
 _REGISTRY_PATH = Path(__file__).resolve().parent.parent / "kdb_benchmark" / "models.json"
-_DEFAULT_MODEL_ID = "gemini-3.1-flash-lite"
+_DEFAULT_MODEL_ID = "deepseek-v4-flash:direct"
 
 
 def _load_model_entry(model_id: str, registry_path: Path) -> dict:
