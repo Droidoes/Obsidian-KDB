@@ -67,6 +67,8 @@ This blueprint specifies steps 2–4. Step 1 (which Analysis op surfaces the can
 
 **Cost being accepted:** one extra mechanism (the "upgrade" operation that takes an existing `LINKS_TO` edge and promotes the involved claim to a `Claim` node) that must be specified, tested, and documented. Two read paths at query time (`LINKS_TO` for stable beliefs, `Claim` for contested) — query layer must handle both deterministically.
 
+**Amended by D-83/84-7 (2026-05-22):** the framing above (LINKS_TO = "uncontested" / Claim = "contested") oversimplifies. Post-#83/#84, `LINKS_TO` is the **corpus topology layer** (connection-presence); Claim space is the **belief layer**. Both coexist on contested pairs: `LINKS_TO` is untouched by the upgrade operation; Claim nodes are added on top. See D-83/84-7 Part A + Part D for the full semantic contract.
+
 **Open questions filed against this decision:**
 
 | OQ | Question | Owner | Status |
@@ -312,6 +314,7 @@ CREATE REL TABLE EVIDENCES (
   FROM Source TO Claim,
   quoted_text STRING,
   confidence_score DOUBLE,
+  provenance_type STRING,                    -- D-83/84-7: analysis_emitted | reconstructed_from_run_payload | reconstructed_from_supports_overlap
   run_id STRING,
   created_at TIMESTAMP
 );
@@ -350,6 +353,156 @@ CREATE REL TABLE QUALIFIES (
 
 - **OQ-14** — How to aggregate multiple `EVIDENCES.confidence_score` values into the Claim's single `confidence` field (max, mean, Bayesian fusion, log-odds sum, etc.). Implementation-level question; deferred to the Belief Revision module work but flagged so it gets explicit attention.
 
+### D-83/84-7 — Upgrade mechanism: additive on Claim layer; LINKS_TO untouched; three-tier provenance — 2026-05-22
+
+**Decision:** Synthesis incorporating Codex's two tightenings (semantic-contract rewrite on D-83/84-1; α → α+ three-tier provenance hierarchy with explicit naming) on top of the (a)+(α) draft. Ratified by Joseph 2026-05-22. **Gemini was not consulted for this round** per the one-strike rule established 2026-05-22 after the hard-cap experiment partial failure (see `docs/gemini-review-hard-cap-prompt.md` + [[feedback_gemini_review_only_guardrail]]).
+
+#### Part A — OQ-2 resolution: upgrade is additive on Claim layer; LINKS_TO untouched
+
+- The Promotion Contract creates Claim nodes + Claim-Claim edges (`SUPERSEDES` / `CONTRADICTS` / `QUALIFIES`) + `EVIDENCES` edges.
+- **The upgrade does not delete or derive `LINKS_TO`.** The upgrade operation is additive only.
+- Normal compile ingestion (Stage 9/10 `graph_sync`) can still drop/recreate `LINKS_TO` via the existing current-state replacement path. That is not the upgrade's concern.
+- **Semantic contract (post-#83/#84):**
+  - `LINKS_TO` = corpus topology layer (which entities are associated in the corpus)
+  - Claim space = belief layer (polarity, version, provenance, contradiction)
+  - **Belief-sensitive reads must consult Claim space when a Claim family exists for the subject.** Topology-only reads (`graph_context_loader`, V0 ops, PageRank, communities, structural-holes) consume `LINKS_TO` unchanged.
+
+#### Part B — OQ-4 resolution: three-tier provenance reconstruction (α+)
+
+When upgrading an existing belief into a Claim, populate `EVIDENCES` via this fallback chain:
+
+- **Tier 1 (preferred): Run-payload reconstruction.** Use `LINKS_TO.run_id` to locate the run sidecar / `compile_result.json` that emitted the edge; extract the source page(s) + structured output. Provides specific source attribution.
+- **Tier 2 (fallback): SUPPORTS-overlap.** Walk `Source—SUPPORTS→Entity` for both subject and scope/object entities; intersection yields candidate sources. Honestly weaker — co-mention ≠ predicate-evidencing.
+- **Tier 3 (escape hatch): synthesized marker.** If neither Tier 1 nor Tier 2 yields a source, create the OLD Claim with no `EVIDENCES` edges; record attempted-and-failed reconstruction in operational metadata.
+
+#### Part C — `EVIDENCES.provenance_type` attribute (new)
+
+| Value | Source | Required attributes |
+|---|---|---|
+| `analysis_emitted` | Analysis-op surfaced the candidate | `quoted_text` + `confidence_score` REQUIRED (unless candidate rejected or sent to human review) |
+| `reconstructed_from_run_payload` | Tier 1 reconstruction | `quoted_text` + `confidence_score` MAY be NULL |
+| `reconstructed_from_supports_overlap` | Tier 2 reconstruction | `quoted_text` + `confidence_score` MAY be NULL — weakest variant |
+
+Schema update applied to D-83/84-6's `EVIDENCES` definition (provenance_type column added in-line above).
+
+#### Part D — D-83/84-1 amendment (semantic-contract rewrite)
+
+The original wording — *"LINKS_TO edges remain the default representation for stable, uncontested, single-source claims"* — is **superseded post-D-83/84-7** by:
+
+> *"`LINKS_TO` is the corpus topology layer (connection-presence), not belief state. The Claim layer carries belief state. Before #83/#84 deployment, `LINKS_TO` topology and implicit belief coincided; after #83/#84 ships, they diverge — a contested entity pair has its `LINKS_TO` edge unchanged (topology) AND new Claim nodes (belief layer). Reading `LINKS_TO` as belief truth post-#83/#84 is a contract violation."*
+
+Original D-83/84-1 entry preserved as-written for lineage; amendment note inline in D-83/84-1's body referencing this decision.
+
+**Resolves:** OQ-2 (post-upgrade LINKS_TO behavior), OQ-4 (provenance reconstruction at upgrade).
+
+**Opens:**
+
+- **OQ-15** — Run-payload (Tier 1) eligibility constraints. Ties to D39 replayability and Task #69 `compile_count` audit findings (some early runs have ineligible sidecars). Implementation-level question.
+- **OQ-16** — Tier-1 reconstruction timing: proactive (on every upgrade) vs. lazy (on demand from belief-sensitive queries). Performance vs. eagerness trade-off.
+- **OQ-17** — Tier-2 (SUPPORTS-overlap) precision: `SUPPORTS` is per-Entity; `predicate_scope_slugs` may not always correspond directly to entities in `SUPPORTS`. Needs verification at implementation.
+
+### D-83/84-8 — Candidate envelope details: targeted fingerprint + bucketed confidence with system-mapped score — 2026-05-22
+
+**Decision:** Synthesis across three reviewers (Codex + Deepseek + Qwen — the post-Gemini panel; see `docs/external-review-panel.md`). All three picked (d)+(d). Codex contributed deterministic LINKS_TO keys + confidence auditability metadata + hash-scope/algorithm tags. Deepseek contributed the coupling-as-invariant contract, the explicit attribute spec for `canonical_form_hash`, and the LLM-emits-string-system-normalizes pattern. Qwen contributed the null-counterpart-collision flag + aggregation-distortion concern (deferred to OQ-14/OQ-18). Ratified by Joseph 2026-05-22.
+
+#### Part A — Doxastic Fingerprint structure (resolves OQ-8)
+
+Targeted fingerprint hashing **only the subject + counterpart** that the classifier actually consults. Audit artifact, not fast-path-skip (per D-83/84-3 #3, always re-classify at promotion-time in v1).
+
+```yaml
+doxastic_fingerprint:
+  hash_scope: targeted-v1                # versioned scope/shape; future expansions bump this
+  hash_algorithm: sha256                 # matches project's ledger_snapshot_sha256 pattern
+  classifier_version: <version_string>   # classifier code+config snapshot identifier
+                                         # (lightweight: a version-string, not a hash;
+                                         # disambiguates same-fingerprint candidates with
+                                         # different classifier rule/prompt configurations)
+
+  subject:
+    slug: <canonical_entity_slug>        # canonical slug post-#74
+    state_hash: <sha256-hash>            # hashes ONLY {title, page_type, canonical_id}
+                                         # procedural fields (created_at, updated_at,
+                                         # last_run_id, first_run_id) EXCLUDED to prevent
+                                         # false drift on re-compile
+
+  counterpart: null                      # for no_counterpart / orthogonal cases
+  # OR:
+  counterpart:
+    kind: LINKS_TO
+    key:                                 # LINKS_TO has no stable edge ID today
+      from_slug: <subject_slug>          # (verified `graphdb_kdb/schema.py:81`);
+      to_slug: <target_slug>             # deterministic key required
+    state_hash: <sha256-hash>            # NOTE: degenerate today — LINKS_TO carries only
+                                         # `run_id`/`created_at` (both procedural).
+                                         # state_hash effectively reduces to an
+                                         # existence check. Acknowledged as expected.
+  # OR:
+  counterpart:
+    kind: Claim
+    id: <stable_claim_id>                # per D-83/84-6 F1 (claim_family_id + version)
+    state_hash: <sha256-hash>            # hashes classifier-read fields ONLY:
+                                         # {polarity, state, version, modality}
+                                         # created_at, last_revised_at EXCLUDED
+```
+
+#### Part B — Coupling-as-invariant (Deepseek's structural contract)
+
+> **The fingerprint hash content is defined as the union of all graph data the shared classifier reads during classification.** When the classifier's input surface expands (e.g., consults corroboration counts via OQ-6, domain membership via Task #76, or new Claim attributes), the fingerprint content **must** expand accordingly via a `hash_scope` version bump (e.g., `targeted-v1` → `targeted-v2`). **Fingerprint ≠ classifier-input-surface is a contract violation.**
+
+This is a named architectural invariant, not a one-time spec. Future PRs that touch the classifier's input surface must update the fingerprint scope in the same PR.
+
+#### Part C — Confidence representation (resolves OQ-10)
+
+**LLM emission contract** (extends existing `kdb_compiler/schemas/compiled_source_response.schema.json` `#/$defs/confidence` pattern):
+
+```json
+{ "confidence": "high" }
+// single string field, enum: "low" | "medium" | "high"
+```
+
+**Candidate envelope (post-parse, validated by upcoming JSON-Schema per OQ-19):**
+
+```yaml
+confidence:
+  bucket: low | medium | high            # LLM-emitted, normalized to enum at parse
+  score: 0.3 | 0.5 | 0.8                 # system-derived from bucket via configurable map
+  score_source: config_map               # always 'config_map' in v1
+  map_version: confidence_map_v1         # identifies which map was applied;
+                                         # old decisions remain explainable after
+                                         # config changes
+```
+
+**Config layer (off-candidate, versioned):**
+
+```yaml
+confidence_map_v1:
+  low_to_float: 0.3
+  medium_to_float: 0.5
+  high_to_float: 0.8
+# Default values; no empirical basis yet. Future eval surface per Task #75 pattern — see OQ-20.
+```
+
+#### Part D — Promotion-time audit fields (Codex's clarification)
+
+These fields are added by the Promotion Contract at promotion-time — **NOT** emitted by the Analysis op:
+
+```yaml
+promotion_audit:
+  fingerprint_drift: true | false        # subject.state_hash or counterpart.state_hash differs
+  classification_drift: true | false     # promotion-time classification differs from analysis-time
+  drift_explanation: <string>            # human-readable diff if either is true
+```
+
+The two are distinct signals: fingerprint can drift without classification changing (an irrelevant graph mutation in the subject's procedural fields, though our excluded-fields spec in Part A reduces this); classification can drift without fingerprint changing (caught by always-re-classify per D-83/84-3 #3 — e.g., a newly-relevant Claim that didn't exist at analysis-time). Recording both makes the audit explainable.
+
+**Resolves:** OQ-8 (Doxastic Fingerprint hash content), OQ-10 (confidence representation).
+
+**Opens:**
+
+- **OQ-18** — Aggregation distortion (Qwen's catch): when OQ-14 (confidence aggregation rule) lands, must handle bucketed/mapped aggregation edge cases — `low + high → mean(0.3, 0.8) = 0.55` rounds back to medium, losing the polarization signal. Flag `spread`/`variance` field, or `mode(bucket) + mean(score)` as a possible signal pair. **OQ-14 concern, not D-83/84-8.**
+- **OQ-19** — Candidate envelope JSON-Schema (Deepseek's follow-up): create a JSON-Schema validating analysis-op emissions. Mirrors `compile_result.schema.json` pattern. Implementation-level follow-up.
+- **OQ-20** — Confidence map empirical calibration: defaults `{0.3, 0.5, 0.8}` have no empirical basis. Belongs in Task #75 predeclared eval criteria territory (or its #83/#84 analog).
+
 ---
 
 ## 4. Candidate envelope — settled and open fields
@@ -361,23 +514,39 @@ D-83/84-4 settled `proposed_claim`'s structured form. D-83/84-6 settled the pers
 | `proposed_claim` | Analysis op + shared classifier (predicate-canon) | **D-83/84-4** | Settled. |
 | `provenance.source_paths` | Analysis op | This blueprint | Settled — list of `raw/...` source paths supporting the claim. |
 | `provenance.quoted_text` | Analysis op | This blueprint | Settled — source-text excerpts (become `EVIDENCES.quoted_text` on promotion per D-83/84-6). |
-| `confidence` | Analysis op | **OQ-10 open** | Numeric float (0.0–1.0) vs bucketed enum vs both. Affects threshold comparisons in D-83/84-2 action table AND becomes `EVIDENCES.confidence_score` on promotion per D-83/84-6. |
+| `confidence` | Analysis op | **D-83/84-8** | Bucketed enum (`low`/`medium`/`high`) + system-derived `score` + `score_source` + `map_version`. Score becomes `EVIDENCES.confidence_score` on promotion per D-83/84-6. |
 | `analysis_classification` | Analysis op + shared classifier | D-83/84-3 | Settled — 2-step result per D-83/84-2. |
 | `counterpart_ref` | Analysis op | This blueprint | Settled — existing edge or Claim ID being engaged (null if `no_counterpart` / `orthogonal`). |
-| `doxastic_fingerprint` | Analysis op | D-83/84-3 | Hash of target state at Analysis-time. **OQ-8 open** on hash content. |
+| `doxastic_fingerprint` | Analysis op | D-83/84-3, **D-83/84-8** | Targeted: hashes subject (canonical-form attributes only) + specific counterpart state. Coupling-as-invariant: scope expands with classifier-input-surface. |
 
 **At promotion-time** the contract re-runs the shared classifier (D-83/84-3 #3), produces `promotion_classification` (same shape as `analysis_classification`), compares fingerprint freshness, sets `classification_drift: bool` with reason. These fields are added to the candidate envelope (or to a per-candidate audit record) by the Promotion Contract — not emitted by the Analysis op.
 
 ---
 
-## 5. Next deliberation item — Upgrade mechanism (OQ-2 + OQ-4)
+## 5. Blueprint v1 status — structurally complete pending external v1 review
 
-D-83/84-6 settled the Claim node schema. The remaining schema-level work is the **upgrade mechanism** — how an existing `LINKS_TO` edge transitions into a `Claim` node when the Promotion Contract triggers it.
+With D-83/84-8 ratified, the **structural** decisions for #83 (Promotion Contract) and #84 (Belief Revision) are complete:
 
-- **OQ-2** — Post-upgrade behavior of `LINKS_TO` edges. Options: (a) stay as navigation shortcuts with consensus weight; (b) get removed entirely so retrieval routes through Claim space; (c) get auto-derived from Claim state (LINKS_TO always reflects latest uncontested consensus; Claim space carries history). Earlier lean: (c).
-- **OQ-4** — `LINKS_TO` provenance reconstruction at upgrade time. Current `LINKS_TO` has minimal attributes; the upgrade implies a richer provenance walk to populate `EVIDENCES` edge attributes (where does `quoted_text` come from on a historical edge? how is `confidence_score` derived if no Analysis op surfaced it originally?).
+| Layer | Decision | Status |
+|---|---|---|
+| Schema placement | D-83/84-1 (+ D-83/84-7 amendment) | ✅ |
+| Relation typology + triggers | D-83/84-2 | ✅ |
+| Classifier role + Doxastic Fingerprint pattern | D-83/84-3 | ✅ |
+| Predicate representation | D-83/84-4 | ✅ |
+| Predicate-class canonicalization | D-83/84-5 | ✅ |
+| Claim node schema | D-83/84-6 | ✅ |
+| Upgrade mechanism | D-83/84-7 | ✅ |
+| Candidate envelope details | D-83/84-8 | ✅ |
 
-OQ-2 + OQ-4 are tightly coupled: the answer to OQ-2 (do LINKS_TO stay or go?) affects whether OQ-4 needs full provenance reconstruction or can rely on the existing `LINKS_TO` + `SUPPORTS` chain for ongoing reads.
+**Remaining open questions** are all either implementation-level (OQ-13 canonicalization form; OQ-14 confidence aggregation; OQ-15/16/17 upgrade-mechanism details; OQ-19 candidate-envelope JSON-Schema) or predeclared-eval territory analogous to Task #75 (OQ-6 corroboration threshold; OQ-9 drift eval thresholds; OQ-18 aggregation-distortion signal; OQ-20 confidence map calibration). None block structural v1.
+
+**Recommended next steps** (decision for Joseph):
+
+1. **Fire blueprint v1 holistically at the post-Gemini reviewer panel** (Codex + Deepseek + Qwen — see `docs/external-review-panel.md`) for v1 review. Mirrors Tasks #74 / #75 / #76 pattern (per-decision review during draft → holistic v1 review → v2 → implementation).
+2. **File a separate task for predeclared eval criteria for #83/#84** (analogous to Task #75 for step-3 ops). OQ-6 / OQ-9 / OQ-18 / OQ-20 live there, not in this blueprint.
+3. **Begin implementation** on Task #83 (Promotion Contract) and Task #84 (Belief Revision) in parallel per the §9.4.4 parallel-design sequencing.
+
+Once v1 is reviewed and any blocking feedback addressed (→ v2), Tasks #85 (Identity Refinement) and #86 (Abstraction) can be unblocked since they inherit the formalized contract.
 
 ---
 
