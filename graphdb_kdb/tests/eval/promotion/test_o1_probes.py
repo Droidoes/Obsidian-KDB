@@ -47,13 +47,19 @@ _DEFERRED_PROBES = {
     # "s05_reinforces_threshold_triggers_upgrade",  # unblocked 2026-05-23 PM — LINKS_TO-implicit-counterpart classifier fallback
     # "s06_qualifies_with_truth_refinement_upgrade",  # unblocked 2026-05-23 PM — real fingerprint hash
     # "s07_qualifies_without_truth_refinement_topology",  # unblocked 2026-05-23 PM — classifier rule + object_slug + real hash
-    # Semantic-contradicts (no polarity flip; structural classifier picks
-    # `reinforces`/`supersedes` instead of Analysis's `contradicts` hint).
-    # S12 and S18 share this root cause; S14 passes because the drift cell
-    # expects BOTH drifts to fire (so the cls_drift discrepancy is the
-    # expected behavior, not a failure).
-    "s12_drift_cell_fingerprint_only_auto_promote_with_note",
-    "s18_retracted_counterpart_no_active_sibling",
+    # S12/S18 unblocked 2026-05-23 PM:
+    # - S12: probe rewritten with real polarity flip (denies→affirms)
+    #   under the narrowed D-83/84-2 contradicts definition; structural
+    #   classifier fires correctly → classification_drift=false. Future
+    #   semantic-contradicts probe coverage tracked by OQ-30 (predicate-
+    #   class antonym registry; tied to HW-1 vanity-graph hedge).
+    # - S18: classifier patched to OQ-18 branch B (retracted-no-sibling
+    #   returns no_counterpart, does not engage retracted as counterpart);
+    #   probe normalized so candidate envelope's counterpart_status /
+    #   relation_kind reflect the shared classifier's output per
+    #   D-83/84-3 #1 (analysis-time and promotion-time agree).
+    # "s12_drift_cell_fingerprint_only_auto_promote_with_note",
+    # "s18_retracted_counterpart_no_active_sibling",  # unblocked 2026-05-23 PM — classifier patched to OQ-18 branch B
 }
 
 

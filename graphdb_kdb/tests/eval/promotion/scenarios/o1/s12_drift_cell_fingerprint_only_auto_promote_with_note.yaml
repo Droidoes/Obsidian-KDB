@@ -1,6 +1,19 @@
 scenario_id: s12-drift-fingerprint-only-auto-promote-with-note
 op_under_test: O1
 
+# Tests the [fp_drift=true, classification_drift=false] cell of the
+# D-83/84-8 Part D matrix — disposition `auto_promote_with_note` STILL
+# mutates the graph (per P-O1-7 + F-O1-5: human_review/investigate are
+# zero-mutation; auto_promote and auto_promote_with_note are mutating).
+#
+# Setup (rewritten 2026-05-23 PM per blueprint amendment narrowing
+# `contradicts` to polarity-flip-only — see D-83/84-2 §Step 2): a real
+# polarity flip on the SAME predicate_class_canonical drives structural
+# contradicts dispatch; structural classifier output matches the
+# Analysis-time hint → classification_drift=false. fp_drift is induced
+# by a new SUPPORTS edge that appears between Analysis-time and
+# Promotion-time (deliberate sentinel hash on the candidate).
+
 eval_config:
   eval_clock: "2026-06-01T00:00:00+09:00"
   corroboration_threshold_n: 3
@@ -17,12 +30,12 @@ pre_state:
     - from_slug: warren-buffett
       to_slug: tech-industry
       run_id: run-1995-buffett-letter
-      predicate_class_canonical: avoids_tech_investments
+      predicate_class_canonical: invests_in_technology
       predicate_scope_slugs: ["global"]
-      polarity: affirms
+      polarity: denies
 
   # Promotion-time has an EXTRA SUPPORTS edge that didn't exist at analysis-time
-  # → fingerprint hash drifts; classification (contradicts) is unaffected
+  # → fingerprint hash drifts; classification (contradicts via polarity flip) is unaffected
   supports:
     - source_id: KDB/raw/1995-buffett-letter.md
       entity_slug: warren-buffett
@@ -32,19 +45,20 @@ pre_state:
       role: subject
 
   claims:
-    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
-      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+    # 1995 Claim: Buffett DENIES invests_in_technology (he explicitly said so)
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      claim_family_id: "warren-buffett__invests_in_technology__global"
       subject_slug: warren-buffett
-      predicate_class_canonical: avoids_tech_investments
+      predicate_class_canonical: invests_in_technology
       predicate_scope_slugs: ["global"]
       version: 1
       state: active
-      polarity: affirms
+      polarity: denies
       provenance_type: analysis_emitted
       confidence: 0.80
 
   about_edges:
-    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
       entity_slug: warren-buffett
       role: subject
 
@@ -54,7 +68,9 @@ pre_state:
 
 input:
   candidate:
-    candidate_id: cand-2020-buffett-apple-stake-drift-fp
+    # 2020 candidate: Buffett AFFIRMS invests_in_technology (real polarity flip
+    # against the 1995 Claim → structural contradicts dispatch fires)
+    candidate_id: cand-2020-buffett-tech-polarity-flip-drift-fp
     subject_slug: warren-buffett
     predicate_class_raw: "invests_in_technology"
     predicate_class_canonical: invests_in_technology
@@ -64,15 +80,17 @@ input:
     counterpart_status: candidate_counterpart_found
     relation_kind: contradicts
     refines_truth_conditions: false
-    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_claim_id: "warren-buffett__invests_in_technology__global__v1"
     counterpart_links_to_ref: null
     # Analysis-time fingerprint snapshot — graph state at T1 (before the new SUPPORTS arrived)
     doxastic_fingerprint:
       state_hash: "sha256:ANALYSIS_TIME_STATE_DELIBERATELY_DIFFERS_FROM_PROMOTION_TIME"
       classifier_input_scope:
-        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+        - "claim(warren-buffett__invests_in_technology__global__v1).polarity"
         - "supports_cardinality_for_subject(warren-buffett)"
-    # Analysis-time classification captured for drift comparison
+    # Analysis-time classification captured for drift comparison — matches
+    # the authoritative classifier output (same shared classifier per
+    # D-83/84-3 #1) → classification_drift=false.
     analysis_time_classification:
       counterpart_status: candidate_counterpart_found
       relation_kind: contradicts
@@ -98,31 +116,31 @@ expected_post_state:
         role: subject
   claims:
     add:
-      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
-        claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      - claim_id: "warren-buffett__invests_in_technology__global__v2"
+        claim_family_id: "warren-buffett__invests_in_technology__global"
         subject_slug: warren-buffett
-        predicate_class_canonical: invests_in_technology   # NEW Claim polarity flip
+        predicate_class_canonical: invests_in_technology
         predicate_scope_slugs: ["global"]
         version: 2
         state: active
-        polarity: affirms
+        polarity: affirms   # polarity flip from v1's denies
         provenance_type: analysis_emitted
         confidence: <placeholder-pending-OQ-26>
         classified_at: "2026-06-01T00:00:00+09:00"
   edges:
     add:
-      - from_claim_id: "warren-buffett__avoids_tech_investments__global__v2"
-        to_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      - from_claim_id: "warren-buffett__invests_in_technology__global__v2"
+        to_claim_id: "warren-buffett__invests_in_technology__global__v1"
         kind: CONTRADICTS
   about_edges:
     add:
-      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+      - claim_id: "warren-buffett__invests_in_technology__global__v2"
         entity_slug: warren-buffett
         role: subject
   evidences:
     add:
       - source_id: KDB/raw/2020-buffett-apple-stake.md
-        claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        claim_id: "warren-buffett__invests_in_technology__global__v2"
         provenance_type: analysis_emitted
         confidence: 0.80
 

@@ -59,15 +59,22 @@ input:
     predicate_class_canonical: holds_position_on
     predicate_scope_slugs: ["global"]
     polarity: affirms
-    counterpart_status: candidate_counterpart_found
-    relation_kind: contradicts
+    # Per D-83/84-3 #1 (shared classifier), Analysis-time and Promotion-time
+    # produce identical classification for identical input. OQ-18 branch B
+    # fires at BOTH stages → no_counterpart / relation_kind=null is the
+    # authoritative output. The candidate's counterpart_claim_id +
+    # counterpart_links_to_ref fields below are kept as documentation of
+    # what Analysis-time INSPECTED (the retracted Claim + the prior
+    # LINKS_TO), not as a counterpart-engagement signal.
+    counterpart_status: no_counterpart
+    relation_kind: null
     refines_truth_conditions: false
-    counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"   # retracted; no active sibling
+    counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"   # retracted; no active sibling — inspected by classifier, rerouted via OQ-18 branch B
     counterpart_links_to_ref:
       from_slug: warren-buffett
       to_slug: gold-investments
     doxastic_fingerprint:
-      state_hash: "sha256:retracted_no_sibling..."
+      state_hash: "sha256:e3cef9a1253bafc6cee11bbdd89265d5"
     object_slug: gold-investments
     object_qualifier: "pro"   # new stance — would contradict the retracted Claim if it were active
     confidence:

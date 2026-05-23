@@ -94,7 +94,7 @@ This blueprint specifies steps 2–4. Step 1 (which Analysis op surfaces the can
 **Step 2 — Relation kind** (only if `candidate_counterpart_found`):
 
 - `reinforces` — same predicate, same polarity, additional evidence
-- `contradicts` — same predicate, opposing polarity (claim X vs. not-X; narrative reframing also qualifies)
+- `contradicts` — same predicate, opposing polarity (claim X vs. not-X). **Narrative reframing is NOT structurally classifiable as contradicts at v1** (amended 2026-05-23 PM — see OQ-30); semantic-contradiction across different `predicate_class_canonical` with same polarity (e.g. `avoids_tech_investments` ↔ `invests_in_technology`) is correctly captured by `classification_drift=true` between Analysis-time hint and Promotion-time authoritative output, routing to `human_review` per D-83/84-8 Part D — which is the right human-in-loop disposition until OQ-30 lands.
 - `qualifies_or_extends` — adds nuance or condition to the prior claim
 - `supersedes` — temporally replaces prior claim
 
@@ -125,6 +125,7 @@ This blueprint specifies steps 2–4. Step 1 (which Analysis op surfaces the can
 
 - **OQ-6** — Corroboration threshold N for `reinforces`. Default 3; needs empirical tuning on real corpus. Belongs in predeclared eval criteria (Task #75 pattern).
 - **OQ-7** — *Resolved by D-83/84-4.* Same-predicate is canonical-form matching: `(subject_slug, predicate_class_canonical, predicate_scope_slugs as set)` triple equality, post predicate-class canonicalization (D-83/84-5).
+- **OQ-30** (new, 2026-05-23 PM) — Predicate-class antonym registry for narrative-reframing contradiction. Per D-83/84-3 #1 the structural classifier cannot derive semantic contradiction across different `predicate_class_canonical` values; per D-83/84-3 #4 such drift is correctly audited as `classification_drift=true` → `human_review` in v1. A config-driven antonym registry (same shape as `confidence_map_v1` + canonicalization registry per D-83/84-5) is the natural future home for this. Tied to **HW-1 vanity-graph attrition hedge** (#87 v2): if real-corpus runs show too many `human_review` cases driven by narrative-reframing, the registry becomes load-bearing. Empirical-tuning OQ — defer until real-corpus signal appears.
 
 ### D-83/84-3 — Classifier role: (C) Mid + shared module + Doxastic Fingerprint as audit artifact — 2026-05-22
 

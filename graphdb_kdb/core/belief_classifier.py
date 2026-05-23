@@ -288,13 +288,13 @@ def classify(
                     "object_slugs": list(row[4]) if row[4] is not None else [],
                     "condition_text": row[5] or "",
                 })
-            # No active sibling → use the retracted claim itself as the
-            # counterpart for relation_kind dispatch (S18 path). The
-            # `counterpart_status` stays `candidate_counterpart_found`;
-            # contradicts/qualifies dispatch can still apply against a
-            # retracted target.
-            if not counterpart_claims and retracted_entry is not None:
-                counterpart_claims.append(retracted_entry)
+            # No active sibling → per P-O1-8 OQ-18 default branch B
+            # (ratified via #87.1 probe S18), do NOT engage the retracted
+            # member as a counterpart for relation_kind dispatch. Fall
+            # through with `counterpart_claims` empty so the no_counterpart
+            # path fires below. `retracted_family_id` remains set, which
+            # the no_counterpart branch consults to short-circuit the
+            # orthogonal-vs-no_counterpart distinction.
     else:
         r = conn.execute(
             """
@@ -336,9 +336,15 @@ def classify(
     # only (run_id, created_at) per graphdb_kdb/schema.py:115-119, so we
     # can't filter by predicate or polarity at this layer. Tracked as OQ
     # alongside the verifier-strictness arc.
+    #
+    # Gated off when `retracted_family_id` is set: per OQ-18 branch B
+    # (S18 path), retracted-no-sibling takes precedence — the candidate
+    # gets a fresh start as `no_counterpart`, ignoring any LINKS_TO
+    # history that may coexist with the retracted Claim.
     ref = candidate.counterpart_links_to_ref
     if (
         not active_counterparts
+        and retracted_family_id is None
         and isinstance(ref, dict)
         and ref.get("from_slug")
         and ref.get("to_slug")
