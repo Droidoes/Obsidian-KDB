@@ -1,0 +1,121 @@
+scenario_id: s18-retracted-counterpart-no-active-sibling
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: gold-investments
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: gold-investments
+      run_id: run-2010-buffett-anti-gold-letter
+      predicate_class_canonical: holds_position_on
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-anti-gold-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Only the retracted Claim exists in this family — no active sibling
+    - claim_id: "warren-buffett__holds_position_on__global__v1"
+      claim_family_id: "warren-buffett__holds_position_on__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: holds_position_on
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: retracted
+      polarity: affirms
+      object_slug: gold-investments
+      object_qualifier: "anti"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      retracted_at: "2026-04-01T00:00:00+09:00"
+
+  about_edges:
+    - claim_id: "warren-buffett__holds_position_on__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-buffett-gold-new-position
+    subject_slug: warren-buffett
+    predicate_class_raw: "holds_position_on"
+    predicate_class_canonical: holds_position_on
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"   # retracted; no active sibling
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: gold-investments
+    doxastic_fingerprint:
+      state_hash: "sha256:retracted_no_sibling..."
+    object_slug: gold-investments
+    object_qualifier: "pro"   # new stance — would contradict the retracted Claim if it were active
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2024-buffett-gold-position-shift.md
+        quoted_text: "Berkshire has accumulated a position in Barrick Gold."
+
+expected_post_state:
+  # P-O1-8 branch B: treat as no_counterpart → topology-only writes
+  entities: unchanged
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: gold-investments
+        run_id: <runtime-assigned>
+        predicate_class_canonical: holds_position_on
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2024-buffett-gold-position-shift.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged   # NO new Claim — topology-only per no_counterpart treatment
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  counterpart_resolution_path:
+    original_counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"
+    original_counterpart_state: retracted
+    resolution_rule: "P-O1-8 OQ-18 default branch B — no active sibling; treat as no_counterpart"
+    resolved_counterpart_claim_id: null
+    effective_relation_kind: no_counterpart   # rather than contradicts against the retracted member
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "no_counterpart effective treatment → topology-only writes"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: P-O1-8, expected: pass, note: "retracted-counterpart with no active sibling routes to no_counterpart per OQ-18 default branch B"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were created or CONTRADICTS edge were written against the retracted member"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "topology-only writes are authorized for the effective no_counterpart resolution"}

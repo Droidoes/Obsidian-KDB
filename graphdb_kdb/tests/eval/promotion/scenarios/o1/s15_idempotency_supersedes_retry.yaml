@@ -1,0 +1,126 @@
+scenario_id: s15-supersedes-idempotency-post-state-retry
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  # This pre_state is S8's expected_post_state — the predecessor Claim is already superseded
+  entities:
+    - slug: warren-buffett
+    - slug: apple-inc
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: apple-inc
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+      subject_slug: warren-buffett
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      version: 1
+      state: superseded   # already superseded from prior promotion
+      polarity: affirms
+      object_slug: apple-inc
+      object_qualifier: "5%"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      superseded_by: "warren-buffett__owns_stake_percentage__t=2023__v2"
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+      subject_slug: warren-buffett
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2023"]
+      version: 2
+      state: active
+      polarity: affirms
+      object_slug: apple-inc
+      object_qualifier: "8%"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      supersedes: "warren-buffett__owns_stake_percentage__t=2020__v1"
+
+  edges:
+    - from_claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      to_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      kind: SUPERSEDES
+
+  about_edges:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      entity_slug: warren-buffett
+      role: subject
+
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  # Same candidate as S8 — re-run against post-state
+  candidate:
+    candidate_id: cand-2023-buffett-apple-stake-update
+    subject_slug: warren-buffett
+    predicate_class_raw: "owns_stake_percentage"
+    predicate_class_canonical: owns_stake_percentage
+    predicate_scope_slugs: ["t=2023"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: supersedes
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: apple-inc
+    doxastic_fingerprint:
+      state_hash: "sha256:supersedes_retry..."
+    object_slug: apple-inc
+    object_qualifier: "8%"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+        quoted_text: "Apple now represents 8% of the Berkshire portfolio."
+
+expected_post_state:
+  # Idempotency: ZERO new writes — graph unchanged
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged   # predecessor stays superseded; NEW Claim already exists with v2 identity
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  idempotency_outcome: no_writes_unique_constraint_hit   # per D-83/84-10
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-3, expected: pass, note: "idempotency under retry against post-state — also covers state-transition idempotency (predecessor already superseded; SUPERSEDES edge already present)"}
+  - {id: F-O1-3, expected: not_fire, note: "would fail if retry produced duplicate Claim, duplicate SUPERSEDES edge, or re-flipped predecessor state"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}

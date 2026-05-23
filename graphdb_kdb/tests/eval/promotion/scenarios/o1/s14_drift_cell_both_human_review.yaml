@@ -1,0 +1,133 @@
+scenario_id: s14-drift-both-human-review
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  # Both the SUPPORTS edge (fingerprint scope) AND a new related Claim arrived since analysis-time
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2019-buffett-tech-pivot-context.md   # NEW since T1 — contributes to fingerprint drift
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Existing Claim
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+    # NEW Claim arrived since analysis-time — affects classifier read surface AND outcome
+    - claim_id: "warren-buffett__shifted_investment_thesis__global__v1"
+      claim_family_id: "warren-buffett__shifted_investment_thesis__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: shifted_investment_thesis
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.70
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__shifted_investment_thesis__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-both
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint captured BEFORE the new SUPPORTS + new Claim arrived
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_at_T1_pre_drift"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+        - "supports_cardinality_for_subject(warren-buffett)"
+        - "related_claims_for_subject(warren-buffett)"
+    # Analysis-time classification was different
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: qualifies_or_extends
+      refines_truth_conditions: true
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # human_review disposition → NO graph mutation per P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: human_review
+  drift_signals: { fingerprint_drift: true, classification_drift: true }
+  drift_note: "both fingerprint_drift and classification_drift — state change correlates with classification change; flagged for human review"
+  classified_at: "2026-06-01T00:00:00+09:00"
+  human_review_record:
+    analysis_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: qualifies_or_extends, refines_truth_conditions: true }
+    promotion_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: contradicts, refines_truth_conditions: false }
+    state_changes_in_fingerprint_scope:
+      - "new SUPPORTS edge for warren-buffett"
+      - "new Claim: shifted_investment_thesis"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=true, classification_drift=true"}
+  - {id: P-O1-7, expected: pass, note: "disposition human_review — no graph mutation per P-O1-7"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation under human_review disposition"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (graph unchanged)"}

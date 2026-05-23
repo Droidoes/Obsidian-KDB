@@ -1,0 +1,113 @@
+scenario_id: s13-drift-classification-only-investigate
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-cls
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    # PROMOTION-TIME re-classification will yield `contradicts`
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint scope matches promotion-time → no drift
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_stable_across_T1_T2"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+    # Analysis-time classification was DIFFERENT (e.g., qualifies_or_extends, refines=false)
+    # but promotion-time re-classification yields contradicts → classification_drift=true
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: qualifies_or_extends
+      refines_truth_conditions: false
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # investigate disposition → NO graph mutation per P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: investigate
+  drift_signals: { fingerprint_drift: false, classification_drift: true }
+  drift_note: "classification_drift without fingerprint_drift — suspect classifier non-determinism, stale classifier_version, or coupling-as-invariant violation; flagged for investigation"
+  classified_at: "2026-06-01T00:00:00+09:00"
+  investigation_record:
+    analysis_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: qualifies_or_extends, refines_truth_conditions: false }
+    promotion_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: contradicts, refines_truth_conditions: false }
+    suspected_cause: classifier_non_determinism_or_coupling_violation
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=false, classification_drift=true"}
+  - {id: P-O1-7, expected: pass, note: "disposition investigate — no graph mutation per P-O1-7"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation — investigate disposition short-circuits before any Claim/EVIDENCES/LINKS_TO/SUPPORTS write"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (graph unchanged)"}

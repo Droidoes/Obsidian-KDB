@@ -1,0 +1,113 @@
+scenario_id: s9-buffett-senate-meeting-orthogonal
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Existing contested-family Claim — unrelated to the candidate's predicate
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      claim_family_id: "warren-buffett__invests_in__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: tech-industry
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2010-buffett-senate-meeting
+    subject_slug: warren-buffett
+    predicate_class_raw: "met_with"
+    predicate_class_canonical: met_with   # entirely different predicate
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: orthogonal
+    relation_kind: null   # orthogonal → no relation_kind dispatch per D-83/84-2
+    refines_truth_conditions: null
+    counterpart_claim_id: null
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:orthogonal..."
+      classifier_input_scope:
+        - "subject_mentions(warren-buffett)"
+        - "predicate_class(met_with) — no overlap with existing predicates"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2010-buffett-senate-testimony.md
+        quoted_text: "Buffett testified before the Senate Banking Committee on financial regulation."
+
+expected_post_state:
+  entities:
+    add:
+      - slug: senate-banking-committee
+        kind: organization
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: senate-banking-committee
+        run_id: <runtime-assigned>
+        predicate_class_canonical: met_with
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2010-buffett-senate-testimony.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged       # NO Claim writes — orthogonal path
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "orthogonal (topology-only; existing Claims untouched)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were written for the orthogonal cell"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation"}

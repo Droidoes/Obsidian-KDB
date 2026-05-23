@@ -1,0 +1,113 @@
+scenario_id: s7-buffett-amex-extends-without-refining
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      claim_family_id: "warren-buffett__invests_in__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      object_slug: tech-industry
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2023-buffett-amex-investment
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in"
+    predicate_class_canonical: invests_in
+    predicate_scope_slugs: ["global"]   # SAME scope as existing Claim — not a refinement
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: qualifies_or_extends
+    refines_truth_conditions: false   # KEY: extends without refining → topology-only
+    counterpart_claim_id: "warren-buffett__invests_in__global__v1"
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: tech-industry
+    doxastic_fingerprint:
+      state_hash: "sha256:qualifies_no_truth..."
+      classifier_input_scope:
+        - "claim_family(warren-buffett__invests_in__global)"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-amex-stake.md
+        quoted_text: "Berkshire also continues to hold its American Express position."
+
+expected_post_state:
+  entities:
+    add:
+      - slug: american-express
+        kind: organization
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: american-express
+        run_id: <runtime-assigned>
+        predicate_class_canonical: invests_in
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2023-buffett-amex-stake.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged       # NO Claim writes — topology-only path
+  edges: unchanged        # no new Claim-Claim edges
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged    # no new EVIDENCES (no new Claim to attach to)
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "qualifies-without-truth (topology-only — zero Claim writes)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were written for this cell"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation — confirms topology-only is authorized for this disposition"}

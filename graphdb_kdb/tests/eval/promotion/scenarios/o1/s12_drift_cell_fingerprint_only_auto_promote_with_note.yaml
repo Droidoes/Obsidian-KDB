@@ -1,0 +1,143 @@
+scenario_id: s12-drift-fingerprint-only-auto-promote-with-note
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  # Promotion-time has an EXTRA SUPPORTS edge that didn't exist at analysis-time
+  # → fingerprint hash drifts; classification (contradicts) is unaffected
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2018-buffett-interview.md   # NEW since analysis-time
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-fp
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint snapshot — graph state at T1 (before the new SUPPORTS arrived)
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_at_analysis_time_T1"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+        - "supports_cardinality_for_subject(warren-buffett)"
+    # Analysis-time classification captured for drift comparison
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: contradicts
+      refines_truth_conditions: false
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # auto_promote_with_note STILL mutates per D-83/84-8 Part D + P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        claim_family_id: "warren-buffett__avoids_tech_investments__global"
+        subject_slug: warren-buffett
+        predicate_class_canonical: invests_in_technology   # NEW Claim polarity flip
+        predicate_scope_slugs: ["global"]
+        version: 2
+        state: active
+        polarity: affirms
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges:
+    add:
+      - from_claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        to_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+        kind: CONTRADICTS
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        provenance_type: analysis_emitted
+        confidence: 0.80
+
+promotion_audit:
+  disposition: auto_promote_with_note
+  drift_signals: { fingerprint_drift: true, classification_drift: false }
+  drift_note: "fingerprint_drift due to new SUPPORTS edge (KDB/raw/2018-buffett-interview.md) — orthogonal to relation_kind dispatch; promoted with note"
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "Claim-creating contradicts cell — mutation proceeds despite fingerprint drift"}
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=true, classification_drift=false"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote_with_note (mutates per P-O1-7)"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if mutation skipped despite auto_promote_with_note disposition"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "auto_promote_with_note is an authorized mutation disposition"}

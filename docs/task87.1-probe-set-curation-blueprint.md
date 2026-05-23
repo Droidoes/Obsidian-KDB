@@ -179,7 +179,7 @@ input:
     predicate_scope_slugs: ["global"]
     polarity: denies   # this is what makes it a contradiction
     modality: declarative
-    counterpart_status: present  # has counterpart Claim
+    counterpart_status: candidate_counterpart_found  # has counterpart Claim (spike-leftover `present` normalized 2026-05-23 to v1-ratified canonical enum)
     relation_kind: contradicts
     refines_truth_conditions: false
     counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"

@@ -1,0 +1,153 @@
+scenario_id: s5-buffett-long-term-holding-reinforces-threshold
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+      kind: person
+    - slug: long-term-holding-strategy
+      kind: concept
+
+  links_to:
+    # Two prior LINKS_TO from independent runs — candidate is the 3rd corroboration (= N)
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2010-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2015-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2015-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims: []
+  edges: []
+  about_edges: []
+  alias_of_edges: []
+
+  run_payloads:
+    - run_id: run-2010-buffett-letter
+      compile_result_path: KDB/runs/run-2010-buffett-letter/compile_result.json
+      reconstructible_quote: "I prefer to hold investments indefinitely; my favorite holding period is forever."
+    - run_id: run-2015-buffett-letter
+      compile_result_path: KDB/runs/run-2015-buffett-letter/compile_result.json
+      reconstructible_quote: "Time is the friend of the wonderful business."
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-long-term-holding-3
+    subject_slug: warren-buffett
+    predicate_class_raw: "practices_strategy"
+    predicate_class_canonical: practices_strategy
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    # Dispatch derivation (per D-87.1-5): candidate_counterpart_found + null claim_id + non-null LINKS_TO ref → O2-eligible.
+    # But relation_kind=reinforces + corroboration_count reaches N → upgrade triggered, routes through O1's upgrade-from-reinforces branch.
+    counterpart_status: candidate_counterpart_found
+    relation_kind: reinforces
+    refines_truth_conditions: false
+    counterpart_claim_id: null
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+    doxastic_fingerprint:
+      state_hash: "sha256:reinforces_threshold..."
+      classifier_input_scope:
+        - "links_to_subject_mentions(warren-buffett, long-term-holding-strategy)"
+        - "supports_cardinality_for_predicate(practices_strategy)"
+    confidence:
+      bucket: high
+      score: 0.80
+      score_source: config_map
+      map_version: confidence_map_v1
+    evidence:
+      - source_id: KDB/raw/2020-buffett-letter.md
+        quoted_text: "Our preferred holding period remains forever."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  entities: unchanged
+  links_to: unchanged   # additive; not deleted on upgrade per D-83/84-7 Part A
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-letter.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      # SINGLE Claim — consensus path consolidates all three corroborating sources
+      - claim_id: "warren-buffett__practices_strategy__global__v1"
+        claim_family_id: "warren-buffett__practices_strategy__global"
+        subject_slug: warren-buffett
+        predicate_class_canonical: practices_strategy
+        predicate_scope_slugs: ["global"]
+        version: 1
+        state: active
+        polarity: affirms
+        modality: declarative
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        confidence_spread: <placeholder-pending-OQ-26>
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges: []   # no Claim-Claim edges — consensus, not contradiction
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__practices_strategy__global__v1"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      # 3 EVIDENCES — 2 reconstructed via Tier-1 + 1 analysis_emitted from current candidate
+      - source_id: KDB/raw/2010-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "I prefer to hold investments indefinitely; my favorite holding period is forever."
+        provenance_type: reconstructed_from_run_payload
+        confidence: 0.80
+      - source_id: KDB/raw/2015-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "Time is the friend of the wonderful business."
+        provenance_type: reconstructed_from_run_payload
+        confidence: 0.80
+      - source_id: KDB/raw/2020-buffett-letter.md
+        claim_id: "warren-buffett__practices_strategy__global__v1"
+        quoted_text: "Our preferred holding period remains forever."
+        provenance_type: analysis_emitted
+        confidence: 0.80
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  upgrade_trigger: corroboration_threshold_crossed
+  corroboration_count_at_upgrade: 3   # equals corroboration_threshold_n
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "reinforces-above-threshold (Claim-creating consensus path)"}
+  - {id: P-O1-5, expected: pass, note: "3 unique evidence sources → 3 EVIDENCES edges (mixed Tier-1 + analysis_emitted)"}
+  - {id: P-O1-6, expected: pass, note: "aggregate confidence over 3 sources (placeholder; OQ-26-blocked)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if reinforces with corroboration < N wrote a Claim"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (single Claim; no Claim-Claim edge)"}

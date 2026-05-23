@@ -1,0 +1,110 @@
+scenario_id: s16-subject-canonicalized-between-runs
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett   # canonical
+      kind: person
+    - slug: buffett          # alias — added between analysis-time and promotion-time
+      kind: person
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2010-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__practices_strategy__global__v1"
+      claim_family_id: "warren-buffett__practices_strategy__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__practices_strategy__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  # ALIAS_OF added between analysis-time and promotion-time
+  alias_of_edges:
+    - from_slug: buffett          # the candidate's analysis-time slug
+      to_slug: warren-buffett     # canonical
+      established_at: "2026-05-25T00:00:00+09:00"   # before eval_clock
+
+  edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-buffett-reinforces-mid-canonicalization
+    subject_slug: buffett   # NON-CANONICAL — candidate was emitted before ALIAS_OF was established
+    predicate_class_raw: "practices_strategy"
+    predicate_class_canonical: practices_strategy
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: reinforces
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__practices_strategy__global__v1"
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:between_runs_alias..."
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-newer-letter.md
+        quoted_text: "Buffett continues to practice patient capital allocation."
+
+expected_post_state:
+  entities: unchanged
+  # ALIAS_OF traversal resolves `buffett` → `warren-buffett` for the Claim's authoritative ABOUT binding (D-83/84-9 Part B)
+  links_to: unchanged   # below-threshold reinforces is topology-only (assumes N=3, this is 2nd corroboration)
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-newer-letter.md
+        entity_slug: warren-buffett   # subject_slug rewritten to canonical via ALIAS_OF
+        role: subject
+  claims: unchanged   # below threshold — no upgrade
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  canonicalization_resolution:
+    candidate_subject_slug: buffett
+    canonical_subject_slug: warren-buffett
+    resolution_path: "via_alias_of(buffett → warren-buffett)"
+    established_at: "2026-05-25T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "reinforces below threshold → topology-only (single SUPPORTS add)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if Claim were written below threshold"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation — ABOUT-authoritative binding holds under between-runs canonicalization"}

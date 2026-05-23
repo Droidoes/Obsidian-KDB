@@ -1,0 +1,171 @@
+scenario_id: s1-buffett-tech-contradicts-2020
+op_under_test: O1
+description: |
+  Existing active Claim "buffett_avoids_tech_investments" (from 1995 letter, 2
+  evidences, high confidence). New candidate emitted from 2020 article
+  reporting Buffett's Apple investment, classified as `contradicts`.
+  Expected: NEW Claim created, CONTRADICTS edge to OLD Claim, EVIDENCES
+  on NEW Claim, no mutation of LINKS_TO topology.
+covers:
+  - "action-cell: contradicts"
+  - "drift-cell: fingerprint_drift=false, classification_drift=false"
+  - "upgrade-tier: N/A (pre-existing Claim family)"
+  - "state-transition: N/A (both Claims remain active)"
+  - "aliasing: N/A"
+  - "retracted-counterpart: N/A"
+  - "sequential-interaction: N/A"
+  - "HW-rule: N/A (single-candidate)"
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365.0
+  default_read_confidence_threshold_t: 0.30
+  confidence_map_version: "confidence_map_v1"
+  read_mode: default  # unused by O1; included for template uniformity
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+      canonical_id: warren-buffett
+      domain: investing
+    - slug: berkshire-hathaway
+      canonical_id: berkshire-hathaway
+      domain: investing
+    - slug: apple-inc
+      canonical_id: apple-inc
+      domain: technology
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      state_hash: "links_to_state_v1"
+      type: subject_mentions
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: tech-industry
+      role: object
+  claims:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      modality: declarative
+      confidence: 0.80  # OQ-26-dependent placeholder
+      confidence_spread: 0.05  # OQ-26-dependent placeholder
+      created_at: "1995-03-15T00:00:00+09:00"
+  evidences:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      quoted_text: "I don't invest in technology businesses I don't understand."
+      score: 0.80
+      provenance_type: analysis_emitted
+      created_at: "1995-03-15T00:00:00+09:00"
+    - source_id: KDB/raw/1996-buffett-shareholder-meeting.md
+      claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      quoted_text: "We stay away from tech because circle-of-competence."
+      score: 0.80
+      provenance_type: analysis_emitted
+      created_at: "1996-05-04T00:00:00+09:00"
+  edges: []  # no Claim-Claim edges yet
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: avoids_tech_investments  # canonicalized to existing family
+    predicate_scope_slugs: ["global"]
+    polarity: denies   # this is what makes it a contradiction
+    modality: declarative
+    counterpart_status: candidate_counterpart_found  # has counterpart Claim (spike-leftover `present` normalized 2026-05-23 to v1-ratified canonical enum)
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    doxastic_fingerprint:
+      state_hash: "sha256:abc123def456..."  # placeholder
+      classifier_input_scope:
+        - "buffett_avoids_tech_investments_global_family"
+        - "candidate_polarity"
+    confidence:
+      bucket: high
+      score: 0.80
+      score_source: config_map
+      map_version: confidence_map_v1
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        claim_family_id: "warren-buffett__avoids_tech_investments__global"
+        subject_slug: warren-buffett
+        predicate_class_canonical: avoids_tech_investments
+        predicate_scope_slugs: ["global"]
+        version: 2
+        state: active
+        polarity: denies
+        modality: declarative
+        confidence: 0.80  # OQ-26-dependent placeholder
+        confidence_spread: 0.00  # OQ-26-dependent placeholder
+        created_at: "2026-06-01T00:00:00+09:00"
+  evidences:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        score: 0.80
+        provenance_type: analysis_emitted
+        created_at: "2026-06-01T00:00:00+09:00"
+  edges:
+    add:
+      - from_claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        to_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+        edge_type: CONTRADICTS
+        created_at: "2026-06-01T00:00:00+09:00"
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        entity_slug: warren-buffett
+  promotion_audit:
+    candidate_id: cand-2020-buffett-apple
+    fingerprint_drift: false
+    classification_drift: false
+    drift_explanation: null
+    disposition: auto_promote
+    counterpart_resolution_path: null  # counterpart is active, no resolution traversal needed
+    classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-1, expected: pass, note: "determinism: re-running this scenario should yield same classification"}
+  - {id: P-O1-2, expected: pass, note: "Claim-creating path: contradicts cell"}
+  - {id: P-O1-3, expected: pass, note: "idempotency (verified by retry pass)"}
+  - {id: P-O1-4, expected: pass, note: "drift signals false"}
+  - {id: P-O1-5, expected: pass, note: "evidence cardinality (1 entry → 1 EVIDENCES edge)"}
+  - {id: P-O1-6, expected: pass, note: "aggregate confidence (placeholder; OQ-26-blocked)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (verifier clean post-mutation)"}

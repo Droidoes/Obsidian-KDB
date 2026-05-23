@@ -1,0 +1,99 @@
+scenario_id: s2-new-entity-no-counterpart
+op_under_test: O1
+description: |
+  Brand-new entity ("nvidia-corp") never seen by the system before. Candidate
+  has counterpart_status=no_counterpart. Expected: LINKS_TO + SUPPORTS
+  writes only; ZERO Claim/EVIDENCES/Claim-Claim writes.
+covers:
+  - "action-cell: no_counterpart"
+  - "drift-cell: fingerprint_drift=false, classification_drift=false"
+  - "topology-only post-state (P-O1-2)"
+  - "HW-rule: N/A"
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365.0
+  default_read_confidence_threshold_t: 0.30
+  confidence_map_version: "confidence_map_v1"
+  read_mode: default
+
+pre_state:
+  entities: []   # empty — new-entity scenario
+  links_to: []
+  supports: []
+  claims: []
+  evidences: []
+  edges: []
+  about_edges: []
+
+input:
+  candidate:
+    candidate_id: cand-nvidia-founded
+    subject_slug: nvidia-corp
+    predicate_class_raw: "founded_in"
+    predicate_class_canonical: founded_in
+    predicate_scope_slugs: ["temporal"]
+    polarity: affirms
+    modality: declarative
+    counterpart_status: no_counterpart
+    relation_kind: null   # no relation when no_counterpart
+    refines_truth_conditions: false
+    counterpart_claim_id: null
+    doxastic_fingerprint:
+      state_hash: "sha256:none000..."
+      classifier_input_scope:
+        - "subject_existence_check"
+        - "context_key: founded_in__temporal"  # per #83/#84 D-83/84-8 Part A v2 null-counterpart distinguisher
+    confidence:
+      bucket: high
+      score: 0.80
+      score_source: config_map
+      map_version: confidence_map_v1
+    evidence:
+      - source_id: KDB/raw/nvidia-founding-1993.md
+        quoted_text: "NVIDIA Corporation was founded on April 5, 1993."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  entities:
+    add:
+      - slug: nvidia-corp
+        canonical_id: nvidia-corp
+        domain: technology  # inferred from source/context (impl-detail per OQ-26-adjacent)
+  links_to:
+    add:
+      - from_slug: nvidia-corp
+        to_slug: "1993"  # temporal-scope target (impl-detail: how scopes become topology)
+        run_id: <runtime-assigned>
+        state_hash: <runtime-computed>
+        type: subject_temporal_assertion
+  supports:
+    add:
+      - source_id: KDB/raw/nvidia-founding-1993.md
+        entity_slug: nvidia-corp
+        role: subject
+  claims: unchanged  # zero Claim writes per topology-only contract
+  evidences: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  promotion_audit:
+    candidate_id: cand-nvidia-founded
+    fingerprint_drift: false
+    classification_drift: false
+    drift_explanation: null
+    disposition: auto_promote
+    counterpart_resolution_path: null
+    classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "topology-only path (zero Claim writes asserted explicitly)"}
+  - {id: P-O1-3, expected: pass, note: "idempotency"}
+  - {id: P-O1-4, expected: pass, note: "drift signals false"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if Claim were written"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
