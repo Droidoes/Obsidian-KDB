@@ -74,7 +74,7 @@ input:
     counterpart_claim_id: "warren-buffett__invests_in_technology__global__v1"   # retracted
     counterpart_links_to_ref: null
     doxastic_fingerprint:
-      state_hash: "sha256:retracted_with_sibling..."
+      state_hash: "sha256:25c72187a150c1c7325b230cc3127d6d"
     confidence:
       bucket: high
       score: 0.80

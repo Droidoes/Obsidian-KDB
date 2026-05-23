@@ -41,7 +41,7 @@ input:
     refines_truth_conditions: false
     counterpart_claim_id: null
     doxastic_fingerprint:
-      state_hash: "sha256:none000..."
+      state_hash: "sha256:80c22a1335339d509508b3437d9173a1"
       classifier_input_scope:
         - "subject_existence_check"
         - "context_key: founded_in__temporal"  # per #83/#84 D-83/84-8 Part A v2 null-counterpart distinguisher

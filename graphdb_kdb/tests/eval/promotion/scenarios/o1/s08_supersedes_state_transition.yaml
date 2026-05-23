@@ -65,7 +65,7 @@ input:
       from_slug: warren-buffett
       to_slug: apple-inc
     doxastic_fingerprint:
-      state_hash: "sha256:supersedes..."
+      state_hash: "sha256:d109123187fcc8fc4acc5b25e0a9a024"
     object_slug: apple-inc
     object_qualifier: "8%"
     confidence:

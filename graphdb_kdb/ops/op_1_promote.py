@@ -86,15 +86,15 @@ def run(candidate: CandidateEnvelope, eval_config: EvalConfig, conn: Any) -> Pro
 
     # Drift detection (D-83/84-8 Part B + Part D).
     #
-    # GREEN v1 simplification: fingerprint_drift requires real
-    # deterministic hashes of graph-state slices at both Analysis-time
-    # AND promotion-time. The #87.1 v1 probe corpus uses placeholder
-    # strings ("sha256:abc123..." / "sha256:fingerprint_at_T1") rather
-    # than computed hashes, so end-to-end fingerprint_drift testing
-    # isn't yet probe-grounded. Implementation reports `False` here;
-    # probes that exercise fp_drift=true (S12, S14) are deferred until
-    # the corpus carries real hashes (#87.1 v1.2).
-    fingerprint_drift = False
+    # fingerprint_drift compares the candidate's Analysis-time recorded
+    # state_hash to the classifier's current authoritative computation.
+    # Both derive from the deterministic `_state_hash` over the
+    # `classifier_input_scope` lines; identical inputs → identical hash;
+    # mismatch indicates the graph slices the classifier consults have
+    # drifted since the candidate was emitted. Probe corpus normalized
+    # 2026-05-23 to carry real hashes (probes that expect fp_drift=true
+    # use a sentinel that deliberately differs).
+    fingerprint_drift = candidate.doxastic_fingerprint.state_hash != classification.state_hash
 
     # classification_drift: compare authoritative classifier output to the
     # Analysis-time hint. The hint lives in `analysis_time_classification`

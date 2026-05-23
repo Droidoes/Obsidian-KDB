@@ -47,10 +47,12 @@ _DEFERRED_PROBES = {
     "s05_reinforces_threshold_triggers_upgrade",
     "s06_qualifies_with_truth_refinement_upgrade",
     "s07_qualifies_without_truth_refinement_topology",
-    # Real deterministic fingerprint hashes (corpus uses placeholders)
+    # Semantic-contradicts (no polarity flip; structural classifier picks
+    # `reinforces`/`supersedes` instead of Analysis's `contradicts` hint).
+    # S12 and S18 share this root cause; S14 passes because the drift cell
+    # expects BOTH drifts to fire (so the cls_drift discrepancy is the
+    # expected behavior, not a failure).
     "s12_drift_cell_fingerprint_only_auto_promote_with_note",
-    "s14_drift_cell_both_human_review",
-    # Semantic-contradicts (no polarity flip; Analysis-judged contradiction)
     "s18_retracted_counterpart_no_active_sibling",
 }
 

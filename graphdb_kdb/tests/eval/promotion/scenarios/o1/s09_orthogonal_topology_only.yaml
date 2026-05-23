@@ -63,7 +63,7 @@ input:
     counterpart_claim_id: null
     counterpart_links_to_ref: null
     doxastic_fingerprint:
-      state_hash: "sha256:orthogonal..."
+      state_hash: "sha256:8809d2d616c800da7b15196f042aecc9"
       classifier_input_scope:
         - "subject_mentions(warren-buffett)"
         - "predicate_class(met_with) — no overlap with existing predicates"

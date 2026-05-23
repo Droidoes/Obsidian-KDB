@@ -93,7 +93,7 @@ input:
     refines_truth_conditions: false
     counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
     doxastic_fingerprint:
-      state_hash: "sha256:abc123def456..."  # placeholder
+      state_hash: "sha256:4bed53ae7a29eaa38a968c4164096445"  # placeholder
       classifier_input_scope:
         - "buffett_avoids_tech_investments_global_family"
         - "candidate_polarity"

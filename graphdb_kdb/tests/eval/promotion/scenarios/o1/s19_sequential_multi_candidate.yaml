@@ -37,7 +37,7 @@ input:
         counterpart_claim_id: null
         counterpart_links_to_ref: null
         doxastic_fingerprint:
-          state_hash: "sha256:seq_cand_A_empty_graph..."
+          state_hash: "sha256:b21f955a9f33a01592fc32bafe5d44bc"
         confidence:
           bucket: high
           score: 0.80
@@ -64,7 +64,7 @@ input:
         counterpart_links_to_ref: null
         # Promotion-time will reclassify against the just-created LINKS_TO → counterpart_status becomes candidate_counterpart_found + relation_kind=reinforces
         doxastic_fingerprint:
-          state_hash: "sha256:seq_cand_B_was_empty_graph..."
+          state_hash: "sha256:b21f955a9f33a01592fc32bafe5d44bc"
         analysis_time_classification:
           counterpart_status: no_counterpart
           relation_kind: null

@@ -64,7 +64,7 @@ input:
     counterpart_links_to_ref: null
     # Analysis-time fingerprint scope matches promotion-time → no drift
     doxastic_fingerprint:
-      state_hash: "sha256:fingerprint_stable_across_T1_T2"
+      state_hash: "sha256:25c72187a150c1c7325b230cc3127d6d"
       classifier_input_scope:
         - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
     # Analysis-time classification was DIFFERENT (e.g., qualifies_or_extends, refines=false)
