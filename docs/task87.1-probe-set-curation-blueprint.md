@@ -432,10 +432,14 @@ input:
     predicate_scope_slugs: ["global"]
     polarity: affirms
     modality: declarative
-    counterpart_status: implied_by_links_to  # signals O2 upgrade path (per D-83/84-7)
+    # O2 dispatch is DERIVED, not enum-named (per D-87.1-5 ratification 2026-05-22):
+    # counterpart_status == candidate_counterpart_found
+    # AND counterpart_claim_id == null  (no Claim family yet)
+    # AND counterpart_links_to_ref != null  (LINKS_TO counterpart exists)
+    counterpart_status: candidate_counterpart_found
     relation_kind: contradicts
     refines_truth_conditions: false
-    counterpart_claim_id: null   # no Claim exists yet
+    counterpart_claim_id: null   # no Claim exists yet — dispatches to O2
     counterpart_links_to_ref:
       from_slug: warren-buffett
       to_slug: tech-industry
@@ -750,24 +754,36 @@ S1's `exercised_criteria` lists `F-O1-4` (invariant preservation), but the scena
 
 **Lean:** one file per scenario — easier review-per-scenario, easier diff, easier addition of new scenarios. Group by op via directory: `tests/eval/promotion/scenarios/o1/*.yaml` etc. Defer to #83/#84 implementation start.
 
+### OQ-S7 — Should O1-vs-O2 dispatch be an explicit field on the candidate, or stay derived?
+
+Surfaced by D-87.1-5 ratification 2026-05-22. The current contract derives O2 dispatch from three fields jointly: `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. This is correct per #83/#84 but means the dispatch logic is **implicit** — a reader scanning a scenario must reconstruct the dispatch from three fields rather than read one.
+
+**Tradeoff:**
+- **Stay derived (current):** No new vocabulary in #83/#84; single source of truth (the three fields the Promotion Contract already needs anyway); no risk of a `dispatch_path` field disagreeing with the underlying fields.
+- **Add explicit `op_dispatch_path: O1 | O2`:** More readable in scenarios; lets the probe runner assert dispatch correctness directly (does the dispatcher route to the right handler?). Cost: new field that must be kept consistent with the three derived inputs.
+
+**Lean:** stay derived in #87.1 scenarios; revisit if #83/#84 implementation introduces a `dispatch_path` field at the dispatcher level (in which case scenarios can mirror it). Defer to #83/#84 implementation start.
+
 ---
 
 ## 6. Decisions needed before expansion (D-87.1-*)
 
+**Status: ratified 2026-05-22.** All 10 decisions adopted as their lean (D-87.1-5 with vocabulary correction — see "Ratification outcome" column).
+
 These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is small, but writing 14 more without these decisions risks mass rework.
 
-| # | Decision | Spike-surface basis | Lean |
+| # | Decision | Spike-surface basis | Ratification outcome (2026-05-22) |
 |---|---|---|---|
-| **D-87.1-1** | Adopt `unchanged` / `add` / `update` explicit-delta shape for `expected_post_state.*` | All four scenarios | **Yes.** Self-documenting. v2 §7.2 template should be amended (or this spike-doc supersedes the §7.2 example). |
-| **D-87.1-2** | Add `pre_state.run_payloads:` block for Tier-1 fixtures | S3 | **Yes.** Tier-2 and Tier-3 also need run/SUPPORTS-graph awareness in pre-state; spike-doc establishes the field. |
-| **D-87.1-3** | Split `edges:` into `about_edges:` + `alias_of_edges:` + `edges:` (Claim-Claim only) | S3, S4 | **Yes.** Each edge type has different integrity contract; bucketing them prevents ambiguity. |
-| **D-87.1-4** | Marker syntax for runtime-assigned fields: `<runtime-assigned>` for UUID-like; `<eval_clock>` for time | S2, S3 | **Yes.** Make the marker explicit so runner has unambiguous matching rules. |
-| **D-87.1-5** | Confirm `counterpart_status: implied_by_links_to` triggers O2 dispatch | S3 | **Lean: yes, but verify against #83/#84 D-83/84-7 vocabulary.** If #83/#84 used a different value, rename. |
-| **D-87.1-6** | Allow input shape divergence per op: `input.candidate` for O1/O2; `input.read_tuple` for O3 | S4 | **Yes.** Forcing O3 reads through `candidate` shape was awkward in S4. |
-| **D-87.1-7** | Add `expected_read_result:` block for O3 scenarios | S4 | **Yes.** O3's retrieval-eval class needs an output-assertion field distinct from `expected_post_state`. |
-| **D-87.1-8** | Move `read_mode` from `eval_config` to `input.read_mode` (O3 only) | OQ-S4 | **Yes.** `eval_config.read_mode` is unused for O1/O2; it belongs with the read tuple semantically. |
-| **D-87.1-9** | Add `expected_to_pass` / `expected_to_fire` annotation to `exercised_criteria` entries | OQ-S5 | **Yes.** Makes positive-vs-adversarial intent machine-readable. |
-| **D-87.1-10** | Confidence placeholders stay until OQ-26 resolves | All Claim-creating scenarios | **Yes.** Block expansion only on D-87.1-1..9; confidence values are amendable in-place when OQ-26 closes. |
+| **D-87.1-1** | Adopt `unchanged` / `add` / `update` explicit-delta shape for `expected_post_state.*` | All four scenarios | **Ratified.** Self-documenting. v2 §7.2 template superseded by this spike-doc's shape; v2 §7.2 to be amended in a follow-up patch. |
+| **D-87.1-2** | Add `pre_state.run_payloads:` block for Tier-1 fixtures | S3 | **Ratified.** Tier-2 and Tier-3 also need run/SUPPORTS-graph awareness in pre-state; field is canonical. |
+| **D-87.1-3** | Split `edges:` into `about_edges:` + `alias_of_edges:` + `edges:` (Claim-Claim only) | S3, S4 | **Ratified.** Each edge type has different integrity contract; bucketing prevents ambiguity. |
+| **D-87.1-4** | Marker syntax for runtime-assigned fields: `<runtime-assigned>` for UUID-like; `<eval_clock>` for time | S2, S3 | **Ratified.** Marker is explicit; runner has unambiguous matching rules. |
+| **D-87.1-5** | Confirm `counterpart_status: implied_by_links_to` triggers O2 dispatch | S3 | **Ratified with correction.** Verify result: `implied_by_links_to` is **not** in the #83/#84 `counterpart_status` enum. Canonical enum (per D-83/84-2 §94 + §696) is `no_counterpart` \| `candidate_counterpart_found` \| `orthogonal`. **O2 dispatch is derived, not enum-named:** `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. S3 input field corrected. See OQ-S7 for follow-up. |
+| **D-87.1-6** | Allow input shape divergence per op: `input.candidate` for O1/O2; `input.read_tuple` for O3 | S4 | **Ratified.** Forcing O3 reads through `candidate` shape was awkward in S4. |
+| **D-87.1-7** | Add `expected_read_result:` block for O3 scenarios | S4 | **Ratified.** O3's retrieval-eval class needs an output-assertion field distinct from `expected_post_state`. |
+| **D-87.1-8** | Move `read_mode` from `eval_config` to `input.read_mode` (O3 only) | OQ-S4 | **Ratified.** `eval_config.read_mode` is unused for O1/O2; it belongs with the read tuple semantically. |
+| **D-87.1-9** | Add `expected_to_pass` / `expected_to_fire` annotation to `exercised_criteria` entries | OQ-S5 | **Ratified.** Makes positive-vs-adversarial intent machine-readable. |
+| **D-87.1-10** | Confidence placeholders stay until OQ-26 resolves | All Claim-creating scenarios | **Ratified.** Block expansion only on D-87.1-1..9; confidence values are amendable in-place when OQ-26 closes. |
 
 ---
 
@@ -793,3 +809,4 @@ Expansion ratification gate: §6 decisions ratified → 14 scenarios written →
 ## 8. Change log
 
 - **2026-05-22** — v1 spike-phase draft. 4 scenarios (S1 O1 contradicts, S2 O1 no_counterpart, S3 O2 Tier-1 upgrade, S4 O3 aliased read). Template-stress observations + 6 OQs (OQ-S1..S6) + 10 decision gates (D-87.1-1..10) surfaced. Expansion to ~18 scenarios blocked on D-87.1-1..9 ratification.
+- **2026-05-22** — §6 decisions D-87.1-1..10 **ratified**. D-87.1-5 ratified with vocabulary correction: `implied_by_links_to` is not a valid `counterpart_status` enum value per #83/#84 D-83/84-2; canonical enum is `no_counterpart` | `candidate_counterpart_found` | `orthogonal`. O2 dispatch is derived (not enum-named): `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. S3 input field corrected accordingly. **OQ-S7 added** (should dispatch path be explicit or stay derived — current lean: stay derived). Expansion to 14 more scenarios now unblocked.
