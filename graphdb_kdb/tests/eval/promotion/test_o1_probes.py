@@ -47,16 +47,10 @@ _DEFERRED_PROBES = {
     "s05_reinforces_threshold_triggers_upgrade",
     "s06_qualifies_with_truth_refinement_upgrade",
     "s07_qualifies_without_truth_refinement_topology",
-    # Canonicalization-mid-promotion
-    "s16_alias_canonicalized_between_runs",
-    # Sequential multi-candidate dispatch
-    "s19_sequential_multi_candidate",
     # Real deterministic fingerprint hashes (corpus uses placeholders)
     "s12_drift_cell_fingerprint_only_auto_promote_with_note",
     "s14_drift_cell_both_human_review",
     # Semantic-contradicts (no polarity flip; Analysis-judged contradiction)
-    # — structural classifier picks supersedes instead. Requires either
-    # LLM-as-classifier-layer or richer relation_kind hints from Analysis.
     "s18_retracted_counterpart_no_active_sibling",
 }
 
@@ -322,6 +316,18 @@ def _load_pre_state(conn, pre_state: dict) -> None:
                 params,
             )
 
+    # --- ALIAS_OF edges (S16: alias canonicalized between runs)
+    for ae in pre_state.get("alias_of_edges", []) or []:
+        conn.execute(
+            """
+            MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t})
+            CREATE (a)-[:ALIAS_OF {run_id: 'pre', created_at: $ts, algorithm: $alg}]->(b)
+            """,
+            {"f": ae["from_slug"], "t": ae["to_slug"],
+             "ts": ae.get("established_at", DEFAULT_TS),
+             "alg": ae.get("algorithm", "manual")},
+        )
+
 
 @pytest.mark.parametrize("probe_path", PROBES, ids=lambda p: p.stem)
 def test_o1_probe(probe_path: Path, tmp_path):
@@ -341,30 +347,41 @@ def test_o1_probe(probe_path: Path, tmp_path):
         )
 
     input_block = probe["input"]
-    if "candidates_sequential" in input_block:
-        candidate_d = input_block["candidates_sequential"][0]["candidate"]
-    else:
-        candidate_d = input_block["candidate"]
-    candidate = _build_candidate(candidate_d)
     eval_config = _build_eval_config(probe["eval_config"])
 
-    # Build a fresh Kuzu test graph and load pre_state.
     graph_dir = tmp_path / "probe-graph"
     with GraphDB(graph_dir) as gdb:
         _load_pre_state(gdb.conn, probe.get("pre_state") or {})
 
-        # Dispatch into O1.
-        result = op_1_promote.run(candidate, eval_config, gdb.conn)
+        # Sequential multi-candidate dispatch (S19): loop through each
+        # candidate; the previous mutation forms part of the next pre-state.
+        # v1 asserts the first candidate's audit only — later candidates'
+        # disposition logic is subject to the same fp_drift placeholder
+        # limitation as S12/S14.
+        if "candidates_sequential" in input_block:
+            results: list = []
+            candidates: list = []
+            for cand_wrapper in input_block["candidates_sequential"]:
+                cand = _build_candidate(cand_wrapper["candidate"])
+                candidates.append(cand)
+                results.append(op_1_promote.run(cand, eval_config, gdb.conn))
+            result = results[0]
+            candidate = candidates[0]
+        else:
+            candidate = _build_candidate(input_block["candidate"])
+            result = op_1_promote.run(candidate, eval_config, gdb.conn)
 
     # --- Audit assertions
-    # promotion_audit lives in two places across the v1 corpus:
-    # S01/S02 nest it under expected_post_state; S05+ promote it to the
-    # probe root. v1.2 normalization should unify this; harness tolerates
-    # both for now.
-    expected_audit = (
-        probe.get("expected_post_state", {}).get("promotion_audit")
-        or probe.get("promotion_audit")
-    )
+    # promotion_audit lives in three places across the v1 corpus:
+    # S01/S02 nest it under expected_post_state; S05–S18 promote it to the
+    # probe root; S19 (sequential) uses promotion_audit_sequential[0].
+    if "promotion_audit_sequential" in probe:
+        expected_audit = probe["promotion_audit_sequential"][0]
+    else:
+        expected_audit = (
+            probe.get("expected_post_state", {}).get("promotion_audit")
+            or probe.get("promotion_audit")
+        )
     assert expected_audit is not None, f"{probe_path.stem}: no promotion_audit block found"
     assert result.audit.candidate_id == candidate.candidate_id
     assert result.audit.disposition == expected_audit["disposition"], (

@@ -146,11 +146,132 @@ def run(candidate: CandidateEnvelope, eval_config: EvalConfig, conn: Any) -> Pro
     # Auto-promote path — perform mutation per D-83/84-2 action cell.
     _apply_mutation(candidate, classification, eval_config, conn)
 
+    # [G] Post-mutation invariant check: a subset of blueprint §6 invariants
+    # applied to the just-created Claim (if any). Topology-only mutations
+    # skip the Claim-anchored checks.
+    _verify_post_mutation(candidate, classification, conn)
+
     return PromotionResult(
         audit=audit,
         mutations_applied=True,
         classification=classification,
     )
+
+
+def _verify_post_mutation(
+    candidate: CandidateEnvelope,
+    classification: ClassificationResult,
+    conn: Any,
+) -> None:
+    """Post-mutation graph-integrity check (subset of blueprint §6 invariants).
+
+    Checks the Claim layer state immediately after a Claim-creating
+    mutation. Raises `RuntimeError` if any invariant breaks — better to
+    fail loud at the boundary than ship a corrupted graph.
+
+    Invariants checked (mirrors §6 sub-list):
+      1. Every newly-created Claim has an ABOUT edge.
+      2. Every ABOUT target Entity exists.
+      3. Every EVIDENCES source exists.
+      4. Claim-Claim edges (CONTRADICTS / SUPERSEDES / QUALIFIES) target
+         existing Claims.
+
+    Deferred (require multi-Claim graph state to evaluate meaningfully):
+      - State machine invariants (no retracted → active transitions).
+      - claim_id parseability.
+      - claim_family_id consistency across versions.
+      - Denormalized-key coherence with ALIAS_OF chains.
+
+    For topology-only dispositions (where no Claim was created), this
+    function is a no-op.
+    """
+    from graphdb_kdb.core.belief_classifier import _scope_key
+
+    pred = candidate.predicate_class_canonical
+    scope = _scope_key(candidate.predicate_scope_slugs)
+    family_id = f"{candidate.subject_slug}__{pred}__{scope}"
+
+    # Look up the just-created Claim (highest-version in family, if any was created).
+    r = conn.execute(
+        """
+        MATCH (c:Claim {claim_family_id: $fid})
+        WHERE c.state = 'active' AND c.subject_slug = $subj
+        RETURN c.claim_id ORDER BY c.version DESC LIMIT 1
+        """,
+        {"fid": family_id, "subj": candidate.subject_slug},
+    )
+    if not r.has_next():
+        # Topology-only path — no Claim to verify.
+        return
+    new_claim_id = r.get_next()[0]
+
+    # Invariant 1: ABOUT edge exists.
+    r = conn.execute(
+        "MATCH (c:Claim {claim_id: $cid})-[:ABOUT]->(:Entity) RETURN COUNT(*)",
+        {"cid": new_claim_id},
+    )
+    if r.has_next() and int(r.get_next()[0]) == 0:
+        raise RuntimeError(
+            f"Post-mutation invariant violation: Claim {new_claim_id!r} has no ABOUT edge"
+        )
+
+    # Invariant 2: ABOUT target Entity exists (relation-set integrity).
+    r = conn.execute(
+        """
+        MATCH (c:Claim {claim_id: $cid})-[:ABOUT]->(e:Entity)
+        RETURN e.slug
+        """,
+        {"cid": new_claim_id},
+    )
+    while r.has_next():
+        slug = r.get_next()[0]
+        chk = conn.execute(
+            "MATCH (e:Entity {slug: $s}) RETURN COUNT(*)", {"s": slug},
+        )
+        if chk.has_next() and int(chk.get_next()[0]) == 0:
+            raise RuntimeError(
+                f"Post-mutation invariant violation: Claim {new_claim_id!r} ABOUT "
+                f"references missing Entity {slug!r}"
+            )
+
+    # Invariant 3: EVIDENCES sources exist (relation-set integrity).
+    r = conn.execute(
+        """
+        MATCH (s:Source)-[:EVIDENCES]->(c:Claim {claim_id: $cid})
+        RETURN s.source_id
+        """,
+        {"cid": new_claim_id},
+    )
+    while r.has_next():
+        sid = r.get_next()[0]
+        chk = conn.execute(
+            "MATCH (s:Source {source_id: $s}) RETURN COUNT(*)", {"s": sid},
+        )
+        if chk.has_next() and int(chk.get_next()[0]) == 0:
+            raise RuntimeError(
+                f"Post-mutation invariant violation: Claim {new_claim_id!r} EVIDENCES "
+                f"references missing Source {sid!r}"
+            )
+
+    # Invariant 4: Claim-Claim edges target existing Claims.
+    for edge_name in ("CONTRADICTS", "SUPERSEDES", "QUALIFIES"):
+        r = conn.execute(
+            f"""
+            MATCH (a:Claim {{claim_id: $cid}})-[:{edge_name}]->(b:Claim)
+            RETURN b.claim_id
+            """,
+            {"cid": new_claim_id},
+        )
+        while r.has_next():
+            other = r.get_next()[0]
+            chk = conn.execute(
+                "MATCH (c:Claim {claim_id: $c}) RETURN COUNT(*)", {"c": other},
+            )
+            if chk.has_next() and int(chk.get_next()[0]) == 0:
+                raise RuntimeError(
+                    f"Post-mutation invariant violation: Claim {new_claim_id!r} "
+                    f"{edge_name} references missing Claim {other!r}"
+                )
 
 
 def _apply_mutation(

@@ -326,24 +326,28 @@ def classify(
     # engageable counterparts; pure 'superseded' is engageable too.
     active_counterparts = [c for c in counterpart_claims if c["state"] in {"active", "retracted", "superseded"}]
 
-    if not entity_exists and not counterpart_claims:
-        return ClassificationResult(
-            counterpart_status="no_counterpart",
-            relation_kind=None,
-            refines_truth_conditions=candidate.refines_truth_conditions,
-            counterpart_claim_id=None,
-            counterpart_links_to_ref=None,
-            classifier_input_scope=scope_lines,
-            state_hash=_state_hash(scope_lines),
-        )
-
     if not active_counterparts:
-        # P-O1-8 OQ-18 default branch B: if candidate explicitly pointed at
-        # a retracted Claim AND no active sibling was found in the family,
-        # the candidate is asserting into a vacuum left by retraction →
-        # no_counterpart (not orthogonal — the absence is meaningful, not
-        # just "other claims exist").
-        cs_result = "no_counterpart" if retracted_family_id is not None else "orthogonal"
+        # Distinguish no_counterpart vs orthogonal per D-83/84-2:
+        #   * no_counterpart — nothing engaging the candidate. Either the
+        #     subject doesn't exist, or it exists but has no claims about
+        #     it at all in any family.
+        #   * orthogonal — subject exists with claims in OTHER families,
+        #     but none in this family.
+        #   * retracted-counterpart-no-active-sibling — explicit
+        #     no_counterpart per P-O1-8 OQ-18 default branch B.
+        if retracted_family_id is not None:
+            cs_result = "no_counterpart"
+        elif entity_exists:
+            # Check if subject has any other claims (in different families).
+            r2 = conn.execute(
+                "MATCH (c:Claim)-[:ABOUT]->(e:Entity {slug: $slug}) "
+                "WHERE c.state = 'active' RETURN COUNT(*)",
+                {"slug": candidate.subject_slug},
+            )
+            other_claims = int(r2.get_next()[0]) if r2.has_next() else 0
+            cs_result = "orthogonal" if other_claims > 0 else "no_counterpart"
+        else:
+            cs_result = "no_counterpart"
         return ClassificationResult(
             counterpart_status=cs_result,
             relation_kind=None,

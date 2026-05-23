@@ -178,6 +178,74 @@ def _graph_belongs_to(
     return out
 
 
+# --- #83/#84 Claim-layer collectors (schema v2.2) -------------------------
+#
+# Claim-layer state isn't yet recreated by the rebuilder (rebuild is supposed
+# to "re-run the Promotion Contract against the restored compilation state"
+# per blueprint §6, but that requires the O1 pipeline replay-side, deferred).
+# So the structural diff for Claim-layer tables would always show
+# `missing_in_replay` for any live Claims (replay starts empty).
+#
+# Pragmatic v1: collectors run on both replay + live, but the diff is
+# **scope-limited to keys present in BOTH** sides. Live-only Claims aren't
+# flagged as drift — they're just acknowledged as "not yet replay-derivable".
+# When the rebuild's promotion-replay lands, this diff tightens to strict
+# equality (parallel to how Domain/BELONGS_TO became strict in #79).
+
+def _graph_claims(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+    r = conn.execute(
+        "MATCH (c:Claim) RETURN c.claim_id, c.claim_family_id, c.state, c.version"
+    )
+    out: dict[str, dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[row[0]] = {
+            "claim_id": row[0],
+            "claim_family_id": row[1],
+            "state": row[2],
+            "version": row[3],
+        }
+    return out
+
+
+def _graph_evidences(conn: kuzu.Connection) -> dict[tuple[str, str], dict[str, Any]]:
+    r = conn.execute(
+        "MATCH (s:Source)-[r:EVIDENCES]->(c:Claim) "
+        "RETURN s.source_id, c.claim_id, r.provenance_type"
+    )
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[(row[0], row[1])] = {
+            "source_id": row[0], "claim_id": row[1], "provenance_type": row[2],
+        }
+    return out
+
+
+def _graph_about(conn: kuzu.Connection) -> dict[tuple[str, str], dict[str, Any]]:
+    r = conn.execute(
+        "MATCH (c:Claim)-[r:ABOUT]->(e:Entity) RETURN c.claim_id, e.slug"
+    )
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[(row[0], row[1])] = {"claim_id": row[0], "entity_slug": row[1]}
+    return out
+
+
+def _graph_claim_claim_edges(
+    conn: kuzu.Connection, edge_name: str
+) -> dict[tuple[str, str], dict[str, Any]]:
+    r = conn.execute(
+        f"MATCH (a:Claim)-[r:{edge_name}]->(b:Claim) RETURN a.claim_id, b.claim_id"
+    )
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    while r.has_next():
+        row = r.get_next()
+        out[(row[0], row[1])] = {"from_claim_id": row[0], "to_claim_id": row[1]}
+    return out
+
+
 # ---------- manifest projection (source-state preflight only) ----------
 
 def _manifest_sources(manifest: dict) -> dict[str, dict[str, Any]]:
@@ -351,6 +419,33 @@ def _diff_belongs_to(
             actual_row=actual[k],
             fields=(("sub_domain", "sub_domain"),),
         ))
+    return divs
+
+
+def _diff_claim_layer_scoped(
+    *, category: str, expected: dict, actual: dict, key_to_str
+) -> list[Divergence]:
+    """Scope-limited diff for #83/#84 Claim-layer tables.
+
+    Per the note on the collectors above: rebuild doesn't yet write
+    Claim-layer state, so a strict equality diff would always flag live
+    Claims as `missing_in_replay`. v1 reports divergences ONLY for keys
+    present in BOTH replay and live (the strict diff is unlocked when
+    rebuild's promotion-replay lands). Live-only rows are silently
+    accepted as "not yet replay-derivable" — counted but not flagged.
+    """
+    divs: list[Divergence] = []
+    src = "replay_structural_diff"
+    # Only flag missing-in-live for keys present in BOTH (so we catch
+    # attribute drift when replay does begin producing Claims; today,
+    # this loop is empty since replay carries no Claims).
+    shared = expected.keys() & actual.keys()
+    for k in sorted(shared):
+        if expected[k] != actual[k]:
+            divs.append(Divergence(
+                kind="attribute_mismatch", category=category,
+                key=key_to_str(k), source=src,
+            ))
     return divs
 
 
@@ -551,6 +646,13 @@ def verify(
             r_supports = _graph_supports(replay_gdb.conn)
             r_domains = _graph_domains(replay_gdb.conn)
             r_belongs_to = _graph_belongs_to(replay_gdb.conn)
+            # #83/#84 Claim layer — empty under v1 (no promotion-replay yet).
+            r_claims = _graph_claims(replay_gdb.conn)
+            r_evidences = _graph_evidences(replay_gdb.conn)
+            r_about = _graph_about(replay_gdb.conn)
+            r_supersedes = _graph_claim_claim_edges(replay_gdb.conn, "SUPERSEDES")
+            r_contradicts = _graph_claim_claim_edges(replay_gdb.conn, "CONTRADICTS")
+            r_qualifies = _graph_claim_claim_edges(replay_gdb.conn, "QUALIFIES")
 
     l_entities = _graph_entities(live_conn)
     l_sources = _graph_sources(live_conn)
@@ -558,6 +660,12 @@ def verify(
     l_supports = _graph_supports(live_conn)
     l_domains = _graph_domains(live_conn)
     l_belongs_to = _graph_belongs_to(live_conn)
+    l_claims = _graph_claims(live_conn)
+    l_evidences = _graph_evidences(live_conn)
+    l_about = _graph_about(live_conn)
+    l_supersedes = _graph_claim_claim_edges(live_conn, "SUPERSEDES")
+    l_contradicts = _graph_claim_claim_edges(live_conn, "CONTRADICTS")
+    l_qualifies = _graph_claim_claim_edges(live_conn, "QUALIFIES")
 
     all_divs.extend(_diff_entities(r_entities, l_entities))
     all_divs.extend(_diff_sources_replay(r_sources, l_sources))
@@ -569,6 +677,28 @@ def verify(
     ))
     all_divs.extend(_diff_domains(r_domains, l_domains))
     all_divs.extend(_diff_belongs_to(r_belongs_to, l_belongs_to))
+    # Claim-layer scoped diff (v1: shared-keys-only — see collector note above).
+    all_divs.extend(_diff_claim_layer_scoped(
+        category="claim", expected=r_claims, actual=l_claims,
+        key_to_str=lambda k: str(k),
+    ))
+    all_divs.extend(_diff_claim_layer_scoped(
+        category="evidences", expected=r_evidences, actual=l_evidences,
+        key_to_str=lambda k: f"{k[0]}→{k[1]}",
+    ))
+    all_divs.extend(_diff_claim_layer_scoped(
+        category="about", expected=r_about, actual=l_about,
+        key_to_str=lambda k: f"{k[0]}→{k[1]}",
+    ))
+    for cat, r_set, l_set in (
+        ("supersedes", r_supersedes, l_supersedes),
+        ("contradicts", r_contradicts, l_contradicts),
+        ("qualifies", r_qualifies, l_qualifies),
+    ):
+        all_divs.extend(_diff_claim_layer_scoped(
+            category=cat, expected=r_set, actual=l_set,
+            key_to_str=lambda k: f"{k[0]}→{k[1]}",
+        ))
 
     counts = {
         "entities_checked": len(r_entities.keys() | l_entities.keys()),
@@ -577,6 +707,13 @@ def verify(
         "supports_checked": len(r_supports | l_supports),
         "domains_checked": len(r_domains.keys() | l_domains.keys()),
         "belongs_to_checked": len(r_belongs_to.keys() | l_belongs_to.keys()),
+        # #83/#84 Claim layer
+        "claims_checked": len(r_claims.keys() | l_claims.keys()),
+        "evidences_checked": len(r_evidences.keys() | l_evidences.keys()),
+        "about_checked": len(r_about.keys() | l_about.keys()),
+        "supersedes_checked": len(r_supersedes.keys() | l_supersedes.keys()),
+        "contradicts_checked": len(r_contradicts.keys() | l_contradicts.keys()),
+        "qualifies_checked": len(r_qualifies.keys() | l_qualifies.keys()),
         "missing_in_live": sum(1 for d in all_divs if d.kind == "missing_in_live"),
         "missing_in_replay": sum(1 for d in all_divs if d.kind == "missing_in_replay"),
         "attribute_mismatch": sum(1 for d in all_divs if d.kind == "attribute_mismatch"),
