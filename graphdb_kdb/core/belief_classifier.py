@@ -67,6 +67,20 @@ class DoxasticFingerprint:
 
 
 @dataclass(frozen=True)
+class AnalysisTimeClassification:
+    """The classification that Analysis recorded when the candidate was emitted.
+
+    O1 re-classifies authoritatively at promotion time; mismatch between
+    this recorded hint and the authoritative result = classification_drift
+    per D-83/84-8 Part B. Carries only the three mutation-relevant fields
+    (not the full ClassificationResult, which is the authoritative output).
+    """
+    counterpart_status: str
+    relation_kind: Optional[str]
+    refines_truth_conditions: bool
+
+
+@dataclass(frozen=True)
 class CandidateEnvelope:
     """The candidate proposed by Analysis for promotion through the O1 boundary.
 
@@ -94,7 +108,15 @@ class CandidateEnvelope:
     relation_kind: Optional[str] = None
     counterpart_claim_id: Optional[str] = None
     counterpart_links_to_ref: Optional[str] = None   # O2 dispatch signal per memory `project_task87_87_1_ratified`
-    extras: dict = field(default_factory=dict)       # holds probe-specific fields not in v1 universal schema (object_slug, object_qualifier, analysis_time_classification, etc.)
+    # First-class fields (promoted from extras 2026-05-23 — #11 v1.1
+    # normalization). Used by [E] (object_slug → Claim.object_slugs cell
+    # for the `supersedes` action) and [F] (analysis_time_classification →
+    # classification_drift computation per D-83/84-8 Part B).
+    object_slug: Optional[str] = None
+    object_qualifier: Optional[str] = None
+    analysis_time_classification: Optional[AnalysisTimeClassification] = None
+    # Reserved for any future probe-specific fields not yet promoted.
+    extras: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -136,21 +158,231 @@ class ClassificationResult:
 
 # ---------- Stateless classify function ----------
 
-def classify(candidate: CandidateEnvelope, eval_config: EvalConfig, graph_state: Any) -> ClassificationResult:
+def _scope_key(predicate_scope_slugs: list[str]) -> str:
+    """Deterministic scope serialization (D-83/84-6 F1): sort + join with `+`,
+    empty set → `<none>` sentinel."""
+    if not predicate_scope_slugs:
+        return "<none>"
+    return "+".join(sorted(predicate_scope_slugs))
+
+
+def _state_hash(scope_lines: list[str]) -> str:
+    """Deterministic SHA256 over the classifier_input_scope list."""
+    import hashlib
+    h = hashlib.sha256()
+    for line in scope_lines:
+        h.update(line.encode("utf-8"))
+        h.update(b"\n")
+    return f"sha256:{h.hexdigest()[:32]}"  # 16-byte prefix for compactness
+
+
+def classify(
+    candidate: CandidateEnvelope, eval_config: EvalConfig, conn: Any
+) -> ClassificationResult:
     """Deterministically classify a candidate against live graph state.
 
-    Reads only the candidate envelope + graph state slices named in
-    `classifier_input_scope`. Pure function: identical inputs → identical
-    output (P-O1-1 determinism criterion).
+    Implements the D-83/84-2 3-way counterpart enum + relation_kind
+    derivation. Reads only:
+      * Existence of subject Entity in the graph
+      * Active Claims in the same family
+        (subject_slug, predicate_class_canonical, predicate_scope_slugs)
+        excluding retracted; superseded handled per P-O1-8.
 
-    `graph_state` is held abstract here; the harness will pass either a
-    live Kuzu connection wrapper or a fixture-built state object.
+    Output drives O1's dispatch into the D-83/84-2 action table per [E].
+    Pure function: identical (candidate, conn-state, eval_config) →
+    identical ClassificationResult (P-O1-1 determinism).
 
-    NOTE: Skeleton stub — step [D] of the O1 kickoff plan implements the
-    actual D-83/84-2 dispatch logic. Tests against this stub should fail
-    in the RED phase with a clear NotImplementedError surface.
+    `conn` is a Kuzu Connection (or anything with .execute returning a
+    result-set with .has_next() / .get_next()). The classifier reads via
+    Cypher; the harness passes a populated test connection.
+
+    Scope coverage (LINKS_TO-implicit-counterpart for "reinforces"
+    threshold-crossing cases per blueprint §6.7 Tier-2/Tier-3 evidence
+    reconstruction) is **NOT** implemented in this pass — probes that
+    rely on it (S05-S07, S16, S19's-first-candidate) will report
+    classification_drift in [F] because the authoritative classifier
+    won't see the LINKS_TO-only counterparts. Filed as follow-up beyond
+    the current GREEN scope.
     """
-    raise NotImplementedError(
-        "belief_classifier.classify is a skeleton stub; step [D] of the O1 "
-        "kickoff plan implements the D-83/84-2 action-table dispatch."
+    pred = candidate.predicate_class_canonical
+    scope = _scope_key(candidate.predicate_scope_slugs)
+    family_id = f"{candidate.subject_slug}__{pred}__{scope}"
+    context_key = f"{pred}__{scope}"
+
+    # 1. Subject existence check.
+    entity_exists = False
+    r = conn.execute(
+        "MATCH (e:Entity {slug: $slug}) RETURN COUNT(*)",
+        {"slug": candidate.subject_slug},
+    )
+    if r.has_next():
+        entity_exists = int(r.get_next()[0]) > 0
+
+    # 2. Find active counterpart Claims.
+    #
+    # Two lookup paths:
+    #   (a) Candidate carries an explicit `counterpart_claim_id` — direct
+    #       lookup. Honors probes whose corpus modeling diverges from
+    #       implementation's family_id construction (e.g., S08's
+    #       `__apple` family vs the spec's full-scope family).
+    #   (b) No explicit pointer — search by computed family_id.
+    counterpart_claims: list[dict] = []
+    retracted_family_id: Optional[str] = None
+    if candidate.counterpart_claim_id is not None:
+        r = conn.execute(
+            """
+            MATCH (c:Claim {claim_id: $cid})
+            RETURN c.claim_id, c.polarity, c.state, c.version,
+                   c.object_slugs, c.condition_text, c.claim_family_id
+            """,
+            {"cid": candidate.counterpart_claim_id},
+        )
+        while r.has_next():
+            row = r.get_next()
+            entry = {
+                "claim_id": row[0], "polarity": row[1], "state": row[2],
+                "version": row[3],
+                "object_slugs": list(row[4]) if row[4] is not None else [],
+                "condition_text": row[5] or "",
+            }
+            if entry["state"] == "retracted":
+                # P-O1-8 OQ-18: walk to active sibling in same family.
+                retracted_family_id = row[6]
+            else:
+                counterpart_claims.append(entry)
+        retracted_entry: Optional[dict] = None
+        if retracted_family_id is not None:
+            # Look up the retracted Claim's full record for fallback use.
+            rret = conn.execute(
+                """
+                MATCH (c:Claim {claim_id: $cid})
+                RETURN c.claim_id, c.polarity, c.state, c.version,
+                       c.object_slugs, c.condition_text
+                """,
+                {"cid": candidate.counterpart_claim_id},
+            )
+            if rret.has_next():
+                row = rret.get_next()
+                retracted_entry = {
+                    "claim_id": row[0], "polarity": row[1], "state": row[2],
+                    "version": row[3],
+                    "object_slugs": list(row[4]) if row[4] is not None else [],
+                    "condition_text": row[5] or "",
+                }
+            # Walk to active sibling (S17 path per P-O1-8 default branch A).
+            r2 = conn.execute(
+                """
+                MATCH (c:Claim {claim_family_id: $fid})
+                WHERE c.state = 'active'
+                RETURN c.claim_id, c.polarity, c.state, c.version,
+                       c.object_slugs, c.condition_text
+                ORDER BY c.version DESC
+                """,
+                {"fid": retracted_family_id},
+            )
+            while r2.has_next():
+                row = r2.get_next()
+                counterpart_claims.append({
+                    "claim_id": row[0], "polarity": row[1], "state": row[2],
+                    "version": row[3],
+                    "object_slugs": list(row[4]) if row[4] is not None else [],
+                    "condition_text": row[5] or "",
+                })
+            # No active sibling → use the retracted claim itself as the
+            # counterpart for relation_kind dispatch (S18 path). The
+            # `counterpart_status` stays `candidate_counterpart_found`;
+            # contradicts/qualifies dispatch can still apply against a
+            # retracted target.
+            if not counterpart_claims and retracted_entry is not None:
+                counterpart_claims.append(retracted_entry)
+    else:
+        r = conn.execute(
+            """
+            MATCH (c:Claim {claim_family_id: $fid})
+            WHERE c.state IN ['active', 'superseded']
+            RETURN c.claim_id, c.polarity, c.state, c.version,
+                   c.object_slugs, c.condition_text
+            ORDER BY c.version DESC
+            """,
+            {"fid": family_id},
+        )
+        while r.has_next():
+            row = r.get_next()
+            counterpart_claims.append({
+                "claim_id": row[0], "polarity": row[1], "state": row[2],
+                "version": row[3],
+                "object_slugs": list(row[4]) if row[4] is not None else [],
+                "condition_text": row[5] or "",
+            })
+
+    scope_lines = [
+        "subject_existence_check",
+        f"context_key: {context_key}",
+        f"counterpart_count: {len(counterpart_claims)}",
+    ]
+
+    # 3. Counterpart-status dispatch (D-83/84-2).
+    # Treat both active and (when no active option exists) retracted as
+    # engageable counterparts; pure 'superseded' is engageable too.
+    active_counterparts = [c for c in counterpart_claims if c["state"] in {"active", "retracted", "superseded"}]
+
+    if not entity_exists and not counterpart_claims:
+        return ClassificationResult(
+            counterpart_status="no_counterpart",
+            relation_kind=None,
+            refines_truth_conditions=candidate.refines_truth_conditions,
+            counterpart_claim_id=None,
+            counterpart_links_to_ref=None,
+            classifier_input_scope=scope_lines,
+            state_hash=_state_hash(scope_lines),
+        )
+
+    if not active_counterparts:
+        # P-O1-8 OQ-18 default branch B: if candidate explicitly pointed at
+        # a retracted Claim AND no active sibling was found in the family,
+        # the candidate is asserting into a vacuum left by retraction →
+        # no_counterpart (not orthogonal — the absence is meaningful, not
+        # just "other claims exist").
+        cs_result = "no_counterpart" if retracted_family_id is not None else "orthogonal"
+        return ClassificationResult(
+            counterpart_status=cs_result,
+            relation_kind=None,
+            refines_truth_conditions=candidate.refines_truth_conditions,
+            counterpart_claim_id=None,
+            counterpart_links_to_ref=None,
+            classifier_input_scope=scope_lines,
+            state_hash=_state_hash(scope_lines),
+        )
+
+    # 4. candidate_counterpart_found — derive relation_kind structurally.
+    counterpart = active_counterparts[0]  # highest version
+    counterpart_claim_id = counterpart["claim_id"]
+
+    if counterpart["polarity"] != candidate.polarity:
+        relation_kind = "contradicts"
+    elif candidate.refines_truth_conditions:
+        relation_kind = "qualifies_or_extends"
+    else:
+        # Same polarity, no truth refinement — distinguish supersedes vs reinforces:
+        # state change (different object_slug OR different qualifier) → supersedes
+        # identical assertion → reinforces
+        cand_qual = candidate.object_qualifier or ""
+        cp_qual = counterpart["condition_text"]
+        cand_obj_in_cp = (
+            candidate.object_slug is None
+            or candidate.object_slug in counterpart["object_slugs"]
+        )
+        if cand_obj_in_cp and cand_qual == cp_qual:
+            relation_kind = "reinforces"
+        else:
+            relation_kind = "supersedes"
+
+    return ClassificationResult(
+        counterpart_status="candidate_counterpart_found",
+        relation_kind=relation_kind,
+        refines_truth_conditions=candidate.refines_truth_conditions,
+        counterpart_claim_id=counterpart_claim_id,
+        counterpart_links_to_ref=None,
+        classifier_input_scope=scope_lines,
+        state_hash=_state_hash(scope_lines),
     )
