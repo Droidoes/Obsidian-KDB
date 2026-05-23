@@ -2107,6 +2107,657 @@ exercised_criteria:
 
 ---
 
+### 3.15 S15 — state-transition idempotency (`supersedes` retry against post-state)
+
+**Stress purpose:** Re-applies S8's `supersedes` candidate against the post-S8 state. Predecessor Claim is already `superseded`; SUPERSEDES edge already exists; NEW Claim already exists. P-O1-3 (idempotency) requires zero new writes — including idempotency over state transitions, not just additive writes.
+
+```yaml
+scenario_id: s15-supersedes-idempotency-post-state-retry
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  # This pre_state is S8's expected_post_state — the predecessor Claim is already superseded
+  entities:
+    - slug: warren-buffett
+    - slug: apple-inc
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: apple-inc
+      run_id: run-2020-buffett-apple-stake
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+      subject_slug: warren-buffett
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2020"]
+      version: 1
+      state: superseded   # already superseded from prior promotion
+      polarity: affirms
+      object_slug: apple-inc
+      object_qualifier: "5%"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      superseded_by: "warren-buffett__owns_stake_percentage__t=2023__v2"
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      claim_family_id: "warren-buffett__owns_stake_percentage__apple"
+      subject_slug: warren-buffett
+      predicate_class_canonical: owns_stake_percentage
+      predicate_scope_slugs: ["t=2023"]
+      version: 2
+      state: active
+      polarity: affirms
+      object_slug: apple-inc
+      object_qualifier: "8%"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      supersedes: "warren-buffett__owns_stake_percentage__t=2020__v1"
+
+  edges:
+    - from_claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      to_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      kind: SUPERSEDES
+
+  about_edges:
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__owns_stake_percentage__t=2023__v2"
+      entity_slug: warren-buffett
+      role: subject
+
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  # Same candidate as S8 — re-run against post-state
+  candidate:
+    candidate_id: cand-2023-buffett-apple-stake-update
+    subject_slug: warren-buffett
+    predicate_class_raw: "owns_stake_percentage"
+    predicate_class_canonical: owns_stake_percentage
+    predicate_scope_slugs: ["t=2023"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: supersedes
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__owns_stake_percentage__t=2020__v1"
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: apple-inc
+    doxastic_fingerprint:
+      state_hash: "sha256:supersedes_retry..."
+    object_slug: apple-inc
+    object_qualifier: "8%"
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-apple-stake-update.md
+        quoted_text: "Apple now represents 8% of the Berkshire portfolio."
+
+expected_post_state:
+  # Idempotency: ZERO new writes — graph unchanged
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged   # predecessor stays superseded; NEW Claim already exists with v2 identity
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  idempotency_outcome: no_writes_unique_constraint_hit   # per D-83/84-10
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-3, expected: pass, note: "idempotency under retry against post-state — also covers state-transition idempotency (predecessor already superseded; SUPERSEDES edge already present)"}
+  - {id: F-O1-3, expected: not_fire, note: "would fail if retry produced duplicate Claim, duplicate SUPERSEDES edge, or re-flipped predecessor state"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+```
+
+---
+
+### 3.16 S16 — aliasing variant: subject canonicalized **between runs** (lazy denormalized-key reconciliation)
+
+**Stress purpose:** Distinct from S4 (which has pre-existing alias before any operations). S16 covers the case where the candidate's `subject_slug` was the canonical alias at analysis-time but a subsequent canonicalization event added an `ALIAS_OF` edge before promotion-time. Promotion must follow the alias to resolve the candidate's subject to the canonical entity per D-83/84-9 (ABOUT-authoritative + lazy denormalized-key rewrite).
+
+```yaml
+scenario_id: s16-subject-canonicalized-between-runs
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett   # canonical
+      kind: person
+    - slug: buffett          # alias — added between analysis-time and promotion-time
+      kind: person
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: long-term-holding-strategy
+      run_id: run-2010-buffett-letter
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__practices_strategy__global__v1"
+      claim_family_id: "warren-buffett__practices_strategy__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: practices_strategy
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__practices_strategy__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  # ALIAS_OF added between analysis-time and promotion-time
+  alias_of_edges:
+    - from_slug: buffett          # the candidate's analysis-time slug
+      to_slug: warren-buffett     # canonical
+      established_at: "2026-05-25T00:00:00+09:00"   # before eval_clock
+
+  edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-buffett-reinforces-mid-canonicalization
+    subject_slug: buffett   # NON-CANONICAL — candidate was emitted before ALIAS_OF was established
+    predicate_class_raw: "practices_strategy"
+    predicate_class_canonical: practices_strategy
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: reinforces
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__practices_strategy__global__v1"
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:between_runs_alias..."
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-newer-letter.md
+        quoted_text: "Buffett continues to practice patient capital allocation."
+
+expected_post_state:
+  entities: unchanged
+  # ALIAS_OF traversal resolves `buffett` → `warren-buffett` for the Claim's authoritative ABOUT binding (D-83/84-9 Part B)
+  links_to: unchanged   # below-threshold reinforces is topology-only (assumes N=3, this is 2nd corroboration)
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-newer-letter.md
+        entity_slug: warren-buffett   # subject_slug rewritten to canonical via ALIAS_OF
+        role: subject
+  claims: unchanged   # below threshold — no upgrade
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  canonicalization_resolution:
+    candidate_subject_slug: buffett
+    canonical_subject_slug: warren-buffett
+    resolution_path: "via_alias_of(buffett → warren-buffett)"
+    established_at: "2026-05-25T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "reinforces below threshold → topology-only (single SUPPORTS add)"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if Claim were written below threshold"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation — ABOUT-authoritative binding holds under between-runs canonicalization"}
+```
+
+---
+
+### 3.17 S17 — retracted-counterpart with active sibling (P-O1-8 OQ-18 default rule, branch A)
+
+**Stress purpose:** Per P-O1-8 + OQ-18 default rule: when the candidate's `counterpart_claim_id` points at a `state=retracted` Claim AND an active member exists in the same Claim family, the candidate is classified **against the active member**, not the retracted one. The `counterpart_resolution_path` records this routing.
+
+```yaml
+scenario_id: s17-retracted-counterpart-with-active-sibling
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to: []
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Retracted predecessor (e.g., from prior corrective action)
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      claim_family_id: "warren-buffett__invests_in_technology__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in_technology
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: retracted
+      polarity: denies   # the original retracted Claim
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      retracted_at: "2026-04-01T00:00:00+09:00"
+    # Active sibling in same family — the "right" classification target per P-O1-8
+    - claim_id: "warren-buffett__invests_in_technology__global__v2"
+      claim_family_id: "warren-buffett__invests_in_technology__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in_technology
+      predicate_scope_slugs: ["global"]
+      version: 2
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__invests_in_technology__global__v2"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-buffett-tech-reinforces-against-active-sibling
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    # NOTE: candidate's counterpart_claim_id points at the RETRACTED member (analysis was stale)
+    counterpart_status: candidate_counterpart_found
+    relation_kind: reinforces   # would-be relation against the active sibling
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__invests_in_technology__global__v1"   # retracted
+    counterpart_links_to_ref: null
+    doxastic_fingerprint:
+      state_hash: "sha256:retracted_with_sibling..."
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2023-buffett-newer-tech-affirmation.md
+        quoted_text: "Buffett confirms continued conviction in Apple investment."
+
+expected_post_state:
+  # P-O1-8: classify against the active sibling v2 → reinforces below threshold → topology-only
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2023-buffett-newer-tech-affirmation.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  counterpart_resolution_path:
+    original_counterpart_claim_id: "warren-buffett__invests_in_technology__global__v1"
+    original_counterpart_state: retracted
+    resolution_rule: "P-O1-8 OQ-18 default — classify against active sibling in same family"
+    resolved_counterpart_claim_id: "warren-buffett__invests_in_technology__global__v2"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "reinforces below threshold (corroboration_count=2 vs N=3) → topology-only against active sibling"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: P-O1-8, expected: pass, note: "retracted-counterpart routed to active sibling per OQ-18 default"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if classification were applied to the retracted member"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+```
+
+---
+
+### 3.18 S18 — retracted-counterpart with no active sibling (P-O1-8 OQ-18 default rule, branch B)
+
+**Stress purpose:** Per P-O1-8 + OQ-18 default rule, branch B: when the candidate's `counterpart_claim_id` is retracted AND **no active member exists in the same Claim family**, treat as `no_counterpart` against the retracted member — topology-only writes (LINKS_TO + SUPPORTS) per D-83/84-2 `no_counterpart` row.
+
+```yaml
+scenario_id: s18-retracted-counterpart-no-active-sibling
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: gold-investments
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: gold-investments
+      run_id: run-2010-buffett-anti-gold-letter
+      predicate_class_canonical: holds_position_on
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/2010-buffett-anti-gold-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Only the retracted Claim exists in this family — no active sibling
+    - claim_id: "warren-buffett__holds_position_on__global__v1"
+      claim_family_id: "warren-buffett__holds_position_on__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: holds_position_on
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: retracted
+      polarity: affirms
+      object_slug: gold-investments
+      object_qualifier: "anti"
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      retracted_at: "2026-04-01T00:00:00+09:00"
+
+  about_edges:
+    - claim_id: "warren-buffett__holds_position_on__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-buffett-gold-new-position
+    subject_slug: warren-buffett
+    predicate_class_raw: "holds_position_on"
+    predicate_class_canonical: holds_position_on
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"   # retracted; no active sibling
+    counterpart_links_to_ref:
+      from_slug: warren-buffett
+      to_slug: gold-investments
+    doxastic_fingerprint:
+      state_hash: "sha256:retracted_no_sibling..."
+    object_slug: gold-investments
+    object_qualifier: "pro"   # new stance — would contradict the retracted Claim if it were active
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2024-buffett-gold-position-shift.md
+        quoted_text: "Berkshire has accumulated a position in Barrick Gold."
+
+expected_post_state:
+  # P-O1-8 branch B: treat as no_counterpart → topology-only writes
+  entities: unchanged
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: gold-investments
+        run_id: <runtime-assigned>
+        predicate_class_canonical: holds_position_on
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2024-buffett-gold-position-shift.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged   # NO new Claim — topology-only per no_counterpart treatment
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: auto_promote
+  drift_signals: { fingerprint_drift: false, classification_drift: false }
+  classified_at: "2026-06-01T00:00:00+09:00"
+  counterpart_resolution_path:
+    original_counterpart_claim_id: "warren-buffett__holds_position_on__global__v1"
+    original_counterpart_state: retracted
+    resolution_rule: "P-O1-8 OQ-18 default branch B — no active sibling; treat as no_counterpart"
+    resolved_counterpart_claim_id: null
+    effective_relation_kind: no_counterpart   # rather than contradicts against the retracted member
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "no_counterpart effective treatment → topology-only writes"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote"}
+  - {id: P-O1-8, expected: pass, note: "retracted-counterpart with no active sibling routes to no_counterpart per OQ-18 default branch B"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if a Claim were created or CONTRADICTS edge were written against the retracted member"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "topology-only writes are authorized for the effective no_counterpart resolution"}
+```
+
+---
+
+### 3.19 S19 — sequential multi-candidate touching the same family (OQ-28-adjacent)
+
+**Stress purpose:** Exercises v1 sequential semantics for two candidates emitted from the same Analysis batch that engage the same Claim family. First candidate creates a Claim; second candidate's classification is now against the just-created Claim (post-first-write state). Per #87 v2 §7.1 sequential-interaction coverage axis. v1 behavior must be observable — multi-batch parallelism remains deferred to OQ-28.
+
+```yaml
+scenario_id: s19-sequential-two-candidates-same-family
+op_under_test: O1
+op_invocation_mode: sequential   # not a single invocation; two ordered invocations against shared state
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: berkshire-hathaway
+
+  links_to: []
+  supports: []
+  claims: []
+  edges: []
+  about_edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidates_sequential:   # ordered list — runner applies each in order; state from candidate[i] is pre-state for candidate[i+1]
+    - candidate:
+        candidate_id: cand-2020-buffett-berkshire-relationship-A
+        subject_slug: warren-buffett
+        predicate_class_raw: "leads_company"
+        predicate_class_canonical: leads_company
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+        counterpart_status: no_counterpart   # nothing exists yet
+        relation_kind: null
+        refines_truth_conditions: null
+        counterpart_claim_id: null
+        counterpart_links_to_ref: null
+        doxastic_fingerprint:
+          state_hash: "sha256:seq_cand_A_empty_graph..."
+        confidence:
+          bucket: high
+          score: 0.80
+        evidence:
+          - source_id: KDB/raw/2020-buffett-berkshire-leadership.md
+            quoted_text: "Buffett has led Berkshire Hathaway since 1965."
+            confidence:
+              bucket: high
+              score: 0.80
+    - candidate:
+        candidate_id: cand-2020-buffett-berkshire-relationship-B
+        subject_slug: warren-buffett
+        predicate_class_raw: "leads_company"
+        predicate_class_canonical: leads_company
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+        # NOTE: candidate B was emitted at the same analysis-time as A — its analysis-time view of the graph was empty.
+        # At promotion-time, candidate A has already been applied → counterpart now exists.
+        # Promotion-time re-classification MUST account for this; classification_drift may fire.
+        counterpart_status: no_counterpart   # ANALYSIS-TIME classification (stale)
+        relation_kind: null
+        refines_truth_conditions: null
+        counterpart_claim_id: null
+        counterpart_links_to_ref: null
+        # Promotion-time will reclassify against the just-created LINKS_TO → counterpart_status becomes candidate_counterpart_found + relation_kind=reinforces
+        doxastic_fingerprint:
+          state_hash: "sha256:seq_cand_B_was_empty_graph..."
+        analysis_time_classification:
+          counterpart_status: no_counterpart
+          relation_kind: null
+          refines_truth_conditions: null
+        confidence:
+          bucket: high
+          score: 0.80
+        evidence:
+          - source_id: KDB/raw/2021-buffett-berkshire-chairman-letter.md
+            quoted_text: "Charlie and I have led Berkshire together for decades."
+            confidence:
+              bucket: high
+              score: 0.80
+
+expected_post_state:
+  # After both candidates apply sequentially:
+  # - A: no_counterpart → topology-only writes (LINKS_TO + SUPPORTS)
+  # - B: promotion-time reclassifies against A's just-created LINKS_TO → reinforces below threshold (2/3) → topology-only (additional SUPPORTS only)
+  entities: unchanged
+  links_to:
+    add:
+      - from_slug: warren-buffett
+        to_slug: berkshire-hathaway
+        run_id: <runtime-assigned>
+        predicate_class_canonical: leads_company
+        predicate_scope_slugs: ["global"]
+        polarity: affirms
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-berkshire-leadership.md
+        entity_slug: warren-buffett
+        role: subject
+      - source_id: KDB/raw/2021-buffett-berkshire-chairman-letter.md
+        entity_slug: warren-buffett
+        role: subject
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit_sequential:   # one entry per candidate, in order
+  - candidate_id: cand-2020-buffett-berkshire-relationship-A
+    disposition: auto_promote
+    drift_signals: { fingerprint_drift: false, classification_drift: false }
+    effective_relation_kind: no_counterpart
+  - candidate_id: cand-2020-buffett-berkshire-relationship-B
+    disposition: auto_promote_with_note   # fingerprint_drift fires due to A's intervening write
+    drift_signals: { fingerprint_drift: true, classification_drift: true }
+    drift_note: "intra-batch sequential — candidate A's write changed the graph between analysis-time and promotion-time; promotion-time classification reroutes to reinforces"
+    analysis_time_classification: { counterpart_status: no_counterpart, relation_kind: null }
+    promotion_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: reinforces, refines_truth_conditions: false }
+    effective_relation_kind: reinforces
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1   # invoked twice in order
+exercised_criteria:
+  - {id: P-O1-1, expected: pass, note: "determinism: sequential ordering produces same outcome on retry"}
+  - {id: P-O1-2, expected: pass, note: "A: no_counterpart topology-only; B: reinforces below threshold → topology-only"}
+  - {id: P-O1-3, expected: pass, note: "candidate B against post-A state is idempotent at LINKS_TO uniqueness key"}
+  - {id: P-O1-4, expected: pass, note: "candidate B exhibits both fingerprint_drift and classification_drift due to A's intervening write"}
+  - {id: P-O1-7, expected: pass, note: "candidate B disposition auto_promote_with_note (drift detected; mutation still proceeds since B's effective relation is benign topology-only)"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if B were treated as no_counterpart at promotion-time (the stale analysis-time classification)"}
+  - {id: F-O1-3, expected: not_fire, note: "would fail if duplicate LINKS_TO were written for the second candidate"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation across sequential application"}
+```
+
+---
+
 ## 4. Template-stress observations
 
 ### 4.1 What worked
@@ -2222,20 +2873,20 @@ These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is sm
 
 ## 7. Expansion plan (post-ratification of §6 decisions)
 
-**Progress (2026-05-23):** Batches 1–3 complete — 10 scenarios landed (S5–S14). Action-table-cell + upgrade-tier + drift-cell axes closed. Batch 4 remaining (5 cross-axis scenarios).
+**Progress (2026-05-23):** **All 4 batches complete — 19 scenarios total (S1–S19).** All 7 coverage axes closed. Awaiting spot-check + #87.1 v1 ratification.
 
 | Axis | Spike covers | Expansion adds | Status |
 |---|---|---|---|
 | Action-table cells (7) | `contradicts`, `no_counterpart` (S1, S2) | `reinforces` (S5), `qualifies-with-truth` (S6), `qualifies-without-truth` (S7), `supersedes` (S8), `orthogonal` (S9) | ✅ **Complete** |
 | Upgrade tiers (3) | Tier 1 (S3) | Tier 2 (S10), Tier 3 (S11) | ✅ **Complete** |
 | Drift cells (4) | `(false, false)` only — implicit in all spike + S5–S9 | `(true, false)` (S12), `(false, true)` (S13), `(true, true)` (S14) | ✅ **Complete** |
-| State transitions (1 — `active → superseded`) | Implicit in S8 as side effect; dedicated scenario pending | 1 dedicated scenario (batch 4) | 🔄 Pending |
-| Aliasing (1) | S4 (1) | Subject-canonicalized-between-runs variant (1 — batch 4) | 🔄 Pending |
-| Retracted-counterpart (2) | Not covered | 2 (sibling-active and no-active-sibling — batch 4) | 🔄 Pending |
-| Sequential-interaction (1) | Not covered | 1 dedicated scenario (batch 4) | 🔄 Pending |
-| **Total expansion** | **4 spike + 5 batch 1** | **~10 remaining** = ~19 full coverage | |
+| State transitions (1 — `active → superseded`) | Implicit side effect in S8 | Idempotency retry (S15) | ✅ **Complete** |
+| Aliasing (2) | S4 (pre-existing alias) | S16 (canonicalized between runs) | ✅ **Complete** |
+| Retracted-counterpart (2) | Not covered | S17 (active sibling — branch A) + S18 (no active sibling — branch B) | ✅ **Complete** |
+| Sequential-interaction (1) | Not covered | S19 (two candidates same family, ordered A→B) | ✅ **Complete** |
+| **Total** | **4 spike + 15 expansion** = **19 full coverage** | | |
 
-Expansion ratification gate: §6 decisions ratified → all scenarios written → spot-check pass → #87.1 v1 ratified → unblocks #83/#84 implementation start.
+Expansion ratification gate: §6 decisions ratified → all 19 scenarios written → **spot-check pass pending** → #87.1 v1 ratified → unblocks #83/#84 implementation start.
 
 ---
 
@@ -2246,3 +2897,4 @@ Expansion ratification gate: §6 decisions ratified → all scenarios written �
 - **2026-05-23** — §3 renamed from "Spike scenarios" → "Probe scenarios" with origin note distinguishing spike (§§3.1–3.4) from expansion (§§3.5+). **Batch 1 expansion landed**: 5 action-table-cell scenarios — S5 reinforces (corroboration crosses N), S6 qualifies-with-truth (Claim-creating + QUALIFIES edge), S7 qualifies-without-truth (topology-only), S8 supersedes (mandatory upgrade + state transition + SUPERSEDES edge), S9 orthogonal (topology-only with subject-overlap). S1–S4 `exercised_criteria` retroactively patched to D-87.1-9 annotated form (`{id, expected: pass|not_fire, note}`). Action-table-cell axis now complete (7/7).
 - **2026-05-23** — **Batch 2 expansion landed**: 2 upgrade-tier scenarios — S10 O2 Tier-2 (SUPPORTS-overlap reconstruction with NULL `quoted_text` per P-O2-3 + intersection narrowed to single shared source), S11 O2 Tier-3 (synthesized marker with zero EVIDENCES on OLD Claim + `provenance_synthesized_marker=true` in `promotion_audit` per P-O2-7). Upgrade-tier axis now complete (3/3). Tier-3 scenario exercises both F-O2-2 (premature-Tier-3 negative) and F-O2-4 (missing-marker negative) as expected_to_not_fire.
 - **2026-05-23** — **Batch 3 expansion landed**: 3 drift-cell scenarios — S12 (true, false) auto_promote_with_note (mutation proceeds), S13 (false, true) investigate (no mutation — short-circuits before any write), S14 (true, true) human_review (no mutation). S13 and S14 carry `analysis_time_classification` + `investigation_record`/`human_review_record` blocks in `promotion_audit` to make the drift comparison auditable. F-O1-5 (unauthorized-mutation guard) fires as expected_to_not_fire across all three. Drift-cell axis now complete (4/4).
+- **2026-05-23** — **Batch 4 expansion landed (final batch)**: 5 cross-axis scenarios — S15 state-transition idempotency (re-run S8's `supersedes` candidate against post-state; expect zero new writes), S16 alias-canonicalized-between-runs (ALIAS_OF added after analysis-time; promotion resolves to canonical via D-83/84-9), S17 retracted-counterpart with active sibling (P-O1-8 OQ-18 branch A — classify against active sibling), S18 retracted-counterpart with no active sibling (P-O1-8 OQ-18 branch B — treat as no_counterpart), S19 sequential multi-candidate (intra-batch ordering A→B; B's promotion-time classification differs from analysis-time due to A's intervening write). New shape introduced for sequential: `op_invocation_mode: sequential` + `input.candidates_sequential` list + `promotion_audit_sequential` array. **All 19 scenarios landed.** Awaiting spot-check pass for #87.1 v1 ratification.
