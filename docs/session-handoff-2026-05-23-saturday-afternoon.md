@@ -103,16 +103,68 @@ All four unlock together when verifier tightens to strict equality after **promo
 - **Memory `feedback_concrete_first_extract_later`** — when designing the Analysis-op (the multi-session next arc), look at concrete real-corpus output first
 - Path 0 backup files: `~/Obsidian/KDB/state/manifest.json.bak-2026-05-23-pre-deepseek-test` (deletable; not load-bearing). Snapshot: `~/Obsidian/KDB/state/graph-snapshots/2026-05-23T13-35-22_EDT/`.
 
-## Open path — next session
+## Strategic pivot at session close (added after Path 0)
 
-**Primary (Task #20 — 30-60 min, high leverage):** amend system prompt + tighten schema to make `domain` field actually emit on real corpus. Re-fire on Li_Lu to verify. Use sentinel-hash workaround or build the `--force-all` flag (Task #17) first if cleaner.
+**The "tunnel from both ends" reframe — ratified 2026-05-23 evening by Joseph.**
 
-**Secondary (Task #21):** decide on aliases.json bootstrap approach. Could be the same session if #20 is quick.
+After Path 0's findings landed, Joseph called the architectural elephant in the room: the project has spent ~6 weeks deepening end A (compile pipeline) and zero weeks on end B (ingestion pipeline). Continued investment in end A has diminishing returns when end B doesn't exist. **Pause end A deepening; focus all architectural design effort on end B.**
 
-**The bigger next arc (multi-session): Analysis-op design** — the missing producer side. Brainstorm + multi-model parallel draft + 3-reviewer panel + blueprint + ratification + implementation + probe-set extension. The honest "Option B — fire O1 on real corpus" requires this exists first.
+### Strategic principles ratified
+
+1. **End B = platform, not a single LLM pass.** Pluggable adapters for multiple source streams: manual `.md` drops today; future: RSS, podcasts, YouTube transcripts, web scrapes, PDFs, emails. All streams converge to a normalized internal form compile consumes.
+
+2. **Three "big things" on the ingestion side:**
+   - **Ingestion framework / platform itself** (the multi-source-stream foundation)
+   - **Domain/sub_domain classification** (MOVED from end A — was Task #20)
+   - **LLM preprocessing pass** (embeds frontmatter at top, suggests wiki links at end)
+
+3. **Minor finishing on end A is OK** — `--force-all` flag (Task #17), small bug fixes. Just don't ADD new architectural surface on the compile side.
+
+4. **Move-don't-duplicate discipline.** During ingestion design, review the compile pipeline and identify what should MOVE from end A to end B. Domain extraction is the first concrete example. AVOID building the same logic on both sides.
+
+5. **Iterate to ONE tunnel.** End state is a single integrated pipeline. Two failure modes actively to avoid:
+   - **Two parallel tunnels** — compile + ingest become silos that never converge
+   - **One never-finished tunnel** — perpetual scope-creep; no v1 ever reached
+
+   Discipline: ship a v1 that works end-to-end, then refine.
+
+### Operational impact on Tasks
+
+| # | Status | Note |
+|---|---|---|
+| #17 `--force-all` flag | Active (minor compile-side; OK to finish during ingestion design) | |
+| #20 #76 prompt amendment | **Deleted / superseded** | Domain extraction MOVES to ingestion-side, so amending the compile-side prompt is the wrong layer |
+| #21 #74 aliases.json setup | **Deleted / superseded** | Likely shared infrastructure between both ends; design after ingestion architecture clarifies |
+| **#88 Ingestion Pipeline (NEW)** | **Open / scoping** | Umbrella for the multi-source-stream platform arc; sub-tasks emerge from blueprint |
+| Analysis-op for #83/#84 (re-scoped) | Open question for #88 | Does Analysis live IN ingestion, IN compile, or as a 3rd pipeline? Resolved as part of the ingestion design phase |
+| 4 latent debts from sub-arc 3 | Still deferred (post promotion-replay) | Unchanged |
+
+## Open path — next session (REVISED post-strategic-pivot)
+
+**Primary: brainstorm ingestion pipeline architecture.** This is the next #74-/#82-/#83-/#84-scale architectural arc. Pattern to follow:
+
+1. `superpowers:brainstorming` on ingestion-as-platform — explore source streams, metadata schema, where the LLM pass lives, how the domain ledger interacts, how Analysis-op fits in, what gets moved from compile-side
+2. Multi-model parallel design pass (Gemini + GPT + Grok + Opus per Round 6 / #82 pattern)
+3. Synthesis → blueprint v1 at `docs/task88-ingestion-pipeline-blueprint.md`
+4. 3-reviewer external panel (Codex + Deepseek + Qwen per `docs/external-review-panel.md`)
+5. v2 synthesis + ratification
+6. Implementation arcs (sub-tasks of #88)
+
+**Realistic scope: 2-3 sessions just for design.** Implementation comes after.
+
+**Secondary (only if energy/time):** Task #17 `--force-all` flag (~30 min) — small compile-side utility worth finishing.
+
+## Things to consult on session resumption
+
+- **Memory `tunnel-from-both-ends-pivot-2026-05-23`** (loaded automatically via MEMORY.md) — the strategic frame
+- **Memory `feedback_concrete_first_extract_later`** — applies to ingestion: look at concrete source streams (RSS, YouTube, etc.) BEFORE designing the platform abstraction
+- **Memory `feedback_no_imaginary_risk`** — applies to ingestion: don't over-engineer multi-stream support before validating single-stream end-to-end
+- **Path 0 findings as design input**: #76 Domain field dormant in production (root cause = prompt under-instruction) is now design INPUT for the ingestion-side metadata extraction, not a fix-in-place target
+- **`docs/external-review-panel.md`** — the 3-reviewer panel composition + flow
+- **`docs/what-is-the-ontology-for.md` §9.4** — Round 6 context; Analysis-op question lives here
 
 ## Mental state for resumption
 
-This was a high-energy productive afternoon — closure of an architectural objective (15/15 GREEN) PLUS real empirical signal from Path 0 PLUS a Munger-style honest reframe of what counts as the right next move. Don't let next session's smaller-scope work (Task #20) feel diminished by today's momentum — surface-area-of-finding ratio is high for that task (silent design gap with clear root cause + fix path).
+This was an unusually rich session — closure of architectural objective (15/15 GREEN) + real empirical signal from Path 0 + TWO Munger-style honest reframes (Option B as vapor option → Path 0; then end-A-deepening as wrong direction → end-B-ingestion). The pivot at close is the most strategically important moment of the day. **Don't try to start the ingestion brainstorm cold next session — let the warmup load the tunnel-pivot memory and the strategic frame settles in, THEN brainstorm.**
 
-**Next session should start with /warmup + reading this handoff before any code.**
+**Next session should start with /warmup + reading this handoff (especially the §Strategic pivot section) before any code.**
