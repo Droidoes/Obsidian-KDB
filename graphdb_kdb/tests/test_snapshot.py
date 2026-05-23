@@ -464,7 +464,7 @@ def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["counts"]["domain"] == 2
-    assert manifest["snapshot_format_version"] == 3
+    assert manifest["snapshot_format_version"] == 4
 
 
 def test_snapshot_belongs_to_jsonl_records_edges(graph_dir, tmp_path):
@@ -503,9 +503,162 @@ def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["counts"]["domain"] == 0
     assert manifest["counts"]["belongs_to"] == 0
-    assert manifest["snapshot_format_version"] == 3
+    assert manifest["snapshot_format_version"] == 4
+    # #83/#84: Claim-layer files are also empty for pre-#83/#84 graphs.
+    for fname in ("claims.jsonl", "evidences.jsonl", "about.jsonl",
+                  "supersedes.jsonl", "contradicts.jsonl", "qualifies.jsonl"):
+        assert (out / fname).read_text("utf-8") == ""
+        kind = fname.replace(".jsonl", "")
+        assert manifest["counts"][kind] == 0
 
 
-def test_snapshot_format_version_is_v3():
-    """#80: snapshot bumped from v2 (alias_of) to v3 (domain + belongs_to)."""
-    assert SNAPSHOT_FORMAT_VERSION == 3
+def test_snapshot_format_version_is_v4():
+    """#83/#84: snapshot bumped from v3 (domain + belongs_to) to v4 (Claim layer)."""
+    assert SNAPSHOT_FORMAT_VERSION == 4
+
+
+def _seed_graph_with_claim_layer(graph_dir):
+    """Create a minimal graph with one Claim + ABOUT + EVIDENCES +
+    one CONTRADICTS edge so the new snapshot writers can be exercised
+    on real content."""
+    from graphdb_kdb.graphdb import GraphDB
+
+    with GraphDB(graph_dir) as gdb:
+        c = gdb.conn
+        c.execute(
+            "CREATE (e:Entity {slug: 'buffett', title: 'Warren Buffett', "
+            "page_type: 'concept', status: 'active', confidence: 'high', "
+            "canonical_id: NULL, created_at: 'x', updated_at: 'x', "
+            "first_run_id: 'r1', last_run_id: 'r1'})"
+        )
+        c.execute(
+            "CREATE (s:Source {source_id: 'KDB/raw/1995-buffett.md', "
+            "source_type: 'md', canonical_path: 'p', status: 'active', "
+            "file_type: 'md', hash: 'h', size_bytes: 100, "
+            "first_seen_at: 'x', last_seen_at: 'x', last_ingested_at: 'x', "
+            "ingest_state: 'compiled', ingest_count: 1, "
+            "last_run_id: 'r1', moved_to: ''})"
+        )
+        c.execute(
+            "CREATE (c1:Claim {claim_id: 'buffett__avoids-tech__global__v1', "
+            "claim_family_id: 'buffett__avoids-tech__global', "
+            "subject_slug: 'buffett', predicate_class_canonical: 'avoids-tech', "
+            "predicate_class_raw: 'avoids-tech', "
+            "predicate_scope_slugs: ['global'], object_slugs: [], "
+            "polarity: 'affirms', modality: 'declarative', "
+            "condition_text: '', assertion_text: 'Buffett avoids tech', "
+            "confidence: 0.8, confidence_spread: 0.05, state: 'active', "
+            "version: 1, created_at: '1995-03-15T00:00:00+09:00', "
+            "last_revised_at: '1995-03-15T00:00:00+09:00'})"
+        )
+        c.execute(
+            "CREATE (c2:Claim {claim_id: 'buffett__avoids-tech__global__v2', "
+            "claim_family_id: 'buffett__avoids-tech__global', "
+            "subject_slug: 'buffett', predicate_class_canonical: 'avoids-tech', "
+            "predicate_class_raw: 'avoids-tech', "
+            "predicate_scope_slugs: ['global'], object_slugs: [], "
+            "polarity: 'denies', modality: 'declarative', "
+            "condition_text: '', assertion_text: 'Buffett now invests in tech', "
+            "confidence: 0.85, confidence_spread: 0.03, state: 'active', "
+            "version: 2, created_at: '2020-08-15T00:00:00+09:00', "
+            "last_revised_at: '2020-08-15T00:00:00+09:00'})"
+        )
+        c.execute(
+            "MATCH (s:Source {source_id: 'KDB/raw/1995-buffett.md'}), "
+            "(c:Claim {claim_id: 'buffett__avoids-tech__global__v1'}) "
+            "CREATE (s)-[:EVIDENCES {quoted_text: 'I avoid tech I do not understand', "
+            "score: 0.8, provenance_type: 'analysis_emitted', "
+            "run_id: 'r1', created_at: '1995-03-15T00:00:00+09:00'}]->(c)"
+        )
+        c.execute(
+            "MATCH (c:Claim {claim_id: 'buffett__avoids-tech__global__v1'}), "
+            "(e:Entity {slug: 'buffett'}) "
+            "CREATE (c)-[:ABOUT {run_id: 'r1', created_at: '1995-03-15T00:00:00+09:00'}]->(e)"
+        )
+        c.execute(
+            "MATCH (c:Claim {claim_id: 'buffett__avoids-tech__global__v2'}), "
+            "(e:Entity {slug: 'buffett'}) "
+            "CREATE (c)-[:ABOUT {run_id: 'r2', created_at: '2020-08-15T00:00:00+09:00'}]->(e)"
+        )
+        c.execute(
+            "MATCH (a:Claim {claim_id: 'buffett__avoids-tech__global__v2'}), "
+            "(b:Claim {claim_id: 'buffett__avoids-tech__global__v1'}) "
+            "CREATE (a)-[:CONTRADICTS {contradiction_kind: 'polarity_flip', "
+            "run_id: 'r2', created_at: '2020-08-15T00:00:00+09:00'}]->(b)"
+        )
+
+
+def test_snapshot_writes_claim_layer_content(graph_dir, tmp_path):
+    """#83/#84 (format v4): claim-layer JSONL files carry the expected content
+    when the graph has Claims/EVIDENCES/ABOUT/CONTRADICTS rows.
+
+    Exercises all 6 new writers on a hand-seeded graph with 2 Claims (a
+    contradictory family pair), 1 EVIDENCES edge, 2 ABOUT edges, and 1
+    CONTRADICTS edge. Total-ordering and field projection both validated.
+    """
+    _seed_graph_with_claim_layer(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+
+    # Claims: 2 rows, sorted by claim_id (v1 before v2 lexicographically).
+    claim_rows = [
+        json.loads(line)
+        for line in (out / "claims.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert [c["claim_id"] for c in claim_rows] == [
+        "buffett__avoids-tech__global__v1",
+        "buffett__avoids-tech__global__v2",
+    ]
+    c1 = claim_rows[0]
+    assert c1["polarity"] == "affirms"
+    assert c1["predicate_scope_slugs"] == ["global"]
+    assert c1["object_slugs"] == []
+    assert c1["confidence"] == 0.8
+    assert c1["state"] == "active"
+    assert c1["version"] == 1
+    assert claim_rows[1]["polarity"] == "denies"
+
+    # EVIDENCES: 1 row, source→claim with full attributes.
+    ev_rows = [
+        json.loads(line)
+        for line in (out / "evidences.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert len(ev_rows) == 1
+    assert ev_rows[0]["source_id"] == "KDB/raw/1995-buffett.md"
+    assert ev_rows[0]["claim_id"] == "buffett__avoids-tech__global__v1"
+    assert ev_rows[0]["score"] == 0.8
+    assert ev_rows[0]["provenance_type"] == "analysis_emitted"
+
+    # ABOUT: 2 rows (both Claims point at buffett).
+    about_rows = [
+        json.loads(line)
+        for line in (out / "about.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert {(r["claim_id"], r["entity_slug"]) for r in about_rows} == {
+        ("buffett__avoids-tech__global__v1", "buffett"),
+        ("buffett__avoids-tech__global__v2", "buffett"),
+    }
+
+    # CONTRADICTS: 1 row, v2 → v1, with contradiction_kind preserved.
+    contra_rows = [
+        json.loads(line)
+        for line in (out / "contradicts.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert len(contra_rows) == 1
+    assert contra_rows[0]["from_claim_id"] == "buffett__avoids-tech__global__v2"
+    assert contra_rows[0]["to_claim_id"] == "buffett__avoids-tech__global__v1"
+    assert contra_rows[0]["contradiction_kind"] == "polarity_flip"
+
+    # SUPERSEDES + QUALIFIES files exist but are empty (no such edges seeded).
+    assert (out / "supersedes.jsonl").read_text("utf-8") == ""
+    assert (out / "qualifies.jsonl").read_text("utf-8") == ""
+
+    # Manifest counts reflect the seed.
+    manifest = json.loads((out / "manifest.json").read_text("utf-8"))
+    assert manifest["counts"]["claims"] == 2
+    assert manifest["counts"]["evidences"] == 1
+    assert manifest["counts"]["about"] == 2
+    assert manifest["counts"]["contradicts"] == 1
+    assert manifest["counts"]["supersedes"] == 0
+    assert manifest["counts"]["qualifies"] == 0
+    assert manifest["snapshot_format_version"] == 4

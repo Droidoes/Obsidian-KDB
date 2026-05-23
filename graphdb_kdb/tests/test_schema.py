@@ -13,9 +13,9 @@ from graphdb_kdb.graphdb import GraphDB
 def test_schema_constants_exist():
     """Schema module exposes SCHEMA_VERSION + DDL lists + MIGRATIONS registry."""
     assert isinstance(schema.SCHEMA_VERSION, str)
-    assert schema.SCHEMA_VERSION == "2.1"  # #76.2 bump
-    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 3
-    assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 4
+    assert schema.SCHEMA_VERSION == "2.2"  # #83/#84 Claim layer bump
+    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 4
+    assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 9
     node_text = " ".join(schema.NODE_TABLE_DDL)
     assert "CREATE NODE TABLE Entity" in node_text
     assert "CREATE NODE TABLE Source" in node_text
@@ -23,6 +23,8 @@ def test_schema_constants_exist():
     assert "canonical_id" in node_text
     # #76.2: Domain node table.
     assert "CREATE NODE TABLE Domain" in node_text
+    # #83/#84: Claim node table.
+    assert "CREATE NODE TABLE Claim" in node_text
     rel_text = " ".join(schema.REL_TABLE_DDL)
     assert "CREATE REL TABLE LINKS_TO" in rel_text
     assert "CREATE REL TABLE SUPPORTS" in rel_text
@@ -32,11 +34,15 @@ def test_schema_constants_exist():
     # #76.2: BELONGS_TO rel table with sub_domain property.
     assert "CREATE REL TABLE BELONGS_TO" in rel_text
     assert "sub_domain" in rel_text
-    # 2 migrations registered: 1.0→2.0 and 2.0→2.1.
+    # #83/#84: 5 new Claim-layer rel tables.
+    for name in ("EVIDENCES", "ABOUT", "SUPERSEDES", "CONTRADICTS", "QUALIFIES"):
+        assert f"CREATE REL TABLE {name}" in rel_text
+    # 3 migrations registered: 1.0→2.0, 2.0→2.1, 2.1→2.2.
     assert isinstance(schema.MIGRATIONS, dict)
-    assert set(schema.MIGRATIONS.keys()) == {("1.0", "2.0"), ("2.0", "2.1")}
+    assert set(schema.MIGRATIONS.keys()) == {("1.0", "2.0"), ("2.0", "2.1"), ("2.1", "2.2")}
     assert callable(schema.MIGRATIONS[("1.0", "2.0")])
     assert callable(schema.MIGRATIONS[("2.0", "2.1")])
+    assert callable(schema.MIGRATIONS[("2.1", "2.2")])
 
 
 def test_graphdb_init_creates_schema(graph_dir):
@@ -46,11 +52,14 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert v == "2.1"
+    assert v == "2.2"
     # #76.2: domains + belongs_to counters join the stats dict.
     assert stats == {
         "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
         "alias_of": 0, "domains": 0, "belongs_to": 0,
+        # #83/#84 v2.2 — Claim layer counters all zero on fresh DB.
+        "claims": 0, "evidences": 0, "about": 0,
+        "supersedes": 0, "contradicts": 0, "qualifies": 0,
     }
 
 
@@ -65,6 +74,9 @@ def test_graphdb_init_is_idempotent(graph_dir):
     assert stats == {
         "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
         "alias_of": 0, "domains": 0, "belongs_to": 0,
+        # #83/#84 v2.2 — Claim layer counters all zero on fresh DB.
+        "claims": 0, "evidences": 0, "about": 0,
+        "supersedes": 0, "contradicts": 0, "qualifies": 0,
     }
 
 
@@ -172,15 +184,15 @@ def _create_v1_db(graph_dir):
     del db
 
 
-def test_migration_v1_to_v2_1_applies(graph_dir):
-    """Opening a v1.0 DB with v2.1 code chains migrations 1.0→2.0→2.1.
-    Existing entity survives; canonical_id, ALIAS_OF, Domain, BELONGS_TO all
-    become available."""
+def test_migration_v1_to_v2_2_applies(graph_dir):
+    """Opening a v1.0 DB with v2.2 code chains migrations 1.0→2.0→2.1→2.2.
+    Existing entity survives; canonical_id, ALIAS_OF, Domain, BELONGS_TO,
+    Claim, and the 5 Claim-layer rels all become available."""
     _create_v1_db(graph_dir)
 
     with GraphDB(graph_dir) as gdb:
-        # Schema version now reports v2.1 (chained migrations ran).
-        assert gdb.schema_version() == "2.1"
+        # Schema version now reports v2.2 (chained migrations ran).
+        assert gdb.schema_version() == "2.2"
         # The pre-migration entity survived.
         stats = gdb.stats()
         assert stats["entities"] == 1

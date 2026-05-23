@@ -151,6 +151,13 @@ class GraphDB:
             # #76.2: Domain node + BELONGS_TO rel added to schema v2.1.
             "domains":   count("MATCH (d:Domain) RETURN COUNT(*)"),
             "belongs_to": count("MATCH ()-[r:BELONGS_TO]->() RETURN COUNT(*)"),
+            # #83/#84: Claim node + 5 claim-layer rels added to schema v2.2.
+            "claims":      count("MATCH (c:Claim) RETURN COUNT(*)"),
+            "evidences":   count("MATCH ()-[r:EVIDENCES]->() RETURN COUNT(*)"),
+            "about":       count("MATCH ()-[r:ABOUT]->() RETURN COUNT(*)"),
+            "supersedes":  count("MATCH ()-[r:SUPERSEDES]->() RETURN COUNT(*)"),
+            "contradicts": count("MATCH ()-[r:CONTRADICTS]->() RETURN COUNT(*)"),
+            "qualifies":   count("MATCH ()-[r:QUALIFIES]->() RETURN COUNT(*)"),
         }
 
     # ---- ingestion (#63.2) ----

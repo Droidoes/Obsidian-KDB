@@ -42,7 +42,7 @@ from graphdb_kdb.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 3
+SNAPSHOT_FORMAT_VERSION = 4
 # v1: original (entities/sources/links_to/supports + schema.cypher)
 # v2 (#74.7): adds Entity.canonical_id + alias_of.jsonl
 # v3 (#80): adds domain.jsonl + belongs_to.jsonl (Domain nodes + BELONGS_TO
@@ -130,6 +130,45 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "sha256": _sha256(belongs_to_path),
             }
 
+            # #83/#84 (format v4): Claim node + 5 Claim-layer rel tables.
+            # Pre-#83/#84 graphs produce empty files with rows=0 — additive
+            # bump, no breaking change to v3 file layout.
+            claims_path = tmp_dir / "claims.jsonl"
+            files_meta["claims.jsonl"] = {
+                "rows": _write_claims(gdb.conn, claims_path),
+                "sha256": _sha256(claims_path),
+            }
+
+            evidences_path = tmp_dir / "evidences.jsonl"
+            files_meta["evidences.jsonl"] = {
+                "rows": _write_evidences(gdb.conn, evidences_path),
+                "sha256": _sha256(evidences_path),
+            }
+
+            about_path = tmp_dir / "about.jsonl"
+            files_meta["about.jsonl"] = {
+                "rows": _write_about(gdb.conn, about_path),
+                "sha256": _sha256(about_path),
+            }
+
+            supersedes_path = tmp_dir / "supersedes.jsonl"
+            files_meta["supersedes.jsonl"] = {
+                "rows": _write_supersedes(gdb.conn, supersedes_path),
+                "sha256": _sha256(supersedes_path),
+            }
+
+            contradicts_path = tmp_dir / "contradicts.jsonl"
+            files_meta["contradicts.jsonl"] = {
+                "rows": _write_contradicts(gdb.conn, contradicts_path),
+                "sha256": _sha256(contradicts_path),
+            }
+
+            qualifies_path = tmp_dir / "qualifies.jsonl"
+            files_meta["qualifies.jsonl"] = {
+                "rows": _write_qualifies(gdb.conn, qualifies_path),
+                "sha256": _sha256(qualifies_path),
+            }
+
             schema_path = tmp_dir / "schema.cypher"
             schema_ddl_sha256 = _write_schema(schema_path)
             files_meta["schema.cypher"] = {"sha256": schema_ddl_sha256}
@@ -142,6 +181,12 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
                 "alias_of": files_meta["alias_of.jsonl"]["rows"],
                 "domain": files_meta["domain.jsonl"]["rows"],
                 "belongs_to": files_meta["belongs_to.jsonl"]["rows"],
+                "claims": files_meta["claims.jsonl"]["rows"],
+                "evidences": files_meta["evidences.jsonl"]["rows"],
+                "about": files_meta["about.jsonl"]["rows"],
+                "supersedes": files_meta["supersedes.jsonl"]["rows"],
+                "contradicts": files_meta["contradicts.jsonl"]["rows"],
+                "qualifies": files_meta["qualifies.jsonl"]["rows"],
             }
 
             manifest = {
@@ -410,6 +455,166 @@ def _write_belongs_to(conn: kuzu.Connection, path: Path) -> int:
                 "run_id": row[3],
                 "created_at": row[4],
             }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_claims(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): Claim nodes with full D-83/84-6 attribute set.
+
+    Pre-#83/#84 graphs have no Claim rows ⇒ emit an empty file (rows=0).
+    Stable ordering: lexical by `claim_id` (the primary key).
+    """
+    query = """
+    MATCH (c:Claim)
+    RETURN c.claim_id, c.claim_family_id, c.subject_slug,
+           c.predicate_class_canonical, c.predicate_class_raw,
+           c.predicate_scope_slugs, c.object_slugs,
+           c.polarity, c.modality, c.condition_text, c.assertion_text,
+           c.confidence, c.confidence_spread, c.state, c.version,
+           c.created_at, c.last_revised_at
+    ORDER BY c.claim_id
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "claim_id": row[0],
+                "claim_family_id": row[1],
+                "subject_slug": row[2],
+                "predicate_class_canonical": row[3],
+                "predicate_class_raw": row[4],
+                "predicate_scope_slugs": list(row[5]) if row[5] is not None else [],
+                "object_slugs": list(row[6]) if row[6] is not None else [],
+                "polarity": row[7],
+                "modality": row[8],
+                "condition_text": row[9],
+                "assertion_text": row[10],
+                "confidence": row[11],
+                "confidence_spread": row[12],
+                "state": row[13],
+                "version": row[14],
+                "created_at": row[15],
+                "last_revised_at": row[16],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_evidences(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): EVIDENCES edges (Source → Claim) with
+    quoted_text + score + provenance_type + run_id + created_at.
+
+    Pre-#83/#84 graphs have no edges ⇒ empty file. Total-order by
+    `(source_id, claim_id, run_id, created_at)` for byte-identical reruns.
+    """
+    query = """
+    MATCH (s:Source)-[r:EVIDENCES]->(c:Claim)
+    RETURN s.source_id, c.claim_id, r.quoted_text, r.score,
+           r.provenance_type, r.run_id, r.created_at
+    ORDER BY s.source_id, c.claim_id, r.run_id, r.created_at
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "source_id": row[0],
+                "claim_id": row[1],
+                "quoted_text": row[2],
+                "score": row[3],
+                "provenance_type": row[4],
+                "run_id": row[5],
+                "created_at": row[6],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_about(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): ABOUT edges (Claim → Entity). Authoritative
+    Claim-to-Entity binding per D-83/84-9.
+
+    Pre-#83/#84 graphs have no edges ⇒ empty file. Total-order by
+    `(claim_id, entity_slug, run_id, created_at)`.
+    """
+    query = """
+    MATCH (c:Claim)-[r:ABOUT]->(e:Entity)
+    RETURN c.claim_id, e.slug, r.run_id, r.created_at
+    ORDER BY c.claim_id, e.slug, r.run_id, r.created_at
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "claim_id": row[0],
+                "entity_slug": row[1],
+                "run_id": row[2],
+                "created_at": row[3],
+            }
+            f.write(json.dumps(obj, sort_keys=True) + "\n")
+            n += 1
+    return n
+
+
+def _write_supersedes(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): SUPERSEDES edges (Claim → Claim, newer → older).
+    Per D-83/84-6 F2 state machine.
+    """
+    return _write_claim_claim_edge(conn, path, "SUPERSEDES", extra_attrs=())
+
+
+def _write_contradicts(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): CONTRADICTS edges (Claim → Claim) with
+    `contradiction_kind` attribute. Semantically symmetric; queries traverse
+    both directions per D-83/84-6 F2.
+    """
+    return _write_claim_claim_edge(conn, path, "CONTRADICTS", extra_attrs=("contradiction_kind",))
+
+
+def _write_qualifies(conn: kuzu.Connection, path: Path) -> int:
+    """#83/#84 (format v4): QUALIFIES edges (Claim → Claim) for
+    `qualifies_or_extends` with `refines_truth_conditions=true` per D-83/84-2.
+    """
+    return _write_claim_claim_edge(conn, path, "QUALIFIES", extra_attrs=())
+
+
+def _write_claim_claim_edge(
+    conn: kuzu.Connection, path: Path, edge_name: str, *, extra_attrs: tuple[str, ...]
+) -> int:
+    """Shared serializer for SUPERSEDES / CONTRADICTS / QUALIFIES.
+
+    All three are Claim→Claim with common (run_id, created_at) provenance;
+    CONTRADICTS adds `contradiction_kind`. Stable order:
+    `(from_claim_id, to_claim_id, run_id, created_at)`.
+    """
+    extra_proj = "".join(f", r.{a}" for a in extra_attrs)
+    query = f"""
+    MATCH (a:Claim)-[r:{edge_name}]->(b:Claim)
+    RETURN a.claim_id, b.claim_id, r.run_id, r.created_at{extra_proj}
+    ORDER BY a.claim_id, b.claim_id, r.run_id, r.created_at
+    """
+    n = 0
+    with open(path, "w", encoding="utf-8") as f:
+        r = conn.execute(query)
+        while r.has_next():
+            row = r.get_next()
+            obj = {
+                "from_claim_id": row[0],
+                "to_claim_id": row[1],
+                "run_id": row[2],
+                "created_at": row[3],
+            }
+            for i, attr in enumerate(extra_attrs):
+                obj[attr] = row[4 + i]
             f.write(json.dumps(obj, sort_keys=True) + "\n")
             n += 1
     return n

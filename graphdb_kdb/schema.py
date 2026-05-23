@@ -1,17 +1,24 @@
 """Kuzu DDL + schema version + migration registry for GraphDB-KDB.
 
 Schema is documented at docs/task-graphdb-kdb-blueprint.md §4 (#63 baseline),
-docs/task74-canonicalization-blueprint.md §5 (#74 canonicalization delta), and
-docs/task76-domain-field-blueprint.md §6 (#76 domain field delta).
+docs/task74-canonicalization-blueprint.md §5 (#74 canonicalization delta),
+docs/task76-domain-field-blueprint.md §6 (#76 domain field delta), and
+docs/task83-84-promotion-contract-belief-revision-blueprint.md §6 (#83/#84
+Claim layer delta).
 
 Tables:
 - Node: Entity (slug-keyed; v2.0 adds canonical_id), Source (source_id-keyed),
-        Domain (name-keyed; v2.1)
+        Domain (name-keyed; v2.1), Claim (claim_id-keyed; v2.2)
 - Rel:  LINKS_TO (Entity->Entity), SUPPORTS (Source->Entity),
-        ALIAS_OF (Entity->Entity, v2.0), BELONGS_TO (Entity->Domain, v2.1)
+        ALIAS_OF (Entity->Entity, v2.0), BELONGS_TO (Entity->Domain, v2.1),
+        EVIDENCES (Source->Claim, v2.2), ABOUT (Claim->Entity, v2.2),
+        SUPERSEDES (Claim->Claim, v2.2), CONTRADICTS (Claim->Claim, v2.2),
+        QUALIFIES (Claim->Claim, v2.2)
 - Internal: _SchemaMeta (key/value for schema_version pinning)
 
 Timestamps are STRING (per D-note in §4) holding `datetime.now().astimezone().isoformat()`.
+(The #83/#84 blueprint §6 names `TIMESTAMP` nominally — implementation uses
+STRING to stay consistent with all prior tables.)
 
 Naming history:
 - `Page` → `Entity` per D-A1 (2026-05-14).
@@ -25,12 +32,18 @@ Schema version history:
         rel table with `algorithm` provenance (D-R5-5, D-R5-6, D-R5-13).
 - 2.1 — #76.2: new Domain node table (name-keyed); new BELONGS_TO rel table
         (Entity→Domain) with sub_domain property (nullable, primary-only).
+- 2.2 — #83/#84 §6 Claim layer: new Claim node (claim_id-keyed; family/version
+        split per D-83/84-6 F1; STRING[] scope+object slug arrays);
+        five new rel tables — EVIDENCES (with quoted_text+score+provenance_type
+        per D-83/84-6 F3 + D-83/84-7), ABOUT (Claim→Entity authoritative
+        binding per D-83/84-9), SUPERSEDES + CONTRADICTS + QUALIFIES
+        (Claim-Claim per D-83/84-6 F2 state machine).
 """
 from __future__ import annotations
 
 from typing import Callable
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 # Node tables — one CREATE per element (Kuzu requires one statement per execute).
 NODE_TABLE_DDL: list[str] = [
@@ -73,6 +86,27 @@ NODE_TABLE_DDL: list[str] = [
         first_run_id STRING
     )
     """,
+    """
+    CREATE NODE TABLE Claim (
+        claim_id                   STRING PRIMARY KEY,
+        claim_family_id            STRING,
+        subject_slug               STRING,
+        predicate_class_canonical  STRING,
+        predicate_class_raw        STRING,
+        predicate_scope_slugs      STRING[],
+        object_slugs               STRING[],
+        polarity                   STRING,
+        modality                   STRING,
+        condition_text             STRING,
+        assertion_text             STRING,
+        confidence                 DOUBLE,
+        confidence_spread          DOUBLE,
+        state                      STRING,
+        version                    INT64,
+        created_at                 STRING,
+        last_revised_at            STRING
+    )
+    """,
 ]
 
 # Relationship tables
@@ -107,6 +141,45 @@ REL_TABLE_DDL: list[str] = [
         run_id      STRING,
         created_at  STRING,
         sub_domain  STRING
+    )
+    """,
+    """
+    CREATE REL TABLE EVIDENCES (
+        FROM Source TO Claim,
+        quoted_text     STRING,
+        score           DOUBLE,
+        provenance_type STRING,
+        run_id          STRING,
+        created_at      STRING
+    )
+    """,
+    """
+    CREATE REL TABLE ABOUT (
+        FROM Claim TO Entity,
+        run_id      STRING,
+        created_at  STRING
+    )
+    """,
+    """
+    CREATE REL TABLE SUPERSEDES (
+        FROM Claim TO Claim,
+        run_id      STRING,
+        created_at  STRING
+    )
+    """,
+    """
+    CREATE REL TABLE CONTRADICTS (
+        FROM Claim TO Claim,
+        contradiction_kind STRING,
+        run_id             STRING,
+        created_at         STRING
+    )
+    """,
+    """
+    CREATE REL TABLE QUALIFIES (
+        FROM Claim TO Claim,
+        run_id      STRING,
+        created_at  STRING
     )
     """,
 ]
@@ -185,8 +258,50 @@ def _migrate_2_0_to_2_1(conn) -> None:
     )
 
 
+def _migrate_2_1_to_2_2(conn) -> None:
+    """Bring a v2.1 DB up to v2.2 in place (non-destructive).
+
+    Changes:
+      - New node table Claim (claim_id-keyed; D-83/84-6 attribute set with
+        STRING[] arrays for predicate_scope_slugs + object_slugs) — empty
+        at migration time.
+      - Five new rel tables, all empty at migration time:
+          * EVIDENCES   (Source → Claim) — quoted_text + score +
+            provenance_type per D-83/84-6 F3 + D-83/84-7 three-tier
+            provenance.
+          * ABOUT       (Claim → Entity) — D-83/84-9 authoritative
+            Claim-to-Entity binding.
+          * SUPERSEDES  (Claim → Claim) — D-83/84-6 F2 state machine.
+          * CONTRADICTS (Claim → Claim) — D-83/84-6 F2 + contradiction_kind
+            attribute.
+          * QUALIFIES   (Claim → Claim) — D-83/84-6 F2 for
+            qualifies_or_extends with refines_truth_conditions=true.
+      - `_SchemaMeta.schema_version` updated to "2.2".
+
+    Anchor: docs/task83-84-promotion-contract-belief-revision-blueprint.md
+    §6 + D-83/84-6 (#83/#84 schema delta).
+
+    All five rel tables and one node table are empty at migration time;
+    Claims are populated by the O1 promotion pipeline (`graphdb_kdb.ops.
+    op_1_promote`). The Promotion Contract reads from the existing
+    Entity / Source / LINKS_TO / SUPPORTS scaffolding when it fires.
+    """
+    # 1. Create the Claim node table (index 3 of NODE_TABLE_DDL).
+    conn.execute(NODE_TABLE_DDL[3])
+
+    # 2. Create the 5 new rel tables (indexes 4-8 of REL_TABLE_DDL).
+    for idx in (4, 5, 6, 7, 8):
+        conn.execute(REL_TABLE_DDL[idx])
+
+    # 3. Bump _SchemaMeta to "2.2".
+    conn.execute(
+        "MATCH (m:_SchemaMeta {key: 'schema_version'}) SET m.value = '2.2'"
+    )
+
+
 # Migration registry keyed by (from_version, to_version).
 MIGRATIONS: dict[tuple[str, str], Callable] = {
     ("1.0", "2.0"): _migrate_1_0_to_2_0,
     ("2.0", "2.1"): _migrate_2_0_to_2_1,
+    ("2.1", "2.2"): _migrate_2_1_to_2_2,
 }

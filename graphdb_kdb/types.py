@@ -3,10 +3,13 @@
 #63.1 shipped Entity + Source (renamed from Page per D-A1 2026-05-14).
 #63.2 adds SyncResult. VerifyResult / RebuildResult arrive in their
 respective sub-tasks (#63.5 / #63.6).
+#83/#84 schema v2.2 adds Claim (D-83/84-6 F1 family/version split;
+STRING[] arrays for scope + object slugs).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass
@@ -54,3 +57,36 @@ class Source:
     ingest_count: int         # renamed from compile_count per D-A2
     last_run_id: str
     moved_to: str
+
+
+@dataclass(frozen=True)
+class Claim:
+    """A versioned belief about an Entity.
+
+    Mirrors the Claim Kuzu node table (schema v2.2). Identity is
+    `claim_id` = `<claim_family_id>__v<N>` per D-83/84-6 F1; siblings in
+    a family share `subject_slug + predicate_class_canonical +
+    predicate_scope_slugs` and differ on polarity / modality /
+    condition_text. Polarity is NOT part of `claim_id` (corrected from
+    v1 draft per Codex v1 review Finding 1).
+
+    Created by the O1 Promotion Pipeline; never authored by the
+    Producer directly.
+    """
+    claim_id: str
+    claim_family_id: str
+    subject_slug: str
+    predicate_class_canonical: str
+    predicate_class_raw: str
+    predicate_scope_slugs: list[str]
+    object_slugs: list[str]
+    polarity: str           # 'affirms' | 'denies'
+    modality: str           # 'declarative' | ...
+    condition_text: str     # qualifier text for `qualifies_or_extends` with refines_truth_conditions=true
+    assertion_text: str
+    confidence: float
+    confidence_spread: float  # per D-83/84-12: spread of aggregated EVIDENCES.score values
+    state: str              # 'active' | 'superseded' | 'retracted'
+    version: int
+    created_at: str
+    last_revised_at: str

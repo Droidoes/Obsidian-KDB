@@ -385,6 +385,9 @@ def test_multiple_sources_in_one_run(graph_dir):
     assert stats == {
         "entities": 3, "sources": 2, "links_to": 0, "supports": 3,
         "alias_of": 0, "domains": 0, "belongs_to": 0,
+        # #83/#84 v2.2 — Claim layer counters all zero (no Claims written by ingestion).
+        "claims": 0, "evidences": 0, "about": 0,
+        "supersedes": 0, "contradicts": 0, "qualifies": 0,
     }
 
 
