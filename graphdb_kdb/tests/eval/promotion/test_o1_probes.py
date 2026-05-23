@@ -45,8 +45,8 @@ from graphdb_kdb.ops import op_1_promote
 _DEFERRED_PROBES = {
     # LINKS_TO-implicit-counterpart logic (D-83/84-7 Tier-2/Tier-3)
     "s05_reinforces_threshold_triggers_upgrade",
-    "s06_qualifies_with_truth_refinement_upgrade",
-    "s07_qualifies_without_truth_refinement_topology",
+    # "s06_qualifies_with_truth_refinement_upgrade",  # unblocked 2026-05-23 PM — real fingerprint hash
+    # "s07_qualifies_without_truth_refinement_topology",  # unblocked 2026-05-23 PM — classifier rule + object_slug + real hash
     # Semantic-contradicts (no polarity flip; structural classifier picks
     # `reinforces`/`supersedes` instead of Analysis's `contradicts` hint).
     # S12 and S18 share this root cause; S14 passes because the drift cell

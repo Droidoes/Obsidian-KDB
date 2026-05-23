@@ -63,7 +63,7 @@ input:
     counterpart_claim_id: "warren-buffett__invests_in__global__v1"
     counterpart_links_to_ref: null
     doxastic_fingerprint:
-      state_hash: "sha256:qualifies_truth..."
+      state_hash: "sha256:b9ca99fa8447a686e7c0589a9a23f7eb"
       classifier_input_scope:
         - "claim_family(warren-buffett__invests_in__global)"
     confidence:

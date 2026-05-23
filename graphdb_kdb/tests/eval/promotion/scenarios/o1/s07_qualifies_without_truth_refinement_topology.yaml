@@ -63,8 +63,9 @@ input:
     counterpart_links_to_ref:
       from_slug: warren-buffett
       to_slug: tech-industry
+    object_slug: american-express   # added 2026-05-23 PM (#87.1 v1.2): the new co-mentioned entity the candidate extends to; classifier needs this to distinguish 'extending to new object' (qualifies_or_extends) from 'supersedes' (same object, different qualifier)
     doxastic_fingerprint:
-      state_hash: "sha256:qualifies_no_truth..."
+      state_hash: "sha256:7a03140731687c27376591a5a2c1f09d"
       classifier_input_scope:
         - "claim_family(warren-buffett__invests_in__global)"
     confidence:

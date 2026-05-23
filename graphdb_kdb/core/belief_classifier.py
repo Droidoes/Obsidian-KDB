@@ -367,16 +367,23 @@ def classify(
     elif candidate.refines_truth_conditions:
         relation_kind = "qualifies_or_extends"
     else:
-        # Same polarity, no truth refinement — distinguish supersedes vs reinforces:
-        # state change (different object_slug OR different qualifier) → supersedes
-        # identical assertion → reinforces
+        # Same polarity, no truth refinement — three structural sub-cases
+        # per D-83/84-2 default action table:
+        #   * different object_slug → qualifies_or_extends (extending the
+        #     entity surface; refines_truth=false routes to topology-only)
+        #   * same object_slug + different qualifier → supersedes (state
+        #     transition on the same axis, e.g. stake percentage change)
+        #   * same object_slug + same qualifier → reinforces (additional
+        #     evidence for an identical assertion)
         cand_qual = candidate.object_qualifier or ""
         cp_qual = counterpart["condition_text"]
         cand_obj_in_cp = (
             candidate.object_slug is None
             or candidate.object_slug in counterpart["object_slugs"]
         )
-        if cand_obj_in_cp and cand_qual == cp_qual:
+        if not cand_obj_in_cp:
+            relation_kind = "qualifies_or_extends"
+        elif cand_qual == cp_qual:
             relation_kind = "reinforces"
         else:
             relation_kind = "supersedes"
