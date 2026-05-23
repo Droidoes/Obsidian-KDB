@@ -90,6 +90,7 @@ Four scenarios chosen to maximize template stress and coverage diversity:
 
 ```yaml
 scenario_id: s1-buffett-tech-contradicts-2020
+op_under_test: O1
 description: |
   Existing active Claim "buffett_avoids_tech_investments" (from 1995 letter, 2
   evidences, high confidence). New candidate emitted from 2020 article
@@ -267,6 +268,7 @@ exercised_criteria:
 
 ```yaml
 scenario_id: s2-new-entity-no-counterpart
+op_under_test: O1
 description: |
   Brand-new entity ("nvidia-corp") never seen by the system before. Candidate
   has counterpart_status=no_counterpart. Expected: LINKS_TO + SUPPORTS
@@ -372,6 +374,7 @@ exercised_criteria:
 
 ```yaml
 scenario_id: s3-buffett-tech-upgrade-tier1
+op_under_test: O2
 description: |
   Existing LINKS_TO from a 1995 run (warren-buffett -> tech-industry, type
   subject_mentions). No Claim family exists yet. New candidate contradicts
@@ -559,6 +562,7 @@ exercised_criteria:
 
 ```yaml
 scenario_id: s4-aliased-read-lazy-rewrite
+op_under_test: O3
 description: |
   Two entities: "warren-buffett" (canonical) and "buffett" (alias via
   ALIAS_OF). A Claim exists with subject_slug="buffett" (denormalized key
@@ -2758,6 +2762,114 @@ exercised_criteria:
 
 ---
 
+### 3.20 S20 — O3 read with retracted-filtered active version (F-O3-3 coverage)
+
+**Stress purpose:** Closes the F-O3-3 (Retracted-Claim leak) coverage gap surfaced during the spot-check pass. Default-mode O3 read for a `(subject, predicate_class, scope)` tuple where the family contains both a retracted v1 and an active v2 — the read must return v2 and filter v1 out.
+
+```yaml
+scenario_id: s20-o3-retracted-filtered-default-read
+op_under_test: O3
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to: []
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2020-buffett-apple-stake.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Retracted v1
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      claim_family_id: "warren-buffett__invests_in_technology__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in_technology
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: retracted
+      polarity: denies
+      provenance_type: analysis_emitted
+      confidence: 0.80
+      retracted_at: "2026-04-01T00:00:00+09:00"
+    # Active v2 — the correct read target
+    - claim_id: "warren-buffett__invests_in_technology__global__v2"
+      claim_family_id: "warren-buffett__invests_in_technology__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: invests_in_technology
+      predicate_scope_slugs: ["global"]
+      version: 2
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__invests_in_technology__global__v2"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  read_tuple:
+    subject_slug: warren-buffett
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    read_mode: default   # default mode filters retracted per D-83/84-11
+
+expected_read_result:
+  resolution_path: "claim_family__invests_in_technology__global → filter(state != retracted)"
+  returned_claims:
+    - claim_id: "warren-buffett__invests_in_technology__global__v2"
+      state: active
+      polarity: affirms
+      confidence: 0.80
+  filtered_out:
+    - claim_id: "warren-buffett__invests_in_technology__global__v1"
+      reason: state_retracted
+
+expected_post_state:
+  # No mutation — read-only with no stale denormalized keys
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+expected_invariants_hold: true
+expected_op_to_invoke: O3
+exercised_criteria:
+  - {id: P-O3-1, expected: pass, note: "tuple-granularity Claim returned (not LINKS_TO fallback)"}
+  - {id: P-O3-3, expected: pass, note: "default-mode read filters retracted Claim correctly"}
+  - {id: P-O3-4, expected: pass, note: "active Claim above decay threshold T is returned"}
+  - {id: P-O3-5, expected: pass, note: "no stale keys present → no lazy rewrite fires (no-op read produces zero writes)"}
+  - {id: F-O3-3, expected: not_fire, note: "default-mode read does NOT leak the retracted v1"}
+  - {id: F-O3-4, expected: not_fire, note: "no lazy rewrite triggered for clean denormalized keys"}
+```
+
+---
+
 ## 4. Template-stress observations
 
 ### 4.1 What worked
@@ -2838,6 +2950,17 @@ S1's `exercised_criteria` lists `F-O1-4` (invariant preservation), but the scena
 
 **Lean:** one file per scenario — easier review-per-scenario, easier diff, easier addition of new scenarios. Group by op via directory: `tests/eval/promotion/scenarios/o1/*.yaml` etc. Defer to #83/#84 implementation start.
 
+### OQ-S8 — How does the eval harness exercise F-O1-1 (classification non-determinism)?
+
+Surfaced by spot-check 2026-05-23. F-O1-1 detects classification non-determinism: same `(pre-state, candidate, eval_config)` yielding different classifications across runs. This is **structurally non-scenario-exercisable** — a single YAML probe specifies one expected outcome, not a distribution.
+
+**Options:**
+- **(a) Eval-harness retry**: runner re-executes each scenario N times (e.g., N=3 or N=10) and asserts identical outcome. F-O1-1 fires if any retry diverges. Cost: N× eval cost per scenario; needs scenario-level `retry_count` field.
+- **(b) Dedicated harness layer**: a single "deterministic-replay" gate scenario that re-applies a known classifier-input fixture N times outside the per-scenario probe set. Cost: separate harness machinery, but eval-cost amortized.
+- **(c) Defer F-O1-1 to the classifier-test suite** (separate from #87 probe set). The Promotion Contract probe set asserts outcomes for specific states; the classifier suite asserts determinism on classifier inputs.
+
+**Lean:** (c) — F-O1-1 is fundamentally a classifier property, not a Promotion-Contract property. Defer to a classifier-test suite under #83/#84 implementation. Document this scoping decision in #87 v3 if v3 is ever opened.
+
 ### OQ-S7 — Should O1-vs-O2 dispatch be an explicit field on the candidate, or stay derived?
 
 Surfaced by D-87.1-5 ratification 2026-05-22. The current contract derives O2 dispatch from three fields jointly: `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. This is correct per #83/#84 but means the dispatch logic is **implicit** — a reader scanning a scenario must reconstruct the dispatch from three fields rather than read one.
@@ -2873,7 +2996,7 @@ These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is sm
 
 ## 7. Expansion plan (post-ratification of §6 decisions)
 
-**Progress (2026-05-23):** **All 4 batches complete — 19 scenarios total (S1–S19).** All 7 coverage axes closed. Awaiting spot-check + #87.1 v1 ratification.
+**Progress (2026-05-23):** **All 4 batches + spot-check addition complete — 20 scenarios total (S1–S20).** All 7 coverage axes closed; spot-check added S20 to close the F-O3-3 gap. Awaiting #87.1 v1 ratification.
 
 | Axis | Spike covers | Expansion adds | Status |
 |---|---|---|---|
@@ -2884,9 +3007,18 @@ These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is sm
 | Aliasing (2) | S4 (pre-existing alias) | S16 (canonicalized between runs) | ✅ **Complete** |
 | Retracted-counterpart (2) | Not covered | S17 (active sibling — branch A) + S18 (no active sibling — branch B) | ✅ **Complete** |
 | Sequential-interaction (1) | Not covered | S19 (two candidates same family, ordered A→B) | ✅ **Complete** |
-| **Total** | **4 spike + 15 expansion** = **19 full coverage** | | |
+| O3 read coverage gap (spot-check) | S4 (P-O3-1..5, F-O3-1/2/4) | S20 (F-O3-3 retracted-Claim leak — default-mode read filters retracted) | ✅ **Complete** |
+| **Total** | **4 spike + 15 expansion + 1 spot-check addition** = **20 full coverage** | | |
 
-Expansion ratification gate: §6 decisions ratified → all 19 scenarios written → **spot-check pass pending** → #87.1 v1 ratified → unblocks #83/#84 implementation start.
+**Spot-check findings (2026-05-23):**
+
+- ✅ All 20 scenarios conform to ratified template shape (D-87.1-1..10).
+- ✅ All P/F criteria exercised at least once across the probe set, EXCEPT **F-O1-1 (classification non-determinism)** which is **structurally non-scenario-exercisable**: detecting non-determinism requires re-running the same scenario N times and asserting outcome consistency — that's an eval-harness property, not a single-probe property. Documented as known limitation; the runner is expected to assert F-O1-1 via repeat-execution per scenario, not via a dedicated YAML probe. OQ-S8 registers this.
+- ✅ Slug delimiter guard holds across all scenarios (no slug contains `__`).
+- ✅ No cross-criteria conflicts found (P-* + F-* combinations internally consistent per scenario).
+- ✅ S1–S4 retroactively patched to add `op_under_test:` field for shape uniformity.
+
+Expansion ratification gate: §6 decisions ratified → all 20 scenarios written → **spot-check pass complete** → #87.1 v1 awaiting Joseph's ratification → unblocks #83/#84 implementation start.
 
 ---
 
@@ -2898,3 +3030,4 @@ Expansion ratification gate: §6 decisions ratified → all 19 scenarios written
 - **2026-05-23** — **Batch 2 expansion landed**: 2 upgrade-tier scenarios — S10 O2 Tier-2 (SUPPORTS-overlap reconstruction with NULL `quoted_text` per P-O2-3 + intersection narrowed to single shared source), S11 O2 Tier-3 (synthesized marker with zero EVIDENCES on OLD Claim + `provenance_synthesized_marker=true` in `promotion_audit` per P-O2-7). Upgrade-tier axis now complete (3/3). Tier-3 scenario exercises both F-O2-2 (premature-Tier-3 negative) and F-O2-4 (missing-marker negative) as expected_to_not_fire.
 - **2026-05-23** — **Batch 3 expansion landed**: 3 drift-cell scenarios — S12 (true, false) auto_promote_with_note (mutation proceeds), S13 (false, true) investigate (no mutation — short-circuits before any write), S14 (true, true) human_review (no mutation). S13 and S14 carry `analysis_time_classification` + `investigation_record`/`human_review_record` blocks in `promotion_audit` to make the drift comparison auditable. F-O1-5 (unauthorized-mutation guard) fires as expected_to_not_fire across all three. Drift-cell axis now complete (4/4).
 - **2026-05-23** — **Batch 4 expansion landed (final batch)**: 5 cross-axis scenarios — S15 state-transition idempotency (re-run S8's `supersedes` candidate against post-state; expect zero new writes), S16 alias-canonicalized-between-runs (ALIAS_OF added after analysis-time; promotion resolves to canonical via D-83/84-9), S17 retracted-counterpart with active sibling (P-O1-8 OQ-18 branch A — classify against active sibling), S18 retracted-counterpart with no active sibling (P-O1-8 OQ-18 branch B — treat as no_counterpart), S19 sequential multi-candidate (intra-batch ordering A→B; B's promotion-time classification differs from analysis-time due to A's intervening write). New shape introduced for sequential: `op_invocation_mode: sequential` + `input.candidates_sequential` list + `promotion_audit_sequential` array. **All 19 scenarios landed.** Awaiting spot-check pass for #87.1 v1 ratification.
+- **2026-05-23** — **Spot-check pass complete**. Added **S20** O3 retracted-Claim-leak filter (closes F-O3-3 coverage gap surfaced during the per-criterion audit). S1–S4 retroactively patched to add `op_under_test:` field for shape uniformity (was missing in spike scenarios). Surfaced **F-O1-1 (classification non-determinism)** as structurally non-scenario-exercisable — registered as **OQ-S8** with lean = defer to classifier-test suite under #83/#84. All other 32 P/F criteria exercised at least once. Slug delimiter guard verified across all 20 scenarios (no slug contains `__`). No cross-criteria conflicts found. **#87.1 v1 ready for Joseph's ratification.**
