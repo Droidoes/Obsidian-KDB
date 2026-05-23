@@ -1,7 +1,7 @@
 # Obsidian-KDB — Codebase Overview (North Star)
 
 **Status:** v1 architecture locked; M0 → M2 landed (compiler + validator + reconciler + benchmark engine all live)
-**Last updated:** 2026-05-22
+**Last updated:** 2026-05-23
 **Owners:** Joseph (human) + Claude Opus 4.7 (staff architect) + GPT 5.4 / Codex 5.3 (external review)
 
 This is the **single source of truth** for the Obsidian-KDB project. All design rationale, decisions, and open questions live here. External AI consultation artifacts (Grok / Gemini Pro / GPT 5.4 / Codex 5.3) are referenced but not authoritative — they fed into the consensus captured below.
@@ -23,6 +23,7 @@ Dated architectural inflection points. Full retrospective and three-iteration hi
 - **2026-05-22** — **Three-iteration retrospective filed** ([`docs/JOURNEY.md`](JOURNEY.md)). This changelog itself is the mitigation for Lessons §5 (milestone-level signal was missing pre-this-doc).
 - **2026-05-22** — **Round 6 closes — "Learn" operationalized.** Three Learn mechanisms ratified (Belief Revision / Identity Refinement / Abstraction & Principle Induction) + Hypothesis Promotion as first-class boundary contract per **(a+)** decision; M2 + M3 reclassified as Analysis-feeding-[C] Create; project's first articulated position on [C] Create recorded ([`docs/what-is-the-ontology-for.md`](what-is-the-ontology-for.md) §9.4; Task #82 closure; Tasks #83–#86 filed).
 - **2026-05-23** — **Predeclared eval criteria + probe set ratified for #83/#84.** Task #87 v2 (eval criteria — 3 ops O1/O2/O3, P-On-N / F-On-N criteria, HW-1..HW-11 hedge-watch rules, `eval_config` block per Codex+Deepseek+Qwen panel review) + Task #87.1 v1 (20 probe scenarios across 7 §7.1 coverage axes, 8 OQs OQ-S1..S8 surfaced, D-87.1-1..10 decision gates ratified) both shipped. **Mutation-eval discipline adopted** (vs Task #75's retrieval-eval): pre-state + input → expected post-state + invariants preserved. **Unblocks #83/#84 implementation start.**
+- **2026-05-23 (afternoon)** — **DeepSeek-V4-Flash returned to active pool via direct API.** The 2026-05-15 "capability gap" diagnosis was a routing artifact, not a model deficiency: Alibaba's OpenAI-compat layer was stripping/mis-handling `response_format` for non-Qwen models. Empirical fire on canonical corpus: S0=1.000, M1-M5=1.000, M7=3578ms (2.75× faster than Alibaba's best historical 9830ms). Ties #1 on cost-quality frontier with `gemini-3.1-flash-lite` at FINAL=0.956 (Gemini wins latency 4×; DeepSeek wins cost 50%). `deepseek-v4-pro:direct` dropped same-session (strictly dominated by Flash:direct — 3.2× cost, 2.7× latency, identical quality). **Meta-lesson:** control models must match the model-under-test's vendor/routing relationship, not just the routing layer.
 
 ---
 
