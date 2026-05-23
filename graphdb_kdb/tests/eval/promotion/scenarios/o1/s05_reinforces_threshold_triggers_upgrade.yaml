@@ -70,7 +70,7 @@ input:
       from_slug: warren-buffett
       to_slug: long-term-holding-strategy
     doxastic_fingerprint:
-      state_hash: "sha256:reinforces_threshold..."
+      state_hash: "sha256:a2475eb03fcdccfe93bec32ca1f211e9"
       classifier_input_scope:
         - "links_to_subject_mentions(warren-buffett, long-term-holding-strategy)"
         - "supports_cardinality_for_predicate(practices_strategy)"

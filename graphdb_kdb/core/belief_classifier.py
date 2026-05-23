@@ -326,6 +326,40 @@ def classify(
     # engageable counterparts; pure 'superseded' is engageable too.
     active_counterparts = [c for c in counterpart_claims if c["state"] in {"active", "retracted", "superseded"}]
 
+    # 3a. LINKS_TO-implicit-counterpart fallback. Distinct from blueprint
+    # §6.7 Tier-1/2/3 provenance reconstruction (which lives in the
+    # mutator). When no Claim exists in the family AND the candidate
+    # carries `counterpart_links_to_ref` pointing to a real LINKS_TO
+    # edge in the graph, treat that edge as the implicit counterpart for
+    # relation_kind dispatch. Polarity / predicate-class fidelity on
+    # LINKS_TO is currently trust-the-hint: schema v2.2's LINKS_TO carries
+    # only (run_id, created_at) per graphdb_kdb/schema.py:115-119, so we
+    # can't filter by predicate or polarity at this layer. Tracked as OQ
+    # alongside the verifier-strictness arc.
+    ref = candidate.counterpart_links_to_ref
+    if (
+        not active_counterparts
+        and isinstance(ref, dict)
+        and ref.get("from_slug")
+        and ref.get("to_slug")
+    ):
+        rl = conn.execute(
+            "MATCH (a:Entity {slug: $f})-[l:LINKS_TO]->(b:Entity {slug: $t}) RETURN COUNT(l)",
+            {"f": ref["from_slug"], "t": ref["to_slug"]},
+        )
+        n_links = int(rl.get_next()[0]) if rl.has_next() else 0
+        if n_links > 0:
+            scope_lines.append(f"links_to_corroboration_count: {n_links}")
+            return ClassificationResult(
+                counterpart_status="candidate_counterpart_found",
+                relation_kind="reinforces",
+                refines_truth_conditions=candidate.refines_truth_conditions,
+                counterpart_claim_id=None,
+                counterpart_links_to_ref=ref,
+                classifier_input_scope=scope_lines,
+                state_hash=_state_hash(scope_lines),
+            )
+
     if not active_counterparts:
         # Distinguish no_counterpart vs orthogonal per D-83/84-2:
         #   * no_counterpart — nothing engaging the candidate. Either the

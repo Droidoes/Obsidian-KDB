@@ -44,7 +44,7 @@ from graphdb_kdb.ops import op_1_promote
 # evidence reconstruction per D-83/84-7) — deferred beyond GREEN v1.
 _DEFERRED_PROBES = {
     # LINKS_TO-implicit-counterpart logic (D-83/84-7 Tier-2/Tier-3)
-    "s05_reinforces_threshold_triggers_upgrade",
+    # "s05_reinforces_threshold_triggers_upgrade",  # unblocked 2026-05-23 PM — LINKS_TO-implicit-counterpart classifier fallback
     # "s06_qualifies_with_truth_refinement_upgrade",  # unblocked 2026-05-23 PM — real fingerprint hash
     # "s07_qualifies_without_truth_refinement_topology",  # unblocked 2026-05-23 PM — classifier rule + object_slug + real hash
     # Semantic-contradicts (no polarity flip; structural classifier picks
@@ -344,8 +344,11 @@ def test_o1_probe(probe_path: Path, tmp_path):
 
     if probe_path.stem in _DEFERRED_PROBES:
         pytest.xfail(
-            "Deferred beyond GREEN v1: requires LINKS_TO-implicit-counterpart "
-            "logic (D-83/84-7 Tier-2/Tier-3) or canonicalization-mid-promotion."
+            "Deferred beyond current GREEN: semantic-contradicts class "
+            "(S12/S18 — structural classifier picks reinforces/supersedes "
+            "where Analysis's contradicts hint disagrees). Resolution path: "
+            "LLM-as-classifier layer OR relation_kind from candidate treated "
+            "as authoritative-from-Analysis when structurally ambiguous."
         )
 
     input_block = probe["input"]
