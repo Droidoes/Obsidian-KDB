@@ -1691,6 +1691,422 @@ exercised_criteria:
 
 ---
 
+### 3.12 S12 — drift cell `(true, false)` — fingerprint drift, classification stable → `auto_promote_with_note`
+
+**Stress purpose:** Exercises the D-83/84-8 Part D `(fingerprint_drift=true, classification_drift=false)` cell. Graph state changed in the candidate's fingerprint scope between analysis-time and promotion-time, but the change was orthogonal to the classification dispatch — disposition is `auto_promote_with_note`, graph mutates with drift note recorded.
+
+```yaml
+scenario_id: s12-drift-fingerprint-only-auto-promote-with-note
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  # Promotion-time has an EXTRA SUPPORTS edge that didn't exist at analysis-time
+  # → fingerprint hash drifts; classification (contradicts) is unaffected
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2018-buffett-interview.md   # NEW since analysis-time
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-fp
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint snapshot — graph state at T1 (before the new SUPPORTS arrived)
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_at_analysis_time_T1"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+        - "supports_cardinality_for_subject(warren-buffett)"
+    # Analysis-time classification captured for drift comparison
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: contradicts
+      refines_truth_conditions: false
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # auto_promote_with_note STILL mutates per D-83/84-8 Part D + P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        entity_slug: warren-buffett
+        role: subject
+  claims:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        claim_family_id: "warren-buffett__avoids_tech_investments__global"
+        subject_slug: warren-buffett
+        predicate_class_canonical: invests_in_technology   # NEW Claim polarity flip
+        predicate_scope_slugs: ["global"]
+        version: 2
+        state: active
+        polarity: affirms
+        provenance_type: analysis_emitted
+        confidence: <placeholder-pending-OQ-26>
+        classified_at: "2026-06-01T00:00:00+09:00"
+  edges:
+    add:
+      - from_claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        to_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+        kind: CONTRADICTS
+  about_edges:
+    add:
+      - claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        entity_slug: warren-buffett
+        role: subject
+  evidences:
+    add:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        claim_id: "warren-buffett__avoids_tech_investments__global__v2"
+        provenance_type: analysis_emitted
+        confidence: 0.80
+
+promotion_audit:
+  disposition: auto_promote_with_note
+  drift_signals: { fingerprint_drift: true, classification_drift: false }
+  drift_note: "fingerprint_drift due to new SUPPORTS edge (KDB/raw/2018-buffett-interview.md) — orthogonal to relation_kind dispatch; promoted with note"
+  classified_at: "2026-06-01T00:00:00+09:00"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-2, expected: pass, note: "Claim-creating contradicts cell — mutation proceeds despite fingerprint drift"}
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=true, classification_drift=false"}
+  - {id: P-O1-7, expected: pass, note: "disposition auto_promote_with_note (mutates per P-O1-7)"}
+  - {id: F-O1-2, expected: not_fire, note: "would fail if mutation skipped despite auto_promote_with_note disposition"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation"}
+  - {id: F-O1-5, expected: not_fire, note: "auto_promote_with_note is an authorized mutation disposition"}
+```
+
+---
+
+### 3.13 S13 — drift cell `(false, true)` — classification drift only → `investigate` (no mutation)
+
+**Stress purpose:** Exercises the D-83/84-8 Part D `(fingerprint_drift=false, classification_drift=true)` cell. Same fingerprint should mean same classification; divergence signals classifier non-determinism, stale `classifier_version`, or coupling-as-invariant violation. Disposition `investigate` → **zero graph mutation** in default mode (per P-O1-7). F-O1-5 explicitly tests for unauthorized writes.
+
+```yaml
+scenario_id: s13-drift-classification-only-investigate
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-cls
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    modality: declarative
+    # PROMOTION-TIME re-classification will yield `contradicts`
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint scope matches promotion-time → no drift
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_stable_across_T1_T2"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+    # Analysis-time classification was DIFFERENT (e.g., qualifies_or_extends, refines=false)
+    # but promotion-time re-classification yields contradicts → classification_drift=true
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: qualifies_or_extends
+      refines_truth_conditions: false
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # investigate disposition → NO graph mutation per P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: investigate
+  drift_signals: { fingerprint_drift: false, classification_drift: true }
+  drift_note: "classification_drift without fingerprint_drift — suspect classifier non-determinism, stale classifier_version, or coupling-as-invariant violation; flagged for investigation"
+  classified_at: "2026-06-01T00:00:00+09:00"
+  investigation_record:
+    analysis_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: qualifies_or_extends, refines_truth_conditions: false }
+    promotion_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: contradicts, refines_truth_conditions: false }
+    suspected_cause: classifier_non_determinism_or_coupling_violation
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=false, classification_drift=true"}
+  - {id: P-O1-7, expected: pass, note: "disposition investigate — no graph mutation per P-O1-7"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation — investigate disposition short-circuits before any Claim/EVIDENCES/LINKS_TO/SUPPORTS write"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (graph unchanged)"}
+```
+
+---
+
+### 3.14 S14 — drift cell `(true, true)` — both drift → `human_review` (no mutation)
+
+**Stress purpose:** Exercises the D-83/84-8 Part D `(fingerprint_drift=true, classification_drift=true)` cell. State change correlates with classification change — the new classification is based on more current state, but divergence is the signal worth human attention. Disposition `human_review` → **zero graph mutation** in default mode (per P-O1-7). F-O1-5 covers unauthorized-write detection.
+
+```yaml
+scenario_id: s14-drift-both-human-review
+op_under_test: O1
+
+eval_config:
+  eval_clock: "2026-06-01T00:00:00+09:00"
+  corroboration_threshold_n: 3
+  confidence_decay_tau_days: 365
+  default_read_confidence_threshold_t: 0.40
+  confidence_map_version: confidence_map_v1
+
+pre_state:
+  entities:
+    - slug: warren-buffett
+    - slug: tech-industry
+
+  links_to:
+    - from_slug: warren-buffett
+      to_slug: tech-industry
+      run_id: run-1995-buffett-letter
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      polarity: affirms
+
+  # Both the SUPPORTS edge (fingerprint scope) AND a new related Claim arrived since analysis-time
+  supports:
+    - source_id: KDB/raw/1995-buffett-letter.md
+      entity_slug: warren-buffett
+      role: subject
+    - source_id: KDB/raw/2019-buffett-tech-pivot-context.md   # NEW since T1 — contributes to fingerprint drift
+      entity_slug: warren-buffett
+      role: subject
+
+  claims:
+    # Existing Claim
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      claim_family_id: "warren-buffett__avoids_tech_investments__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: avoids_tech_investments
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.80
+    # NEW Claim arrived since analysis-time — affects classifier read surface AND outcome
+    - claim_id: "warren-buffett__shifted_investment_thesis__global__v1"
+      claim_family_id: "warren-buffett__shifted_investment_thesis__global"
+      subject_slug: warren-buffett
+      predicate_class_canonical: shifted_investment_thesis
+      predicate_scope_slugs: ["global"]
+      version: 1
+      state: active
+      polarity: affirms
+      provenance_type: analysis_emitted
+      confidence: 0.70
+
+  about_edges:
+    - claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+    - claim_id: "warren-buffett__shifted_investment_thesis__global__v1"
+      entity_slug: warren-buffett
+      role: subject
+
+  edges: []
+  alias_of_edges: []
+  run_payloads: []
+
+input:
+  candidate:
+    candidate_id: cand-2020-buffett-apple-stake-drift-both
+    subject_slug: warren-buffett
+    predicate_class_raw: "invests_in_technology"
+    predicate_class_canonical: invests_in_technology
+    predicate_scope_slugs: ["global"]
+    polarity: affirms
+    counterpart_status: candidate_counterpart_found
+    relation_kind: contradicts
+    refines_truth_conditions: false
+    counterpart_claim_id: "warren-buffett__avoids_tech_investments__global__v1"
+    counterpart_links_to_ref: null
+    # Analysis-time fingerprint captured BEFORE the new SUPPORTS + new Claim arrived
+    doxastic_fingerprint:
+      state_hash: "sha256:fingerprint_at_T1_pre_drift"
+      classifier_input_scope:
+        - "claim(warren-buffett__avoids_tech_investments__global__v1).polarity"
+        - "supports_cardinality_for_subject(warren-buffett)"
+        - "related_claims_for_subject(warren-buffett)"
+    # Analysis-time classification was different
+    analysis_time_classification:
+      counterpart_status: candidate_counterpart_found
+      relation_kind: qualifies_or_extends
+      refines_truth_conditions: true
+    confidence:
+      bucket: high
+      score: 0.80
+    evidence:
+      - source_id: KDB/raw/2020-buffett-apple-stake.md
+        quoted_text: "Berkshire's stake in Apple has grown to be one of its largest holdings."
+        confidence:
+          bucket: high
+          score: 0.80
+
+expected_post_state:
+  # human_review disposition → NO graph mutation per P-O1-7
+  entities: unchanged
+  links_to: unchanged
+  supports: unchanged
+  claims: unchanged
+  edges: unchanged
+  about_edges: unchanged
+  alias_of_edges: unchanged
+  evidences: unchanged
+
+promotion_audit:
+  disposition: human_review
+  drift_signals: { fingerprint_drift: true, classification_drift: true }
+  drift_note: "both fingerprint_drift and classification_drift — state change correlates with classification change; flagged for human review"
+  classified_at: "2026-06-01T00:00:00+09:00"
+  human_review_record:
+    analysis_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: qualifies_or_extends, refines_truth_conditions: true }
+    promotion_time_classification: { counterpart_status: candidate_counterpart_found, relation_kind: contradicts, refines_truth_conditions: false }
+    state_changes_in_fingerprint_scope:
+      - "new SUPPORTS edge for warren-buffett"
+      - "new Claim: shifted_investment_thesis"
+
+expected_invariants_hold: true
+expected_op_to_invoke: O1
+exercised_criteria:
+  - {id: P-O1-4, expected: pass, note: "drift signals: fingerprint_drift=true, classification_drift=true"}
+  - {id: P-O1-7, expected: pass, note: "disposition human_review — no graph mutation per P-O1-7"}
+  - {id: F-O1-5, expected: not_fire, note: "no unauthorized mutation under human_review disposition"}
+  - {id: F-O1-4, expected: not_fire, note: "invariant preservation (graph unchanged)"}
+```
+
+---
+
 ## 4. Template-stress observations
 
 ### 4.1 What worked
@@ -1806,13 +2222,13 @@ These gate the expansion from 4 spike scenarios to ~18 full coverage. Each is sm
 
 ## 7. Expansion plan (post-ratification of §6 decisions)
 
-**Progress (2026-05-23):** Batches 1–2 complete — 7 scenarios landed (S5–S11). Action-table-cell axis + upgrade-tier axis closed. Batches 3–4 remaining (~8 scenarios).
+**Progress (2026-05-23):** Batches 1–3 complete — 10 scenarios landed (S5–S14). Action-table-cell + upgrade-tier + drift-cell axes closed. Batch 4 remaining (5 cross-axis scenarios).
 
 | Axis | Spike covers | Expansion adds | Status |
 |---|---|---|---|
 | Action-table cells (7) | `contradicts`, `no_counterpart` (S1, S2) | `reinforces` (S5), `qualifies-with-truth` (S6), `qualifies-without-truth` (S7), `supersedes` (S8), `orthogonal` (S9) | ✅ **Complete** |
 | Upgrade tiers (3) | Tier 1 (S3) | Tier 2 (S10), Tier 3 (S11) | ✅ **Complete** |
-| Drift cells (4) | `(false, false)` only — implicit in all spike + S5–S9 | `(true, false)`, `(false, true)`, `(true, true)` (3 scenarios — batch 3) | 🔄 Pending |
+| Drift cells (4) | `(false, false)` only — implicit in all spike + S5–S9 | `(true, false)` (S12), `(false, true)` (S13), `(true, true)` (S14) | ✅ **Complete** |
 | State transitions (1 — `active → superseded`) | Implicit in S8 as side effect; dedicated scenario pending | 1 dedicated scenario (batch 4) | 🔄 Pending |
 | Aliasing (1) | S4 (1) | Subject-canonicalized-between-runs variant (1 — batch 4) | 🔄 Pending |
 | Retracted-counterpart (2) | Not covered | 2 (sibling-active and no-active-sibling — batch 4) | 🔄 Pending |
@@ -1829,3 +2245,4 @@ Expansion ratification gate: §6 decisions ratified → all scenarios written �
 - **2026-05-22** — §6 decisions D-87.1-1..10 **ratified**. D-87.1-5 ratified with vocabulary correction: `implied_by_links_to` is not a valid `counterpart_status` enum value per #83/#84 D-83/84-2; canonical enum is `no_counterpart` | `candidate_counterpart_found` | `orthogonal`. O2 dispatch is derived (not enum-named): `counterpart_status == candidate_counterpart_found` AND `counterpart_claim_id == null` AND `counterpart_links_to_ref != null`. S3 input field corrected accordingly. **OQ-S7 added** (should dispatch path be explicit or stay derived — current lean: stay derived). Expansion to 14 more scenarios now unblocked.
 - **2026-05-23** — §3 renamed from "Spike scenarios" → "Probe scenarios" with origin note distinguishing spike (§§3.1–3.4) from expansion (§§3.5+). **Batch 1 expansion landed**: 5 action-table-cell scenarios — S5 reinforces (corroboration crosses N), S6 qualifies-with-truth (Claim-creating + QUALIFIES edge), S7 qualifies-without-truth (topology-only), S8 supersedes (mandatory upgrade + state transition + SUPERSEDES edge), S9 orthogonal (topology-only with subject-overlap). S1–S4 `exercised_criteria` retroactively patched to D-87.1-9 annotated form (`{id, expected: pass|not_fire, note}`). Action-table-cell axis now complete (7/7).
 - **2026-05-23** — **Batch 2 expansion landed**: 2 upgrade-tier scenarios — S10 O2 Tier-2 (SUPPORTS-overlap reconstruction with NULL `quoted_text` per P-O2-3 + intersection narrowed to single shared source), S11 O2 Tier-3 (synthesized marker with zero EVIDENCES on OLD Claim + `provenance_synthesized_marker=true` in `promotion_audit` per P-O2-7). Upgrade-tier axis now complete (3/3). Tier-3 scenario exercises both F-O2-2 (premature-Tier-3 negative) and F-O2-4 (missing-marker negative) as expected_to_not_fire.
+- **2026-05-23** — **Batch 3 expansion landed**: 3 drift-cell scenarios — S12 (true, false) auto_promote_with_note (mutation proceeds), S13 (false, true) investigate (no mutation — short-circuits before any write), S14 (true, true) human_review (no mutation). S13 and S14 carry `analysis_time_classification` + `investigation_record`/`human_review_record` blocks in `promotion_audit` to make the drift comparison auditable. F-O1-5 (unauthorized-mutation guard) fires as expected_to_not_fire across all three. Drift-cell axis now complete (4/4).
