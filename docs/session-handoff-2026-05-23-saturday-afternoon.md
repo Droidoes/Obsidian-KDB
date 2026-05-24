@@ -139,6 +139,30 @@ After Path 0's findings landed, Joseph called the architectural elephant in the 
 | Analysis-op for #83/#84 (re-scoped) | Open question for #88 | Does Analysis live IN ingestion, IN compile, or as a 3rd pipeline? Resolved as part of the ingestion design phase |
 | 4 latent debts from sub-arc 3 | Still deferred (post promotion-replay) | Unchanged |
 
+## Pre-pivot cleanup — tomorrow's warmup before brainstorm
+
+End A is being put down clean. Three tiers to settle before opening Task #88:
+
+### Tier A — settle before brainstorm (~45–60 min)
+
+1. **Freeze the producer contract as v1.0** (~15 min) — `docs/graphdb-kdb-producer-contract.md` is what compile consumes; ingestion design references it as the input boundary. Read-through, add explicit version stamp + "end A frozen at 2026-05-23 pivot" header. Gives the brainstorm a clean anchor.
+2. **Repo hygiene** (~5 min) — 4 untracked files at repo root from earlier this session: `.qwen/`, `AGENTS.md`, `QWEN.md`, `uv.lock`. Decide commit / gitignore / delete; will keep showing as noise on every `git status` until handled.
+3. **Task #17 `--force-all` flag** (~30 min) — known small CLI surfaced by Path 0; no design needed, just TDD pass.
+
+### Tier B — small cleanups inline (~10 min total)
+
+4. **Path 0 backup cleanup** — delete `~/Obsidian/KDB/state/manifest.json.bak-2026-05-23-pre-deepseek-test` (~30s).
+5. **CODEBASE_OVERVIEW state-of-the-tunnel marker** (~5 min) — explicit Milestone Changelog entry: "end A frozen at commit X; end B kicks off Task #88". Makes the architectural snapshot unambiguous.
+6. **Open-5 reclassification** (~2 min) — `Open-5` in CODEBASE_OVERVIEW (binary file handling in `raw/`) was filed as v2-partial; it's now **owned by Task #88**. Re-tag so future-you doesn't think it's orphaned.
+
+### Tier C — already handled, leave alone
+
+- 4 latent debts from #83/#84 sub-arc 3 — correctly deferred with parent arc to post-promotion-replay
+- O2/O3 of #83/#84 — implementation paused per pivot; resumes when arcs do
+- `Open-1..Open-4, 6-8` in CODEBASE_OVERVIEW — status already correct (closed/deferred/partial)
+- #85, #86 Learn slots — explicitly deferred until #83/#84 land
+- Tasks #20 (#76 prompt amendment), #21 (#74 aliases.json) — superseded/shared per pivot memory
+
 ## Open path — next session (REVISED post-strategic-pivot)
 
 **Primary: brainstorm ingestion pipeline architecture.** This is the next #74-/#82-/#83-/#84-scale architectural arc. Pattern to follow:
@@ -152,7 +176,7 @@ After Path 0's findings landed, Joseph called the architectural elephant in the 
 
 **Realistic scope: 2-3 sessions just for design.** Implementation comes after.
 
-**Secondary (only if energy/time):** Task #17 `--force-all` flag (~30 min) — small compile-side utility worth finishing.
+**Recommended tomorrow shape:** Tier A (45–60 min warmup) → Tier B inline → open Task #88 brainstorm proper. That gives a clean handoff — end A genuinely sealed, repo clean, ingestion brainstorm starts on a tidy slate.
 
 ## Things to consult on session resumption
 
