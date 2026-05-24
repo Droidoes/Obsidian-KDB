@@ -1,8 +1,10 @@
 # GraphDB-KDB — Producer Contract
 
-**Status:** Forward-looking architectural specification. Defines what GraphDB-KDB expects from any **producer** (ingestion pipeline) that wants to feed the graph.
+**Version:** v1.0 (frozen 2026-05-23)
 
-**Date:** 2026-05-14.
+**Status:** Input boundary spec for **Task #88 (Ingestion Pipeline)**. End-A (compile-side) development paused at this freeze per the "tunnel from both ends" reframe (see `JOURNEY.md` + memory `project_tunnel_from_both_ends_pivot`). Amendments to this contract require a v1.x bump and notification to active producer/adapter implementers.
+
+**Date:** 2026-05-14 → frozen v1.0 2026-05-23.
 
 **Scope:** The formal contract between GraphDB-KDB (the multi-source ontology system) and any producer (today: Obsidian-KDB's `kdb-compile`; tomorrow: arxiv-compile, youtube-compile, codebase ingester, etc.). Companion to `docs/graphdb-kdb-extraction-roadmap.md` and `docs/manifest-succession-arc.md`.
 
