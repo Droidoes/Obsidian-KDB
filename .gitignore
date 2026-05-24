@@ -20,6 +20,9 @@ venv/
 AGENTS.md
 QWEN.md
 
+# Superpowers brainstorming visual-companion session state
+.superpowers/
+
 # Env / secrets
 .env
 .env.*
