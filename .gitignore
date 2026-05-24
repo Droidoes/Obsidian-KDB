@@ -15,6 +15,11 @@ venv/
 # Antigravity (Gemini) CLI session state
 .antigravitycli/
 
+# Qwen CLI session state + per-agent helper docs (treated as personal tooling)
+.qwen/
+AGENTS.md
+QWEN.md
+
 # Env / secrets
 .env
 .env.*
