@@ -49,11 +49,11 @@ Six components identified through the 2026-05-24 brainstorm + 2026-05-25 v0.1 re
 
 | # | Component | Owns | Status in v0.2 |
 |---|---|---|---|
-| 1 | **Enrichment** | LLM pass per source: property-tags + wikilink suggestions + Pass-1 worth-verdict + domain/sub_domain canonicalization | Outlined (§5.1); criteria + domain list designed in parallel session |
+| 1 | **Enrichment** | LLM pass per source: property-tags + wikilink suggestions + Pass-1 worth-verdict + domain canonicalization | Outlined (§5.1); criteria + domain list designed in parallel session |
 | 2 | **Source Storage** | Where + how sources are stored; what counts as a source; change-detection signals | **Ratified — focus of this blueprint** (§3) |
 | 3 | **Trigger** | When enrichment fires (new / change / move / delete detection); event taxonomy + orphan-cascade | Outlined (§5.2); wires up §3.5 signals |
 | 4 | **Model selection** | Text-LLM vs graph-LLM vs other | Deferred to v2 |
-| 5 | **Move-from-compile** | Which capabilities migrate from end A to end B (systematic compile-survey required) | Outlined (§5.4); domain/sub_domain is first concrete |
+| 5 | **Move-from-compile** | Which capabilities migrate from end A to end B (systematic compile-survey required) | Outlined (§5.4); domain canonicalization is first concrete |
 | 6 | **Orchestrator** | End-to-end pipeline control + GraphDB read-side utilization (NEW per Joseph 2026-05-25) | Outlined (§5.6); v1 minimal scope (script); v2+ for GraphDB utilization; v2/v3 for API |
 
 Plus a cross-cutting surface that lives in end A:
@@ -211,7 +211,6 @@ elif config == "vault-in-place" (Config B):
   model: <model_id>,
   schema_version: <int>,
   domain: <enum from NW-4 canonicalization list>,
-  sub_domain: <enum from NW-4 canonicalization list>,
   property_tags: [...],
   wikilink_suggestions: [...]
 }
@@ -268,7 +267,7 @@ Milestone Changelog entry to add when v0.2 lands: *"2026-05-25 — Tunnel-rule a
 Per-source LLM call emitting the output schema in §4.1. Open work surfaced this round:
 
 - **NW-1 — Pass-1 criteria.** What does "is this source signal?" actually ask the LLM? Examples: length / coherence / has-named-entities / not-meta-commentary-about-the-vault (this criterion is load-bearing for D-88-11 Daily Notes handling) / domain-relevance. Belongs to Component #1 deep-design.
-- **NW-4 — domain/sub_domain canonicalization list.** Predefined list Pass-1 maps to. **Being designed in a parallel session.** Structural #76 redemption.
+- **NW-4 — domain canonicalization list.** Predefined list Pass-1 maps to. **Ratified as v0.3 at `docs/task88-nw4-domain-list-v0.3.md` (2026-05-25).** Structural #76 redemption. Per NW-4 D-NW4-1, the flat list has NO sub-domain layer; finer-grained refinement lives in `property_tags`. This blueprint's §4.1 schema reflects that (sub_domain field removed v0.3 commit).
 - **NW-5 — Pass-1 benchmark** (new in v0.2 per Joseph 2026-05-25). Corpus with known signal/noise + domain ground truth. Measures verdict accuracy, confidence calibration, domain accuracy, tag quality, wikilink relevance. Likely follows Task #75 / #87 predeclared-eval-criteria pattern.
 - **OQ-88-4 (now D-88-10)** — single-call Pass-1 with quality monitor.
 
@@ -286,7 +285,7 @@ Deferred to v2 per Joseph 2026-05-24. v1 assumes text-LLM only.
 
 ### 5.4 Component #5 — Move-from-compile
 
-**Discipline:** systematic compile-survey required as a Component #5 deep-design deliverable (per Qwen F10). First concrete: domain/sub_domain extraction (NW-4). Other candidates to survey:
+**Discipline:** systematic compile-survey required as a Component #5 deep-design deliverable (per Qwen F10). First concrete: domain extraction (NW-4 v0.3). Other candidates to survey:
 - Wikilink resolution logic
 - Frontmatter stamping
 - Canonicalization (Stage 6)
@@ -343,7 +342,7 @@ Per Joseph 2026-05-25: end-to-end orchestrator that moves sources start-to-end +
 6. Pass-1 audit fields (confidence, uncertainty_reason, reject_reason, prompt_version, model, schema_version)
 7. Pass-1 gate at compile entry
 8. **Pass-2 explicit worth-verdict** mechanism in compile (D-88-8) — emits `{ontology_contribution, reason, matched_existing_entities, new_claims_or_edges_count}` schema-gated, archived in sidecar
-9. Domain/sub_domain canonicalization in Pass-1 — NW-4 (parallel session)
+9. Domain canonicalization in Pass-1 — NW-4 v0.3 (ratified 2026-05-25)
 10. Change-detection signal tracking + config-aware recompile-trigger logic + lifecycle event taxonomy — Component #3
 11. Move-from-compile features per Component #5 (domain first concrete; systematic survey required)
 12. **Daily Notes IN scope** (D-88-11) — Pass-1 LLM rejects diary-shaped meta-commentary via verdict
@@ -437,7 +436,7 @@ Per Joseph 2026-05-25: end-to-end orchestrator that moves sources start-to-end +
 
 ### D-88-10 — Single-call Pass-1 with quality monitor (2026-05-25, promoted from OQ-88-4)
 
-**Decision:** Ship single-call enrichment for v1 (one LLM call emits verdict + domain/sub_domain + tags + wikilinks + audit fields). Add structural quality monitor: flag sources where any field is null, empty, or structurally degenerate on non-trivial sources. Predeclared split triggers: if Pass-1 audit accuracy, domain accuracy, or wikilink quality falls below threshold, split into `(verdict + domain)` and `(tags + wikilinks)` calls.
+**Decision:** Ship single-call enrichment for v1 (one LLM call emits verdict + domain + tags + wikilinks + audit fields). Add structural quality monitor: flag sources where any field is null, empty, or structurally degenerate on non-trivial sources. Predeclared split triggers: if Pass-1 audit accuracy, domain accuracy, or wikilink quality falls below threshold, split into `(verdict + domain)` and `(tags + wikilinks)` calls.
 
 **Rationale:** Splitting upfront doubles cost without empirical evidence of single-call degradation. 3/3 reviewers endorsed single-call-with-monitor.
 
