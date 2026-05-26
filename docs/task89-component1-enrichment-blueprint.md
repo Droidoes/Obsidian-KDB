@@ -1,21 +1,27 @@
-# Task #89 — Component #1 (Enrichment) Deep-Design: v0.1 Blueprint
+# Task #89 — Component #1 (Enrichment) Deep-Design: v0.2 Blueprint
 
-**Status:** **v0.1 — drafted 2026-05-25** (evening session, on top of #88 NW-4 v0.4 closure earlier the same day). Pending 5-reviewer panel fire.
+**Status:** **v0.2 — folded 2026-05-26** (round-2 architecture review panel returned 5/5 clean; Joseph-led deliberation locked all forks before this fold). Round-1 property additions deferred to **v0.3** (separate deliberation pass).
 
-**Reviewer panel for v0.1 review** (Joseph's evening shift 2026-05-25 — **now all-CLI, all code-grounded**; first such arc in the project):
+**v0.2 fold sources:**
+- 5 round-2 architecture review responses (`docs/task89-v0.1-review-{codex,qwen,grok,deepseek,gemini}.md`)
+- A vs B vs C deliberation + frontmatter-mechanism deliberation (`docs/task89-deliberation-wikilinks-frontmatter.md`)
+- Parent blueprint amendment of D-88-11 (commit `092b44f`)
+
+**Reviewer panel for v0.1 review** (Joseph's evening shift 2026-05-25 — **all-CLI, all code-grounded**; first such arc in the project):
 - **Codex** — CLI, code-grounded (panel incumbent)
 - **Qwen CLI / qwen3.7-max** — CLI, code-grounded (**new** to panel)
 - **Grok Build** — CLI, code-grounded (**new** to panel)
 - **deepcode CLI / Deepseek** — CLI, code-grounded (Joseph migrated Deepseek from chat 2026-05-25; **new surface**)
 - **agy / gemini-3.5-flash-high** — CLI, code-grounded (**re-trial** under explicit one-strike guardrail per [[feedback_gemini_review_only_guardrail]]; agy was previously dropped for overreach during #83/#84 era; gemini-3.5-flash-high is a newly available Flash variant)
 
-The all-CLI panel is itself a methodology experiment for #89: chat reviewers with many reference docs were operationally heavy for Joseph; CLI reviewers read the repo natively. v0.1 review evaluates both content quality AND CLI behavior under explicit review-only guardrails.
+**Panel-behavior outcome (v0.1 → v0.2):** 5/5 reviewers honored the no-repo-modification guardrail. agy completed 2-for-2 on its one-strike re-trial (round-1 property survey + round-2 architecture review).
 
 **Lineage:**
-- Parent: Task #88 — Ingestion System v0.2 blueprint (`docs/task88-ingestion-pipeline-blueprint.md`), Joseph-ratified 2026-05-25
+- Parent: Task #88 — Ingestion System v0.2 blueprint (`docs/task88-ingestion-pipeline-blueprint.md`), Joseph-ratified 2026-05-25; D-88-11 amended 2026-05-26 (commit `092b44f`)
 - Domain vocab: NW-4 v0.4 (`docs/task88-nw4-domain-list-v0.4.md`), ratified 2026-05-25
 - Strategic frame: tunnel-from-both-ends pivot (2026-05-23) — end B is the design focus
-- Brainstorm session: 2026-05-25 evening (this document is the brainstorm output)
+- v0.1 brainstorm: 2026-05-25 evening
+- v0.2 deliberation + fold: 2026-05-26
 
 **Anchors:**
 - `docs/task88-ingestion-pipeline-blueprint.md` v0.2 — parent blueprint (§5.1 outlines Component #1)
@@ -35,14 +41,15 @@ The all-CLI panel is itself a methodology experiment for #89: chat reviewers wit
 Component #1 (Enrichment) is the LLM pass that converts a raw source file into an enriched source: YAML frontmatter at the top carrying structured properties, plus the post-Pass-1 deterministic overrides applied to its `kdb_signal` field. It is the **first LLM call** of the ingestion pipeline, fired per source by Component #3 (Trigger).
 
 **Component #1 owns:**
-1. The Pass-1 LLM call: prompt construction, model invocation, response parsing, schema validation
+1. The Pass-1 LLM call: prompt construction, model invocation, structured-JSON response parsing, schema validation
 2. The Pass-1 output schema: which properties are emitted and how they are typed
-3. In-place YAML frontmatter writing to the source markdown
-4. Post-Pass-1 deterministic layer: `force_signal` / `force_noise` path-expression overrides
-5. The replay archive sidecar (request + raw response + parsed envelope, per [[project_milestone_validator_reconciler_live]] precedent)
+3. Deterministic post-processor that serializes the validated JSON envelope to YAML frontmatter and embeds it in the source markdown (D-89-13)
+4. Post-Pass-1 deterministic override layer: `force_signal` / `force_noise` path-expression overrides
+5. The replay archive sidecar (request + raw response + parsed JSON envelope, per [[project_milestone_validator_reconciler_live]] precedent)
 6. NW-1 — Pass-1 substance criteria (the language used to instruct the LLM on signal-vs-noise judgment)
 7. NW-7 — source_type controlled vocabulary (placeholder list in v0.1; full ratification deferred to sub-task)
-8. The optional `corpus_index` function and its use in the LLM prompt (Section 6 — open decision)
+
+**Out-of-#89 wikilink resolution (D-89-12 lockdown):** Pass-1 emits `key_entities` as a flat string list. All wikilink / entity-to-entity / `LINKS_TO`-edge resolution happens in compile against the live GraphDB. See `docs/task89-deliberation-wikilinks-frontmatter.md` for the full A vs B vs C deliberation lineage.
 
 **Out of scope for #89 (lives in other components / sub-tasks):**
 - **When** to fire enrichment (lifecycle event taxonomy, change-detection signals, orphan-cascade depth) — Component #3 (Trigger), separate deep-design
@@ -58,17 +65,20 @@ Component #1 (Enrichment) is the LLM pass that converts a raw source file into a
 [source files in scope per Component #2 path-config]
         ↓
 [PASS-1 LLM CALL]                       ← Component #1 (this doc §2)
+    LLM returns structured JSON envelope (D-89-13)
         ↓
 [POST-PASS-1 PROCESSING]                ← Component #1 (this doc §5)
-    • schema validation
-    • apply force_signal / force_noise overrides (§4)
-    • resolve wikilink suggestions (option-dependent per §6)
-    • write frontmatter in-place + replay-archive sidecar
+    • schema validation on the JSON envelope
+    • apply force_signal / force_noise overrides to the envelope (§4)
+    • serialize JSON → YAML frontmatter; embed in source (§3)
+    • write replay-archive sidecar (envelope, request, raw response)
     • emit lifecycle event for Component #3 to consume
         ↓
 [PASS-1 ROUTING by kdb_signal]          ← signal → compile; noise → stop
         ↓
 [COMPILE + PASS-2]                      ← end A; Pass-2 worth-verdict per D-88-8
+                                          must strip YAML frontmatter before
+                                          its LLM call (§10.5 integration precondition)
         ↓
    KDB ontology
 ```
@@ -160,13 +170,43 @@ The 7 substantive properties + 6 audit fields = the locked v0.1 set. Tier reason
 - **★★ tier** (strong value): `author` (provenance metadata compile currently re-derives), `source_type` (filter axis at query time), `key_themes` (finer-grain than domain; accumulates evidence for OQ-NW4-15).
 - **★ tier dropped**: `time_period` (handy but not load-bearing for v1; revisit if reviewers push back), `language` (English-only for v1), `property_tags` (overlaps `key_themes`; merged into `key_themes` for v0.1).
 
-The sibling artifact (`docs/task89-additional-properties-survey-prompt.md`) fires the multi-model survey on what ADDITIONAL properties would justify being added — results feed v0.2 synthesis. Reviewers may propose additions in their v0.1 response as well; both inputs converge in v0.2.
+The sibling artifact (`docs/task89-additional-properties-survey-prompt.md`) fired the round-1 multi-model survey on what ADDITIONAL properties would justify being added. Round-1 returned 5/5 with substantive proposals; v0.2 explicitly defers folding them (own deliberation pass required, see OQ-89-14). v0.3 opens the property-additions deliberation.
 
 ---
 
-## 3. Source modification mechanism
+## 3. Source modification mechanism (D-89-13 — structured response, deterministic embed)
 
-Component #1 modifies the source file **in-place**: it prepends a YAML frontmatter block at the top of the markdown.
+Component #1 modifies the source file **in-place**: it prepends a YAML frontmatter block at the top of the markdown. The LLM **does not return the enriched source**. The LLM returns a **structured JSON envelope** of the 13 fields; a deterministic post-processor serializes the JSON as YAML frontmatter and writes the source.
+
+### 3.1 The flow
+
+```
+1. LLM call:
+   - Input: source content + prompt template + structured-output JSON schema
+   - Output: JSON envelope { kdb_signal, domain, source_type, author, summary,
+             key_entities, key_themes, confidence, uncertainty_reason,
+             reject_reason, prompt_version, model, schema_version }
+   - LLM never sees the source body in its output; never re-emits the body
+
+2. Validate JSON envelope against schema
+   - Required fields present, types correct, enums valid
+   - On failure: emit enrich_failed; archive raw response; NO source write
+
+3. Apply post-LLM override (§4) — modifies the envelope IN MEMORY
+   - force_noise / force_signal precedence (§4.3)
+   - reject_reason survival rule (§4.6)
+
+4. Read source from disk; capture mtime + content-hash
+   - Parse existing frontmatter if present (re-enrichment case)
+   - Apply user-frontmatter collision rule (§3.3)
+
+5. Serialize envelope → YAML; merge with preserved user-added keys
+   - Write atomically: write to temp file, rename to source path
+   - Body content NEVER passes through the LLM and NEVER gets modified by Pass-1
+
+6. Write replay-archive sidecar (§5.3) — JSON envelope + raw response + request
+7. Emit lifecycle event for Component #3
+```
 
 ```
 BEFORE Pass-1 enrichment:
@@ -184,44 +224,66 @@ AFTER Pass-1 enrichment:
   author: Warren Buffett
   summary: "..."
   key_entities: [Warren Buffett, Berkshire Hathaway, See's Candies, ...]
-  ...
+  key_themes: [...]
+  confidence: 0.92
+  uncertainty_reason: null
+  reject_reason: null
+  prompt_version: 1.0.0
+  model: deepseek-v4-flash:direct
+  schema_version: 1
   ---
   # Berkshire 2020 Letter
   Dear shareholders,
   ...
-  <wikilinks block at end — depending on §6 path>
 ```
 
-### 3.1 Why in-place
+Note: the source body remains byte-identical to the pre-enrichment version. Only the frontmatter block is added.
 
-Per Joseph's morning framing (2026-05-25): *"the LLM preprocessing pass that embeds frontmatter at top of source markdown + suggests wiki links at end."* Direct in-place embedding has these properties:
+### 3.2 Why structured response + deterministic embed (D-89-13)
 
-1. **Single source of truth.** The source file IS the enriched representation. No sidecar drift.
-2. **Filesystem-native corpus.** A subsequent Pass-1 call can read the frontmatter from any other enriched source by scanning the filesystem — no separate store needed (see §6 Options A and C).
-3. **Obsidian-native.** Frontmatter is rendered by Obsidian as YAML properties; immediately useful to the user when browsing the vault.
-4. **Pass-2 / compile can read frontmatter directly.** No new IO path; compile's existing source reading just sees frontmatter.
+| Aspect | Returning enriched source | Returning structured JSON (D-89-13) |
+|---|---|---|
+| Token cost | LLM re-emits entire source body | LLM emits ~13 small property fields only |
+| Source-body risk | LLM might trim whitespace, rewrap, alter formatting, drop content | Body is never present in LLM output; never modified |
+| Validation surface | Parse YAML block + diff body for unintended edits | Validate flat JSON against schema; body untouched |
+| Replay archive | Mixed envelope (body + frontmatter together) | Clean JSON envelope; body archived once at source |
+| Failure mode | Bad LLM output can corrupt source on write | Bad LLM output → reject before any source modification |
 
-### 3.2 Body content discipline
+This extends [[feedback_post_llm_deterministic_override]]: LLM does **judgment**; deterministic code does **writes**. The override-application mechanism (§4) and the frontmatter-embedding mechanism (here) follow the same discipline.
 
-Pass-1 **does not modify the body content** beyond optionally appending a wikilinks block at the bottom (subject to §6's open decision). Specifically:
-
-- Existing user-edited content (text, markdown structure, existing frontmatter from the user) is preserved
-- Re-enrichment merges: the YAML frontmatter is updated (full re-write of the frontmatter block); the body remains intact
-- If a wikilinks block was previously appended (Option A path), re-enrichment regenerates it; everything before the wikilinks block delimiter is preserved
-
-### 3.3 Re-enrichment merge behavior
+### 3.3 Re-enrichment merge behavior + user-frontmatter collision rule
 
 On a re-enrichment (e.g., source content changed → Component #3 fires Pass-1 again):
 
-1. Parse existing frontmatter (if any) — capture user-added keys that aren't in the Pass-1 schema (user may have added their own keys)
-2. Run Pass-1; obtain new frontmatter values
-3. Merge: Pass-1 schema fields use new values; user-added keys preserved
-4. Write merged frontmatter back in-place
-5. Body content untouched (modulo §6 path A's wikilinks block regeneration)
+1. Parse existing frontmatter from disk (if any)
+2. Classify each existing key into one of three buckets:
+   - **Pass-1 schema key, never modified by user** (the value still equals the value from the previous replay archive): Pass-1's new value replaces it
+   - **Pass-1 schema key, modified by user since last enrichment** (current value ≠ previous replay archive value): user wins; new value goes into an `override` annotation block (see below); user's value is preserved
+   - **Non-schema key (user-added)**: preserved verbatim
+3. Run Pass-1; obtain new envelope
+4. Apply override layer (§4) to the new envelope
+5. Merge per the bucket rules above
+6. Atomic write back to disk
+
+**Collision-detection mechanism:** compare current frontmatter values against the most-recent replay-archive `parsed_envelope` for the same source. If a value diverges, it's a user override. (Per Gemini F-1.)
+
+**Annotation when a user override is detected:** under the merged frontmatter, add (e.g.):
+
+```yaml
+user_overrides:
+  - field: domain
+    user_value: value-investing
+    pass1_proposed_value: macro-and-monetary-policy
+    detected_at: 2026-06-05T14:30:00-04:00
+```
+
+This gives the user visibility (they can spot what Pass-1 wanted to change) without clobbering their manual correction. (Per Deepseek F-4.)
+
+**Schema-evolution collision** (separate sub-case): if v0.2+ adds a new required field that a user had already created manually with the same name, the user value wins and is annotated as above. The schema migration writes this annotation on the first re-enrichment after the migration. Tracked as **OQ-89-9**.
 
 ### 3.4 Pristine-source recovery (not in v0.1; design hook)
 
-For users who want to revert a source to pre-Pass-1 state, a future utility (post-v0.1) could strip the YAML frontmatter and the wikilinks block. Not in v0.1 scope. Filed as **OQ-89-2**.
+A future utility (post-v0.1) could strip the YAML frontmatter from a source to recover the pre-enrichment state. Not in v0.1 scope. Filed as **OQ-89-2**.
 
 ### 3.5 Sync conflict considerations
 
@@ -248,59 +310,93 @@ force_noise:                # blacklist — always emit kdb_signal=noise post-Pa
   - Projects/**             # v0.1 default
 ```
 
-### 4.2 Defaults for v0.1
+### 4.2 Defaults for v0.2
 
 ```yaml
 force_signal: []                              # empty; user-populated
 force_noise:
-  - Daily Notes/**                            # diary-style content; not KDB ontology material
+  - Daily Notes/**                            # diary-style content; not KDB ontology material (D-89-14)
   - Projects/**                               # work-tracking; not KDB ontology material
 ```
 
-User can override either list per their vault. Future v0.2+ may add domain-specific defaults; v0.1 ships only the path lists Joseph called out 2026-05-25.
+User can override either list per their vault. Future v0.3+ may add domain-specific defaults; v0.2 ships only the path lists Joseph called out 2026-05-25.
 
-### 4.3 Override application logic
+### 4.3 Override application logic (pseudocode order matches §4.4 precedence — Codex F-2 fix)
 
-After the Pass-1 LLM call returns (with the LLM's own `kdb_signal` emission), the deterministic post-Pass-1 layer runs:
+After the Pass-1 LLM call returns (with the LLM's own `kdb_signal` emission), the deterministic post-Pass-1 layer runs. **Blacklist is evaluated first** so that overlapping matches correctly resolve to noise per §4.4 precedence:
 
 ```
-def apply_overrides(source_path, llm_emission):
-    if matches_any(source_path, force_signal):
-        return {
-            kdb_signal: "signal",
-            override: {
-                applied: "signal",
-                rule: "force_signal",
-                match: <which glob fired>,
-                llm_original: llm_emission.kdb_signal
-            }
+def apply_overrides(source_path, llm_envelope):
+    if matches_any(source_path, force_noise):
+        llm_envelope.kdb_signal = "noise"
+        llm_envelope.override = {
+            applied: "noise",
+            rule: "force_noise",
+            match: <which glob fired>,
+            llm_original: llm_envelope_pre_override.kdb_signal
         }
-    elif matches_any(source_path, force_noise):
-        return {
-            kdb_signal: "noise",
-            override: {
-                applied: "noise",
-                rule: "force_noise",
-                match: <which glob fired>,
-                llm_original: llm_emission.kdb_signal
-            }
+        # reject_reason survival rule (§4.6): override → noise
+        # — if LLM had emitted signal, populate reject_reason from override metadata
+
+    elif matches_any(source_path, force_signal):
+        llm_envelope.kdb_signal = "signal"
+        llm_envelope.override = {
+            applied: "signal",
+            rule: "force_signal",
+            match: <which glob fired>,
+            llm_original: llm_envelope_pre_override.kdb_signal
         }
+        # reject_reason survival rule (§4.6): override → signal
+        # — if LLM had emitted noise + reject_reason, clear reject_reason
+        #   to null; preserve original in override.reject_reason_cleared
+
     else:
-        return {
-            kdb_signal: llm_emission.kdb_signal,
-            # no `override` key in frontmatter
+        llm_envelope.override = {
+            applied: null,           # always emitted, never omitted (Grok OQ-3)
+            rule: null,
+            match: null,
+            llm_original: llm_envelope.kdb_signal
         }
+
+    return llm_envelope
 ```
 
 ### 4.4 Precedence
 
-**Blacklist wins ties** (defensive default). If a file matches both `force_signal` and `force_noise`, `force_noise` applies. The reasoning: explicit user intent to exclude (in `force_noise`) should not be silently overridden by an upstream-defined `force_signal` pattern.
+**Blacklist wins ties** (defensive default for v0.2). If a file matches both `force_signal` and `force_noise`, `force_noise` applies. The reasoning: explicit user intent to exclude (in `force_noise`) should not be silently overridden by an upstream-defined `force_signal` pattern.
 
-This is filed as a watch-rule (OQ-89-3) — if reviewers push for an inverted precedence with rationale, revisit in v0.2.
+**Specificity-tiebreaker variant** (Gemini F-4, Deepseek's `Projects/special/**` + `Projects/**` example): some panel input argues for "most-specific glob wins" before defaulting to blacklist-wins. This is plausible but adds complexity (defining "specificity" robustly across globs is non-trivial). v0.2 ships blacklist-wins; OQ-89-3 carries the variant forward for telemetry-driven revisit.
 
 ### 4.5 LLM does not see the path lists
 
 Per [[feedback_post_llm_deterministic_override]]: the LLM is not informed of the override lists; it judges content substance only. This keeps the LLM's job pure and the rules version-controllable in code, not prompt.
+
+### 4.6 Override-block always emitted + reject_reason survival rule
+
+Two related corrections from the v0.1 panel:
+
+**Override block always emitted (Grok OQ-3):** v0.1 said the `override` block is omitted when no override fires. v0.2 always emits the block — when no override fires, `applied: null`, `rule: null`, `match: null`, `llm_original: <whatever LLM emitted>`. Rationale: stable frontmatter shape simplifies downstream consumers (compile, NW-5 probes, human inspection); makes "no override fired" explicit rather than inferred-from-absence.
+
+**reject_reason survival rule (Deepseek F-6):**
+
+When `force_signal` overrides an LLM-emitted `kdb_signal: noise` to `signal`, the LLM had populated `reject_reason` (e.g., "diary-shaped meta-commentary"). Leaving that reject_reason field next to `kdb_signal: signal` is contradictory and confusing.
+
+Rule: when override applies and the LLM's pre-override `kdb_signal` differs from the override `applied` value:
+
+- If override → `signal` AND LLM had emitted `noise` with a `reject_reason`: clear `reject_reason` to `null`; preserve original in `override.reject_reason_cleared: <original-reject-reason>`
+- If override → `noise` AND LLM had emitted `signal` (no `reject_reason`): populate `reject_reason` with a synthetic value, e.g., `"deterministic override via force_noise: <matched-glob>"`
+
+This keeps the user-readable frontmatter internally consistent while preserving the full audit trail in the `override` block.
+
+### 4.7 Pre-LLM short-circuit explicitly NOT adopted (D-89-15)
+
+Qwen F-9 and Grok OQ-4 raised the question of skipping the LLM call entirely for files matching `force_noise` (saving ~30% of LLM cost on a daily-notes-heavy vault). v0.2 explicitly **keeps the LLM call** on every in-scope source. Rationale:
+
+- Audit signal preserved: we can see whether the LLM agreed with the path override (informs whether `force_noise` defaults are well-calibrated)
+- Aligns with "LLM judges content; deterministic handles location" purity
+- Single-user, infrequent workload — cost is the lesser concern at this scale ([[feedback_no_imaginary_risk]])
+
+If post-deployment telemetry shows the LLM never disagrees with the path override (say, 99%+ alignment), v1.1+ can add the short-circuit as a cost optimization. Filed as **OQ-89-10**.
 
 ---
 
@@ -339,30 +435,56 @@ Pass-1 emits one of the following events per source (Component #3 consumes):
 For every Pass-1 call (success or fail), Component #1 writes a replay-archive sidecar to:
 
 ```
-~/Obsidian/KDB/state/ingest_runs/<run_id>/<source_id>.json
+~/Obsidian/KDB/state/ingest_runs/<run_id>/<encoded_source_id>.json
 ```
+
+**Path encoding rule** (Codex F-4, Gemini F-3): source IDs are vault-relative paths and may contain `/` characters. To keep replay-archive lookup flat and avoid creating nested empty directories per run, encode `/` as `__` in the sidecar filename:
+
+| Source ID (vault-relative path) | Sidecar filename |
+|---|---|
+| `Investing/Buffett-letter-2020.md` | `Investing__Buffett-letter-2020.md.json` |
+| `Notes/Quick-thoughts.md` | `Notes__Quick-thoughts.md.json` |
+| `top-level-note.md` | `top-level-note.md.json` |
+
+The original `source_id` (un-encoded) is preserved inside the JSON envelope. Replay code decodes filename → source_id by reversing the substitution. The encoding rule is one-to-one (`__` is not a valid pattern in Obsidian path segments per typical user habits; if it appears, fall back to URL-encoding `/` as `%2F`).
 
 Schema:
 
 ```json
 {
-  "source_id": "Investing/Buffett-letter-2020",
+  "source_id": "Investing/Buffett-letter-2020.md",
   "source_path": "~/Obsidian/Investing/Buffett-letter-2020.md",
   "source_content_hash": "<sha256>",
-  "request": { "prompt": "<full prompt>", "model": "...", "schema": "..." },
+  "request": { "prompt": "<full prompt>", "model": "...", "schema": "<JSON schema>" },
   "raw_response": { "status": "...", "body": "...", "usage": "..." },
-  "parsed_envelope": { "kdb_signal": "signal", "domain": "...", "..." },
-  "override": null | { "applied": "...", "rule": "...", "match": "...", "llm_original": "..." },
-  "prompt_version": "1.0.0",
-  "schema_version": 1,
-  "timestamp": "2026-05-25T20:30:00-04:00",
+  "parsed_envelope": {
+    "kdb_signal": "signal", "domain": "value-investing", "source_type": "letter",
+    "author": "Warren Buffett", "summary": "...", "key_entities": [...],
+    "key_themes": [...], "confidence": 0.92, "uncertainty_reason": null,
+    "reject_reason": null, "prompt_version": "1.0.0",
+    "model": "deepseek-v4-flash:direct", "schema_version": 1
+  },
+  "override": {
+    "applied": null | "signal" | "noise",
+    "rule": null | "force_signal" | "force_noise",
+    "match": null | "<glob>",
+    "llm_original": "signal" | "noise",
+    "reject_reason_cleared": null | "<original-reject-reason if force_signal cleared it>"
+  },
+  "user_overrides_detected": [],
+  "timestamp": "2026-05-26T20:30:00-04:00",
   "outcome": "enriched" | "enriched_force_overridden" | "enrich_failed" | "enrich_skipped"
 }
 ```
 
+Notes:
+- The `override` block is always present (per §4.6); `applied: null` indicates no override fired.
+- `user_overrides_detected` is a list of any user-modified frontmatter values detected during re-enrichment (per §3.3).
+- There is **no `corpus_snapshot` field** in v0.2 — Option B (D-89-12) eliminates corpus_index entirely.
+
 The replay-archive lets us:
 - Re-derive the frontmatter deterministically without re-firing the LLM (cheap regeneration after a schema migration)
-- Audit Pass-1 behavior over time (false-rejects, drift, prompt-version comparisons)
+- Audit Pass-1 behavior over time (false-rejects, drift, prompt-version comparisons, force-override calibration)
 - Feed NW-5 benchmark scenarios (predeclared eval criteria, parallel work item)
 
 ### 5.4 Run journal
@@ -395,167 +517,34 @@ The journal is the unit Component #3 (Trigger) and the Orchestrator (Component #
 
 ---
 
-## 6. Open architectural decision: wikilinks + corpus index
+## 6. Wikilinks: out of Pass-1 scope (D-89-12 — Option B locked)
 
-**This is the load-bearing open decision for v0.1.** Three candidate paths are presented below for panel input. Each is internally consistent; each makes a different bet about where wikilinks live and whether Pass-1 reads other sources' frontmatter as context.
+Pass-1 emits `key_entities` (flat string list of entity mentions; already in §2 schema). It does NOT emit wikilink suggestions. It does NOT load a corpus_index. It does NOT modify the source body. **All wikilink / entity-to-entity / `LINKS_TO`-edge resolution is compile's responsibility**, against the live GraphDB.
 
-### 6.1 The underlying tension
+### 6.1 Lineage
 
-Wikilinks are pointers to *other* content. A LLM running on a single source has no native way to know what exists in the rest of the corpus, and therefore can only guess at which entity mentions deserve wikilinks. Three responses are coherent:
+v0.1 left three options open (A: body wikilinks; B: no wikilinks from Pass-1; C: frontmatter wikilinks + corpus_index). The 5-CLI panel converged 4-of-5 on Option C; Deepseek dissented to Option B on concrete-first grounds. Joseph-led mid-deliberation surfaced two structural concerns the panel under-weighted:
 
-- **Make Pass-1 corpus-aware** — give it semantic context from other sources' frontmatter so its wikilink suggestions are grounded (Options A and C).
-- **Give up on Pass-1 wikilinks entirely** — keep Pass-1 single-source and let compile (which already does entity extraction and LINKS_TO edge creation) own all link work (Option B).
-- **Recursive GraphDB dipping (agentic)** — explicitly considered and rejected as v1 scope (over-engineered; introduces multi-round LLM calls; replay complexity).
+1. Body wikilinks (A) demand denormalization refresh on every corpus change → file-change cascade → compile re-trigger. A is fatal.
+2. Corpus_index (in both A and C) is a stripped-down GraphDB built at Pass-1 time. GraphDB is already the authoritative comprehensive corpus index, built dynamically by compile. Duplicating this at Pass-1 re-creates every problem GraphDB was designed to solve.
 
-### 6.2 Option A — filesystem corpus index + body wikilinks
+These collapse both A and C; B is what remains. See `docs/task89-deliberation-wikilinks-frontmatter.md` for the full lineage including the 5-CLI panel convergence, the mid-deliberation reframe, and the two new principle memories ratified by this deliberation:
 
-**Pass-1 reads other enriched sources' frontmatter; emits grounded wikilink suggestions; modifies source body to append a wikilinks block at the bottom.**
+- [[feedback_obsidian_wikilinks_are_vanity]] — Obsidian's wikilink/graph-view feature is display-only with no programmatic utility
+- [[feedback_sources_stay_static_intrinsic_frontmatter_only]] — sources stay as static as possible; frontmatter is permissible iff every property is intrinsic to the source itself; relational/dynamic properties belong in GraphDB
 
-```
-Pass-1 INPUT:
-  - current source content
-  - corpus_index(scope) → dict reading frontmatter from all other enriched sources in scope
-    keyed by source_path; values: {kdb_signal, domain, summary, key_entities, key_themes, source_type, author}
+### 6.2 What this means concretely for Pass-1
 
-Pass-1 LLM CALL:
-  Prompt includes:
-  - Current source content
-  - Corpus index entries (or a curated slice if too large)
-  - Instruction: "Suggest wikilinks for entities you see in the current source that
-    appear in other sources' key_entities (grounded suggestions); do NOT invent
-    connections; do NOT suggest wikilinks for entities not seen in corpus."
+- Pass-1 emits `key_entities` as a flat string list (raw mentions, unresolved); compile is responsible for matching against the live GraphDB
+- No `wikilink_suggestions`, `grounded_in_corpus`, `occurrences_in_corpus`, or any wikilink-shaped frontmatter field
+- No corpus_index loader; no corpus_snapshot in replay sidecar
+- Pass-1 LLM prompt does NOT include other sources' frontmatter; each call is single-source
 
-Pass-1 OUTPUT (frontmatter as in §2 + wikilinks block at bottom of body):
-  ---
-  <frontmatter>
-  ---
-  <original body>
+### 6.3 v1.1+ enhancement hook (Deepseek B' hook)
 
-  ## Suggested wikilinks
-  - [[Warren Buffett]]      <!-- matched corpus entity -->
-  - [[Berkshire Hathaway]]  <!-- matched corpus entity -->
-  - See's Candies            <!-- LLM suggested but no corpus match; left as plain text -->
-```
+`key_entities` is the future anchor for v1.1+ corpus-aware wikilink suggestions IF compile's mechanical entity matching shows measurable gaps (filed as OQ-89-11). The v1.1+ mechanism would be: read `key_entities` from other enriched sources' frontmatter (already there — no new IO path); match current source's `key_entities` against the corpus; emit `wikilink_suggestions` as a new optional frontmatter field. This is an additive schema change, no migration, no breaking change.
 
-**Pros:**
-- Wikilinks visible in Obsidian's graph view from the source page itself (UX win for vault navigation)
-- LLM-grounded by construction (sees what's actually in the pipeline)
-- Compile reads enriched source as today; wikilinks-in-body participate in compile's existing entity extraction
-
-**Cons:**
-- Modifies source body (re-enrichment must regenerate the wikilinks block cleanly without disturbing user-added content above it)
-- Corpus index size grows linearly with corpus; at ~1000 sources × ~150 tokens per entry = ~150K tokens of prompt context (fits modern LLMs but starts to bite)
-- Cold-start: first N sources have empty / sparse corpus; their wikilinks are weak until re-enrichment after corpus matures
-- Re-enrichment merge complexity around the wikilinks block boundary (must use a stable delimiter to avoid clobbering user edits below it)
-
-**Replay implications:** corpus snapshot used must be archived in the replay sidecar; replay reconstructs the LLM call from the snapshot.
-
-**Scale implications:** corpus-index size is bounded by prompt budget. v2+ filtering strategies (domain-affinity slice, recency, sample) become work items if corpus outgrows budget.
-
-### 6.3 Option B — no corpus index, no body wikilinks (Joseph's [1])
-
-**Pass-1 is single-source. No corpus_index function. Frontmatter only; no wikilinks block appended. Compile handles all entity / LINKS_TO work as today.**
-
-```
-Pass-1 INPUT:
-  - current source content (only)
-
-Pass-1 LLM CALL:
-  Prompt: source content + schema + NW-1 substance criteria
-
-Pass-1 OUTPUT (frontmatter only; body untouched):
-  ---
-  kdb_signal: signal
-  ...
-  key_entities: [Warren Buffett, Berkshire Hathaway, See's Candies]   <-- raw mentions
-  ...
-  ---
-  <original body, unchanged>
-```
-
-**Pros:**
-- **Simplest possible.** No corpus_index complexity. No body modification. No cold-start. No corpus-snapshot replay overhead.
-- Concrete-first: ship the minimum that emits useful frontmatter; add corpus-aware behavior in v1.1+ only if compile's existing entity work proves insufficient.
-- Pass-1 cost is bounded (no growing prompt context).
-- No "circles" risk — there's no architecture to drift into manifest.json territory.
-
-**Cons:**
-- No LLM-grounded wikilink discovery. Whatever discovery compile already does (NER + alias resolution via #74) is all we get.
-- The frontmatter `key_entities` list is the only Pass-1 contribution to link discovery; compile must extract its own links from the body.
-- Loses the "one of the payoffs that justifies the LLM cost" from the §2.3 brainstorm.
-
-**Replay implications:** trivially replayable; no corpus state.
-
-**Scale implications:** none (per-source cost; no corpus growth dependency).
-
-### 6.4 Option C — filesystem corpus index + frontmatter wikilinks (no body modification)
-
-**Pass-1 reads corpus index (like A); emits grounded wikilink suggestions in frontmatter as a property, not appended to body; compile reads frontmatter wikilink suggestions and uses them as input to its existing entity / LINKS_TO work.**
-
-```
-Pass-1 INPUT:
-  - current source content
-  - corpus_index(scope) → same as Option A
-
-Pass-1 LLM CALL:
-  Prompt: same as Option A (with corpus index context)
-
-Pass-1 OUTPUT (frontmatter ONLY; body untouched):
-  ---
-  ...
-  key_entities: [Warren Buffett, Berkshire Hathaway, See's Candies]
-  wikilink_suggestions:                          # NEW frontmatter field for Option C
-    - target: Warren Buffett
-      grounded_in_corpus: true                   # entity found in other sources' key_entities
-      occurrences_in_corpus: 7
-    - target: Berkshire Hathaway
-      grounded_in_corpus: true
-      occurrences_in_corpus: 12
-    - target: See's Candies
-      grounded_in_corpus: false                  # candidate new entity
-      occurrences_in_corpus: 0
-  ...
-  ---
-  <original body, unchanged>
-```
-
-**Pros:**
-- Corpus-grounded wikilink suggestions (LLM has empirical reason to suggest each one)
-- Source body untouched (no merge / sync / Obsidian-overwrite risk on existing edits)
-- Compile gets a high-quality input to its entity/LINKS_TO work (suggestions PASSES; compile DISPOSES)
-- Frontmatter `grounded_in_corpus: false` cases surface candidate-new-entities — useful signal in their own right
-- Re-enrichment merges are simple (just update frontmatter; body never touched)
-
-**Cons:**
-- Obsidian graph view doesn't directly benefit from Pass-1 (wikilinks aren't materialized in the body; only compile's separate wiki output creates body-level `[[...]]`)
-- Corpus_index complexity remains (cold-start, growing context)
-- Adds a new frontmatter field (`wikilink_suggestions`) — schema cost
-- Two layers (Pass-1 suggests + compile renders) — slightly more moving parts than Option A
-
-**Replay implications:** same as Option A (corpus snapshot archived).
-
-**Scale implications:** same as Option A (corpus_index size bound by prompt budget).
-
-### 6.5 Synthesis lean
-
-**My current lean: Option C, narrowly.**
-
-Reasoning:
-- Option B sacrifices the LLM-grounded wikilink discovery, which is one of the brainstorm-identified payoffs that justifies the Pass-1 cost. Without it, Pass-1's value-add over what compile already provides is thinner.
-- Option A's body modification has real failure modes (re-enrichment merge complexity, sync conflicts on user-edited bodies, Obsidian sync overwriting Pass-1's appended block). The Obsidian-graph-view UX benefit is real but not load-bearing — Joseph navigates primarily via compile's wiki output already (which has its own `[[wikilinks]]` between wiki pages).
-- Option C splits cleanly: Pass-1 owns LLM-grounded suggestion; compile owns the LINKS_TO edge creation it already does. Concrete separation of concerns. Frontmatter-only is replay-safe + merge-safe + sync-safe.
-
-That said, this is a close call between A and C; the panel may surface considerations I'm missing.
-
-### 6.6 Explicit ask to reviewers
-
-> **Which of Options A, B, C do you recommend for v0.1, and why?**
->
-> Specifically:
-> - Is Option C's frontmatter-only approach sufficient, or does Option A's body-wikilink-block UX justify the merge complexity?
-> - Is Option B's simplicity worth giving up Pass-1 grounded wikilink discovery entirely?
-> - Are there options A', B', C' (variations) we should consider?
-> - For Option A or C: what's the cleanest cold-start strategy when the corpus is empty / sparse?
+Crucially: that v1.1+ enhancement would ONLY happen if we have measured evidence that compile's mechanical matching is insufficient. Concrete-first per [[feedback_concrete_first_extract_later]].
 
 ---
 
@@ -602,7 +591,9 @@ The source does not contain substantive knowledge content. Most often:
 - Logs / system output / audit trails / data dumps without analysis
 - Empty or near-empty files
 - Pure references / pointers without their own substantive content (e.g., "see this PDF" with no other text)
-- Meta-commentary about doing work on the KDB itself (session reflections, retrospectives) — note that file-location-based handling (`force_noise` for `Projects/**`, `Daily Notes/**`) covers most of this already; the LLM still applies the substance test as a safety net
+- Meta-commentary about doing work on the KDB itself (session reflections, retrospectives) — note that file-location-based handling (`force_noise` for `Projects/**`, `Daily Notes/**`) covers diary-shaped material directly via path override (D-89-14); the LLM still applies the substance test for any vault-meta-commentary that appears outside those paths.
+
+**Note on Daily Notes (D-89-14):** v0.1 had implied an LLM-detection criterion specifically for Daily Notes ("reject diary-shaped meta-commentary"). v0.2 withdraws that criterion — Daily Notes are handled by the path-based override (`force_noise: [Daily Notes/**]` default). The LLM is NOT instructed to detect diary shapes. The LLM judges every source's content substance the same way; if a Daily Note happens to contain genuinely substantive content, the LLM emits `signal` (audit-preserved in the override block), but the deterministic override routes the file to noise. Users who want LLM judgment to win on Daily Notes can remove `Daily Notes/**` from `force_noise`.
 
 ### 8.3 Prompt construction notes
 
@@ -611,9 +602,9 @@ The source does not contain substantive knowledge content. Most often:
 - The prompt does NOT tell the LLM about `force_signal` / `force_noise` lists. The LLM judges content; deterministic layer handles location overrides.
 - The prompt instructs the LLM that "uncertain → signal" (bias to inclusion per D-88-4).
 
-### 8.4 Implementation surface for v0.1
+### 8.4 Implementation surface for v0.2
 
-The prompt template is `kdb_compiler/ingestion/pass1_prompt.j2` (Jinja2 template by precedent), versioned via `prompt_version` semver. v0.1 ships a concrete first cut; iteration is expected post-panel-review.
+The prompt template is `kdb_compiler/ingestion/pass1_prompt.j2` (Jinja2 template by precedent), versioned via `prompt_version` semver. v0.2 design specifies a concrete first cut; iteration is expected post-implementation under NW-5 telemetry.
 
 ---
 
@@ -694,11 +685,30 @@ Once enrichment proves out, v1.1+ MAY introduce Pass-1 as a SECOND GraphDB produ
 - Pass-1 writes Source-level enrichment properties (summary, key_entities, etc.) to GraphDB Source nodes
 - Same journal + sidecar + retraction patterns (matches #67 / #68 cleanup-event precedent)
 
-This is **explicitly deferred from v0.1.** Reason: v0.1 must prove the per-source enrichment shape first; layering GraphDB writes on top of an unproven shape risks designing for a model that turns out to be wrong. Per [[feedback_concrete_first_extract_later]].
+This is **explicitly deferred from v1.** Reason: the per-source enrichment must be proven on disk first; layering GraphDB writes on top of an unproven structure risks designing for a model that turns out to be wrong. Per [[feedback_concrete_first_extract_later]].
 
 ### 10.4 Compile reads enriched source
 
-Compile (existing behavior) reads source markdown. With v0.1 in place, compile sees the new frontmatter at top + body underneath. Compile's existing entity extraction operates on the body; the new frontmatter is **available as metadata** for compile to use (e.g., compile could pre-populate Source.domain from frontmatter.domain rather than re-extracting). v0.1 does NOT require compile changes; v1.x compile-side amendments can leverage frontmatter as a follow-up.
+Compile (existing behavior) reads source markdown. With v0.2 in place, compile sees the new frontmatter at top + body underneath. Compile's existing entity extraction operates on the body; the new frontmatter is **available as metadata** for compile to use (e.g., compile could pre-populate Source.domain from frontmatter.domain rather than re-extracting). v0.2 does NOT require compile changes BEYOND the §10.5 integration precondition; v1.x compile-side amendments can leverage frontmatter as a follow-up.
+
+### 10.5 Integration precondition: compile must strip YAML frontmatter before its LLM call (Deepseek F-3)
+
+**This is a blocking precondition for Pass-1 to ship.**
+
+Compile's source-reading code path predates Pass-1 frontmatter. It currently reads source markdown as raw text and feeds it to compile's LLM. After Pass-1 lands, every enriched source has a YAML frontmatter block at the top. If compile feeds that frontmatter to its LLM verbatim:
+
+- The LLM sees metadata-as-content: `kdb_signal: signal`, `domain: value-investing`, `key_entities: [Warren Buffett, Berkshire Hathaway, ...]`, etc.
+- Compile's entity extraction may emit entities for metadata values (e.g., emit "value-investing" as an entity instead of recognizing it as a domain tag)
+- The LLM's reasoning context is polluted; compile quality silently degrades
+
+**Required compile-side fix before Pass-1 ships:** compile's source-reading path must either
+
+- (a) Strip the YAML frontmatter block before feeding source body to its LLM, OR
+- (b) Pass the frontmatter to its LLM as a separate structured-metadata block (with explicit framing: "the following YAML is metadata about this source, not source content"), not as raw body text
+
+**v0.2 tracking:** the implementation plan for Pass-1 MUST include this compile-side fix as an upstream dependency. Pass-1 cannot ship before compile is verified to handle frontmatter correctly. Filed as **OQ-89-12** (integration precondition; not a Pass-1 design question but a Pass-1 ship-blocker).
+
+Acceptance test for OQ-89-12 closure: run compile on an enriched source; verify compile's entity extraction does not emit entities for frontmatter values.
 
 ---
 
@@ -786,74 +796,149 @@ NW-5 should land **before** Pass-1 implementation (per Task #75 precedent: eval 
 
 **Rationale:** D-88-4 from parent blueprint; not re-litigated here. Audit preserves false-positive vs false-negative trade-off observability.
 
-### D-89-11 — Wikilinks + corpus_index — OPEN for v0.1 review (2026-05-25)
+### D-89-11 — Wikilinks + corpus_index — OPEN for v0.1 review (2026-05-25) [CLOSED by D-89-12]
 
 **Decision:** Not closed at v0.1. Three candidate options in §6 (A: corpus_index + body wikilinks; B: no corpus_index + no body wikilinks; C: corpus_index + frontmatter wikilinks). Synthesis lean = C (narrowly). Reviewer panel explicitly asked to recommend.
 
 **Rationale:** Joseph (2026-05-25): present multiple options to the panel; let new CLI reviewers (Qwen 3.7-max, Grok Build) demonstrate design judgment, not just review accuracy. v0.2 closes this decision.
 
+**Closure:** Closed by D-89-12 (Option B locked) after Joseph-led mid-deliberation surfaced two structural concerns the 4-of-5 panel convergence on C had under-weighted. See `task89-deliberation-wikilinks-frontmatter.md`.
+
+### D-89-12 — Option B locked: no wikilinks + no corpus_index from Pass-1 (2026-05-26)
+
+**Decision:** Pass-1 emits `key_entities` (flat string list) only. No `wikilink_suggestions`, no corpus_index, no corpus_snapshot in replay sidecar. Compile owns wikilink / entity-to-entity / `LINKS_TO`-edge resolution against the live GraphDB. v1.1+ may layer LLM-grounded suggestions on top IF compile's mechanical matching shows measurable gaps (Deepseek B' hook).
+
+**Rationale:** During the v0.1 → v0.2 fork-resolution conversation 2026-05-26, two structural concerns about Option C surfaced that the 4-of-5 panel convergence did not address:
+
+1. Body wikilinks (A) demand denormalization refresh on every corpus change → file-change → compile re-trigger cascade. A is fatal.
+2. Corpus_index (in both A and C) is a stripped-down GraphDB at the wrong place and time. GraphDB is already the authoritative comprehensive corpus index; duplicating this at Pass-1 re-creates every problem GraphDB was designed to solve (dynamicity, iterative build, snapshot semantics, cold-start cascade).
+
+These collapse A and C. B is what remains. The Deepseek-dissent concrete-first reasoning becomes the right answer once the dynamicity argument lands.
+
+Two new principle memories captured by this deliberation:
+- [[feedback_obsidian_wikilinks_are_vanity]] — Obsidian's wikilink/graph-view is display-only with no programmatic utility
+- [[feedback_sources_stay_static_intrinsic_frontmatter_only]] — frontmatter is permissible iff every property is intrinsic; relational/dynamic properties belong in GraphDB
+
+Lineage: `docs/task89-deliberation-wikilinks-frontmatter.md`.
+
+### D-89-13 — LLM returns structured JSON; deterministic post-processor embeds YAML frontmatter (2026-05-26)
+
+**Decision:** The Pass-1 LLM call returns a structured JSON envelope of the 13 fields. The LLM does NOT return the enriched source. A deterministic post-processor validates the JSON, applies overrides (§4), serializes as YAML frontmatter, and atomically writes the source (body unchanged).
+
+**Rationale:** Cleaner architectural separation — LLM does judgment (emit property values), deterministic code does writes (serialize JSON as YAML, merge with existing frontmatter per §3.3). Cheaper (no body re-emission in LLM output). Safer (body never present in LLM output → never modified by LLM). Aligns with [[feedback_post_llm_deterministic_override]] extended from override-application to frontmatter-embedding.
+
+Implication: providers that lack reliable structured-output support cannot be used for Pass-1 (filed as OQ-89-13). Same posture as [[project_deepseek_v4_flash_dropped]].
+
+### D-89-14 — D-88-11 amended: Daily Notes default to force_noise via path-based override (2026-05-26)
+
+**Decision:** Daily Notes remain in scope (Config B reads them; LLM runs on them per D-89-15), but default to `kdb_signal: noise` via `force_noise: [Daily Notes/**]` in scope-config. The LLM is NOT instructed to detect diary shapes; it judges content substance only. Users who want LLM substance judgment to win on Daily Notes can remove `Daily Notes/**` from their `force_noise` config. Parent blueprint D-88-11 amended to reflect this (commit `092b44f`).
+
+**Rationale:** v0.1 D-89-4 (default force_noise list) had already chosen the path-based override mechanism per Joseph's 2026-05-25 evening framing: "we should not add additional prompt to LLM to tag no-pass; what we should do is tag it as no-pass after LLM pass-1 if the configuration indicates." That mechanism is more disciplined than D-88-11's LLM-prompt detection: LLM judges content; deterministic code applies location policy. The panel's Codex F-1 and Gemini F-2 argued for rollback (remove Daily Notes/** from default) on grounds that Daily Notes can contain source-worthy observations. Joseph's evening decision answered that concern via configurability (users can opt-in by removing the pattern). Parent blueprint catches up; NW-1 "reject vault-meta-commentary" criterion withdrawn for Daily Notes.
+
+### D-89-15 — LLM runs on every in-scope source; pre-LLM short-circuit not adopted (2026-05-26)
+
+**Decision:** Files matching `force_noise` still receive a full Pass-1 LLM call; the override applies after. No pre-filter that skips the LLM call.
+
+**Rationale:** Audit signal preserved — the override block records both the LLM's pre-override emission and the deterministic result, letting us spot whether the default `force_noise` patterns are correctly calibrated (e.g., do Daily Notes consistently get LLM-emitted `noise`, or does the LLM frequently disagree?). At single-user-scale with infrequent workload ([[feedback_no_imaginary_risk]]), cost is the lesser concern. If post-deployment telemetry shows the LLM-pre-override emission consistently agrees with the deterministic outcome (~99%+), v1.1+ can add the short-circuit then. Filed as OQ-89-10.
+
 ---
 
 ## 13. Open questions
 
-### OQ-89-1 — corpus_index cold-start strategy (gated on §6 outcome)
+### Closed by v0.2
 
-If Option A or C is chosen, how should Pass-1 behave when the corpus is empty or sparse (first N sources)?
+- **OQ-89-1 — corpus_index cold-start strategy.** Closed by D-89-12 — no corpus_index in v0.2.
+- **OQ-89-6 — multi-source re-enrichment batching.** Closed by D-89-12 — no corpus_index → no batch-vs-sequential question.
 
-Candidates:
-- (a) Run Pass-1 with empty corpus; wikilinks weak for early sources; re-enrich after corpus matures
-- (b) Defer Pass-1 until corpus reaches threshold N; awkward (no way to bootstrap)
-- (c) Bootstrap mode: first batch processes without corpus_index; subsequent batches use it
-
-Lean: (a) — same pattern as #71 cold-start widening for compile-side context. Reviewers may have better.
+### Carried forward (still open)
 
 ### OQ-89-2 — Pristine-source recovery utility (post-v0.1)
 
-A future utility could strip Pass-1 frontmatter + wikilinks block to recover the pre-Pass-1 source. Not in v0.1 scope; filed as a v1.1+ candidate.
+A future utility could strip Pass-1 frontmatter to recover the pre-Pass-1 source. Not in v0.2 scope; filed as a v1.1+ candidate.
 
-### OQ-89-3 — Override precedence (blacklist vs whitelist)
+### OQ-89-3 — Override precedence: specificity-tiebreaker variant (Gemini F-4)
 
-v0.1 default: blacklist wins ties (defensive). Reviewers may push for whitelist-wins or most-specific-glob-wins. Decision lockable in v0.2.
+v0.2 keeps blacklist-wins-ties as the default precedence. Gemini F-4 and Deepseek argued for a specificity-tiebreaker rule (most-specific glob wins before defaulting to blacklist) — useful for the `Projects/special/**` (whitelist) + `Projects/**` (blacklist) pattern. Tracked for telemetry-driven revisit. If user-edited scope-config telemetry shows specificity collisions are common, promote to D-89-x in v0.3+.
 
-### OQ-89-4 — `key_themes` vs `property_tags` merge (carried from §2.3)
+### OQ-89-4 — `key_themes` vs `property_tags` separation (carried from §2.3)
 
-v0.1 merges `property_tags` (★ tier from brainstorm) into `key_themes` (★★ tier). Reviewers may push to separate them. Tie-break in v0.2.
+v0.1 merged `property_tags` (★ tier from brainstorm) into `key_themes` (★★ tier). v0.3 property-additions deliberation may revisit. Tie-break in v0.3.
 
 ### OQ-89-5 — Re-enrichment trigger surface vs Component #3
 
-Component #1 exposes: `enrich(source_path, last_state) → enriched_source + new_state + lifecycle_event`. Component #3 owns when to call. Surface only is in v0.1; full Component #3 deep-design is its own arc. Reviewers may flag misalignment.
-
-### OQ-89-6 — Multi-source re-enrichment batching
-
-When Component #3 fires re-enrichment on N sources in one run, should Pass-1 process them sequentially (each one re-reads corpus_index including its own freshly-updated frontmatter), or batch-then-write (all read same corpus snapshot)?
-
-Sequential lean (each sees freshest corpus) per concrete-first. Decision lockable in v0.2.
+Component #1 exposes: `enrich(source_path, last_state) → enriched_source + new_state + lifecycle_event`. Component #3 owns when to call. Surface only is in v0.2; full Component #3 deep-design is its own arc.
 
 ### OQ-89-7 — Schema version vs prompt version bumping rules
 
-Currently §2.2 distinguishes additive schema change (no bump), required-field add/remove (schema bump), prompt-only change (prompt version bump). Reviewers may push for more nuanced rules.
+§2.2 distinguishes additive schema change (no bump), required-field add/remove (schema bump), prompt-only change (prompt version bump). Reviewers may push for more nuanced rules during implementation.
 
 ### OQ-89-8 — `confidence` semantics + threshold for `uncertainty_reason` population
 
 §2.1 says `uncertainty_reason` is populated when `confidence < 0.6` OR when LLM had doubts despite signal. The 0.6 threshold is arbitrary; could be empirically tuned via NW-5.
 
+### New in v0.2
+
+### OQ-89-9 — Schema-evolution + user-key collision resolution
+
+When v0.2+ adds a new required field that a user has already created manually with the same name (e.g., user added `difficulty: hard` to their frontmatter; v0.3 adds `difficulty` as a Pass-1 schema field), what's the migration rule? Current §3.3 says user value wins + annotated in `user_overrides`. Edge case: if the user's value violates the schema enum (e.g., user wrote `difficulty: easyish` but schema requires `easy | medium | hard`), should the user value still win (with a `schema_invalid: true` flag) or should Pass-1 force-replace? v0.3 ratifies.
+
+### OQ-89-10 — Pre-LLM short-circuit telemetry watch (post-deployment)
+
+D-89-15 explicitly keeps the LLM call on force_noise matches for audit signal. Post-deployment: if telemetry shows the LLM-pre-override emission agrees with the deterministic outcome 99%+ of the time, v1.1+ may add a pre-LLM short-circuit as a cost optimization. Watch metric: `force_noise_llm_disagreement_rate` per run journal aggregation.
+
+### OQ-89-11 — v1.1+ corpus-aware wikilink suggestion enhancement (telemetry-gated)
+
+D-89-12 / Deepseek B' hook. Pass-1 emits `key_entities`; compile owns wikilink resolution. v1.1+ may layer LLM-grounded suggestions on top IF compile's mechanical entity matching shows measurable gaps. Watch metric: human-spot-check disagreement rate on compile's `LINKS_TO` edges; or a NW-5 wikilink-relevance probe (if NW-5 includes one). If compile's matching is sufficient, this OQ never activates.
+
+### OQ-89-12 — Compile YAML-frontmatter-strip integration precondition (BLOCKING — Deepseek F-3)
+
+§10.5 — compile's source-reading code path predates Pass-1 frontmatter. Before Pass-1 ships, compile MUST be verified to strip YAML frontmatter (or consume it as structured metadata) before feeding source content to its LLM. This is a **Pass-1 ship-blocker**. Acceptance test: run compile on an enriched source; verify entity extraction does not emit entities for frontmatter values.
+
+### OQ-89-13 — Provider parity on structured-output support
+
+D-89-13 — Pass-1 LLM call uses structured-output mode (JSON envelope). The current panel reviewers (Qwen 3.7-max, Claude, Grok Build, Codex GPT-5, Deepseek) all advertise structured output, but parity isn't verified for the specific 13-field schema. Pre-implementation: test each candidate Pass-1 model against the schema. Drop any provider that lacks reliable structured-output support (same posture as [[project_deepseek_v4_flash_dropped]]).
+
+### OQ-89-14 — Round-1 property-additions deliberation (deferred to v0.3)
+
+The round-1 property-additions survey returned 5/5 with substantive proposals — e.g., `knowledge_intent`, `evidence_basis`, `temporal_frame`, `abstraction_level` (Codex); analogous candidates from Qwen, Grok, Deepseek, Gemini. v0.2 explicitly DOES NOT fold these into the schema. v0.3 opens a separate deliberation on which (if any) additions to ratify, with the same convergence + Joseph-led ratification flow used for D-89-12/13/14/15. v0.2 ships with the original 13-field schema unchanged.
+
 ---
 
-## 14. v0.1 amendment summary (carried into v0.2)
+## 14. Decision summary (v0.1 + v0.2)
 
-| ID | Source | Status | Where in v0.1 |
+| ID | Source | Status | Where in this doc |
 |---|---|---|---|
 | D-89-1 | Brainstorm 2026-05-25 | Locked | §2 + §12 |
 | D-89-2 | Brainstorm 2026-05-25 (rename verdict→KDB-Signal) | Locked + propagated to parent blueprint | §2 + §12 |
 | D-89-3 | Brainstorm 2026-05-25 (path-expression overrides) | Locked | §4 + §12 |
-| D-89-4 | Brainstorm 2026-05-25 (Daily Notes/Projects defaults) | Locked | §4.2 + §12 |
-| D-89-5 | Brainstorm 2026-05-25 (in-place frontmatter) | Locked | §3 + §12 |
+| D-89-4 | Brainstorm 2026-05-25 (Daily Notes/Projects defaults) | Locked (mechanism clarified by D-89-14) | §4.2 + §12 |
+| D-89-5 | Brainstorm 2026-05-25 (in-place frontmatter) | Locked (mechanism refined by D-89-13) | §3 + §12 |
 | D-89-6 | Brainstorm 2026-05-25 (no GraphDB writes from Pass-1 v1) | Locked | §10 + §12 |
 | D-89-7 | Brainstorm 2026-05-25 (drop "shape" word) | Locked | §8 + §12 |
 | D-89-8 | Brainstorm 2026-05-25 (build mode) | Locked | §0 header + §12 |
 | D-89-9 | Brainstorm 2026-05-25 (NW-7 deferred) | Locked | §9 + §12 |
 | D-89-10 | Carried from D-88-4 | Locked | §2.1 + §12 |
-| D-89-11 | Brainstorm 2026-05-25 (wikilinks + corpus_index) | **OPEN — reviewers asked** | §6 + §12 |
+| D-89-11 | v0.1 (wikilinks + corpus_index OPEN) | **CLOSED by D-89-12** | §6.1 + §12 |
+| D-89-12 | v0.2 deliberation 2026-05-26 (Option B locked) | Locked | §6 + §12 |
+| D-89-13 | v0.2 deliberation 2026-05-26 (structured JSON + deterministic embed) | Locked | §3 + §12 |
+| D-89-14 | v0.2 deliberation 2026-05-26 (D-88-11 amended; path-override mechanism) | Locked + propagated to parent blueprint commit `092b44f` | §8.2 + §12 |
+| D-89-15 | v0.2 deliberation 2026-05-26 (no pre-LLM short-circuit) | Locked | §4.7 + §12 |
+
+### Round-2 panel non-controversial fixes folded into v0.2
+
+| Source | Fix | Where in v0.2 |
+|---|---|---|
+| Codex F-2, Deepseek, Gemini, Grok (4/5 catch) | §4.3 pseudocode order swapped — force_noise checked before force_signal to match §4.4 precedence | §4.3 |
+| Codex F-4, Gemini F-3 (3/5) | Sidecar path encoding rule — `/` → `__` for flat lookup; no nested empty directories | §5.3 |
+| Deepseek F-4, Gemini F-1, Codex OQ-4 (3/5) | User-frontmatter collision rule — user values win + annotated in `user_overrides` block | §3.3 |
+| Deepseek F-6 (1/5) | reject_reason survival rule — clear when force_signal flips noise→signal; populate when force_noise flips signal→noise | §4.6 |
+| Grok OQ-3 (1/5) | Override block always emitted with `applied: null` when no override fired | §4.3, §4.6, §5.3 |
+| Deepseek F-3 (1/5 — critical) | Compile must strip YAML frontmatter before its LLM call — ship-blocking integration precondition | §10.5, OQ-89-12 |
+| Gemini F-4, Deepseek `Projects/special/**` example | Specificity-tiebreaker variant of override precedence carried forward as OQ for telemetry-driven revisit | §4.4, OQ-89-3 |
+
+### Round-1 panel: deferred
+
+Round-1 property-additions survey returned 5/5 with substantive proposals. v0.2 explicitly does NOT fold these — they require their own deliberation pass with the same convergence + Joseph-led ratification flow used for D-89-12/13/14/15. Tracked as OQ-89-14; v0.3 opens that deliberation.
 
 ---
 
@@ -874,9 +959,9 @@ Currently §2.2 distinguishes additive schema change (no bump), required-field a
 
 ---
 
-## 16. Reviewer prompt header (for panel fire)
+## 16. Reviewer prompt header (used for v0.1 review — historical)
 
-When firing this v0.1 at the reviewer panel, the prompt should include the following text. The repo-modification guardrail is **CRITICAL** — four of five reviewers are new to the panel, and `agy/gemini-3.5-flash-high` is on an explicit one-strike re-trial after previous overreach.
+This was the prompt used to fire v0.1 at the reviewer panel. The repo-modification guardrail was **CRITICAL** — four of five reviewers were new to the panel, and `agy/gemini-3.5-flash-high` was on an explicit one-strike re-trial after previous overreach. **Panel outcome: 5/5 clean.** agy completed 2-for-2 on its one-strike trial (round-1 + round-2).
 
 ```
 You are reviewing Task #89 — Component #1 (Enrichment) v0.1 blueprint for the
@@ -935,4 +1020,4 @@ in the same panel cycle without conflict.
 
 ---
 
-**END OF BLUEPRINT v0.1**
+**END OF BLUEPRINT v0.2**
