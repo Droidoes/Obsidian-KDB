@@ -31,6 +31,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
 
@@ -40,6 +41,7 @@ from kdb_compiler import (
     response_normalizer,
     validate_compiled_source_response,
 )
+from kdb_compiler.ingestion.frontmatter_embedder import parse_existing_frontmatter
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
@@ -101,10 +103,51 @@ def _set_failure(
     )
 
 
-def source_text_for(job: CompileJob) -> str:
-    """Read job.abs_path as UTF-8. Propagates OSError / UnicodeDecodeError
-    so compile_one's scaffold-and-fill can classify the failure."""
-    return Path(job.abs_path).read_text(encoding="utf-8")
+@dataclass
+class SourceFrontmatter:
+    """Parsed GraphDB-input section of Pass-1 frontmatter. Audit section +
+    user-added keys are ignored by compile per D-89-16."""
+    kdb_signal: str
+    domain: str
+    source_type: str
+    author: str | None
+    summary: str
+    key_entities: list[str]
+    key_themes: list[str]
+
+    @classmethod
+    def from_dict(cls, fm: dict) -> "SourceFrontmatter | None":
+        """Return None if frontmatter does not contain Pass-1 GraphDB-input keys."""
+        required = {"kdb_signal", "domain", "source_type", "summary"}
+        if not required.issubset(fm.keys()):
+            return None
+        return cls(
+            kdb_signal=fm["kdb_signal"],
+            domain=fm["domain"],
+            source_type=fm["source_type"],
+            author=fm.get("author"),
+            summary=fm["summary"],
+            key_entities=fm.get("key_entities", []) or [],
+            key_themes=fm.get("key_themes", []) or [],
+        )
+
+
+def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
+    """Read job.abs_path as UTF-8; split frontmatter from body.
+
+    Returns (frontmatter, body) where:
+    - frontmatter is a SourceFrontmatter if Pass-1 enriched (GraphDB-input keys
+      present); None otherwise
+    - body is the body text without the YAML frontmatter block
+
+    Per D-89-17 + §10.5. Compile LLM receives only `body`; Source-node writer
+    + entity extractor use `frontmatter` (Task D.2). Propagates OSError /
+    UnicodeDecodeError so compile_one's scaffold-and-fill can classify failure.
+    """
+    raw = Path(job.abs_path).read_text(encoding="utf-8")
+    fm_dict, body = parse_existing_frontmatter(raw)
+    fm = SourceFrontmatter.from_dict(fm_dict)
+    return fm, body
 
 
 def _build_source_stats_entry(
@@ -232,7 +275,7 @@ def compile_one(
     try:
         # --- read source ---
         try:
-            source_text = source_text_for(job)
+            _, source_text = source_text_for(job)
         except (OSError, UnicodeDecodeError) as e:
             _set_failure(state, "source_read", type(e).__name__, str(e))
             state["error"] = (

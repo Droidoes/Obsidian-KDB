@@ -1201,3 +1201,69 @@ def test_cli_happy_path_returns_zero(
     out = capsys.readouterr().out
     assert "success=True" in out
     assert (state_root / "compile_result.json").exists()
+
+
+# ---------- D-89-17: source_text_for returns (frontmatter, body) tuple ----------
+
+def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
+    """Per D-89-17 + §10.5: source_text_for splits frontmatter from body."""
+    from kdb_compiler.compiler import source_text_for, SourceFrontmatter
+
+    src = tmp_path / "essay.md"
+    src.write_text(
+        "---\n"
+        "kdb_signal: signal\n"
+        "domain: ai-ml\n"
+        "source_type: blog\n"
+        "author: Joseph\n"
+        "summary: Test.\n"
+        "key_entities:\n  - x\n"
+        "key_themes:\n  - y\n"
+        "confidence: 0.9\n"
+        "uncertainty_reason: null\n"
+        "reject_reason: null\n"
+        "prompt_version: 1.0.0\n"
+        "model: deepseek\n"
+        "schema_version: 1\n"
+        "override:\n"
+        "  applied: null\n"
+        "  rule: null\n"
+        "  match: null\n"
+        "  llm_original: signal\n"
+        "  reject_reason_cleared: null\n"
+        "other_reason: null\n"
+        "---\n"
+        "The body content here.\n",
+        encoding="utf-8",
+    )
+    job = CompileJob(
+        source_id="essay",
+        abs_path=str(src),
+        context_snapshot=ContextSnapshot(source_id="essay", pages=[]),
+    )
+    fm, body = source_text_for(job)
+    assert isinstance(fm, SourceFrontmatter)
+    assert fm.domain == "ai-ml"
+    assert fm.source_type == "blog"
+    assert fm.author == "Joseph"
+    assert fm.summary == "Test."
+    assert fm.key_entities == ["x"]
+    assert fm.key_themes == ["y"]
+    assert "The body content here." in body
+    assert "kdb_signal" not in body  # frontmatter stripped
+
+
+def test_source_text_for_handles_pristine_source(tmp_path: Path) -> None:
+    """A source without frontmatter (pre-Pass-1) still works — returns (None, body)."""
+    from kdb_compiler.compiler import source_text_for
+
+    src = tmp_path / "essay.md"
+    src.write_text("# Essay\n\nBody only.\n", encoding="utf-8")
+    job = CompileJob(
+        source_id="essay",
+        abs_path=str(src),
+        context_snapshot=ContextSnapshot(source_id="essay", pages=[]),
+    )
+    fm, body = source_text_for(job)
+    assert fm is None
+    assert "# Essay" in body
