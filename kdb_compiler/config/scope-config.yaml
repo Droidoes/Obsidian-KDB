@@ -1,0 +1,17 @@
+# kdb_compiler/config/scope-config.yaml
+# Pass-1 ingestion scope configuration. Per Task #89 v0.2.1 §4.
+#
+# exclude_paths    — never read; circularity guards (parent #88 §3.3 reserved)
+# force_signal     — read + run Pass-1 + deterministically override to signal
+# force_noise      — read + run Pass-1 + deterministically override to noise
+#
+# Precedence: blacklist (force_noise) wins ties per D-89-3 §4.4.
+# LLM never sees these lists per D-89-3 §4.5.
+
+exclude_paths: []
+
+force_signal: []
+
+force_noise:
+  - "Daily Notes/**"
+  - "Projects/**"

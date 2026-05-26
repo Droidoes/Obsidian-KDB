@@ -1,0 +1,140 @@
+[
+  {
+    "id": "ai-ml",
+    "display": "AI & Machine Learning",
+    "scope": "LLMs, prompt engineering, RAG, models, MLOps, AI tools, knowledge graphs / GraphDB as AI harness, ontology engineering for AI/LLM systems. Technical and foundational content about how AI/ML systems work.",
+    "aliases": []
+  },
+  {
+    "id": "software",
+    "display": "Software",
+    "scope": "Programming languages, CS algorithms, operating systems (Linux / WSL), Git, dev tools, cloud infrastructure, software architecture.",
+    "aliases": []
+  },
+  {
+    "id": "hardware",
+    "display": "Hardware",
+    "scope": "Computer architecture, chips, semiconductors as engineering, electronics, devices, silicon design.",
+    "aliases": []
+  },
+  {
+    "id": "math-statistics-logic",
+    "display": "Math, Statistics & Logic",
+    "scope": "Pure and applied mathematics, probability, statistics, formal logic, decision theory, computational theory foundations.",
+    "aliases": ["logics"]
+  },
+  {
+    "id": "biology",
+    "display": "Biology",
+    "scope": "Life sciences, genetics, cellular biology, evolution, organisms.",
+    "aliases": []
+  },
+  {
+    "id": "physics",
+    "display": "Physics",
+    "scope": "Physical sciences, astronomy, cosmology, chemistry at fundamental level, materials physics.",
+    "aliases": []
+  },
+  {
+    "id": "neuroscience-cognition",
+    "display": "Neuroscience & Cognition",
+    "scope": "Brain mechanisms, cognitive science, consciousness studies, philosophy of mind. Content that maps cognitive phenomena to neurological substrates.",
+    "aliases": ["brain-consciousness"]
+  },
+  {
+    "id": "science-technology",
+    "display": "Science & Technology (catch-all)",
+    "scope": "Scientific or technical content that does not fit cleanly in #1–7. Use ONLY when you can articulate in one sentence why none of #1–7 applies. If you cannot articulate that reason, re-examine #1–7 first.",
+    "aliases": []
+  },
+  {
+    "id": "value-investing",
+    "display": "Value Investing",
+    "scope": "Investment philosophy, methods, mental models in the Buffett / Munger / Li Lu / Pabrai tradition.",
+    "aliases": []
+  },
+  {
+    "id": "personal-finance",
+    "display": "Personal Finance",
+    "scope": "Applied personal-investor finance: sector analysis (mining, oil & gas, software, semis as industry), company analysis, equity research methodology, retirement financial planning, tax strategies, portfolio construction.",
+    "aliases": ["equity-research"]
+  },
+  {
+    "id": "economy-markets",
+    "display": "Economy & Markets",
+    "scope": "Macro, monetary policy, currency, bonds, interest rates, gold, commodities, market structure, economic data and statistics (GDP series, unemployment, inflation, central bank data, market indicators).",
+    "aliases": []
+  },
+  {
+    "id": "business-management",
+    "display": "Business & Management",
+    "scope": "Strategy, operations, organizational design — distinct from investment-decision-making.",
+    "aliases": []
+  },
+  {
+    "id": "health-wellbeing",
+    "display": "Health & Wellbeing",
+    "scope": "Nutrition, fitness, longevity, sleep, applied medicine — life-application angle.",
+    "aliases": []
+  },
+  {
+    "id": "history",
+    "display": "History",
+    "scope": "Historical events, civilizations, eras, historical biographies, completed historical periods.",
+    "aliases": []
+  },
+  {
+    "id": "geopolitics",
+    "display": "Geopolitics & World Affairs",
+    "scope": "International relations, geopolitical analysis, current world events, demographics, world powers.",
+    "aliases": []
+  },
+  {
+    "id": "psychology",
+    "display": "Psychology & Self-Improvement",
+    "scope": "Cognitive psychology, behavior, personal development, productivity.",
+    "aliases": []
+  },
+  {
+    "id": "spirituality",
+    "display": "Spirituality",
+    "scope": "Religions, theology, comparative religion, meditation, spiritual practice.",
+    "aliases": []
+  },
+  {
+    "id": "literature",
+    "display": "Literature",
+    "scope": "Fiction, poetry, literary criticism, author studies.",
+    "aliases": []
+  },
+  {
+    "id": "philosophy",
+    "display": "Philosophy",
+    "scope": "Western and Eastern philosophy, ethics, epistemology, metaphysics.",
+    "aliases": []
+  },
+  {
+    "id": "arts-design",
+    "display": "Arts & Design",
+    "scope": "Visual arts, architecture, design (graphic, industrial, interaction, residential), music — aesthetic and creative disciplines.",
+    "aliases": ["arts"]
+  },
+  {
+    "id": "lifestyle",
+    "display": "Lifestyle",
+    "scope": "Travel, collections, food and drinks, retirement activities and goals, home design choices, and other content about how to live well — the personal-experience-of-living dimension.",
+    "aliases": ["retirement-lifestyle", "food-drinks"]
+  },
+  {
+    "id": "quotes",
+    "display": "Quotes",
+    "scope": "Standalone quotes — attributable one-liners, wisdom snippets, aphorisms. Use ONLY when the source's primary unit is a standalone quotation or quote collection. Quote-rich essays, speeches, or books classify by substantive subject.",
+    "aliases": []
+  },
+  {
+    "id": "undecided",
+    "display": "Undecided",
+    "scope": "Residual catch-all for genuinely uncategorizable content. Use ONLY when no other domain in this list describes the content's primary nature. High `undecided` rates indicate the domain list needs expansion.",
+    "aliases": ["others", "misc"]
+  }
+]

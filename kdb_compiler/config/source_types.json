@@ -1,0 +1,128 @@
+[
+  {
+    "id": "blog",
+    "display": "Blog Post",
+    "scope": "Personal blog post, technical blog, Substack newsletter, Medium piece, individual-authored writing on a personal or branded publication. Typically short to medium length (500-3000 words).",
+    "aliases": []
+  },
+  {
+    "id": "post",
+    "display": "Online Post",
+    "scope": "Newsletter post, forum post, community-platform post (Reddit-style threaded discussion, HN-style comment), or generic online text published on a community / forum / aggregator venue.",
+    "aliases": []
+  },
+  {
+    "id": "article",
+    "display": "Magazine / Long-form Article",
+    "scope": "Editorially-published magazine article, longform journalism piece, think-piece, or essay published through an editorial intermediary (The Atlantic, New Yorker, trade publication). Analytical, argumentative, or interpretive in voice.",
+    "aliases": []
+  },
+  {
+    "id": "news",
+    "display": "News Report",
+    "scope": "Event-reporting journalism: news article reporting facts of a current event, press release, market report. Reports what happened.",
+    "aliases": []
+  },
+  {
+    "id": "paper",
+    "display": "Academic / Research Paper",
+    "scope": "Peer-reviewed paper, preprint (arXiv, SSRN), working paper, conference paper, thesis, dissertation. Academic publication form regardless of subject.",
+    "aliases": []
+  },
+  {
+    "id": "book-chapter",
+    "display": "Book Chapter / Excerpt",
+    "scope": "Verbatim chapter, section, or excerpt extracted from a longer book-length work. The content IS the book's text.",
+    "aliases": []
+  },
+  {
+    "id": "book-summary",
+    "display": "Book Summary",
+    "scope": "Full-book distillation, chapter-by-chapter notes, or third-party summary of a book-length work (Blinkist-style abstracts, user's reading notes, executive summaries). The content is ABOUT a book, not FROM the book.",
+    "aliases": []
+  },
+  {
+    "id": "letter",
+    "display": "Public Letter",
+    "scope": "Shareholder letter, public open letter, addressed correspondence intended for a defined audience and published as such (Buffett's letters, Bezos's letters, public open letters in trade publications). Curated, public-facing, addressed.",
+    "aliases": []
+  },
+  {
+    "id": "documentation",
+    "display": "Technical Documentation",
+    "scope": "Software API documentation, product documentation, technical reference, tutorial, runbook, README. Content structured as a technical reference — navigable, lookup-oriented, not narrative.",
+    "aliases": []
+  },
+  {
+    "id": "wiki",
+    "display": "Wiki / Encyclopedic Entry",
+    "scope": "Wikipedia article, encyclopedia entry, knowledge-base reference article, fandom wiki page. Content authored in encyclopedic register — third-person, multi-source, citation-heavy, neutral tone.",
+    "aliases": []
+  },
+  {
+    "id": "transcript-podcast",
+    "display": "Podcast Transcript",
+    "scope": "Verbatim transcript of an audio podcast episode — host monologue, host + guest conversation, or panel discussion.",
+    "aliases": []
+  },
+  {
+    "id": "transcript-video",
+    "display": "Video Transcript",
+    "scope": "Verbatim transcript of video content — YouTube video, recorded talk, Vimeo, Loom, local video file. Medium-neutral within the video umbrella.",
+    "aliases": ["transcript-youtube"]
+  },
+  {
+    "id": "transcript-lecture",
+    "display": "Lecture / Talk Transcript",
+    "scope": "Verbatim transcript of one-direction educational or informational delivery — academic lecture, conference talk, keynote, TED-style talk, public address.",
+    "aliases": []
+  },
+  {
+    "id": "interview",
+    "display": "Interview",
+    "scope": "Q&A-structured exchange where one or more interlocutors question a primary subject. Curated and intentional — the interviewer prepares questions and the subject is the focus. Format-driven and medium-neutral: applies to spoken interviews (transcribed), written interviews (email Q&A, document-based submission), and any other Q&A-structured exchange that is the source's primary form.",
+    "aliases": ["transcript-interview"]
+  },
+  {
+    "id": "chat-log",
+    "display": "Chat Log / Conversation",
+    "scope": "Verbatim log of a conversational exchange between two or more parties in a messaging or LLM interface — Slack export, Discord channel archive, Google Chat export, saved ChatGPT / Claude / Gemini conversation transcript. Informal register, rapid alternating multi-speaker conversational blocks, often tool-mediated.",
+    "aliases": []
+  },
+  {
+    "id": "speech",
+    "display": "Speech / Address",
+    "scope": "Written-prose form of an address — prepared text of a speech, written speech, written address. Often the speaker's prepared text, regardless of whether the speech was actually delivered.",
+    "aliases": []
+  },
+  {
+    "id": "social-thread",
+    "display": "Social Media Thread",
+    "scope": "Long-form thread, carousel, or substantive standalone post on a social platform (Twitter/X thread, LinkedIn long-form post, Threads multi-post, substantive single-post platform-native essay). Authored on the platform; the platform IS the publication venue.",
+    "aliases": []
+  },
+  {
+    "id": "email",
+    "display": "Email",
+    "scope": "Forwarded or saved email correspondence, individual or distribution-list email content. Informal register, individual or small-group distribution.",
+    "aliases": []
+  },
+  {
+    "id": "daily-note",
+    "display": "Daily Note / Log Entry",
+    "scope": "Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events. Routes to `noise` by default via `force_noise: [Daily Notes/**]` (D-89-14).",
+    "aliases": []
+  },
+  {
+    "id": "meeting-notes",
+    "display": "Meeting Notes",
+    "scope": "User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session. Single-meeting artifact (one source = one meeting). User-summarized, paraphrased, action-item-shaped.",
+    "aliases": []
+  },
+  {
+    "id": "other",
+    "display": "Other source form",
+    "scope": "Residual catch-all for source forms not covered by #1-20. Use ONLY when you can articulate in one sentence why none of #1-20 applies — the articulation MUST name the specific missing publication form or shape (not just \"doesn't fit\"). If you cannot articulate that reason, re-examine #1-20 first. High `other` rate indicates the vocabulary needs expansion (OQ-NW7-1).",
+    "aliases": []
+  }
+]
