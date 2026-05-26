@@ -869,8 +869,8 @@ body in your output. Do not include any explanatory text outside the JSON.
   - `{{ d.id }}` — {{ d.display }}: {{ d.scope }}
 {%- endfor %}
 
-- `source_type`: one of the following IDs. Pick the publication-form shape
-  of the source. If genuinely uncategorizable, pick `other` (last resort,
+- `source_type`: one of the following IDs. Pick the publication form of the
+  source. If genuinely uncategorizable, pick `other` (last resort,
   with `other_reason` filled in).
 
 {% for s in source_types %}
@@ -920,7 +920,7 @@ relationships.)
   The deterministic post-processor will overwrite this block if an override
   fires.
 - `other_reason`: string or null. Required-non-null when `source_type=other`
-  — name the specific missing publication form/shape. Null otherwise.
+  — name the specific missing publication form. Null otherwise.
 
 ## Source content to classify
 

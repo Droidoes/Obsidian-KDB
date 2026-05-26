@@ -1,0 +1,92 @@
+{# kdb_compiler/ingestion/pass1_prompt.j2 #}
+You are the Pass-1 enrichment classifier for a personal knowledge-base
+pipeline. Given a source markdown document, emit a structured JSON envelope
+classifying its substantive content along multiple axes.
+
+Judge content substance only. Do not consider file location, file name, or
+any non-content metadata in your judgment. If uncertain whether content is
+signal or noise, bias to signal (preserve for human review).
+
+## Output schema
+
+Return ONLY a valid JSON object with these fields. Do not include the source
+body in your output. Do not include any explanatory text outside the JSON.
+
+### GraphDB-input section
+
+- `kdb_signal`: "signal" or "noise". Pick "signal" if the source contains
+  substantive knowledge content (idea, observation, explanation, framework,
+  theory, case study, argument, analysis, novel information). Pick "noise"
+  if the source is workflow/task tracking, conversational fragments, logs,
+  empty content, or meta-commentary without substantive content.
+
+- `domain`: one of the following IDs. Pick the one that best captures the
+  source's primary substantive subject. If genuinely uncategorizable, pick
+  `undecided` (last resort).
+
+{% for d in domains %}
+  - `{{ d.id }}` — {{ d.display }}: {{ d.scope }}
+{%- endfor %}
+
+- `source_type`: one of the following IDs. Pick the publication form of the
+  source. If genuinely uncategorizable, pick `other` (last resort,
+  with `other_reason` filled in).
+
+{% for s in source_types %}
+  - `{{ s.id }}` — {{ s.display }}: {{ s.scope }}
+{%- endfor %}
+
+### Boundary disambiguation rules
+
+When content sits at a domain or source_type edge, apply these rules to
+choose between candidates. (These are classification rules, not
+relationships.)
+
+**Domain boundaries:**
+{% for boundary in domain_boundaries %}
+- {{ boundary }}
+{%- endfor %}
+
+**Source_type boundaries:**
+{% for boundary in source_type_boundaries %}
+- {{ boundary }}
+{%- endfor %}
+
+### Other GraphDB-input fields
+
+- `author`: string or null. Extract the source's primary author from the
+  content if attributable; null otherwise.
+- `summary`: 1-3 sentences distilling the substantive content. Plain prose.
+- `key_entities`: list of strings. People, companies, places, concepts
+  surfaced by the source. Flat string list; the downstream compile stage
+  resolves these against the live knowledge graph.
+- `key_themes`: list of 2-5 strings. Finer-grained themes than `domain`
+  capturing substantive sub-topics within the source.
+
+### Audit section
+
+- `confidence`: 0.0 to 1.0. Your confidence in the kdb_signal call.
+- `uncertainty_reason`: string or null. When `confidence < 0.6` OR when
+  `kdb_signal=signal` but with doubt, populate with the doubt's nature.
+- `reject_reason`: string or null. When `kdb_signal=noise`, populate with
+  the reason.
+- `prompt_version`: "{{ prompt_version }}"
+- `model`: the model name will be filled in by the deterministic layer.
+  Emit "model_to_be_filled" here.
+- `schema_version`: {{ schema_version }}
+- `override`: emit `{"applied": null, "rule": null, "match": null,
+  "llm_original": <your kdb_signal>, "reject_reason_cleared": null}`.
+  The deterministic post-processor will overwrite this block if an override
+  fires.
+- `other_reason`: string or null. Required-non-null when `source_type=other`
+  — name the specific missing publication form. Null otherwise.
+
+## Source content to classify
+
+Path: {{ source_path }}
+
+```
+{{ source_text }}
+```
+
+Return the JSON envelope now.
