@@ -112,7 +112,7 @@ Scope-rules config is a config file enumerating dirs to exclude wholesale. v1 us
 - **Wholesale knowledge exclusions:** machinery dirs (`KDB/state/*`)
 - **Future user-chosen exclusions** of any kind
 
-The capability is **general-purpose**, not circularity-specific. Daily Notes are deliberately NOT excluded — see D-88-11.
+The capability is **general-purpose**, not circularity-specific. Daily Notes remain in scope at the Config B level (LLM still runs on them), but default to noise via post-LLM path override — see D-88-11 (amended by D-89-14).
 
 ### 3.4 Subdirectory semantics
 
@@ -266,7 +266,7 @@ Milestone Changelog entry to add when v0.2 lands: *"2026-05-25 — Tunnel-rule a
 
 Per-source LLM call emitting the output schema in §4.1. Open work surfaced this round:
 
-- **NW-1 — Pass-1 criteria.** What does "is this source signal?" actually ask the LLM? Examples: length / coherence / has-named-entities / not-meta-commentary-about-the-vault (this criterion is load-bearing for D-88-11 Daily Notes handling) / domain-relevance. Belongs to Component #1 deep-design.
+- **NW-1 — Pass-1 criteria.** What does "is this source signal?" actually ask the LLM? Examples: length / coherence / has-named-entities / domain-relevance. Belongs to Component #1 deep-design. (Note: the original v0.2 phrasing included "not-meta-commentary-about-the-vault" as a load-bearing criterion for D-88-11 Daily Notes handling; this is withdrawn per D-89-14 — Daily Notes are now path-overridden post-LLM, not detected by the LLM.)
 - **NW-4 — domain canonicalization list.** Predefined list Pass-1 maps to. **Ratified as v0.3 at `docs/task88-nw4-domain-list-v0.3.md` (2026-05-25).** Structural #76 redemption. Per NW-4 D-NW4-1, the flat list has NO sub-domain layer; finer-grained refinement lives in `property_tags`. This blueprint's §4.1 schema reflects that (sub_domain field removed v0.3 commit).
 - **NW-5 — Pass-1 benchmark** (new in v0.2 per Joseph 2026-05-25). Corpus with known signal/noise + domain ground truth. Measures verdict accuracy, confidence calibration, domain accuracy, tag quality, wikilink relevance. Likely follows Task #75 / #87 predeclared-eval-criteria pattern.
 - **OQ-88-4 (now D-88-10)** — single-call Pass-1 with quality monitor.
@@ -345,7 +345,7 @@ Per Joseph 2026-05-25: end-to-end orchestrator that moves sources start-to-end +
 9. Domain canonicalization in Pass-1 — NW-4 v0.3 (ratified 2026-05-25)
 10. Change-detection signal tracking + config-aware recompile-trigger logic + lifecycle event taxonomy — Component #3
 11. Move-from-compile features per Component #5 (domain first concrete; systematic survey required)
-12. **Daily Notes IN scope** (D-88-11) — Pass-1 LLM rejects diary-shaped meta-commentary via verdict
+12. **Daily Notes IN scope at Config B; default to noise via post-LLM path override** (D-88-11 amended by D-89-14) — LLM judges content substance; `force_noise: [Daily Notes/**]` default route to noise; user-configurable
 13. **Component #6 Orchestrator (v1 minimal scope)** — thin entry-point script
 
 ### 6.2 OUT of v1
@@ -447,6 +447,16 @@ Per Joseph 2026-05-25: end-to-end orchestrator that moves sources start-to-end +
 **Rationale:** Joseph (2026-05-25): "leave Daily Notes for ingestion... I would like daily notes enhanced by the llm." Consistent with the project's "let LLM decide, not scope-config" philosophy. Scope-config is for hard circularity (KDB/wiki/*) and defense-in-depth (`.obsidian/*`), not knowledge-vs-noise judgment.
 
 **Implication:** NW-1 (Pass-1 criteria) must include "reject vault-meta-commentary (Daily Notes shape, planning shape, meta-reflection shape)" as an explicit criterion.
+
+> **AMENDED 2026-05-26 by D-89-14** — the *mechanism* for Daily Notes noise routing changed during Task #89 v0.1→v0.2 deliberation. Daily Notes are still in scope (Config B still reads them; LLM still runs on them); but rejection is now path-based and post-LLM, not LLM-prompt-driven.
+>
+> - Daily Notes default to noise via `force_noise: [Daily Notes/**]` in scope-config (post-LLM deterministic override). The LLM is NOT instructed to detect diary shapes — it judges content substance only ([[feedback_post_llm_deterministic_override]]).
+> - This contradicts the original rationale's "scope-config is for hard circularity only" framing. Scope-config now ALSO hosts user-policy blanket-noise patterns; Daily Notes (and `Projects/**`) are opinionated defaults.
+> - The configurability remains intact: users who want LLM substance judgment on Daily Notes can remove `Daily Notes/**` from `force_noise` in their scope-config.
+> - The audit signal is preserved: LLM still emits its verdict, the override block records both the LLM's original and the deterministic result.
+> - The original NW-1 implication — "reject vault-meta-commentary as explicit LLM criterion" — is **withdrawn**. NW-1 may still cover non-Daily-Notes meta-commentary if it appears in arbitrary vault paths, but it is no longer load-bearing for Daily Notes handling.
+>
+> See `task89-deliberation-wikilinks-frontmatter.md` and Task #89 v0.2 blueprint D-89-14 for the full lineage.
 
 ---
 
