@@ -148,7 +148,7 @@ These entries describe vault-internal source types that typically route to `nois
 
 | # | ID | Display | Scope |
 |---|---|---|---|
-| 19 | `daily-note` | Daily Note / Log Entry | Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events. Routes to `noise` by default via `force_noise: [Daily Notes/**]` (D-89-14). |
+| 19 | `daily-note` | Daily Note / Log Entry | Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events. |
 | 20 | `meeting-notes` | Meeting Notes | User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session. Single-meeting artifact (one source = one meeting). User-summarized, paraphrased, action-item-shaped. |
 
 ### 2.6 Residual (1)

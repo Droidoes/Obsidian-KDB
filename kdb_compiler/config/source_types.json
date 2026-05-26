@@ -110,7 +110,7 @@
   {
     "id": "daily-note",
     "display": "Daily Note / Log Entry",
-    "scope": "Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events. Routes to `noise` by default via `force_noise: [Daily Notes/**]` (D-89-14).",
+    "scope": "Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events.",
     "aliases": []
   },
   {
