@@ -5,25 +5,31 @@ Usage:
     python scripts/verify_structured_output_parity.py
 
 Output:
-    Per-provider pass/fail printed to stdout + recorded to
-    docs/task89-pass1-provider-parity-2026-05-26.md
+    Per-provider pass/fail printed to stdout; manually transcribed by Task A.2
+    into docs/task89-pass1-provider-parity-2026-05-26.md
 """
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 from kdb_compiler.call_model import ModelRequest, call_model, ModelConfigError
 
 # Candidate models for Pass-1 (subset of kdb_benchmark/models.json that advertises
-# structured-output support). Adjust based on registry state.
+# structured-output support). Per-entry knobs handle provider-specific quirks:
+#   extra_body: deepseek needs thinking disabled to prevent <think> tag pollution
+#   use_completion_tokens: GPT-5+ family requires max_completion_tokens not max_tokens
 CANDIDATES = [
-    ("deepseek", "deepseek-v4-flash"),
-    ("gemini", "gemini-3.1-flash-lite"),
-    ("anthropic", "claude-haiku-4-5"),
-    ("openai", "gpt-5.4-mini"),
-    ("xai", "grok-4-1-fast-reasoning"),
+    {"provider": "deepseek", "model": "deepseek-v4-flash",
+     "extra_body": {"thinking": {"type": "disabled"}}, "use_completion_tokens": False},
+    {"provider": "gemini", "model": "gemini-3.1-flash-lite",
+     "extra_body": None, "use_completion_tokens": False},
+    {"provider": "anthropic", "model": "claude-haiku-4-5",
+     "extra_body": None, "use_completion_tokens": False},
+    {"provider": "openai", "model": "gpt-5.4-mini",
+     "extra_body": None, "use_completion_tokens": True},
+    {"provider": "xai", "model": "grok-4-1-fast-reasoning",
+     "extra_body": None, "use_completion_tokens": False},
 ]
 
 PROMPT = """Given this source content, return a JSON envelope matching the
@@ -46,7 +52,13 @@ Return ONLY a valid JSON object with these fields:
 }
 """
 
-def smoke(provider: str, model: str) -> tuple[bool, str]:
+def smoke(
+    *,
+    provider: str,
+    model: str,
+    extra_body: dict | None,
+    use_completion_tokens: bool,
+) -> tuple[bool, str]:
     req = ModelRequest(
         provider=provider,
         model=model,
@@ -54,11 +66,16 @@ def smoke(provider: str, model: str) -> tuple[bool, str]:
         json_mode=True,
         temperature=0.0,
         max_tokens=1024,
+        extra_body=extra_body,
+        use_completion_tokens=use_completion_tokens,
     )
     try:
         resp = call_model(req)
         parsed = json.loads(resp.text)
-        required = {"kdb_signal", "domain", "source_type", "summary", "key_entities"}
+        required = {
+            "kdb_signal", "domain", "source_type", "author",
+            "summary", "key_entities", "key_themes", "confidence",
+        }
         missing = required - set(parsed.keys())
         if missing:
             return False, f"missing fields: {missing}"
@@ -73,11 +90,11 @@ def smoke(provider: str, model: str) -> tuple[bool, str]:
 
 def main():
     results = []
-    for provider, model in CANDIDATES:
-        ok, msg = smoke(provider, model)
+    for c in CANDIDATES:
+        ok, msg = smoke(**c)
         verdict = "PASS" if ok else "FAIL"
-        print(f"{verdict}  {provider:12s} {model:30s}  {msg}")
-        results.append((provider, model, ok, msg))
+        print(f"{verdict}  {c['provider']:12s} {c['model']:30s}  {msg}")
+        results.append((c["provider"], c["model"], ok, msg))
     fail_count = sum(1 for _, _, ok, _ in results if not ok)
     sys.exit(fail_count)
 
