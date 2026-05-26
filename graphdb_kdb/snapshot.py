@@ -42,13 +42,19 @@ from graphdb_kdb.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 4
+SNAPSHOT_FORMAT_VERSION = 5
 # v1: original (entities/sources/links_to/supports + schema.cypher)
 # v2 (#74.7): adds Entity.canonical_id + alias_of.jsonl
 # v3 (#80): adds domain.jsonl + belongs_to.jsonl (Domain nodes + BELONGS_TO
 #           edges from schema v2.1 / #76). Writer-only: snapshot.py has no
 #           reader today, so format-version dispatch is a future load-snapshot
 #           concern; v3 is purely additive (all v2 files still emitted).
+# v4 (#83/#84): adds claims.jsonl + evidences.jsonl + about.jsonl +
+#           supersedes.jsonl + contradicts.jsonl + qualifies.jsonl (Claim
+#           layer from schema v2.2). Purely additive (all v3 files still emitted).
+# v5 (#89 D-89-17): sources.jsonl gains summary, author, domain columns
+#           (Pass-1 frontmatter fields from schema v2.3). Purely additive —
+#           all v4 files still emitted; old rows export NULL for new columns.
 
 
 @dataclass(frozen=True)
@@ -294,12 +300,19 @@ def _write_entities(conn: kuzu.Connection, path: Path) -> int:
 
 
 def _write_sources(conn: kuzu.Connection, path: Path) -> int:
+    """#89 D-89-17 (format v5): adds summary, author, domain columns.
+
+    Pass-1 enrichment populates these via frontmatter; rows without Pass-1
+    data export them as JSON null. Pre-v2.3 graphs produce null for all
+    three — additive bump, no breaking change to v4 file layout.
+    """
     query = """
     MATCH (s:Source)
     RETURN s.source_id, s.source_type, s.canonical_path, s.status,
            s.file_type, s.hash, s.size_bytes,
            s.first_seen_at, s.last_seen_at, s.last_ingested_at,
-           s.ingest_state, s.ingest_count, s.last_run_id, s.moved_to
+           s.ingest_state, s.ingest_count, s.last_run_id, s.moved_to,
+           s.summary, s.author, s.domain
     ORDER BY s.source_id
     """
     n = 0
@@ -322,6 +335,9 @@ def _write_sources(conn: kuzu.Connection, path: Path) -> int:
                 "ingest_count": int(row[11]) if row[11] is not None else 0,
                 "last_run_id": row[12],
                 "moved_to": row[13],
+                "summary": row[14],    # None until Pass-1 populates
+                "author": row[15],     # None until Pass-1 populates
+                "domain": row[16],     # None until Pass-1 populates
             }
             f.write(json.dumps(obj, sort_keys=True) + "\n")
             n += 1

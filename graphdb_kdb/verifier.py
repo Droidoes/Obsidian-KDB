@@ -106,7 +106,8 @@ def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
     r = conn.execute(
         "MATCH (s:Source) "
         "RETURN s.source_id, s.status, s.ingest_state, s.ingest_count, "
-        "       s.hash, s.file_type, s.size_bytes, s.last_run_id"
+        "       s.hash, s.file_type, s.size_bytes, s.last_run_id, "
+        "       s.summary, s.author, s.domain"
     )
     out: dict[str, dict[str, Any]] = {}
     while r.has_next():
@@ -120,6 +121,10 @@ def _graph_sources(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
             "file_type": row[5],
             "size_bytes": int(row[6]) if row[6] is not None else 0,
             "last_run_id": row[7],
+            # #89 D-89-17: Pass-1 frontmatter fields — NULL until Pass-1 runs.
+            "summary": row[8],
+            "author": row[9],
+            "domain": row[10],
         }
     return out
 
@@ -359,7 +364,14 @@ def _diff_sources_replay(
                     ("file_type", "file_type"),
                     ("size_bytes", "size_bytes"),
                     ("status", "status"),
-                    ("last_run_id", "last_run_id")),
+                    ("last_run_id", "last_run_id"),
+                    # #89 D-89-17: Pass-1 frontmatter fields — included in
+                    # replay diff so drift is detected once rebuild's Pass-1
+                    # replay lands. Pre-Pass-1 rows compare NULL==NULL (no
+                    # spurious divergences); post-Pass-1 drift is flagged.
+                    ("summary", "summary"),
+                    ("author", "author"),
+                    ("domain", "domain")),
         ))
     return divs
 

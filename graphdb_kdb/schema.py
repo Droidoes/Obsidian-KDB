@@ -2,13 +2,15 @@
 
 Schema is documented at docs/task-graphdb-kdb-blueprint.md §4 (#63 baseline),
 docs/task74-canonicalization-blueprint.md §5 (#74 canonicalization delta),
-docs/task76-domain-field-blueprint.md §6 (#76 domain field delta), and
+docs/task76-domain-field-blueprint.md §6 (#76 domain field delta),
 docs/task83-84-promotion-contract-belief-revision-blueprint.md §6 (#83/#84
-Claim layer delta).
+Claim layer delta), and docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md
+(#89 Pass-1 ingestion delta).
 
 Tables:
-- Node: Entity (slug-keyed; v2.0 adds canonical_id), Source (source_id-keyed),
-        Domain (name-keyed; v2.1), Claim (claim_id-keyed; v2.2)
+- Node: Entity (slug-keyed; v2.0 adds canonical_id), Source (source_id-keyed;
+        v2.3 adds summary/author/domain), Domain (name-keyed; v2.1),
+        Claim (claim_id-keyed; v2.2)
 - Rel:  LINKS_TO (Entity->Entity), SUPPORTS (Source->Entity),
         ALIAS_OF (Entity->Entity, v2.0), BELONGS_TO (Entity->Domain, v2.1),
         EVIDENCES (Source->Claim, v2.2), ABOUT (Claim->Entity, v2.2),
@@ -38,12 +40,16 @@ Schema version history:
         per D-83/84-6 F3 + D-83/84-7), ABOUT (Claim→Entity authoritative
         binding per D-83/84-9), SUPERSEDES + CONTRADICTS + QUALIFIES
         (Claim-Claim per D-83/84-6 F2 state machine).
+- 2.3 — #89 D-89-17: Source gains `summary STRING`, `author STRING`,
+        `domain STRING` columns. Pass-1 enrichment populates these via
+        frontmatter; compile reads them directly (no LLM re-derivation).
+        Existing Source rows get NULL until next compile run.
 """
 from __future__ import annotations
 
 from typing import Callable
 
-SCHEMA_VERSION = "2.2"
+SCHEMA_VERSION = "2.3"
 
 # Node tables — one CREATE per element (Kuzu requires one statement per execute).
 NODE_TABLE_DDL: list[str] = [
@@ -76,7 +82,10 @@ NODE_TABLE_DDL: list[str] = [
         ingest_state       STRING,
         ingest_count       INT64,
         last_run_id        STRING,
-        moved_to           STRING
+        moved_to           STRING,
+        summary            STRING,
+        author             STRING,
+        domain             STRING
     )
     """,
     """
@@ -299,9 +308,33 @@ def _migrate_2_1_to_2_2(conn) -> None:
     )
 
 
+def _migrate_2_2_to_2_3(conn) -> None:
+    """Bring a v2.2 DB up to v2.3 in place (non-destructive).
+
+    Changes:
+      - Source gains `summary STRING`, `author STRING`, `domain STRING`
+        columns (all nullable). Pass-1 enrichment populates these via
+        frontmatter; compile reads them directly per D-89-17 (no LLM
+        re-derivation). Existing Source rows get NULL until next compile run.
+      - `_SchemaMeta.schema_version` updated to "2.3".
+
+    Anchor: docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md
+    Task B.1, D-89-17 (#89 Pass-1 ingestion schema delta).
+    """
+    conn.execute("ALTER TABLE Source ADD summary STRING")
+    conn.execute("ALTER TABLE Source ADD author STRING")
+    conn.execute("ALTER TABLE Source ADD domain STRING")
+
+    # Bump _SchemaMeta to "2.3".
+    conn.execute(
+        "MATCH (m:_SchemaMeta {key: 'schema_version'}) SET m.value = '2.3'"
+    )
+
+
 # Migration registry keyed by (from_version, to_version).
 MIGRATIONS: dict[tuple[str, str], Callable] = {
     ("1.0", "2.0"): _migrate_1_0_to_2_0,
     ("2.0", "2.1"): _migrate_2_0_to_2_1,
     ("2.1", "2.2"): _migrate_2_1_to_2_2,
+    ("2.2", "2.3"): _migrate_2_2_to_2_3,
 }

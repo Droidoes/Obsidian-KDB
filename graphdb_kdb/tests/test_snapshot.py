@@ -464,7 +464,7 @@ def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["counts"]["domain"] == 2
-    assert manifest["snapshot_format_version"] == 4
+    assert manifest["snapshot_format_version"] == SNAPSHOT_FORMAT_VERSION
 
 
 def test_snapshot_belongs_to_jsonl_records_edges(graph_dir, tmp_path):
@@ -503,7 +503,7 @@ def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
     assert manifest["counts"]["domain"] == 0
     assert manifest["counts"]["belongs_to"] == 0
-    assert manifest["snapshot_format_version"] == 4
+    assert manifest["snapshot_format_version"] == SNAPSHOT_FORMAT_VERSION
     # #83/#84: Claim-layer files are also empty for pre-#83/#84 graphs.
     for fname in ("claims.jsonl", "evidences.jsonl", "about.jsonl",
                   "supersedes.jsonl", "contradicts.jsonl", "qualifies.jsonl"):
@@ -512,9 +512,9 @@ def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
         assert manifest["counts"][kind] == 0
 
 
-def test_snapshot_format_version_is_v4():
-    """#83/#84: snapshot bumped from v3 (domain + belongs_to) to v4 (Claim layer)."""
-    assert SNAPSHOT_FORMAT_VERSION == 4
+def test_snapshot_format_version_is_v5():
+    """#89 D-89-17: snapshot bumped from v4 (Claim layer) to v5 (Source Pass-1 columns)."""
+    assert SNAPSHOT_FORMAT_VERSION == 5
 
 
 def _seed_graph_with_claim_layer(graph_dir):
@@ -661,4 +661,81 @@ def test_snapshot_writes_claim_layer_content(graph_dir, tmp_path):
     assert manifest["counts"]["contradicts"] == 1
     assert manifest["counts"]["supersedes"] == 0
     assert manifest["counts"]["qualifies"] == 0
-    assert manifest["snapshot_format_version"] == 4
+    assert manifest["snapshot_format_version"] == SNAPSHOT_FORMAT_VERSION
+
+
+# ---------- 11. #89 D-89-17 — Source Pass-1 columns (format v5) ----------
+
+
+def _seed_graph_with_pass1_sources(graph_dir: Path) -> None:
+    """Seed a graph with Source nodes that have summary/author/domain populated
+    (simulating what Pass-1 ingestion writes). Uses direct Kuzu INSERT to
+    set the new columns; the ingestor path is Task B.2 scope, not B.1."""
+    with GraphDB(graph_dir) as gdb:
+        c = gdb.conn
+        # Source with all three Pass-1 columns populated.
+        c.execute(
+            "CREATE (:Source {source_id: 'KDB/raw/buffett-letters.md', "
+            "source_type: 'md', canonical_path: 'KDB/raw/buffett-letters.md', "
+            "status: 'active', file_type: 'markdown', hash: 'sha256:abc', "
+            "size_bytes: 200, first_seen_at: '2026-01-01', "
+            "last_seen_at: '2026-01-01', last_ingested_at: '2026-01-01', "
+            "ingest_state: 'compiled', ingest_count: 1, last_run_id: 'r1', "
+            "moved_to: '', summary: 'Annual shareholder letter on value investing', "
+            "author: 'Warren Buffett', domain: 'Investing'})"
+        )
+        # Source with Pass-1 columns all NULL (not yet processed by Pass-1).
+        c.execute(
+            "CREATE (:Source {source_id: 'KDB/raw/untouched.md', "
+            "source_type: 'md', canonical_path: 'KDB/raw/untouched.md', "
+            "status: 'active', file_type: 'markdown', hash: 'sha256:xyz', "
+            "size_bytes: 50, first_seen_at: '2026-01-01', "
+            "last_seen_at: '2026-01-01', last_ingested_at: '2026-01-01', "
+            "ingest_state: 'compiled', ingest_count: 1, last_run_id: 'r1', "
+            "moved_to: '', summary: NULL, author: NULL, domain: NULL})"
+        )
+
+
+def test_snapshot_sources_jsonl_includes_pass1_columns(graph_dir, tmp_path):
+    """#89 D-89-17 (format v5): sources.jsonl rows carry summary, author,
+    domain when the Source has been processed by Pass-1; rows without
+    Pass-1 data export JSON null for all three."""
+    _seed_graph_with_pass1_sources(graph_dir)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = {
+        json.loads(line)["source_id"]: json.loads(line)
+        for line in (out / "sources.jsonl").read_text("utf-8").splitlines()
+    }
+    # Pass-1-populated source: all three columns carry values.
+    populated = rows["KDB/raw/buffett-letters.md"]
+    assert populated["summary"] == "Annual shareholder letter on value investing"
+    assert populated["author"] == "Warren Buffett"
+    assert populated["domain"] == "Investing"
+
+    # Unpopulated source: all three columns are JSON null.
+    untouched = rows["KDB/raw/untouched.md"]
+    assert untouched["summary"] is None
+    assert untouched["author"] is None
+    assert untouched["domain"] is None
+
+
+def test_snapshot_sources_jsonl_null_columns_for_pre_pass1_graph(graph_dir, tmp_path):
+    """Sources written before Pass-1 runs produce null for summary/author/domain
+    in the snapshot (back-compat: v4 format rows are extended, not replaced)."""
+    _seed_graph(graph_dir)  # plain seed via ingestor (no Pass-1 columns set)
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = [
+        json.loads(line)
+        for line in (out / "sources.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert len(rows) >= 1
+    for r in rows:
+        # summary, author, domain keys must be present (format v5) and null.
+        assert "summary" in r, f"sources.jsonl row missing 'summary': {r}"
+        assert "author" in r, f"sources.jsonl row missing 'author': {r}"
+        assert "domain" in r, f"sources.jsonl row missing 'domain': {r}"
+        assert r["summary"] is None
+        assert r["author"] is None
+        assert r["domain"] is None

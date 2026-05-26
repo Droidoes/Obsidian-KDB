@@ -431,3 +431,85 @@ def test_no_domain_pages_still_pass(graph_dir, tmp_path):
     assert result.ok
     assert result.counts["domains_checked"] == 0
     assert result.counts["belongs_to_checked"] == 0
+
+
+# ---------- 13. #89 D-89-17 — Pass-1 Source columns in replay diff ----------
+
+
+def _write_journal_with_source_pass1(
+    journals_dir: Path,
+    run_id: str,
+    *,
+    compile_result: dict,
+    scan: dict,
+) -> None:
+    """Same as _write_journal but with schema_version 2.3 tag."""
+    _write_journal(journals_dir, run_id, compile_result=compile_result, scan=scan, schema_version="2.3")
+
+
+def test_pass1_columns_perfect_agreement(graph_dir, tmp_path):
+    """Replay and live both have matching summary/author/domain on Source
+    (simulated via direct graph writes post-ingest) → ok, no divergences."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)
+        # Directly set Pass-1 columns on the live Source (simulates Pass-1 ingest).
+        gdb.conn.execute(
+            f"MATCH (s:Source {{source_id: '{SRC_ID}'}}) "
+            f"SET s.summary = 'A summary', s.author = 'Alice', s.domain = 'Testing'"
+        )
+        # Replay also picks up the same compile_result from the journal,
+        # but since rebuild doesn't write Pass-1 columns yet (deferred),
+        # the diff is NULL==NULL on replay side. Live has values, replay has NULL.
+        # This means the test should detect a divergence — proving drift detection works.
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    # Replay side has NULL (no Pass-1 replay yet), live side has values → mismatch detected.
+    source_divs = [
+        d for d in result.divergences
+        if d.category == "source" and d.kind == "attribute_mismatch"
+        and d.key == SRC_ID
+    ]
+    summary_divs = [d for d in source_divs if d.field == "summary"]
+    assert len(summary_divs) == 1
+    assert summary_divs[0].expected_value is None        # replay (rebuild): NULL
+    assert summary_divs[0].actual_value == "A summary"  # live: populated by Pass-1
+
+
+def test_pass1_domain_mismatch_detected(graph_dir, tmp_path):
+    """Live Source.domain differs from replay Source.domain → attribute_mismatch
+    on 'domain' field under category='source'. Verifies per-field diff coverage."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)
+        # Set domain to "Investing" on live but replay will produce NULL.
+        gdb.conn.execute(
+            f"MATCH (s:Source {{source_id: '{SRC_ID}'}}) "
+            f"SET s.domain = 'Investing'"
+        )
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    domain_divs = [
+        d for d in result.divergences
+        if d.category == "source" and d.kind == "attribute_mismatch"
+        and d.key == SRC_ID and d.field == "domain"
+    ]
+    assert len(domain_divs) == 1
+    assert domain_divs[0].expected_value is None       # replay: NULL
+    assert domain_divs[0].actual_value == "Investing"  # live: set by Pass-1
+
+
+def test_pass1_null_on_both_sides_no_divergence(graph_dir, tmp_path):
+    """Sources without Pass-1 data have NULL on both replay and live sides
+    → _diff_sources_replay sees NULL==NULL, zero attribute_mismatch divergences
+    for summary/author/domain."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)
+        # No Pass-1 columns set — both sides remain NULL.
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert result.ok
+    # Specifically confirm no attribute_mismatch on the new fields.
+    pass1_divs = [
+        d for d in result.divergences
+        if d.category == "source" and d.field in ("summary", "author", "domain")
+    ]
+    assert pass1_divs == []

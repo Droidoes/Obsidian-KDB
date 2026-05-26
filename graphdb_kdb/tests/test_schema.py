@@ -13,7 +13,7 @@ from graphdb_kdb.graphdb import GraphDB
 def test_schema_constants_exist():
     """Schema module exposes SCHEMA_VERSION + DDL lists + MIGRATIONS registry."""
     assert isinstance(schema.SCHEMA_VERSION, str)
-    assert schema.SCHEMA_VERSION == "2.2"  # #83/#84 Claim layer bump
+    assert schema.SCHEMA_VERSION == "2.3"  # #89 D-89-17 Pass-1 Source columns bump
     assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 4
     assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 9
     node_text = " ".join(schema.NODE_TABLE_DDL)
@@ -25,6 +25,9 @@ def test_schema_constants_exist():
     assert "CREATE NODE TABLE Domain" in node_text
     # #83/#84: Claim node table.
     assert "CREATE NODE TABLE Claim" in node_text
+    # #89 D-89-17: Source gains summary/author/domain columns.
+    assert "summary" in node_text
+    assert "author" in node_text
     rel_text = " ".join(schema.REL_TABLE_DDL)
     assert "CREATE REL TABLE LINKS_TO" in rel_text
     assert "CREATE REL TABLE SUPPORTS" in rel_text
@@ -37,12 +40,15 @@ def test_schema_constants_exist():
     # #83/#84: 5 new Claim-layer rel tables.
     for name in ("EVIDENCES", "ABOUT", "SUPERSEDES", "CONTRADICTS", "QUALIFIES"):
         assert f"CREATE REL TABLE {name}" in rel_text
-    # 3 migrations registered: 1.0→2.0, 2.0→2.1, 2.1→2.2.
+    # 4 migrations registered: 1.0→2.0, 2.0→2.1, 2.1→2.2, 2.2→2.3.
     assert isinstance(schema.MIGRATIONS, dict)
-    assert set(schema.MIGRATIONS.keys()) == {("1.0", "2.0"), ("2.0", "2.1"), ("2.1", "2.2")}
+    assert set(schema.MIGRATIONS.keys()) == {
+        ("1.0", "2.0"), ("2.0", "2.1"), ("2.1", "2.2"), ("2.2", "2.3"),
+    }
     assert callable(schema.MIGRATIONS[("1.0", "2.0")])
     assert callable(schema.MIGRATIONS[("2.0", "2.1")])
     assert callable(schema.MIGRATIONS[("2.1", "2.2")])
+    assert callable(schema.MIGRATIONS[("2.2", "2.3")])
 
 
 def test_graphdb_init_creates_schema(graph_dir):
@@ -52,7 +58,7 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert v == "2.2"
+    assert v == "2.3"
     # #76.2: domains + belongs_to counters join the stats dict.
     assert stats == {
         "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
@@ -78,6 +84,8 @@ def test_graphdb_init_is_idempotent(graph_dir):
         "claims": 0, "evidences": 0, "about": 0,
         "supersedes": 0, "contradicts": 0, "qualifies": 0,
     }
+    # v2.3: schema version now "2.3" (Source gained summary/author/domain).
+    assert v1 == "2.3"
 
 
 def test_alias_of_table_exists_on_fresh_db(graph_dir):
@@ -184,15 +192,16 @@ def _create_v1_db(graph_dir):
     del db
 
 
-def test_migration_v1_to_v2_2_applies(graph_dir):
-    """Opening a v1.0 DB with v2.2 code chains migrations 1.0→2.0→2.1→2.2.
+def test_migration_v1_to_v2_3_applies(graph_dir):
+    """Opening a v1.0 DB with v2.3 code chains migrations 1.0→2.0→2.1→2.2→2.3.
     Existing entity survives; canonical_id, ALIAS_OF, Domain, BELONGS_TO,
-    Claim, and the 5 Claim-layer rels all become available."""
+    Claim, the 5 Claim-layer rels, and Source.summary/author/domain all
+    become available."""
     _create_v1_db(graph_dir)
 
     with GraphDB(graph_dir) as gdb:
-        # Schema version now reports v2.2 (chained migrations ran).
-        assert gdb.schema_version() == "2.2"
+        # Schema version now reports v2.3 (chained migrations ran).
+        assert gdb.schema_version() == "2.3"
         # The pre-migration entity survived.
         stats = gdb.stats()
         assert stats["entities"] == 1
@@ -213,6 +222,113 @@ def test_migration_v1_to_v2_2_applies(graph_dir):
         # #76.2: BELONGS_TO rel table is queryable (empty).
         br = gdb.conn.execute("MATCH ()-[r:BELONGS_TO]->() RETURN COUNT(*)")
         assert int(br.get_next()[0]) == 0
+        # #89 D-89-17: Source.summary/author/domain columns are queryable
+        # (return NULL for rows seeded before migration).
+        sr = gdb.conn.execute(
+            "MATCH (s:Source) RETURN s.summary, s.author, s.domain LIMIT 1"
+        )
+        # No Source rows in v1 seed, but column existence is proved by the
+        # fact that the MATCH executes without error. Confirm zero rows.
+        assert not sr.has_next()
+
+
+def test_migrate_2_2_to_2_3_adds_source_columns(graph_dir):
+    """Per Task #89 D-89-17: _migrate_2_2_to_2_3 adds summary, author, domain
+    columns to Source. Mirrors the _create_v1_db pattern — manually builds
+    a v2.2 DB so we can target the specific migration step."""
+    from graphdb_kdb.schema import _migrate_2_2_to_2_3
+    import kuzu
+
+    # Build a minimal v2.2 DB in-place (Entity + Source + basic rels + meta).
+    db = kuzu.Database(str(graph_dir))
+    conn = kuzu.Connection(db)
+    # Source table in v2.2 shape (no summary/author/domain columns).
+    conn.execute("""
+    CREATE NODE TABLE Source (
+        source_id          STRING PRIMARY KEY,
+        source_type        STRING,
+        canonical_path     STRING,
+        status             STRING,
+        file_type          STRING,
+        hash               STRING,
+        size_bytes         INT64,
+        first_seen_at      STRING,
+        last_seen_at       STRING,
+        last_ingested_at   STRING,
+        ingest_state       STRING,
+        ingest_count       INT64,
+        last_run_id        STRING,
+        moved_to           STRING
+    )
+    """)
+    conn.execute("""
+    CREATE NODE TABLE _SchemaMeta (
+        key   STRING PRIMARY KEY,
+        value STRING
+    )
+    """)
+    conn.execute("CREATE (:_SchemaMeta {key: 'schema_version', value: '2.2'})")
+    # Seed one Source row to prove migration is non-destructive.
+    conn.execute(
+        "CREATE (:Source {source_id: 'KDB/raw/seed.md', source_type: 'md', "
+        "canonical_path: 'KDB/raw/seed.md', status: 'active', file_type: 'markdown', "
+        "hash: 'sha256:abc', size_bytes: 100, first_seen_at: '2026-01-01', "
+        "last_seen_at: '2026-01-01', last_ingested_at: '2026-01-01', "
+        "ingest_state: 'compiled', ingest_count: 1, last_run_id: 'r1', moved_to: ''})"
+    )
+    del conn
+    del db
+
+    # Now run the specific migration step.
+    db2 = kuzu.Database(str(graph_dir))
+    conn2 = kuzu.Connection(db2)
+    _migrate_2_2_to_2_3(conn2)
+
+    # Verify columns exist (query would raise if columns are absent).
+    r = conn2.execute(
+        "MATCH (s:Source {source_id: 'KDB/raw/seed.md'}) "
+        "RETURN s.summary, s.author, s.domain"
+    )
+    assert r.has_next()
+    row = r.get_next()
+    # Existing rows get NULL (not yet populated by Pass-1).
+    assert row[0] is None  # summary
+    assert row[1] is None  # author
+    assert row[2] is None  # domain
+
+    # Schema version bumped.
+    mv = conn2.execute(
+        "MATCH (m:_SchemaMeta {key: 'schema_version'}) RETURN m.value"
+    )
+    assert mv.get_next()[0] == "2.3"
+    del conn2
+    del db2
+
+
+def test_fresh_db_at_2_3_has_source_columns(graph_dir):
+    """Fresh DB created with current SCHEMA_VERSION has summary/author/domain
+    on Source (no migration needed — DDL creates them directly)."""
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.schema_version() == "2.3"
+        # Column existence: INSERT with explicit values, then read back.
+        gdb.conn.execute(
+            "CREATE (:Source {source_id: 'KDB/raw/test.md', source_type: 'md', "
+            "canonical_path: 'KDB/raw/test.md', status: 'active', file_type: 'markdown', "
+            "hash: 'sha256:xyz', size_bytes: 50, first_seen_at: '2026-01-01', "
+            "last_seen_at: '2026-01-01', last_ingested_at: '2026-01-01', "
+            "ingest_state: 'compiled', ingest_count: 1, last_run_id: 'r1', "
+            "moved_to: '', summary: 'A test source', author: 'Jane Doe', "
+            "domain: 'Testing'})"
+        )
+        r = gdb.conn.execute(
+            "MATCH (s:Source {source_id: 'KDB/raw/test.md'}) "
+            "RETURN s.summary, s.author, s.domain"
+        )
+        assert r.has_next()
+        row = r.get_next()
+        assert row[0] == "A test source"
+        assert row[1] == "Jane Doe"
+        assert row[2] == "Testing"
 
 
 def test_migration_unknown_version_raises(graph_dir, monkeypatch):
