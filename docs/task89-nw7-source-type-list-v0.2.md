@@ -148,14 +148,14 @@ These entries describe vault-internal source types that typically route to `nois
 
 | # | ID | Display | Scope |
 |---|---|---|---|
-| 19 | `daily-note` | Daily Note / Log Entry | Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically diary-shaped omnibus of the day's events. |
-| 20 | `meeting-notes` | Meeting Notes | User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session. Single-meeting artifact (one source = one meeting). User-summarized, paraphrased, action-item-shaped. |
+| 19 | `daily-note` | Daily Note / Log Entry | Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically a diary-style omnibus of the day's events. |
+| 20 | `meeting-notes` | Meeting Notes | User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session. Single-meeting artifact (one source = one meeting). User-summarized, paraphrased, action-item-structured. |
 
 ### 2.6 Residual (1)
 
 | # | ID | Display | Scope |
 |---|---|---|---|
-| 21 | `other` | Other source form | Residual catch-all for source forms not covered by #1-20. Use ONLY when you can articulate in one sentence why none of #1-20 applies — the articulation MUST name the specific missing publication form or shape (not just "doesn't fit"). If you cannot articulate that reason, re-examine #1-20 first. High `other` rate indicates the vocabulary needs expansion (OQ-NW7-1). |
+| 21 | `other` | Other source form | Residual catch-all for source forms not covered by #1-20. Use ONLY when you can articulate in one sentence why none of #1-20 applies — the articulation MUST name the specific missing publication form (not just "doesn't fit"). If you cannot articulate that reason, re-examine #1-20 first. High `other` rate indicates the vocabulary needs expansion (OQ-NW7-1). |
 
 ---
 
