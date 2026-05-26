@@ -421,8 +421,8 @@ def test_source_types_aliases_resolve_for_renames():
 def test_scope_config_loads_defaults():
     cfg = load_scope_config()
     assert isinstance(cfg, ScopeConfig)
-    assert cfg.exclude_paths == []
-    assert cfg.force_signal == []
+    assert cfg.exclude_paths == ()
+    assert cfg.force_signal == ()
     assert "Daily Notes/**" in cfg.force_noise
     assert "Projects/**" in cfg.force_noise
 
