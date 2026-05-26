@@ -183,7 +183,7 @@ CANDIDATES = [
      "extra_body": {"thinking": {"type": "disabled"}}, "use_completion_tokens": False},
     {"provider": "gemini", "model": "gemini-3.1-flash-lite",
      "extra_body": None, "use_completion_tokens": False},
-    {"provider": "anthropic", "model": "claude-haiku-4-5",
+    {"provider": "anthropic", "model": "claude-haiku-4-5-20251001",
      "extra_body": None, "use_completion_tokens": False},
     {"provider": "openai", "model": "gpt-5.4-mini",
      "extra_body": None, "use_completion_tokens": True},
