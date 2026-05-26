@@ -495,3 +495,45 @@ def test_moved_writes_only_schema_fields(graph_dir):
     assert old.moved_to == new_sid
     assert old.last_run_id == "run-2"
     assert old.last_seen_at == t2  # Used in place of the non-existent updated_at.
+
+
+# ---------- 13. Pass-1 frontmatter flows into Source node (D-89-17) ----------
+
+def test_ingest_source_writes_summary_author_domain_from_frontmatter(graph_dir):
+    """When compile_result carries source_meta with Pass-1-derived fields,
+    ingestor MERGE's Source with summary/author/domain populated (D-89-17)."""
+    src = "KDB/raw/enriched.md"
+    source_meta = {
+        "summary": "A note about value investing principles",
+        "author": "Warren Buffett",
+        "domain": "value-investing",
+        "source_type": "personal-note",
+        "key_entities": ["berkshire-hathaway"],
+        "key_themes": ["margin-of-safety"],
+    }
+    cr = make_compile_result([
+        make_compiled_source(src, [make_page("alpha")], source_meta=source_meta)
+    ])
+    scan = make_scan([make_scan_entry(src)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        source = gdb.get_source(src)
+    assert source.summary == "A note about value investing principles"
+    assert source.author == "Warren Buffett"
+    assert source.domain == "value-investing"
+
+
+def test_ingest_source_without_source_meta_leaves_columns_null(graph_dir):
+    """When compile_result has no source_meta, summary/author/domain stay NULL
+    (backward-compat: existing compile_results without source_meta remain valid)."""
+    src = "KDB/raw/plain.md"
+    cr = make_compile_result([
+        make_compiled_source(src, [make_page("beta")])
+    ])
+    scan = make_scan([make_scan_entry(src)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        source = gdb.get_source(src)
+    assert source.summary is None
+    assert source.author is None
+    assert source.domain is None

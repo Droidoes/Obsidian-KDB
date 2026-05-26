@@ -210,7 +210,8 @@ class GraphDB:
             RETURN s.source_id, s.source_type, s.canonical_path, s.status,
                    s.file_type, s.hash, s.size_bytes, s.first_seen_at,
                    s.last_seen_at, s.last_ingested_at, s.ingest_state,
-                   s.ingest_count, s.last_run_id, s.moved_to
+                   s.ingest_count, s.last_run_id, s.moved_to,
+                   s.summary, s.author, s.domain
             """,
             {"sid": source_id},
         )
@@ -225,6 +226,7 @@ class GraphDB:
             ingest_state=row[10],
             ingest_count=int(row[11]) if row[11] is not None else 0,
             last_run_id=row[12], moved_to=row[13],
+            summary=row[14], author=row[15], domain=row[16],
         )
 
     # ---- read API (#63.3) — delegates to queries module ----

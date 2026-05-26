@@ -55,9 +55,15 @@ def make_compiled_source(
     *,
     compile_state: str = "compiled",
     source_hash: str = "sha256:abc",
+    source_meta: dict | None = None,
 ) -> dict:
-    """Construct a minimal compile_result.compiled_sources[i] dict."""
-    return {
+    """Construct a minimal compile_result.compiled_sources[i] dict.
+
+    `source_meta` (D-89-17): optional Pass-1 frontmatter projection;
+    included verbatim when provided. Keys: summary, author, domain,
+    source_type, key_entities, key_themes.
+    """
+    d: dict = {
         "source_id": source_id,
         "pages": pages,
         "compile_meta": {
@@ -65,6 +71,9 @@ def make_compiled_source(
             "hash": source_hash,
         },
     }
+    if source_meta is not None:
+        d["source_meta"] = source_meta
+    return d
 
 
 def make_compile_result(

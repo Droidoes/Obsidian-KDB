@@ -172,6 +172,20 @@
             "ok": { "type": "boolean" },
             "error": { "type": ["string", "null"] }
           }
+        },
+        "source_meta": {
+          "type": "object",
+          "description": "Pass-1 frontmatter projection (D-89-17). Omitted when Pass-1 enrichment has not run for this source. Ingestor writes summary/author/domain to Source node; key_entities/key_themes are reserved for D.3+ entity extractor.",
+          "additionalProperties": false,
+          "required": ["summary", "author", "domain", "source_type", "key_entities", "key_themes"],
+          "properties": {
+            "summary": { "type": "string" },
+            "author": { "type": ["string", "null"] },
+            "domain": { "type": "string" },
+            "source_type": { "type": "string" },
+            "key_entities": { "type": "array", "items": { "type": "string" } },
+            "key_themes": { "type": "array", "items": { "type": "string" } }
+          }
         }
       }
     },

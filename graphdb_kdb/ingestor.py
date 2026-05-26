@@ -86,6 +86,7 @@ def apply_compile_result(
                 _replace_outgoing_links(conn, page, run_id, now, result)
             _replace_supports_for_source(conn, cs, run_id, now, result)
             _update_source_ingest_state(conn, cs, run_id, now)
+            _write_source_meta(conn, cs)
 
         # Phase 3.5 (#74.5): materialize alias Entity rows + ALIAS_OF edges
         # from canonical_meta.aliases_emitted. Runs after Phase 3 so the
@@ -409,6 +410,39 @@ def _update_source_ingest_state(
             s.ingest_count = s.ingest_count + 1, s.last_run_id=$run_id
         """,
         {"sid": source_id, "ts": now, "state": state, "run_id": run_id},
+    )
+
+
+def _write_source_meta(
+    conn: kuzu.Connection,
+    cs: dict,
+) -> None:
+    """Phase 3 (D-89-17): write Pass-1 frontmatter fields to Source node.
+
+    Fires only when `source_meta` is present in the compiled_source entry.
+    Writes summary, author, and domain only — key_entities/key_themes ride
+    along for future D.3+ entity extractor but are intentionally ignored here.
+    source_type is NOT overridden (the ingestor always sets 'obsidian-kdb-raw').
+
+    When source_meta is absent the SET is skipped entirely; existing NULL
+    columns remain NULL (backward-compat: compile_results without source_meta
+    stay valid).
+    """
+    source_id = cs.get("source_id")
+    source_meta = cs.get("source_meta")
+    if not source_id or not source_meta:
+        return
+    conn.execute(
+        """
+        MATCH (s:Source {source_id: $sid})
+        SET s.summary=$summary, s.author=$author, s.domain=$domain
+        """,
+        {
+            "sid": source_id,
+            "summary": source_meta.get("summary"),
+            "author": source_meta.get("author"),
+            "domain": source_meta.get("domain"),
+        },
     )
 
 

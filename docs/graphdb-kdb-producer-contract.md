@@ -486,7 +486,57 @@ For someone (today or future) building, say, an arxiv-papers compile pipeline th
 
 ---
 
-## 12. What this document does NOT do
+## 12. Amendments
+
+### Amendment D-89-17 (2026-05-26) — Pass-1 frontmatter fields in compile_result
+
+**Schema version affected**: `compile_result.json` compiledSource entries (optional field).
+
+**Change**: The Obsidian-KDB compile pipeline now includes Pass-1 frontmatter fields in each `compiled_sources[]` entry under an optional `source_meta` key. The ingestor writes `summary`, `author`, and `domain` from this object to the `Source` node in the graph when the key is present.
+
+#### compile_result.json — compiledSource shape (amended)
+
+```json
+{
+  "source_id": "KDB/raw/some-file.md",
+  "pages": [ ... ],
+  "compile_meta": { ... },
+  "source_meta": {
+    "summary": "A note about value investing principles",
+    "author": "Warren Buffett",
+    "domain": "value-investing",
+    "source_type": "personal-note",
+    "key_entities": ["berkshire-hathaway"],
+    "key_themes": ["margin-of-safety"]
+  }
+}
+```
+
+`source_meta` is **optional** — compile_result.json entries without it remain valid. The ingestor skips the SET when it is absent; `Source.summary / .author / .domain` stay NULL.
+
+#### Source node fields affected (schema v2.3)
+
+| Field | Type | Written by | When |
+|---|---|---|---|
+| `summary` | `STRING` | ingestor Phase 3 (`_write_source_meta`) | When `source_meta.summary` present |
+| `author` | `STRING` | ingestor Phase 3 (`_write_source_meta`) | When `source_meta.author` present |
+| `domain` | `STRING` | ingestor Phase 3 (`_write_source_meta`) | When `source_meta.domain` present |
+
+**Fields NOT written by this amendment**: `source_type` (stays `obsidian-kdb-raw` as set by Phase 1), `key_entities`, `key_themes` (reserved for D.3+ entity extractor).
+
+#### Data flow
+
+```
+Pass-1 frontmatter (YAML in source file)
+  → kdb_compiler/compiler.py (compile_one reads fm, builds source_meta dict)
+  → compile_result.json compiledSource.source_meta
+  → graphdb_kdb/ingestor.py _write_source_meta (Phase 3, after _update_source_ingest_state)
+  → Source node SET summary/author/domain
+```
+
+---
+
+## 13. What this document does NOT do
 
 - Does not commit any specific producer to compliance.
 - Does not define the second producer (arxiv-compile or otherwise) — it specifies what such a producer *would need* to comply.

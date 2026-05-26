@@ -212,6 +212,7 @@ class CompiledSource:
     concept_slugs: list[str] = field(default_factory=list)
     article_slugs: list[str] = field(default_factory=list)
     compile_meta: Optional[CompileMeta] = None
+    source_meta: Optional[dict] = None  # D-89-17: Pass-1 frontmatter projection
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -223,6 +224,8 @@ class CompiledSource:
         }
         if self.compile_meta is not None:
             d["compile_meta"] = self.compile_meta.to_dict()
+        if self.source_meta is not None:
+            d["source_meta"] = self.source_meta
         return d
 
 

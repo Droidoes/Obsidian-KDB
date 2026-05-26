@@ -57,6 +57,10 @@ class Source:
     ingest_count: int         # renamed from compile_count per D-A2
     last_run_id: str
     moved_to: str
+    # D-89-17: Pass-1 frontmatter fields written by ingestor when source_meta present
+    summary: Optional[str] = None
+    author: Optional[str] = None
+    domain: Optional[str] = None
 
 
 @dataclass(frozen=True)

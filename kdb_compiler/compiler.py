@@ -275,7 +275,7 @@ def compile_one(
     try:
         # --- read source ---
         try:
-            _, source_text = source_text_for(job)
+            fm, source_text = source_text_for(job)
         except (OSError, UnicodeDecodeError) as e:
             _set_failure(state, "source_read", type(e).__name__, str(e))
             state["error"] = (
@@ -434,6 +434,14 @@ def compile_one(
                 ok=True,
                 error=None,
             ),
+            source_meta={
+                "summary": fm.summary,
+                "author": fm.author,
+                "domain": fm.domain,
+                "source_type": fm.source_type,
+                "key_entities": list(fm.key_entities),
+                "key_themes": list(fm.key_themes),
+            } if fm is not None else None,
         )
         state["log_entries"] = [
             {**le, "related_source_ids": []}
