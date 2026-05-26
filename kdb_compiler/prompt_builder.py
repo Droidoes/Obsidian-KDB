@@ -115,15 +115,83 @@ def exemplar_response(source_name: str) -> dict:
     }
 
 
+_PASS1_META_BLOCK_TEMPLATE = """\
+## PASS-1 SOURCE METADATA
+The following fields were derived by the Pass-1 enrichment step and are
+TRUSTED values — do NOT re-derive them from the source body.
+
+- domain: {domain}
+- source_type: {source_type}
+- author: {author}
+
+### Source summary (from Pass-1)
+{summary}
+
+### Key themes (from Pass-1)
+{key_themes_list}
+
+**Instructions:**
+- USE `domain`, `source_type`, and `author` directly. Do NOT re-derive them.
+- For `Source.summary`: MERGE the Pass-1 summary above with the key themes into
+  a single integrated prose narrative. Weave the themes organically — do NOT
+  produce a verbatim copy of the Pass-1 summary, and do NOT append a bullet
+  list of themes.
+- `key_entities` listed below are seed entity-extraction candidates from Pass-1.
+  Begin entity extraction with these seeds; verify each is genuinely relevant to
+  the body content; supplement with additional entities discovered in the body;
+  dedupe against the existing GraphDB context snapshot as usual.
+
+### Key entity seeds (from Pass-1)
+{key_entities_list}"""
+
+
+def _build_pass1_meta_block(source_meta: dict) -> str:
+    """Render the PASS-1 SOURCE METADATA block from a source_meta dict.
+
+    Excludes kdb_signal — it is the Pass-1 gatekeeper and is noise for
+    the compile LLM (signal is already established by the time compile runs).
+    """
+    key_themes = source_meta.get("key_themes") or []
+    key_entities = source_meta.get("key_entities") or []
+
+    key_themes_list = (
+        "\n".join(f"- {t}" for t in key_themes) if key_themes else "(none)"
+    )
+    key_entities_list = (
+        "\n".join(f"- {e}" for e in key_entities) if key_entities else "(none)"
+    )
+
+    return _PASS1_META_BLOCK_TEMPLATE.format(
+        domain=source_meta.get("domain", "(unknown)"),
+        source_type=source_meta.get("source_type", "(unknown)"),
+        author=source_meta.get("author") or "(unknown)",
+        summary=source_meta.get("summary", "(none)"),
+        key_themes_list=key_themes_list,
+        key_entities_list=key_entities_list,
+    )
+
+
 def build_prompt(
     *,
     vault_root: Path,
     source_name: str,
     source_text: str,
     context_snapshot: ContextSnapshot,
+    source_meta: dict | None = None,
 ) -> BuiltPrompt:
     """Assemble (system, user) strings for one compile call. Pure after
-    the load_* calls populate their caches."""
+    the load_* calls populate their caches.
+
+    source_meta (optional): dict with Pass-1 enrichment fields
+    (domain, source_type, author, summary, key_themes, key_entities).
+    When present a 'PASS-1 SOURCE METADATA' block is inserted before
+    SOURCE CONTENT with explicit instructions per D-89-17/D-89-18:
+    - USE domain/source_type/author directly (no re-derivation)
+    - MERGE summary + key_themes into Source.summary prose (not verbatim copy)
+    - TREAT key_entities as seed candidates (verify + supplement + dedupe)
+    When None (pre-Pass-1 sources), the block is omitted and the prompt
+    renders unchanged for backward compatibility.
+    """
     system_prompt = load_system_prompt(vault_root)
     schema_text = load_response_schema_text()
 
@@ -132,8 +200,16 @@ def build_prompt(
     context_json = json.dumps(context_snapshot.to_dict(), indent=2, ensure_ascii=False)
     exemplar_json = json.dumps(exemplar_response(source_name), indent=2, ensure_ascii=False)
 
+    # Conditionally prepend the Pass-1 metadata block before SOURCE CONTENT
+    pass1_section = (
+        f"{_build_pass1_meta_block(source_meta)}\n\n"
+        if source_meta is not None
+        else ""
+    )
+
     user = (
         f"source_name: {source_name}\n\n"
+        f"{pass1_section}"
         f"## SOURCE CONTENT\n{source_text}\n\n"
         f"## EXISTING CONTEXT (graph snapshot)\n{context_json}\n\n"
         f"## RESPONSE SCHEMA\n{schema_text}\n\n"

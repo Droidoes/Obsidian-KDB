@@ -285,12 +285,26 @@ def compile_one(
         state["source_words"] = len(source_text.split())
 
         # --- build prompt ---
+        # Thread Pass-1 frontmatter through so the LLM can USE domain/source_type/
+        # author directly and MERGE summary + key_themes into Source.summary prose
+        # (D-89-17 / D-89-18). kdb_signal excluded — signal already established.
+        source_meta_dict: dict | None = None
+        if fm is not None:
+            source_meta_dict = {
+                "domain": fm.domain,
+                "source_type": fm.source_type,
+                "author": fm.author,
+                "summary": fm.summary,
+                "key_themes": list(fm.key_themes),
+                "key_entities": list(fm.key_entities),
+            }
         try:
             state["prompt"] = prompt_builder.build_prompt(
                 vault_root=vault_root,
                 source_name=source_name,
                 source_text=source_text,
                 context_snapshot=job.context_snapshot,
+                source_meta=source_meta_dict,
             )
         except Exception as e:
             _set_failure(state, "prompt_build", type(e).__name__, str(e))

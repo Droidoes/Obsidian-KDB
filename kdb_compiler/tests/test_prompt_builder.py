@@ -220,6 +220,124 @@ def test_user_includes_schema_and_exemplar(tmp_path: Path) -> None:
     assert ex_json in bp.user
 
 
+# ---------- source_meta (D-89-17 / D-89-18) ----------
+
+_SAMPLE_SOURCE_META: dict = {
+    "domain": "machine-learning",
+    "source_type": "research-paper",
+    "author": "Vaswani et al.",
+    "summary": "Introduces the Transformer architecture based on self-attention.",
+    "key_themes": ["self-attention", "parallelization", "encoder-decoder"],
+    "key_entities": ["Transformer", "multi-head attention", "positional encoding"],
+}
+
+
+def test_build_prompt_includes_source_meta_block_when_present(tmp_path: Path) -> None:
+    """When source_meta is passed the user prompt contains a '## PASS-1 SOURCE
+    METADATA' section with field values and an explicit USE instruction (D-89-17)."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+        source_meta=_SAMPLE_SOURCE_META,
+    )
+    assert "## PASS-1 SOURCE METADATA" in bp.user
+    assert "machine-learning" in bp.user
+    assert "research-paper" in bp.user
+    assert "Vaswani et al." in bp.user
+    assert "USE" in bp.user
+
+
+def test_build_prompt_omits_source_meta_block_when_absent(tmp_path: Path) -> None:
+    """Pre-Pass-1 sources (source_meta=None) get the original prompt unchanged —
+    no PASS-1 SOURCE METADATA section appears."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+    )
+    assert "## PASS-1 SOURCE METADATA" not in bp.user
+
+
+def test_build_prompt_instructs_merge_of_summary_and_themes_when_present(
+    tmp_path: Path,
+) -> None:
+    """Per D-89-18: when source_meta is present the prompt instructs the LLM to
+    weave key_themes into prose for Source.summary and explicitly prohibits a
+    verbatim copy of the frontmatter summary."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+        source_meta=_SAMPLE_SOURCE_META,
+    )
+    # key_themes appear in the block
+    assert "self-attention" in bp.user
+    assert "parallelization" in bp.user
+    # merge / weave instruction present; verbatim-copy prohibition present
+    user_lower = bp.user.lower()
+    assert "merge" in user_lower or "weave" in user_lower or "integrate" in user_lower
+    assert "verbatim" in user_lower or "not" in user_lower
+
+
+def test_build_prompt_instructs_key_entities_as_seed_candidates(
+    tmp_path: Path,
+) -> None:
+    """Per D-89-17: when source_meta is present the prompt treats key_entities
+    as seed entity-extraction candidates ('seed' language must appear)."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+        source_meta=_SAMPLE_SOURCE_META,
+    )
+    assert "Transformer" in bp.user
+    assert "multi-head attention" in bp.user
+    user_lower = bp.user.lower()
+    assert "seed" in user_lower
+
+
+def test_build_prompt_source_meta_section_precedes_source_content(
+    tmp_path: Path,
+) -> None:
+    """The PASS-1 SOURCE METADATA block must appear before SOURCE CONTENT so
+    the LLM receives context before reading the body (locked ordering)."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+        source_meta=_SAMPLE_SOURCE_META,
+    )
+    meta_idx = bp.user.index("## PASS-1 SOURCE METADATA")
+    src_idx = bp.user.index("## SOURCE CONTENT")
+    assert meta_idx < src_idx
+
+
+def test_build_prompt_source_meta_excludes_kdb_signal(tmp_path: Path) -> None:
+    """kdb_signal is the Pass-1 gatekeeper; once compile runs it's noise.
+    Even if caller passes it, the block must not surface it to the LLM."""
+    vault = _write_vault_system_prompt(tmp_path, "# rules")
+    meta_with_signal = {**_SAMPLE_SOURCE_META, "kdb_signal": "signal"}
+    bp = build_prompt(
+        vault_root=vault,
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=_snapshot(),
+        source_meta=meta_with_signal,
+    )
+    assert "kdb_signal" not in bp.user
+
+
 # ---------- drift guard ----------
 
 def test_response_contract_mentions_semantic_rules() -> None:
