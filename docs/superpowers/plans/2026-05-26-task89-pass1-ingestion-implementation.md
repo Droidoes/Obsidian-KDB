@@ -2011,7 +2011,7 @@ def main():
 
     if args.dry_run:
         print(f"[DRY-RUN] would enrich {len(sources)} sources with run_id={run_id}")
-        for s in sources:
+        for s, _ in sources:
             print(f"  {s}")
         return
 
