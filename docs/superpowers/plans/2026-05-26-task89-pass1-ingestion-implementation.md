@@ -108,6 +108,14 @@ graphdb_kdb/tests/
 
 Phase E asserts the integration via a real enriched source flow: write to `tests/fixtures/sample_source.md`, run Pass-1, run compile, inspect Source-node properties + Entity nodes in test GraphDB.
 
+## §1.1 — config.py / config/ collision (resolved, 2026-05-26)
+
+**Risk:** The C.1 commit (`76deec0`) created `kdb_compiler/config/` as a package directory. Python resolved `from kdb_compiler.config import settings` to the new package instead of the pre-existing `kdb_compiler/config.py` module (settings singleton used by `call_model.py`). The collision was silent through C.2–C.4 because those tasks never imported `call_model`. C.5's `pass1_caller` imports `call_model`, which would have triggered an `ImportError` on first test run.
+
+**Resolution (Option 2 — settings absorbed into `__init__.py`):** Full content of `kdb_compiler/config.py` was written into `kdb_compiler/config/__init__.py`; the old `config.py` was removed via `git rm`. Zero import-path churn — every existing `from kdb_compiler.config import settings` continues to work unchanged.
+
+**Verification performed:** All 4 import checks passed; 26/26 existing tests green (same commit that lands C.5 `pass1_caller`).
+
 ---
 
 ## §2 — Tasks
