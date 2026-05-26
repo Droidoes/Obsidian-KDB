@@ -1548,7 +1548,7 @@ def embed_frontmatter(source_path: Path, envelope: dict) -> None:
                                    default_flow_style=False)
         # Append user keys as a third sub-block within the same frontmatter
         pass1_block = (
-            pass1_block.rstrip("---\n")
+            pass1_block.removesuffix("---\n")
             + "\n# User-added keys (preserved)\n"
             + user_yaml
             + "---\n"

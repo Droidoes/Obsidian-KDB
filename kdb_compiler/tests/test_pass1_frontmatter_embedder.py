@@ -124,6 +124,25 @@ def test_parse_existing_frontmatter_handles_missing(tmp_path):
     assert body == "Just body. No frontmatter.\n"
 
 
+def test_embed_frontmatter_does_not_strip_trailing_dash_from_other_reason(tmp_path):
+    """Regression: rstrip('---\\n') vs removesuffix. If the last YAML value
+    ends in '-' or '\\n', a chars-strip would silently corrupt it."""
+    src = tmp_path / "essay.md"
+    src.write_text(
+        "---\n"
+        "title: Custom\n"
+        "---\n"
+        "The body.\n",
+        encoding="utf-8",
+    )
+    env = _make_envelope()
+    env["source_type"] = "other"
+    env["other_reason"] = "weird-suffix-"  # ends in dash
+    embed_frontmatter(src, env)
+    out = src.read_text(encoding="utf-8")
+    assert "weird-suffix-" in out, f"trailing dash was stripped from other_reason: {out!r}"
+
+
 def _make_envelope():
     return {
         "kdb_signal": "signal", "domain": "ai-ml", "source_type": "blog",
