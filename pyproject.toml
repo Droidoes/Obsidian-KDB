@@ -54,4 +54,5 @@ addopts      = "-ra -q -m 'not bench'"
 markers      = [
     "uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)",
     "bench: latency / runtime regression test — opt-in via `pytest -m bench`; not run by default",
+    "live: live LLM integration test — requires API key in env; skipped by default in CI",
 ]
