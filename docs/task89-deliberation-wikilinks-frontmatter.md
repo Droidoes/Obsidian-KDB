@@ -235,10 +235,87 @@ The frontmatter-mechanism decision creates one minor open question:
 
 ## 11. References
 
-- v0.1 blueprint — `task89-component1-enrichment-blueprint.md`
+- v0.1 / v0.2 / v0.2.1 blueprint — `task89-component1-enrichment-blueprint.md`
 - Round-1 property survey — `task89-additional-properties-survey-prompt.md` + 5 reviewer responses
 - Round-2 architecture review — `task89-v0.1-review-prompt.md` + 5 reviewer responses
 - Parent blueprint — Task #88 ingestion-system blueprint (see TASKS.md)
 - JOURNEY.md D49-D51 — GraphDB-as-ontology-authority lessons
 - Producer Contract v1.0
-- Memories: [[feedback_post_llm_deterministic_override]], [[feedback_no_parallel_storage_to_authority]], [[feedback_concrete_first_extract_later]], [[feedback_obsidian_wikilinks_are_vanity]] (new), [[feedback_sources_stay_static_intrinsic_frontmatter_only]] (new)
+- Memories: [[feedback_post_llm_deterministic_override]], [[feedback_no_parallel_storage_to_authority]], [[feedback_concrete_first_extract_later]], [[feedback_obsidian_wikilinks_are_vanity]], [[feedback_sources_stay_static_intrinsic_frontmatter_only]], [[feedback_integration_preconditions_are_architectural]] (v0.2.1), [[feedback_prompt_template_definition_plus_examples]] (v0.2.1)
+
+---
+
+## 12. v0.2.1 amendment — "What is frontmatter FOR?" reframe (2026-05-26 evening)
+
+A second mid-day deliberation pivoted the design when OQ-89-12 (compile-side frontmatter handling) was being scoped for implementation. The assistant had proposed a "10-line standalone fix" — `source_text_for()` strips YAML frontmatter and discards it before compile's LLM call. Joseph rejected this:
+
+> *"I kept asking the same question, is frontmatter meaningful? is frontmatter useful? you kept reassuring me yes it's meaningful, yes it's useful... NOW we are stripping it out and drop it on the floor... let me ask you again *how* is frontmatter meaningful? *how* is frontmatter useful?"*
+
+> *"Completely dropping frontmatter on the floor at the compile stage is an outrage and totally unacceptable to me... I had expected a lot more from you."*
+
+### 12.1 The reframe
+
+The assistant's initial answer to "is frontmatter meaningful" had listed multiple consumers — compile-side LLM, Obsidian UX, audit, replay, NW-5, future enhancements. Joseph applied a singular criterion:
+
+> *"One of the key questions you raised is meaningful to whom... there can be only one answer and that answer is 'to GraphDB'... we absolutely decided to create llm-pass-1 to offload llm-pass-2... every component in the frontmatter need to be meaningful and useful to the compiler pipeline and to the construction of GraphDB."*
+
+This collapses the "multiple valid consumers" framing to a single one: **does this field feed GraphDB construction?**
+
+### 12.2 Per-field audit through the GraphDB-utility lens
+
+Applied to each v0.2 field:
+
+| Field | GraphDB destination | Verdict |
+|---|---|---|
+| `kdb_signal` | Routes Source into/out of compile (Component #3/#6) | **GraphDB-essential — KEEP** |
+| `domain` | New `Source.domain` column | **GraphDB-essential — KEEP** (the original Pass-1 purpose) |
+| `source_type` | Existing `Source.source_type` column | **GraphDB-essential — KEEP** |
+| `author` | New `Source.author` column | **GraphDB-essential — KEEP** |
+| `summary` | New `Source.summary` column (compile LLM merges with key_themes) | **GraphDB-essential — KEEP** (source matter; Pass-2 doesn't regenerate) |
+| `key_entities` | Existing Entity / SUPPORTS structure (seeds extraction) | **GraphDB-essential — KEEP** |
+| `key_themes` | Merged into Source.summary by compile LLM; no own column in v1 | **KEEP separate in frontmatter; merge in compile LLM** (D-89-18) |
+| `confidence` | None (Pass-2 ignores) | **KEEP in frontmatter (audit section); not consumed by Pass-2** |
+| `uncertainty_reason`, `reject_reason`, `prompt_version`, `model`, `schema_version`, `override` block | None (Pass-2 ignores) | **KEEP in frontmatter (audit section); not consumed by Pass-2** |
+
+### 12.3 The two-section frontmatter (D-89-16)
+
+The audit fields fail the GraphDB-utility test directly — but they ARE intrinsic to the Pass-1 enrichment instance and serve real Pass-1-side purposes (user visibility, replay correspondence, drift detection). Sectionalizing the frontmatter resolves the tension:
+
+- **GraphDB-input section** — Pass-2 consumes
+- **Audit section** — Pass-1's own; Pass-2 ignores
+
+Both live in the same on-disk YAML frontmatter block. An earlier proposal during this deliberation to move audit fields to sidecar-only was overcorrection (per Joseph's clarification "confidence will stay with audit components in llm-pass-1"). Frontmatter has dual structure, not single criterion.
+
+### 12.4 Compile consumes frontmatter in v1 (D-89-17)
+
+v0.2 §10.4 had deferred compile-side frontmatter consumption to "v1.x amendments." 2026-05-26 evening promoted this to v1-required. Rationale per [[feedback_integration_preconditions_are_architectural]]: Pass-1 was created specifically to offload compile-side LLM work; if compile ignores Pass-1's output, the integration's purpose is defeated. The right minimum-viable fix closes the integration loop, not just prevents breakage.
+
+Compile-side v1 work expands from "10-line strip" to:
+- Parse YAML frontmatter → return `(frontmatter_dict, body_text)`
+- Use `domain`, `source_type`, `author` directly for Source-node columns (skip LLM re-derivation)
+- Pass `summary` + `key_themes` into compile LLM (which merges them into Source.summary per D-89-18)
+- Use `key_entities` as seed candidates for entity extraction
+- Strip audit section before compile LLM input
+- Update compile prompt template to explain frontmatter usage
+
+GraphDB schema additions: `Source.summary`, `Source.author`, `Source.domain` (or new Source→Domain edge — design call at writing-plans).
+
+### 12.5 Compile LLM merges summary + key_themes (D-89-18)
+
+Earlier in the deliberation the assistant suggested deterministic Python concatenation for the merge. Joseph rejected:
+
+> *"Compile LLM merge is a better idea because it forces the LLM to process both sections instead of treating it as a pass through."*
+
+The LLM merge ensures both fields are engaged with and integrated meaningfully into a coherent Source.summary. Themes-as-prose-in-summary covers the v1 use case; a Theme node type (NW-8) is deferred to v0.3+ pending telemetry that string-matching themes in Source.summary is insufficient.
+
+### 12.6 New principles ratified during v0.2.1
+
+Two memories captured and one sharpened during this deliberation:
+
+- **[[feedback_integration_preconditions_are_architectural]]** (new) — when wiring two components, ask what the integration is FOR; strip-and-discard signals you've forgotten the upstream's purpose. The 10-line-fix proposal is the cautionary example.
+- **[[feedback_prompt_template_definition_plus_examples]]** (new) — Pass-1 prompts (and other LLM-emitted-field prompts) use a definition + examples template. Examples ground SHAPE, not relationships.
+- **[[feedback_no_edge_predeclaration_no_hints]]** (sharpened) — the no-hints rule is about not hiding behind examples to make architectural decisions you can't justify; it does NOT prohibit examples-as-classification-clarification. Examples-for-field-shape OK; examples-for-edges NOT OK.
+
+### 12.7 Sequencing impact
+
+OQ-89-12 is **rescoped and closed** as a separate "ship-blocker." The compile-side integration work is absorbed into the Pass-1 implementation arc per D-89-17. Build order remains: Pass-1 ingestion implementation → compile-side integration → end-to-end. The "tunnel ends meet in the middle" moment is when compile is updated to consume Pass-1's frontmatter.

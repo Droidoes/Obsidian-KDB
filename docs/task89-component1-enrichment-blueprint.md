@@ -1,6 +1,13 @@
-# Task #89 — Component #1 (Enrichment) Deep-Design: v0.2 Blueprint
+# Task #89 — Component #1 (Enrichment) Deep-Design: v0.2.1 Blueprint
 
-**Status:** **v0.2 — folded 2026-05-26** (round-2 architecture review panel returned 5/5 clean; Joseph-led deliberation locked all forks before this fold). Round-1 property additions deferred to **v0.3** (separate deliberation pass).
+**Status:** **v0.2.1 — amended 2026-05-26 evening** (frontmatter audit + compile-consumption-in-v1 redirect). v0.2 folded earlier the same day after round-2 architecture review panel (5/5 clean) + Joseph-led deliberation. Round-1 property additions deferred to **v0.3** (separate deliberation pass).
+
+**v0.2.1 amendment sources:**
+- 2026-05-26 evening "what is frontmatter FOR" deliberation (Joseph-led)
+- Three new locked decisions: D-89-16 (frontmatter sectionalization), D-89-17 (compile consumes in v1), D-89-18 (key_themes merge via compile LLM)
+- Two new principle memories: [[feedback_integration_preconditions_are_architectural]], [[feedback_prompt_template_definition_plus_examples]]
+- Sharpening of [[feedback_no_edge_predeclaration_no_hints]] (examples-for-shape OK; examples-for-edges NOT OK)
+- See `docs/task89-deliberation-wikilinks-frontmatter.md` §12+ for the full lineage
 
 **v0.2 fold sources:**
 - 5 round-2 architecture review responses (`docs/task89-v0.1-review-{codex,qwen,grok,deepseek,gemini}.md`)
@@ -96,25 +103,41 @@ All four are config-driven path-expression decisions; none is a "gate" in the ro
 
 ---
 
-## 2. Pass-1 output schema (locked)
+## 2. Pass-1 output schema (locked, sectionalized in v0.2.1 per D-89-16)
 
-Component #1 emits, per source, the following YAML frontmatter at the top of the source markdown:
+Component #1 emits, per source, YAML frontmatter at the top of the source markdown, organized into **two sections** (D-89-16):
+
+- **GraphDB-input section** — fields Pass-2 (compile) reads and uses for GraphDB construction
+- **Audit section** — Pass-1's own audit/replay metadata; **Pass-2 ignores this section**
+
+Both sections live in the same YAML frontmatter block on disk (single source of truth; user sees both in Obsidian; replay archive corresponds to both).
 
 ```yaml
 ---
-# === KDB-Signal (the gate) ===
+# ============================================================
+# GraphDB-input section — Pass-2 (compile) consumes (D-89-17)
+# ============================================================
+
+# --- Routing gate ---
 kdb_signal: signal | noise           # binary; "uncertain" routes to signal per D-88-4 bias-to-inclusion
                                       # may be overridden post-Pass-1 by force_signal / force_noise (§4)
+                                      # Routes Source into/out of compile via Component #3/#6 upstream
 
-# === Substantive classification ===
-domain: <one of 23 NW-4 v0.4 ids>     # required; LLM picks one from canonical vocab
-source_type: <one of NW-7 ids>        # required; LLM picks one (v0.1 placeholder list; NW-7 ratifies)
-author: <string or null>              # source attribution; null if not attributable
-summary: <1-3 sentences of prose>     # cheap-read distillation for humans + Pass-2 + queries
-key_entities: [<string>, ...]         # raw mentions (people, companies, places, concepts) — unresolved
-key_themes: [<string>, ...]           # 2-5 finer-grain than domain; free-form
+# --- Substantive classification (compile reads + writes to GraphDB) ---
+domain: <one of 23 NW-4 v0.4 ids>     # required; → Source.domain (new column per D-89-17)
+source_type: <one of NW-7 ids>        # required; → Source.source_type (existing column)
+author: <string or null>              # required; → Source.author (new column per D-89-17)
+summary: <1-3 sentences of prose>     # required; → Source.summary (new column per D-89-17)
+                                      #   compile LLM merges with key_themes when writing (D-89-18)
+key_entities: [<string>, ...]         # required; → seeds Entity nodes + SUPPORTS edges (existing)
+key_themes: [<string>, ...]           # required; 2-5 finer-grain themes
+                                      #   stays separate in frontmatter; compile LLM merges into
+                                      #   Source.summary at write time (D-89-18); no Source.themes column
 
-# === Audit fields (Codex F4 from #88 v0.1 review) ===
+# ============================================================
+# Audit section — Pass-1's own; Pass-2 IGNORES (D-89-16)
+# ============================================================
+
 confidence: 0.0-1.0                   # LLM-emitted confidence in the kdb_signal call
 uncertainty_reason: <string or null>  # populated when confidence is low; "uncertain → pass" preserved
 reject_reason: <string or null>       # populated when kdb_signal = noise; reason given by LLM
@@ -122,37 +145,63 @@ prompt_version: <semver>              # the prompt template version used
 model: <model_id>                     # e.g., "deepseek-v4-flash:direct"
 schema_version: <int>                 # this schema's version (starts at 1)
 
-# === Deterministic override audit (only present if overridden) ===
-override:                              # optional block; absent if no override applied
-  applied: signal | noise              # the deterministic verdict
-  rule: force_signal | force_noise     # which list matched
-  match: <path expression>             # the specific glob that fired
-  llm_original: signal | noise         # what the LLM had emitted before override
+# Deterministic override audit (always emitted per Grok OQ-3 v0.2 fix) ---
+override:
+  applied: signal | noise | null      # the deterministic verdict (null if no override fired)
+  rule: force_signal | force_noise | null
+  match: <path expression> | null     # the specific glob that fired
+  llm_original: signal | noise        # what the LLM had emitted before override
+  reject_reason_cleared: <string> | null  # if force_signal cleared an LLM reject_reason
 ---
 
 <original source body content unchanged>
-
-<wikilinks block at end — see §6, open architectural decision>
 ```
+
+**Note on the audit section staying in frontmatter (D-89-16 rationale):** The audit fields are Pass-1's own metadata about *how this source was enriched* — confidence in the call, model used, prompt version, override rationale. Per [[feedback_sources_stay_static_intrinsic_frontmatter_only]], these describe how Pass-1 processed the source (intrinsic to this enrichment instance), not derived relationships to other sources. They live in frontmatter for:
+- User visibility (Obsidian renders them as Properties; user can spot low-confidence sources or overridden ones)
+- Replay correspondence (sidecar JSON envelope and on-disk frontmatter mirror each other)
+- Future audit telemetry (NW-5 benchmark, drift detection)
+
+Pass-2 (compile) does NOT read this section. It is filtered out before the compile LLM call.
 
 ### 2.1 Property definitions
 
+**GraphDB-input section** (Pass-2 reads + uses for GraphDB construction):
+
+| Field | Type | Required | GraphDB destination | Description |
+|---|---|---|---|---|
+| `kdb_signal` | enum: `signal \| noise` | yes | Routes upstream — gates whether Source enters compile via Component #3/#6 | Bias-to-inclusion per D-88-4: "uncertain" → `signal`. LLM emits content-only judgment; deterministic post-Pass-1 layer may override (§4). |
+| `domain` | enum (23 NW-4 v0.4 ids) | yes | **`Source.domain`** (new schema column) | Substantive classification. LLM picks one. `undecided` is allowed; `science-technology` is gated by the catch-all self-check per NW-4 §4.4. |
+| `source_type` | enum (NW-7 placeholder list) | yes | `Source.source_type` (existing column) | Source form. LLM picks one (e.g., `post`, `transcript-podcast`, `letter`). v0.2 placeholder list in §9; NW-7 ratifies. |
+| `author` | string \| null | yes | **`Source.author`** (new schema column) | Source attribution. LLM extracts from content + filename if available; `null` if not attributable. |
+| `summary` | string (1-3 sentences) | yes | **`Source.summary`** (new schema column) | Prose distillation. Compile LLM merges with `key_themes` when writing Source.summary (D-89-18). |
+| `key_entities` | list[string] | yes | Seeds Entity nodes + SUPPORTS edges (existing graph structure) | Raw mentions — people, companies, places, concepts surfaced by the LLM. Compile's entity extractor uses these as seeds; verifies, dedupes against existing GraphDB, supplements with entities discovered in body. |
+| `key_themes` | list[string] | yes | Merged into `Source.summary` by compile LLM (D-89-18); no own column | 2-5 themes finer-grain than `domain`. Free-form. Stays separate in frontmatter for Pass-1 transparency; compile LLM weaves into Source.summary prose. NW-8 may add a Theme node type in v0.3+ if telemetry justifies. |
+
+**Audit section** (Pass-2 IGNORES per D-89-16):
+
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `kdb_signal` | enum: `signal \| noise` | yes | The gate. Bias-to-inclusion per D-88-4: "uncertain" → `signal`. LLM emits content-only judgment; deterministic post-Pass-1 layer may override (§4). |
-| `domain` | enum (23 NW-4 v0.4 ids) | yes | Substantive classification. LLM picks one. `undecided` is allowed; `science-technology` is gated by the catch-all self-check per NW-4 §4.4. |
-| `source_type` | enum (NW-7 placeholder list) | yes | Source form. LLM picks one (e.g., `post`, `transcript-podcast`, `letter`). v0.1 placeholder list in §9; NW-7 ratifies. |
-| `author` | string \| null | yes | Source attribution. LLM extracts from content + filename if available; `null` if not attributable. |
-| `summary` | string (1-3 sentences) | yes | Prose distillation. Cheap-read downstream payoff: humans / Pass-2 / future queries scan without re-reading the source. |
-| `key_entities` | list[string] | yes | Raw mentions — people, companies, places, concepts surfaced by the LLM. Unresolved (no GraphDB matching at Pass-1 time). Feeds wikilink layer in §6 (depending on chosen path). |
-| `key_themes` | list[string] | yes | 2-5 themes finer-grain than `domain`. Free-form (per D-NW4-3 curation rule — no controlled vocab yet; promotion may come later via OQ-NW4-15 telemetry). |
-| `confidence` | float 0.0-1.0 | yes | LLM-emitted confidence in the `kdb_signal` call. |
+| `confidence` | float 0.0-1.0 | yes | LLM-emitted confidence in the `kdb_signal` call. Pass-1 audit; no GraphDB consumer (Pass-2 ignores). User-visible in Obsidian. |
 | `uncertainty_reason` | string \| null | yes | Populated when `confidence < 0.6` OR when `kdb_signal = signal` but the LLM had doubts. Preserves "uncertain → pass" audit trail. |
 | `reject_reason` | string \| null | yes | Populated when `kdb_signal = noise`. The LLM's stated reason. Enables false-reject audit per D-88-3. |
 | `prompt_version` | semver string | yes | The prompt template version. Bumped on prompt change. |
 | `model` | string | yes | Model id (e.g., `deepseek-v4-flash:direct`). |
 | `schema_version` | int | yes | Schema version, starts at 1; bumped on additive or breaking schema change. |
-| `override` | object \| absent | no | Present only if deterministic post-Pass-1 layer overrode the LLM. See §4.3. |
+| `override` | object (always emitted) | yes | Override audit block. `applied: null` when no override fired (Grok OQ-3 fix). See §4.3-§4.6. |
+
+### 2.1.1 Why the audit section stays in frontmatter (D-89-16)
+
+The audit fields describe **how this source was enriched** — confidence in the call, model used, prompt version, override rationale. These are properties of the Pass-1 enrichment instance, not of relationships to other sources. They are intrinsic to this enrichment, consistent with [[feedback_sources_stay_static_intrinsic_frontmatter_only]].
+
+Consumers (in v1):
+- **User in Obsidian** — sees confidence, reject_reason, override block in side-panel Properties. Spots low-confidence sources at a glance.
+- **Replay archive correspondence** — sidecar JSON envelope mirrors frontmatter audit fields one-to-one. Either is reconstructable from the other.
+- **Future NW-5 benchmark** — reads confidence + override patterns for evaluation.
+- **Future drift detection** — aggregates prompt_version / model across re-enrichments.
+
+NOT a consumer in v1:
+- **Compile (Pass-2)** — does not read this section; strips it (along with the rest of the frontmatter) before its LLM call. Audit metadata has no GraphDB graph-construction role.
 
 ### 2.2 Schema versioning + migration
 
@@ -678,37 +727,68 @@ Per [[feedback_no_parallel_storage_to_authority]] and the architectural decision
 | Run journal | `state/ingest_runs/<run_id>/journal.json` (§5.4) |
 | Sidecar archive | `state/ingest_runs/<run_id>/<source_id>.json` per source (§5.3) |
 
-### 10.3 v1.1+ — Pass-1 as a second producer (deferred)
+### 10.3 v1.1+ — Pass-1 as a second producer (still deferred)
 
-Once enrichment proves out, v1.1+ MAY introduce Pass-1 as a SECOND GraphDB producer:
+Once enrichment proves out, v1.1+ MAY introduce Pass-1 as a SECOND GraphDB producer that writes additional ingestion-side state directly to GraphDB (orphan tracking, cleanup retraction, etc.):
 - New producer contract document: `docs/graphdb-kdb-enrichment-producer-contract.md` (sibling to the v1.0 producer contract)
-- Pass-1 writes Source-level enrichment properties (summary, key_entities, etc.) to GraphDB Source nodes
 - Same journal + sidecar + retraction patterns (matches #67 / #68 cleanup-event precedent)
 
-This is **explicitly deferred from v1.** Reason: the per-source enrichment must be proven on disk first; layering GraphDB writes on top of an unproven structure risks designing for a model that turns out to be wrong. Per [[feedback_concrete_first_extract_later]].
+This is **explicitly deferred from v1.** Compile remains the single producer for v1; Pass-1's contribution to GraphDB flows through compile reading + using the frontmatter (§10.4).
 
-### 10.4 Compile reads enriched source
+### 10.4 Compile consumes the frontmatter in v1 (D-89-17 — promoted from "v1.x amendment")
 
-Compile (existing behavior) reads source markdown. With v0.2 in place, compile sees the new frontmatter at top + body underneath. Compile's existing entity extraction operates on the body; the new frontmatter is **available as metadata** for compile to use (e.g., compile could pre-populate Source.domain from frontmatter.domain rather than re-extracting). v0.2 does NOT require compile changes BEYOND the §10.5 integration precondition; v1.x compile-side amendments can leverage frontmatter as a follow-up.
+**v0.2.1 reframe:** v0.2's §10.4 said "compile MAY use frontmatter as a follow-up in v1.x." During the 2026-05-26 evening "what is frontmatter FOR" deliberation, this was promoted to **v1-required behavior** (D-89-17). Rationale: Pass-1 exists specifically to offload Pass-2 LLM work; if compile ignores the frontmatter and re-derives everything via its own LLM, Pass-1 delivers no value. The integration intent is consumption, not coexistence.
 
-### 10.5 Integration precondition: compile must strip YAML frontmatter before its LLM call (Deepseek F-3)
+Per [[feedback_integration_preconditions_are_architectural]] — the right minimum fix is whatever closes the integration loop the two components were designed for, not "make compile not break."
 
-**This is a blocking precondition for Pass-1 to ship.**
+**Compile-side v1 changes — summary list:**
 
-Compile's source-reading code path predates Pass-1 frontmatter. It currently reads source markdown as raw text and feeds it to compile's LLM. After Pass-1 lands, every enriched source has a YAML frontmatter block at the top. If compile feeds that frontmatter to its LLM verbatim:
+| Frontmatter field | Compile action |
+|---|---|
+| (entire frontmatter block) | Parse YAML at the top of the source; separate from body before any LLM call (§10.5) |
+| `kdb_signal` | Read; honor as routing input (Component #3/#6 may have already filtered, but compile re-checks defensively) |
+| `domain` | Read; write to `Source.domain` (new schema column); do NOT re-classify via LLM |
+| `source_type` | Read; write to `Source.source_type` (existing column); do NOT re-classify |
+| `author` | Read; write to `Source.author` (new schema column); do NOT re-extract |
+| `summary` | Read; pass into the compile LLM call alongside `key_themes`; LLM produces merged `Source.summary` (D-89-18) |
+| `key_themes` | Read; pass into the compile LLM call alongside `summary`; merged into `Source.summary` (D-89-18) |
+| `key_entities` | Read; pass as **seed candidates** for the compile entity-extraction step; LLM verifies, dedupes against GraphDB, supplements with body-discovered entities |
+| Audit section (entire) | Ignore (per D-89-16) — strip out before LLM call along with the rest of the frontmatter |
 
-- The LLM sees metadata-as-content: `kdb_signal: signal`, `domain: value-investing`, `key_entities: [Warren Buffett, Berkshire Hathaway, ...]`, etc.
-- Compile's entity extraction may emit entities for metadata values (e.g., emit "value-investing" as an entity instead of recognizing it as a domain tag)
-- The LLM's reasoning context is polluted; compile quality silently degrades
+**Required GraphDB schema additions (D-89-17 implies):**
 
-**Required compile-side fix before Pass-1 ships:** compile's source-reading path must either
+- `Source.summary STRING`
+- `Source.author STRING`
+- `Source.domain STRING` (or new Source→Domain edge — design call during writing-plans)
 
-- (a) Strip the YAML frontmatter block before feeding source body to its LLM, OR
-- (b) Pass the frontmatter to its LLM as a separate structured-metadata block (with explicit framing: "the following YAML is metadata about this source, not source content"), not as raw body text
+Existing `Source.source_type` column gets populated for the first time (was previously inferred or null).
 
-**v0.2 tracking:** the implementation plan for Pass-1 MUST include this compile-side fix as an upstream dependency. Pass-1 cannot ship before compile is verified to handle frontmatter correctly. Filed as **OQ-89-12** (integration precondition; not a Pass-1 design question but a Pass-1 ship-blocker).
+**Compile prompt template changes (per Joseph 2026-05-26 [2]):** The compile LLM prompt must include explicit instructions on what each frontmatter field means and how to use it. Specifically:
 
-Acceptance test for OQ-89-12 closure: run compile on an enriched source; verify compile's entity extraction does not emit entities for frontmatter values.
+- For trusted fields (`domain`, `source_type`, `author`): instruct the LLM to USE the value, NOT re-derive
+- For `summary` + `key_themes`: instruct the LLM to MERGE both into a final Source.summary that weaves themes into prose (D-89-18 — force the LLM to engage with both, not pass-through)
+- For `key_entities`: instruct the LLM to TREAT as seed candidates for entity extraction, supplementing with body-found entities
+
+The new compile prompt explicitly excludes the audit section (which has already been stripped by the source-reading layer per §10.5).
+
+### 10.5 Frontmatter-handling implementation responsibility (was: "compile must strip" — Deepseek F-3, now expanded)
+
+The source-reading layer in compile (`source_text_for()` in `kdb_compiler/compiler.py:104-107`) is responsible for:
+
+1. **Read** the raw file
+2. **Parse** the YAML frontmatter block at the top (if present)
+3. **Split** into `(frontmatter_dict, body_text)` and return both
+4. The Source-node writer uses the frontmatter dict to populate Source columns
+5. The compile LLM call receives only the body text (audit section + GraphDB-input section both stripped from LLM input; GraphDB-input section is delivered via prompt-builder as structured metadata per the compile prompt template)
+
+This expands what was v0.2's "OQ-89-12 ship-blocker precondition" (strip-and-discard) into a full integration enhancement (parse + use + write). The work is absorbed into the Pass-1 implementation arc.
+
+**Acceptance test:** run compile on an enriched source; verify:
+- `Source.domain`, `Source.author`, `Source.summary`, `Source.source_type` are populated from frontmatter values
+- `key_entities` from frontmatter appear as seeded Entity nodes + SUPPORTS edges (compile may add more from body discovery)
+- Compile LLM does NOT emit entities for metadata values (frontmatter is not pollution-leaking into entity extraction)
+- The audit section does not influence Source node properties
+- `Source.summary` is a merged prose that integrates both the Pass-1 summary AND the key_themes (not a verbatim copy of Pass-1's summary)
 
 ---
 
@@ -841,6 +921,43 @@ Implication: providers that lack reliable structured-output support cannot be us
 
 **Rationale:** Audit signal preserved — the override block records both the LLM's pre-override emission and the deterministic result, letting us spot whether the default `force_noise` patterns are correctly calibrated (e.g., do Daily Notes consistently get LLM-emitted `noise`, or does the LLM frequently disagree?). At single-user-scale with infrequent workload ([[feedback_no_imaginary_risk]]), cost is the lesser concern. If post-deployment telemetry shows the LLM-pre-override emission consistently agrees with the deterministic outcome (~99%+), v1.1+ can add the short-circuit then. Filed as OQ-89-10.
 
+### D-89-16 — Frontmatter sectionalized: GraphDB-input + Audit (2026-05-26 evening)
+
+**Decision:** Pass-1 frontmatter has two explicit sections in the YAML output:
+- **GraphDB-input section** — fields Pass-2 (compile) reads + uses for GraphDB construction (`kdb_signal`, `domain`, `source_type`, `author`, `summary`, `key_entities`, `key_themes`)
+- **Audit section** — Pass-1's own audit/replay metadata (`confidence`, `uncertainty_reason`, `reject_reason`, `prompt_version`, `model`, `schema_version`, `override` block); **Pass-2 IGNORES this section**
+
+Both sections stay in the same on-disk YAML frontmatter block (single source of truth; user-visible; replay-corresponding).
+
+**Rationale:** During 2026-05-26 evening "what is frontmatter FOR" deliberation, Joseph applied a singular criterion to the schema: *"every component in the frontmatter need to be meaningful and useful to the compiler pipeline and to the construction of GraphDB."* The audit fields don't pass that test for compile's GraphDB-construction job — but they ARE intrinsic to the Pass-1 enrichment instance and serve real Pass-1 purposes (user visibility, replay correspondence, drift detection). Sectionalization preserves both: GraphDB-input fields feed compile; audit fields stay visible to user/replay/telemetry without polluting compile's LLM.
+
+The earlier proposal to move audit fields to sidecar-only was overcorrection. Audit fields LIVE in frontmatter; Pass-2 just filters them out before its LLM call.
+
+### D-89-17 — Compile consumes the frontmatter in v1 (NOT v1.x deferral) (2026-05-26 evening)
+
+**Decision:** Compile reads the GraphDB-input section of the frontmatter in v1 and uses it for Source-node population (without LLM re-derivation). Required GraphDB schema additions:
+- `Source.summary STRING` (new)
+- `Source.author STRING` (new)
+- `Source.domain STRING` (new) — or new Source→Domain edge (design call at writing-plans)
+
+Existing `Source.source_type` column gets populated for the first time.
+
+The OQ-89-12 "strip-and-discard" framing (v0.2) is **withdrawn**; compile-side work expands from a single-function frontmatter-strip into a full integration enhancement (parse + use + write). Absorbed into the Pass-1 implementation arc.
+
+**Rationale:** During the 2026-05-26 evening deliberation, Joseph called out the strip-and-discard proposal as "an outrage" — Pass-1 was created specifically to offload domain (and other) extraction from compile (Pass-2); if compile ignores Pass-1's frontmatter and re-derives everything via its own LLM, the entire integration's purpose is defeated. The right minimum-viable fix is the one that closes the integration loop, not the one that prevents breakage with minimum change. Memory: [[feedback_integration_preconditions_are_architectural]].
+
+This corrects the v0.2 §10.4 deferral of "compile MAY use frontmatter as v1.x amendment" — promoted to v1-required.
+
+### D-89-18 — Compile LLM merges summary + key_themes (NOT deterministic Python) (2026-05-26 evening)
+
+**Decision:** When compile writes `Source.summary`, it does NOT do a verbatim copy of `frontmatter.summary`. Instead, compile's LLM prompt receives both `frontmatter.summary` AND `frontmatter.key_themes`, and the LLM produces a merged Source.summary that weaves themes into the summary prose.
+
+`key_themes` stays as a separate field in the frontmatter (visible to user, replay-archive-corresponding). It does NOT get its own GraphDB column (no `Source.themes`); the LLM merge integrates them into `Source.summary`.
+
+**Rationale:** Joseph 2026-05-26: *"compile LLM merge is a better idea because it forces the LLM to process both sections instead of treating it as a pass through."* A deterministic Python concatenation would be cheaper but mechanical; the LLM merge ensures both fields are processed and integrated meaningfully into a coherent Source.summary. The cost — one extra LLM step — is justified by the engagement guarantee.
+
+This eliminates the need for a Theme node type in v1 (themes-as-prose-in-summary covers the use case). NW-8 (Theme node design) is filed as a v0.3+ deliberation if telemetry later shows graph-traversal queries on themes would add value beyond string-matching in Source.summary.
+
 ---
 
 ## 13. Open questions
@@ -890,9 +1007,13 @@ D-89-15 explicitly keeps the LLM call on force_noise matches for audit signal. P
 
 D-89-12 / Deepseek B' hook. Pass-1 emits `key_entities`; compile owns wikilink resolution. v1.1+ may layer LLM-grounded suggestions on top IF compile's mechanical entity matching shows measurable gaps. Watch metric: human-spot-check disagreement rate on compile's `LINKS_TO` edges; or a NW-5 wikilink-relevance probe (if NW-5 includes one). If compile's matching is sufficient, this OQ never activates.
 
-### OQ-89-12 — Compile YAML-frontmatter-strip integration precondition (BLOCKING — Deepseek F-3)
+### OQ-89-12 — Compile-side frontmatter integration (CLOSED + RESCOPED by D-89-17)
 
-§10.5 — compile's source-reading code path predates Pass-1 frontmatter. Before Pass-1 ships, compile MUST be verified to strip YAML frontmatter (or consume it as structured metadata) before feeding source content to its LLM. This is a **Pass-1 ship-blocker**. Acceptance test: run compile on an enriched source; verify entity extraction does not emit entities for frontmatter values.
+**Status:** v0.2 framed this as a "strip-and-discard ship-blocker." 2026-05-26 evening deliberation rescoped it: compile must not just strip — it must **consume** the GraphDB-input section of the frontmatter (use values to populate Source.domain/author/summary/source_type without LLM re-derivation; seed entity extraction with key_entities; merge summary+key_themes via LLM into Source.summary). Schema additions required (§10.4). Absorbed into the Pass-1 implementation arc rather than tracked as a separate "blocking precondition." See D-89-17 and §10.4/§10.5 for the rescoped work.
+
+### OQ-89-15 — NW-8 Theme node design (new, deferred to v0.3+)
+
+Should GraphDB have a first-class Theme node type (parallel to Domain), so themes can be queried via graph traversal (e.g., "all sources discussing intrinsic value", "themes co-occurring with entity X")? v1 covers themes via the merge-into-Source.summary mechanism (D-89-18); a Theme node type adds traversal power but requires its own NW-class deliberation (vocab, curation, aliases, canonicalization — analogous to NW-4 for Domain). File as separate sub-task if telemetry shows string-matching themes in Source.summary is insufficient for the queries Joseph cares about.
 
 ### OQ-89-13 — Provider parity on structured-output support
 
@@ -904,11 +1025,11 @@ The round-1 property-additions survey returned 5/5 with substantive proposals �
 
 ---
 
-## 14. Decision summary (v0.1 + v0.2)
+## 14. Decision summary (v0.1 + v0.2 + v0.2.1)
 
 | ID | Source | Status | Where in this doc |
 |---|---|---|---|
-| D-89-1 | Brainstorm 2026-05-25 | Locked | §2 + §12 |
+| D-89-1 | Brainstorm 2026-05-25 | Locked (audit/schema split refined by D-89-16) | §2 + §12 |
 | D-89-2 | Brainstorm 2026-05-25 (rename verdict→KDB-Signal) | Locked + propagated to parent blueprint | §2 + §12 |
 | D-89-3 | Brainstorm 2026-05-25 (path-expression overrides) | Locked | §4 + §12 |
 | D-89-4 | Brainstorm 2026-05-25 (Daily Notes/Projects defaults) | Locked (mechanism clarified by D-89-14) | §4.2 + §12 |
@@ -923,6 +1044,9 @@ The round-1 property-additions survey returned 5/5 with substantive proposals �
 | D-89-13 | v0.2 deliberation 2026-05-26 (structured JSON + deterministic embed) | Locked | §3 + §12 |
 | D-89-14 | v0.2 deliberation 2026-05-26 (D-88-11 amended; path-override mechanism) | Locked + propagated to parent blueprint commit `092b44f` | §8.2 + §12 |
 | D-89-15 | v0.2 deliberation 2026-05-26 (no pre-LLM short-circuit) | Locked | §4.7 + §12 |
+| D-89-16 | v0.2.1 deliberation 2026-05-26 evening (frontmatter sectionalized: GraphDB-input + Audit) | Locked | §2 + §12 |
+| D-89-17 | v0.2.1 deliberation 2026-05-26 evening (compile consumes frontmatter in v1; schema additions; OQ-89-12 rescoped) | Locked | §10.4 + §12 |
+| D-89-18 | v0.2.1 deliberation 2026-05-26 evening (compile LLM merges summary + key_themes) | Locked | §10.4 + §12 |
 
 ### Round-2 panel non-controversial fixes folded into v0.2
 
@@ -939,6 +1063,20 @@ The round-1 property-additions survey returned 5/5 with substantive proposals �
 ### Round-1 panel: deferred
 
 Round-1 property-additions survey returned 5/5 with substantive proposals. v0.2 explicitly does NOT fold these — they require their own deliberation pass with the same convergence + Joseph-led ratification flow used for D-89-12/13/14/15. Tracked as OQ-89-14; v0.3 opens that deliberation.
+
+### v0.2.1 amendments (2026-05-26 evening — Joseph-led "what is frontmatter FOR" deliberation)
+
+| Decision / change | Origin | Where in v0.2.1 |
+|---|---|---|
+| D-89-16 — Frontmatter sectionalized: GraphDB-input + Audit | Joseph's [1] reframe: "every component in the frontmatter need to be meaningful and useful to the compiler pipeline and to the construction of GraphDB" | §2, §12 |
+| D-89-17 — Compile consumes frontmatter in v1 (not v1.x); Source schema additions | Joseph's [2]: strip-and-discard called out as "outrage"; integration intent must close the loop | §10.4, §10.5, §12 |
+| D-89-18 — Compile LLM merges summary + key_themes | Joseph's [3] (this conversation): force LLM to engage with both fields, not pass-through | §10.4, §12 |
+| key_themes stays in frontmatter as separate field | Joseph's [3]: "keep summary and key_themes *separated* in the frontmatter in llm-pass-1" | §2.1 |
+| Confidence stays in frontmatter audit section; compile ignores | Joseph's [3] / [6] correction: "confidence will stay with audit components in llm-pass-1" | §2.1.1 |
+| Audit section stays in frontmatter (not sidecar-only) | Joseph's [1] reframe — earlier proposal to move audit to sidecar was overcorrection | §2, §2.1.1 |
+| OQ-89-12 rescoped from "strip ship-blocker" → integration enhancement absorbed into Pass-1 implementation arc | D-89-17 | §10.5, §13 OQ-89-12 |
+| OQ-89-15 — NW-8 Theme node design (new, deferred) | D-89-18 covers themes via summary-merge in v1; Theme node design is v0.3+ if telemetry justifies | §13 OQ-89-15 |
+| Memory captures | New: [[feedback_integration_preconditions_are_architectural]]; [[feedback_prompt_template_definition_plus_examples]]. Sharpened: [[feedback_no_edge_predeclaration_no_hints]] (examples-for-shape OK; examples-for-edges NOT) | — |
 
 ---
 
@@ -1020,4 +1158,4 @@ in the same panel cycle without conflict.
 
 ---
 
-**END OF BLUEPRINT v0.2**
+**END OF BLUEPRINT v0.2.1**
