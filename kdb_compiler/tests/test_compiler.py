@@ -1207,7 +1207,8 @@ def test_cli_happy_path_returns_zero(
 
 def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
     """Per D-89-17 + §10.5: source_text_for splits frontmatter from body."""
-    from kdb_compiler.compiler import source_text_for, SourceFrontmatter
+    from kdb_compiler.compiler import source_text_for
+    from kdb_compiler.source_io import SourceFrontmatter
 
     src = tmp_path / "essay.md"
     src.write_text(
