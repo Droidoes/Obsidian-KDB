@@ -57,11 +57,31 @@ relationships.)
 - `author`: string or null. Extract the source's primary author from the
   content if attributable; null otherwise.
 - `summary`: 1-3 sentences distilling the substantive content. Plain prose.
-- `key_entities`: list of strings. People, companies, places, concepts
-  surfaced by the source. Flat string list; the downstream compile stage
-  resolves these against the live knowledge graph.
 - `key_themes`: list of 2-5 strings. Finer-grained themes than `domain`
   capturing substantive sub-topics within the source.
+- `entity_search_keys`: list of up to 10 kebab-case slug candidates designed
+  to find related existing entities in a downstream knowledge graph (where
+  each entity is keyed by a concept slug). The graph contains entities for
+  notable people, concepts, frameworks, themes, and named ideas across many
+  sources. What to include:
+    1. Each item in `key_themes` (themes themselves are often already entity slugs).
+    2. Common slug variants of each theme (e.g., for "value-investing" you might
+       also include "value-investor" or a closely-related concept like
+       "intrinsic-value").
+    3. Slugs for entity names mentioned substantively in the source — people,
+       organizations, named frameworks. Use surname-only for well-known figures
+       ("buffett") and/or full-name form ("warren-buffett") when ambiguity is
+       possible.
+    4. Closely-related concepts that frequently co-occur with the source's
+       themes, even if not named explicitly (a small fanout for graph discovery).
+  Format: lowercase, hyphens between words, no spaces, no punctuation other than
+  hyphens. Prefer specificity over breadth: "value-investing" beats "investing";
+  "graham-and-doddsville" beats "investors". Cap at 10 keys total; aim for 5–10.
+  Example: source about Warren Buffett and Charlie Munger's value-investing
+  approach with key_themes ["value-investing", "margin-of-safety", "compounding"]
+  → `["value-investing", "margin-of-safety", "compounding", "warren-buffett",
+       "buffett", "charlie-munger", "munger", "intrinsic-value",
+       "berkshire-hathaway", "circle-of-competence"]`.
 
 ### Audit section
 

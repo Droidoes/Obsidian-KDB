@@ -96,7 +96,7 @@ def _empty_source_envelope(model: str) -> dict:
     return {
         "kdb_signal": "noise",
         "domain": "undecided", "source_type": "other", "author": None,
-        "summary": "", "key_entities": [], "key_themes": [],
+        "summary": "", "key_themes": [], "entity_search_keys": [],
         "confidence": 1.0, "uncertainty_reason": None,
         "reject_reason": "empty source",
         "prompt_version": "1.0.0", "model": model, "schema_version": 1,

@@ -1217,8 +1217,8 @@ def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
         "source_type: blog\n"
         "author: Joseph\n"
         "summary: Test.\n"
-        "key_entities:\n  - x\n"
         "key_themes:\n  - y\n"
+        "entity_search_keys:\n  - y\n  - related-thing\n"
         "confidence: 0.9\n"
         "uncertainty_reason: null\n"
         "reject_reason: null\n"
@@ -1247,8 +1247,8 @@ def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
     assert fm.source_type == "blog"
     assert fm.author == "Joseph"
     assert fm.summary == "Test."
-    assert fm.key_entities == ["x"]
     assert fm.key_themes == ["y"]
+    assert fm.entity_search_keys == ["y", "related-thing"]
     assert "The body content here." in body
     assert "kdb_signal" not in body  # frontmatter stripped
 

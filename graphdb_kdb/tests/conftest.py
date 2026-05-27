@@ -59,9 +59,10 @@ def make_compiled_source(
 ) -> dict:
     """Construct a minimal compile_result.compiled_sources[i] dict.
 
-    `source_meta` (D-89-17): optional Pass-1 frontmatter projection;
-    included verbatim when provided. Keys: summary, author, domain,
-    source_type, key_entities, key_themes.
+    `source_meta` (D-89-17 amended by D-89-19/D-89-20, v0.2.2): optional Pass-1
+    frontmatter projection; included verbatim when provided. Keys: summary
+    (already carries key_themes appended per D-89-19), author, domain,
+    source_type.
     """
     d: dict = {
         "source_id": source_id,

@@ -30,14 +30,16 @@ class OverrideAudit:
 
 @dataclass
 class Pass1Envelope:
-    # GraphDB-input section (Pass-2 consumes; D-89-17)
+    # GraphDB-input section (Pass-2 consumes; D-89-17 amended by D-89-20)
+    # NB v0.2.2 (D-89-20): key_entities dropped; entity_search_keys added
+    # (≤10 slugs; sole consumer = Task #90 context-loader T2-rewrite).
     kdb_signal: str  # "signal" | "noise"
     domain: str  # one of 23 NW-4 v0.4 IDs
     source_type: str  # one of 21 NW-7 v0.2 IDs
     author: str | None
     summary: str
-    key_entities: list[str]
     key_themes: list[str]
+    entity_search_keys: list[str]  # ≤10 kebab-case slugs; T2-rewrite input (D-89-20)
 
     # Audit section (Pass-2 ignores; D-89-16)
     confidence: float
@@ -64,7 +66,7 @@ def build_json_schema() -> dict[str, Any]:
         "type": "object",
         "required": [
             "kdb_signal", "domain", "source_type", "author", "summary",
-            "key_entities", "key_themes",
+            "key_themes", "entity_search_keys",
             "confidence", "uncertainty_reason", "reject_reason",
             "prompt_version", "model", "schema_version", "override",
             "other_reason",
@@ -75,8 +77,18 @@ def build_json_schema() -> dict[str, Any]:
             "source_type": {"enum": source_type_ids},
             "author": {"type": ["string", "null"]},
             "summary": {"type": "string"},
-            "key_entities": {"type": "array", "items": {"type": "string"}},
             "key_themes": {"type": "array", "items": {"type": "string"}},
+            # Shape validation only (string array, ≤10); content-format
+            # quality is a prompt-discipline concern. Downstream T2-rewrite
+            # (Task #90) does Entity.slug PK lookup — imperfect slugs simply
+            # miss, no harm. A strict regex caused real LLM emissions like
+            # "see's-candies" to reject the whole envelope (2026-05-26 night
+            # live fire); empirically too strict for prompt-only discipline.
+            "entity_search_keys": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 10,
+            },
             "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "uncertainty_reason": {"type": ["string", "null"]},
             "reject_reason": {"type": ["string", "null"]},

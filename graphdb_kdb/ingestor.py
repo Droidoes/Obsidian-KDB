@@ -420,13 +420,14 @@ def _write_source_meta(
     """Phase 3 (D-89-17): write Pass-1 frontmatter fields to Source node.
 
     Fires only when `source_meta` is present in the compiled_source entry.
-    Writes summary, author, and domain only — key_entities/key_themes ride
-    along for future D.3+ entity extractor but are intentionally ignored here.
-    source_type is NOT overridden (the ingestor always sets 'obsidian-kdb-raw').
+    Writes summary, author, domain unconditionally; writes source_type only
+    when present in source_meta (Bug #1 fix 2026-05-26 night per D-89-17 +
+    v0.2.2 amendment — Pass-1's source_type classification flows through to
+    the Source node, replacing the first-time-create default).
 
     When source_meta is absent the SET is skipped entirely; existing NULL
     columns remain NULL (backward-compat: compile_results without source_meta
-    stay valid).
+    stay valid; source_type stays at the first-create default).
     """
     source_id = cs.get("source_id")
     source_meta = cs.get("source_meta")
@@ -444,6 +445,15 @@ def _write_source_meta(
             "domain": source_meta.get("domain"),
         },
     )
+    source_type = source_meta.get("source_type")
+    if source_type is not None:
+        conn.execute(
+            """
+            MATCH (s:Source {source_id: $sid})
+            SET s.source_type=$source_type
+            """,
+            {"sid": source_id, "source_type": source_type},
+        )
 
 
 # ---------- Phase 3.6: Domain nodes + BELONGS_TO edges (#76.3) ----------

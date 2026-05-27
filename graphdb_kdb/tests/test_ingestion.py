@@ -504,12 +504,10 @@ def test_ingest_source_writes_summary_author_domain_from_frontmatter(graph_dir):
     ingestor MERGE's Source with summary/author/domain populated (D-89-17)."""
     src = "KDB/raw/enriched.md"
     source_meta = {
-        "summary": "A note about value investing principles",
+        "summary": "A note about value investing principles. Themes: margin-of-safety, compounding.",
         "author": "Warren Buffett",
         "domain": "value-investing",
         "source_type": "personal-note",
-        "key_entities": ["berkshire-hathaway"],
-        "key_themes": ["margin-of-safety"],
     }
     cr = make_compile_result([
         make_compiled_source(src, [make_page("alpha")], source_meta=source_meta)
@@ -518,14 +516,18 @@ def test_ingest_source_writes_summary_author_domain_from_frontmatter(graph_dir):
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(cr, scan, "run-1")
         source = gdb.get_source(src)
-    assert source.summary == "A note about value investing principles"
+    assert source.summary == "A note about value investing principles. Themes: margin-of-safety, compounding."
     assert source.author == "Warren Buffett"
     assert source.domain == "value-investing"
+    # Bug #1 fix (v0.2.2): source_type from Pass-1 frontmatter now flows through,
+    # replacing the first-create default "obsidian-kdb-raw".
+    assert source.source_type == "personal-note"
 
 
 def test_ingest_source_without_source_meta_leaves_columns_null(graph_dir):
     """When compile_result has no source_meta, summary/author/domain stay NULL
-    (backward-compat: existing compile_results without source_meta remain valid)."""
+    (backward-compat: existing compile_results without source_meta remain valid).
+    source_type stays at the first-create default per Bug #1 fix backward-compat."""
     src = "KDB/raw/plain.md"
     cr = make_compile_result([
         make_compiled_source(src, [make_page("beta")])
@@ -537,3 +539,25 @@ def test_ingest_source_without_source_meta_leaves_columns_null(graph_dir):
     assert source.summary is None
     assert source.author is None
     assert source.domain is None
+    assert source.source_type == "obsidian-kdb-raw"
+
+
+def test_ingest_source_meta_without_source_type_preserves_default(graph_dir):
+    """Bug #1 fix backward-compat: source_meta dict missing source_type key
+    (e.g., pre-v0.2.2 compile_results) leaves source_type at first-create default."""
+    src = "KDB/raw/partial.md"
+    source_meta = {
+        "summary": "Some summary",
+        "author": "Some Author",
+        "domain": "personal-finance",
+        # source_type intentionally absent
+    }
+    cr = make_compile_result([
+        make_compiled_source(src, [make_page("gamma")], source_meta=source_meta)
+    ])
+    scan = make_scan([make_scan_entry(src)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        source = gdb.get_source(src)
+    assert source.summary == "Some summary"
+    assert source.source_type == "obsidian-kdb-raw"

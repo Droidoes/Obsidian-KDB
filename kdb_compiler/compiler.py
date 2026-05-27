@@ -112,12 +112,17 @@ class SourceFrontmatter:
     source_type: str
     author: str | None
     summary: str
-    key_entities: list[str]
     key_themes: list[str]
+    entity_search_keys: list[str]  # ≤10 slugs; T2-rewrite input (D-89-20); not seen by Pass-2
 
     @classmethod
     def from_dict(cls, fm: dict) -> "SourceFrontmatter | None":
-        """Return None if frontmatter does not contain Pass-1 GraphDB-input keys."""
+        """Return None if frontmatter does not contain Pass-1 GraphDB-input keys.
+
+        v0.2.2 (D-89-20): key_entities dropped; entity_search_keys added (the
+        sole consumer is Task #90 context-loader T2-rewrite). Pre-v0.2.2
+        frontmatter without `entity_search_keys` still parses (defaults to []).
+        """
         required = {"kdb_signal", "domain", "source_type", "summary"}
         if not required.issubset(fm.keys()):
             return None
@@ -127,9 +132,25 @@ class SourceFrontmatter:
             source_type=fm["source_type"],
             author=fm.get("author"),
             summary=fm["summary"],
-            key_entities=fm.get("key_entities", []) or [],
             key_themes=fm.get("key_themes", []) or [],
+            entity_search_keys=fm.get("entity_search_keys", []) or [],
         )
+
+
+def _build_source_summary(fm: "SourceFrontmatter") -> str:
+    """D-89-19: Source.summary = Pass-1 summary + mechanical append of key_themes.
+
+    Mechanical concat (not LLM-merge — D-89-18 retracted). Themes participate
+    structurally in the graph via entity_search_keys → context_loader T2-rewrite
+    (Task #90), upstream of Pass-2; Source.summary is purely descriptive.
+
+    Empty summary or empty key_themes → verbatim Pass-1 summary (no append).
+    Persisted to GraphDB Source.summary; also what Pass-2 sees in its prompt.
+    """
+    if not fm.key_themes or not fm.summary.strip():
+        return fm.summary
+    base = fm.summary.rstrip(". ")
+    return base + ". Themes: " + ", ".join(fm.key_themes) + "."
 
 
 def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
@@ -286,17 +307,19 @@ def compile_one(
 
         # --- build prompt ---
         # Thread Pass-1 frontmatter through so the LLM can USE domain/source_type/
-        # author directly and MERGE summary + key_themes into Source.summary prose
-        # (D-89-17 / D-89-18). kdb_signal excluded — signal already established.
+        # author directly (D-89-17). Source.summary is the Pass-1 verbatim summary
+        # with key_themes mechanically appended (D-89-19); Pass-2 treats it as
+        # authoritative (no merge ceremony). key_entities + key_themes are NOT
+        # threaded to Pass-2 separately (D-89-20 — entity_search_keys is the
+        # T2-rewrite channel; Pass-2 doesn't see those slugs at all).
+        # kdb_signal excluded — signal already established by Pass-1.
         source_meta_dict: dict | None = None
         if fm is not None:
             source_meta_dict = {
                 "domain": fm.domain,
                 "source_type": fm.source_type,
                 "author": fm.author,
-                "summary": fm.summary,
-                "key_themes": list(fm.key_themes),
-                "key_entities": list(fm.key_entities),
+                "summary": _build_source_summary(fm),  # D-89-19 mechanical append
             }
         try:
             state["prompt"] = prompt_builder.build_prompt(
@@ -449,12 +472,10 @@ def compile_one(
                 error=None,
             ),
             source_meta={
-                "summary": fm.summary,
+                "summary": _build_source_summary(fm),  # D-89-19 mechanical append
                 "author": fm.author,
                 "domain": fm.domain,
                 "source_type": fm.source_type,
-                "key_entities": list(fm.key_entities),
-                "key_themes": list(fm.key_themes),
             } if fm is not None else None,
         )
         state["log_entries"] = [

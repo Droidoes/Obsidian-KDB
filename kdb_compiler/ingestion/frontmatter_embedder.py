@@ -22,7 +22,7 @@ _FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
 # Pass-1 schema fields (the keys this module owns).
 _GRAPHDB_INPUT_FIELDS = (
     "kdb_signal", "domain", "source_type", "author", "summary",
-    "key_entities", "key_themes",
+    "key_themes", "entity_search_keys",
 )
 _AUDIT_FIELDS = (
     "confidence", "uncertainty_reason", "reject_reason",

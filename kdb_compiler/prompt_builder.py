@@ -124,25 +124,12 @@ TRUSTED values — do NOT re-derive them from the source body.
 - source_type: {source_type}
 - author: {author}
 
-### Source summary (from Pass-1)
+### Source summary (Pass-1 verbatim + appended themes per D-89-19)
 {summary}
-
-### Key themes (from Pass-1)
-{key_themes_list}
 
 **Instructions:**
 - USE `domain`, `source_type`, and `author` directly. Do NOT re-derive them.
-- For `Source.summary`: MERGE the Pass-1 summary above with the key themes into
-  a single integrated prose narrative. Weave the themes organically — do NOT
-  produce a verbatim copy of the Pass-1 summary, and do NOT append a bullet
-  list of themes.
-- `key_entities` listed below are seed entity-extraction candidates from Pass-1.
-  Begin entity extraction with these seeds; verify each is genuinely relevant to
-  the body content; supplement with additional entities discovered in the body;
-  dedupe against the existing GraphDB context snapshot as usual.
-
-### Key entity seeds (from Pass-1)
-{key_entities_list}"""
+- The summary above is authoritative; you do not need to rewrite or merge it."""
 
 
 def _build_pass1_meta_block(source_meta: dict) -> str:
@@ -150,24 +137,17 @@ def _build_pass1_meta_block(source_meta: dict) -> str:
 
     Excludes kdb_signal — it is the Pass-1 gatekeeper and is noise for
     the compile LLM (signal is already established by the time compile runs).
+
+    v0.2.2 (D-89-19 + D-89-20): no key_themes/key_entities rendering. The
+    summary string already carries the appended themes per D-89-19; themes
+    participate in the graph via entity_search_keys → context_loader
+    T2-rewrite (Task #90), upstream of Pass-2.
     """
-    key_themes = source_meta.get("key_themes") or []
-    key_entities = source_meta.get("key_entities") or []
-
-    key_themes_list = (
-        "\n".join(f"- {t}" for t in key_themes) if key_themes else "(none)"
-    )
-    key_entities_list = (
-        "\n".join(f"- {e}" for e in key_entities) if key_entities else "(none)"
-    )
-
     return _PASS1_META_BLOCK_TEMPLATE.format(
         domain=source_meta.get("domain", "(unknown)"),
         source_type=source_meta.get("source_type", "(unknown)"),
         author=source_meta.get("author") or "(unknown)",
         summary=source_meta.get("summary", "(none)"),
-        key_themes_list=key_themes_list,
-        key_entities_list=key_entities_list,
     )
 
 
@@ -183,12 +163,13 @@ def build_prompt(
     the load_* calls populate their caches.
 
     source_meta (optional): dict with Pass-1 enrichment fields
-    (domain, source_type, author, summary, key_themes, key_entities).
-    When present a 'PASS-1 SOURCE METADATA' block is inserted before
-    SOURCE CONTENT with explicit instructions per D-89-17/D-89-18:
+    (domain, source_type, author, summary). Summary is pre-appended with
+    key_themes by the caller per D-89-19. When present a 'PASS-1 SOURCE
+    METADATA' block is inserted before SOURCE CONTENT with instructions
+    per D-89-17 (v0.2.2 amended):
     - USE domain/source_type/author directly (no re-derivation)
-    - MERGE summary + key_themes into Source.summary prose (not verbatim copy)
-    - TREAT key_entities as seed candidates (verify + supplement + dedupe)
+    - summary is authoritative (no merge ceremony — D-89-18 retracted by
+      D-89-19; themes participate in graph via entity_search_keys → T2-rewrite)
     When None (pre-Pass-1 sources), the block is omitted and the prompt
     renders unchanged for backward compatibility.
     """

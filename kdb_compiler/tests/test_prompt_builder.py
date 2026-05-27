@@ -220,15 +220,18 @@ def test_user_includes_schema_and_exemplar(tmp_path: Path) -> None:
     assert ex_json in bp.user
 
 
-# ---------- source_meta (D-89-17 / D-89-18) ----------
+# ---------- source_meta (D-89-17 amended by D-89-19/D-89-20, v0.2.2) ----------
 
+# Per D-89-19: compiler.py pre-appends key_themes to summary before passing in.
+# Per D-89-20: source_meta no longer carries key_themes or key_entities separately.
 _SAMPLE_SOURCE_META: dict = {
     "domain": "machine-learning",
     "source_type": "research-paper",
     "author": "Vaswani et al.",
-    "summary": "Introduces the Transformer architecture based on self-attention.",
-    "key_themes": ["self-attention", "parallelization", "encoder-decoder"],
-    "key_entities": ["Transformer", "multi-head attention", "positional encoding"],
+    "summary": (
+        "Introduces the Transformer architecture based on self-attention. "
+        "Themes: self-attention, parallelization, encoder-decoder."
+    ),
 }
 
 
@@ -263,12 +266,12 @@ def test_build_prompt_omits_source_meta_block_when_absent(tmp_path: Path) -> Non
     assert "## PASS-1 SOURCE METADATA" not in bp.user
 
 
-def test_build_prompt_instructs_merge_of_summary_and_themes_when_present(
+def test_build_prompt_summary_carries_appended_themes_per_d_89_19(
     tmp_path: Path,
 ) -> None:
-    """Per D-89-18: when source_meta is present the prompt instructs the LLM to
-    weave key_themes into prose for Source.summary and explicitly prohibits a
-    verbatim copy of the frontmatter summary."""
+    """Per D-89-19 (v0.2.2): the summary string in source_meta already carries
+    key_themes mechanically appended by compiler.py. The prompt renders that
+    string verbatim — no LLM-merge instruction (D-89-18 retracted)."""
     vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
@@ -277,20 +280,28 @@ def test_build_prompt_instructs_merge_of_summary_and_themes_when_present(
         context_snapshot=_snapshot(),
         source_meta=_SAMPLE_SOURCE_META,
     )
-    # key_themes appear in the block
+    # The pre-appended summary appears verbatim
     assert "self-attention" in bp.user
-    assert "parallelization" in bp.user
-    # merge / weave instruction present; verbatim-copy prohibition present
-    user_lower = bp.user.lower()
-    assert "merge" in user_lower or "weave" in user_lower or "integrate" in user_lower
-    assert "verbatim" in user_lower or "not" in user_lower
+    assert "Themes: self-attention, parallelization, encoder-decoder" in bp.user
+    # No D-89-18-style merge-instruction language (the retracted instruction
+    # used phrases like "MERGE the Pass-1 summary" and "weave the themes
+    # organically"). The new contract says "summary is authoritative; you do
+    # not need to rewrite or merge it" — that "or merge" is a prohibition, not
+    # an instruction.
+    assert "MERGE the Pass-1 summary" not in bp.user
+    assert "weave the themes" not in bp.user
+    assert "Weave the themes" not in bp.user
+    # "authoritative" language present per simplified v0.2.2 contract
+    assert "authoritative" in bp.user.lower()
 
 
-def test_build_prompt_instructs_key_entities_as_seed_candidates(
+def test_build_prompt_omits_key_entities_seed_section_per_d_89_20(
     tmp_path: Path,
 ) -> None:
-    """Per D-89-17: when source_meta is present the prompt treats key_entities
-    as seed entity-extraction candidates ('seed' language must appear)."""
+    """Per D-89-20 (v0.2.2): key_entities is no longer threaded to Pass-2 as
+    seeds (the 'TREAT key_entities as seed candidates' clause of D-89-17 was
+    retracted). The prompt renders no entity-seed section and no 'seed'
+    instruction language."""
     vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
         vault_root=vault,
@@ -299,10 +310,10 @@ def test_build_prompt_instructs_key_entities_as_seed_candidates(
         context_snapshot=_snapshot(),
         source_meta=_SAMPLE_SOURCE_META,
     )
-    assert "Transformer" in bp.user
-    assert "multi-head attention" in bp.user
     user_lower = bp.user.lower()
-    assert "seed" in user_lower
+    assert "key_entities" not in user_lower
+    assert "key entity seeds" not in user_lower
+    assert "seed entity-extraction" not in user_lower
 
 
 def test_build_prompt_source_meta_section_precedes_source_content(

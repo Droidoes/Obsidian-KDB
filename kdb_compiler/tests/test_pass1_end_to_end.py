@@ -1,25 +1,29 @@
 """test_pass1_end_to_end — Full Pass-1 + compile integration acceptance test.
 
-Task #89 §10.5 "tunnel ends meet" check:
+Task #89 §10.5 "tunnel ends meet" check (v0.2.2):
 
     Pass-1 (enrich_one) writes sectionalized YAML frontmatter to disk.
     Compile pipeline reads frontmatter → populates GraphDB Source node.
 
-Five contract points (§10.5):
-    C1: Source.domain / author / summary populated from Pass-1 frontmatter.
-    C2: key_entities from frontmatter appear as Entity nodes + SUPPORTS edges.
-    C3: Compile LLM does NOT emit metadata values as body-discovered entities
-        (metadata fields like author/domain/source_type are frontmatter-only;
-        no phantom entity nodes for those literal strings are expected here —
-        we simply verify the Entity count from key_entities is non-zero if
-        key_entities is non-empty).
-    C4: Audit section fields (confidence, prompt_version, model) are NOT
-        written to Source node properties.
-    C5: Source.summary is NOT a verbatim copy of frontmatter.summary
-        (D-89-18: compile LLM merges summary + key_themes into prose).
+Five contract points (v0.2.2 reality — D-89-17 amended by D-89-19/D-89-20):
+    C1: Source.domain populated from Pass-1 frontmatter (D-89-17 USE-directly).
+    C2: Source.author populated from Pass-1 frontmatter (when envelope.author
+        is non-None).
+    C3: Source.source_type matches Pass-1 envelope (Bug #1 fix verifies the
+        ingestor._write_source_meta SET on source_type when present, replacing
+        the first-create default 'obsidian-kdb-raw').
+    C4: Source.summary = Pass-1 verbatim summary + mechanical append of
+        key_themes (D-89-19). Contains both the original sentence AND a
+        ". Themes: <theme>, <theme>" tail when envelope.key_themes is non-empty.
+        Specifically NOT just verbatim Pass-1 summary (Bug #2 dissolved by
+        D-89-19's mechanical-append landing).
+    C5: Frontmatter on disk contains entity_search_keys (D-89-20 new field) and
+        does NOT contain key_entities (D-89-20 dropped field).
 
-Run command (user fires — costs one API call):
-    DEEPSEEK_API_KEY=... pytest kdb_compiler/tests/test_pass1_end_to_end.py -v -m live
+Run command (user fires — costs one API call). The DEEPSEEK_API_KEY is
+auto-loaded from the repo-root `.env` via `python-dotenv` when any
+`kdb_compiler` module is imported, so no CLI prefix is needed:
+    python3 -m pytest kdb_compiler/tests/test_pass1_end_to_end.py -v -m live -s
 
 @pytest.mark.uses_real_graph_context is set so the autouse
 `_stub_planner_graph_context` fixture is bypassed, allowing the planner to
@@ -45,7 +49,8 @@ from graphdb_kdb.graphdb import GraphDB
     reason="No DEEPSEEK_API_KEY in env",
 )
 def test_tunnel_ends_meet(tmp_path: Path) -> None:
-    """Per Task #89 §10.5 acceptance criteria — 'tunnel ends meet' integration check.
+    """Per Task #89 §10.5 acceptance criteria (v0.2.2) — 'tunnel ends meet'
+    integration check.
 
     Fires two real LLM calls: one Pass-1 enrich_one call + one compile call.
     Asserts all five §10.5 contract points via collect-all-failures pattern
@@ -64,8 +69,21 @@ def test_tunnel_ends_meet(tmp_path: Path) -> None:
     else:
         sys_prompt_dest.write_text("# KDB invariants (test stub)\n", encoding="utf-8")
 
+    # Seed the per-test isolated GraphDB with one entity so the planner's
+    # `_graph_conn_or_raise` check passes (requires graph dir to exist AND
+    # have >0 entities). The seed entity is unrelated to the test source
+    # and does not affect any C1–C5 assertion.
+    seed_graph_dir = Path(os.environ["KDB_GRAPH_PATH"])
+    with GraphDB(seed_graph_dir) as g:
+        g.conn.execute(
+            "CREATE (e:Entity {slug: 'e2e-seed', title: 'E2E Seed', "
+            "page_type: 'concept', status: 'active', confidence: 'low', "
+            "canonical_id: NULL, created_at: '2026-05-26', updated_at: '2026-05-26', "
+            "first_run_id: 'e2e-seed', last_run_id: 'e2e-seed'})"
+        )
+
     # Source file with rich value-investing content so Pass-1 emits
-    # non-trivial domain / key_entities / key_themes.
+    # non-trivial domain / key_themes / entity_search_keys.
     source_path = raw_dir / "buffett-essay.md"
     source_id = "KDB/raw/buffett-essay.md"
     source_path.write_text(
@@ -110,7 +128,8 @@ def test_tunnel_ends_meet(tmp_path: Path) -> None:
     pass1_domain = envelope.get("domain", "")
     pass1_author = envelope.get("author")
     pass1_source_type = envelope.get("source_type", "")
-    pass1_key_entities: list[str] = list(envelope.get("key_entities") or [])
+    pass1_key_themes: list[str] = list(envelope.get("key_themes") or [])
+    pass1_entity_search_keys: list[str] = list(envelope.get("entity_search_keys") or [])
 
     # ─── Phase 2: compile pipeline ───────────────────────────────────────────
     compile_result = kdb_compile.compile(
@@ -123,7 +142,7 @@ def test_tunnel_ends_meet(tmp_path: Path) -> None:
         f"compile() failed: {compile_result.errors}"
     )
 
-    # ─── Phase 3: graph assertions ───────────────────────────────────────────
+    # ─── Phase 3: graph + frontmatter assertions ─────────────────────────────
     graph_dir = Path(os.environ["KDB_GRAPH_PATH"])
     failures: list[str] = []
 
@@ -137,79 +156,88 @@ def test_tunnel_ends_meet(tmp_path: Path) -> None:
                 "format mismatch between scan and ingestor."
             )
 
-        # C1a: domain populated from frontmatter
+        # C1: domain populated from frontmatter (D-89-17)
         if not src.domain:
             failures.append(
                 f"C1 domain: Source.domain is empty; expected non-empty from "
                 f"Pass-1 frontmatter (envelope.domain={pass1_domain!r})"
             )
         elif src.domain != pass1_domain:
-            # Domain may be normalized; just warn rather than hard-fail.
             failures.append(
                 f"C1 domain: Source.domain={src.domain!r} != "
                 f"envelope.domain={pass1_domain!r} (not normalized? check ingestor)"
             )
 
-        # C1b: author populated (may be None if Pass-1 returned None)
+        # C2: author populated (may be None if Pass-1 returned None)
         if pass1_author is not None and src.author != pass1_author:
             failures.append(
-                f"C1 author: Source.author={src.author!r} != "
+                f"C2 author: Source.author={src.author!r} != "
                 f"envelope.author={pass1_author!r}"
             )
 
-        # C1c: summary populated
-        if not src.summary:
-            failures.append(
-                "C1 summary: Source.summary is empty/None; expected populated "
-                "from Pass-1 frontmatter + compile LLM merge"
-            )
-
-        # C1d: source_type — per D-89-17 the Source.source_type should reflect
-        # the Pass-1 frontmatter value, NOT hardcode 'obsidian-kdb-raw'.
+        # C3: source_type — per D-89-17 + Bug #1 fix (v0.2.2), the
+        # Source.source_type should reflect the Pass-1 frontmatter value, NOT
+        # the first-create default 'obsidian-kdb-raw'.
         if src.source_type != pass1_source_type:
             failures.append(
-                f"C1 source_type: Source.source_type={src.source_type!r} != "
+                f"C3 source_type: Source.source_type={src.source_type!r} != "
                 f"envelope.source_type={pass1_source_type!r}. "
-                "ingestor._write_source_meta does not override source_type "
-                "(hardcoded to 'obsidian-kdb-raw' at ingestor.py:19 / line 144). "
-                "This is a known contract gap — BUG #1."
+                "Bug #1 fix (graphdb_kdb/ingestor.py:_write_source_meta) "
+                "should SET source_type from source_meta when present."
             )
 
-        # C2: key_entities from frontmatter result in Entity nodes + SUPPORTS edges.
-        # key_entities are titles; entity slugs are compiler-derived.  We check
-        # that at LEAST one entity exists for the source (non-empty set) when
-        # Pass-1 emitted non-empty key_entities — a reliable signal that compile
-        # extracted entities and SUPPORTS edges were written.
-        if pass1_key_entities:
-            entities_for_src = gdb.entities_for_source(source_id)
-            entity_slugs = {e.slug for e in entities_for_src}
-            if not entity_slugs:
-                failures.append(
-                    f"C2 key_entities: entities_for_source({source_id!r}) returned "
-                    f"empty set even though Pass-1 emitted "
-                    f"key_entities={pass1_key_entities!r}. "
-                    "No SUPPORTS edges written."
-                )
-
-        # C3: audit fields not on Source node schema
-        # Source dataclass has no `confidence`, `prompt_version`, or `model` columns.
-        # This is structurally enforced by the Source dataclass + Kuzu schema.
-        # We assert by confirming the source was loaded at all (schema would
-        # error on unexpected columns) and that the known audit-free fields are
-        # the only ones returned.  No runtime assertion needed beyond a doc note.
-
-        # C4: Source.summary is NOT verbatim copy (D-89-18 merged prose)
-        # Note: this assertion is the "strict" form. If the compile LLM does
-        # merge summary + key_themes, the resulting prose will differ from
-        # the raw Pass-1 summary string. If compile passes through verbatim,
-        # this catches it.
-        if src.summary and pass1_summary and src.summary == pass1_summary:
+        # C4: Source.summary = Pass-1 verbatim + ". Themes: ..." mechanical
+        # append (D-89-19). Should contain BOTH the verbatim Pass-1 summary
+        # (modulo a possible trailing period strip) AND a "Themes: " marker
+        # when key_themes is non-empty.
+        if not src.summary:
             failures.append(
-                f"C5 summary verbatim: Source.summary is an exact copy of "
-                f"envelope.summary. D-89-18 requires compile LLM to merge "
-                f"summary + key_themes into new prose. "
-                f"compiler.py:451-458 sets source_meta['summary'] = fm.summary "
-                f"(verbatim Pass-1, no merge) — BUG #2."
+                "C4 summary: Source.summary is empty/None; expected populated "
+                "from Pass-1 frontmatter + mechanical themes append"
+            )
+        elif pass1_key_themes:
+            # Verbatim Pass-1 summary core should appear in the persisted
+            # Source.summary (modulo trailing-period rstrip).
+            base = pass1_summary.rstrip(". ")
+            if base and base not in src.summary:
+                failures.append(
+                    f"C4 summary base: Source.summary does not contain the "
+                    f"Pass-1 verbatim summary base. "
+                    f"src.summary={src.summary!r}; "
+                    f"expected to contain {base!r}"
+                )
+            if "Themes:" not in src.summary:
+                failures.append(
+                    f"C4 summary themes: Source.summary missing 'Themes: ...' "
+                    f"mechanical append (D-89-19). "
+                    f"key_themes={pass1_key_themes!r}; "
+                    f"src.summary={src.summary!r}"
+                )
+            # Each Pass-1 theme should appear in the appended portion.
+            for theme in pass1_key_themes:
+                if theme not in src.summary:
+                    failures.append(
+                        f"C4 summary themes: theme {theme!r} not found in "
+                        f"src.summary={src.summary!r}"
+                    )
+
+        # C5: Frontmatter on disk contains entity_search_keys (D-89-20 added)
+        # and does NOT contain key_entities (D-89-20 dropped).
+        if "entity_search_keys:" not in enriched_text:
+            failures.append(
+                "C5 frontmatter: entity_search_keys field missing from "
+                "on-disk frontmatter (D-89-20 expected field)."
+            )
+        if "key_entities:" in enriched_text:
+            failures.append(
+                "C5 frontmatter: key_entities still appears in on-disk "
+                "frontmatter — D-89-20 dropped this field; producer should "
+                "no longer emit it."
+            )
+        if not pass1_entity_search_keys:
+            failures.append(
+                "C5 envelope: Pass-1 returned empty entity_search_keys; "
+                "expected ≤10 slug candidates given the rich source content."
             )
 
     # Report all collected failures as a single pytest.fail() for one-pass signal.

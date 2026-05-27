@@ -12,8 +12,8 @@ def test_build_yaml_block_has_sectionalized_comments():
     """Per D-89-16: frontmatter has GraphDB-input + Audit section comments."""
     env = {
         "kdb_signal": "signal", "domain": "ai-ml", "source_type": "blog",
-        "author": "Joseph", "summary": "test", "key_entities": ["x"],
-        "key_themes": ["y"],
+        "author": "Joseph", "summary": "test",
+        "key_themes": ["y"], "entity_search_keys": ["y", "z-related"],
         "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,
         "prompt_version": "1.0.0", "model": "deepseek-v4-flash",
         "schema_version": 1,
@@ -72,8 +72,8 @@ domain: undecided
 source_type: other
 author: null
 summary: stale
-key_entities: []
 key_themes: []
+entity_search_keys: []
 confidence: 0.5
 uncertainty_reason: null
 reject_reason: stale
@@ -146,8 +146,8 @@ def test_embed_frontmatter_does_not_strip_trailing_dash_from_other_reason(tmp_pa
 def _make_envelope():
     return {
         "kdb_signal": "signal", "domain": "ai-ml", "source_type": "blog",
-        "author": "Joseph", "summary": "test", "key_entities": ["x"],
-        "key_themes": ["y"],
+        "author": "Joseph", "summary": "test",
+        "key_themes": ["y"], "entity_search_keys": ["y", "z-related"],
         "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,
         "prompt_version": "1.0.0", "model": "deepseek-v4-flash",
         "schema_version": 1,

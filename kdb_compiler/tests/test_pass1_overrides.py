@@ -6,7 +6,7 @@ def _envelope(kdb_signal="signal", reject_reason=None):
     return {
         "kdb_signal": kdb_signal,
         "domain": "ai-ml", "source_type": "post", "author": None,
-        "summary": "x", "key_entities": [], "key_themes": [],
+        "summary": "x", "key_themes": [], "entity_search_keys": [],
         "confidence": 0.9, "uncertainty_reason": None,
         "reject_reason": reject_reason,
         "prompt_version": "1.0.0", "model": "x", "schema_version": 1,

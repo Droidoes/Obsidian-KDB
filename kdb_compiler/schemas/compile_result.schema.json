@@ -175,16 +175,14 @@
         },
         "source_meta": {
           "type": "object",
-          "description": "Pass-1 frontmatter projection (D-89-17). Omitted when Pass-1 enrichment has not run for this source. Ingestor writes summary/author/domain to Source node; key_entities/key_themes are reserved for D.3+ entity extractor.",
+          "description": "Pass-1 frontmatter projection (D-89-17 amended by D-89-19/D-89-20, v0.2.2). Omitted when Pass-1 enrichment has not run for this source. Ingestor writes summary/author/domain/source_type to Source node. The `summary` field carries the Pass-1 verbatim summary with key_themes mechanically appended per D-89-19. key_entities + key_themes are no longer threaded to Pass-2 separately (D-89-20 — themes participate in the graph via entity_search_keys → context_loader T2-rewrite, upstream of Pass-2).",
           "additionalProperties": false,
-          "required": ["summary", "author", "domain", "source_type", "key_entities", "key_themes"],
+          "required": ["summary", "author", "domain", "source_type"],
           "properties": {
             "summary": { "type": "string" },
             "author": { "type": ["string", "null"] },
             "domain": { "type": "string" },
-            "source_type": { "type": "string" },
-            "key_entities": { "type": "array", "items": { "type": "string" } },
-            "key_themes": { "type": "array", "items": { "type": "string" } }
+            "source_type": { "type": "string" }
           }
         }
       }

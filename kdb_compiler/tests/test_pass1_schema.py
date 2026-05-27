@@ -8,10 +8,12 @@ from kdb_compiler.ingestion.pass1_schema import (
 
 
 def test_envelope_dataclass_has_graphdb_input_section():
-    """All 7 GraphDB-input fields per D-89-16."""
+    """GraphDB-input fields per D-89-16 amended by D-89-20 (v0.2.2):
+    key_entities dropped, entity_search_keys added."""
     fields = {f.name for f in Pass1Envelope.__dataclass_fields__.values()}
     assert {"kdb_signal", "domain", "source_type", "author", "summary",
-            "key_entities", "key_themes"}.issubset(fields)
+            "key_themes", "entity_search_keys"}.issubset(fields)
+    assert "key_entities" not in fields
 
 
 def test_envelope_dataclass_has_audit_section():
@@ -26,8 +28,9 @@ def test_validate_envelope_accepts_signal_envelope():
     payload = {
         "kdb_signal": "signal", "domain": "value-investing",
         "source_type": "letter", "author": "Warren Buffett",
-        "summary": "Annual letter.", "key_entities": ["Berkshire"],
+        "summary": "Annual letter.",
         "key_themes": ["intrinsic value"],
+        "entity_search_keys": ["berkshire-hathaway", "warren-buffett", "intrinsic-value"],
         "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,
         "prompt_version": "1.0.0", "model": "deepseek-v4-flash",
         "schema_version": 1,
@@ -78,8 +81,9 @@ def _valid_payload():
     return {
         "kdb_signal": "signal", "domain": "ai-ml",
         "source_type": "paper", "author": None,
-        "summary": "Test.", "key_entities": [],
+        "summary": "Test.",
         "key_themes": [],
+        "entity_search_keys": [],
         "confidence": 0.8, "uncertainty_reason": None, "reject_reason": None,
         "prompt_version": "1.0.0", "model": "deepseek-v4-flash",
         "schema_version": 1,
