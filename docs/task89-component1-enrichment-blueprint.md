@@ -1,10 +1,18 @@
-# Task #89 — Component #1 (Enrichment) Deep-Design: v0.2.1 Blueprint
+# Task #89 — Component #1 (Enrichment) Deep-Design: v0.2.2 Blueprint
 
-**Status:** **v0.2.1 — amended 2026-05-26 evening** (frontmatter audit + compile-consumption-in-v1 redirect). v0.2 folded earlier the same day after round-2 architecture review panel (5/5 clean) + Joseph-led deliberation. Round-1 property additions deferred to **v0.3** (separate deliberation pass).
+**Status:** **v0.2.2 — amended 2026-05-26 night** (Pass-1↔Pass-2↔context-loader integration loop-close: D-89-18 retracted; D-89-19/D-89-20 ratified). Earlier same day: v0.2.1 (frontmatter sectionalization + compile-consumption-in-v1); v0.2 folded after round-2 architecture review panel (5/5 clean) + Joseph-led deliberation. Round-1 property additions deferred to **v0.3** (separate deliberation pass).
+
+**v0.2.2 amendment sources:**
+- 2026-05-26 night Pass-1 fields consumer-purpose deliberation (Joseph-led; triggered by Phase E checkpoint Bug #2)
+- Two new locked decisions: D-89-19 (Source.summary = mechanical append of key_themes; persisted; replaces D-89-18) + D-89-20 (drop `key_entities`; add `entity_search_keys` ≤10; Task #90 input contract)
+- One full retraction: D-89-18 (LLM merge — replaced by D-89-19's mechanical concat + D-89-20's structural-graph signal channel)
+- One partial retraction: D-89-17 (the "TREAT key_entities as seed candidates" clause; rest stays in force)
+- Task #90 (Context-loader T2-rewrite) input contract locked in `docs/TASKS.md`
+- Session checkpoint: `docs/session-handoff-2026-05-26-task89-evening-v0.2.2-key_themes-loop-close.md`
 
 **v0.2.1 amendment sources:**
 - 2026-05-26 evening "what is frontmatter FOR" deliberation (Joseph-led)
-- Three new locked decisions: D-89-16 (frontmatter sectionalization), D-89-17 (compile consumes in v1), D-89-18 (key_themes merge via compile LLM)
+- Three locked decisions: D-89-16 (frontmatter sectionalization), D-89-17 (compile consumes in v1), D-89-18 (key_themes merge via compile LLM — **note: D-89-18 retracted in v0.2.2**)
 - Two new principle memories: [[feedback_integration_preconditions_are_architectural]], [[feedback_prompt_template_definition_plus_examples]]
 - Sharpening of [[feedback_no_edge_predeclaration_no_hints]] (examples-for-shape OK; examples-for-edges NOT OK)
 - See `docs/task89-deliberation-wikilinks-frontmatter.md` §12+ for the full lineage
@@ -948,15 +956,73 @@ The OQ-89-12 "strip-and-discard" framing (v0.2) is **withdrawn**; compile-side w
 
 This corrects the v0.2 §10.4 deferral of "compile MAY use frontmatter as v1.x amendment" — promoted to v1-required.
 
-### D-89-18 — Compile LLM merges summary + key_themes (NOT deterministic Python) (2026-05-26 evening)
+### D-89-18 — Compile LLM merges summary + key_themes (NOT deterministic Python) (2026-05-26 evening) — **RETRACTED 2026-05-26 night**
 
-**Decision:** When compile writes `Source.summary`, it does NOT do a verbatim copy of `frontmatter.summary`. Instead, compile's LLM prompt receives both `frontmatter.summary` AND `frontmatter.key_themes`, and the LLM produces a merged Source.summary that weaves themes into the summary prose.
+**Status:** RETRACTED. Superseded by D-89-19 (mechanical append, persisted) + D-89-20 (entity_search_keys carries the structural-graph signal for themes upstream of Pass-2). Original text retained below for the audit record.
+
+**Decision (historical, retracted):** When compile writes `Source.summary`, it does NOT do a verbatim copy of `frontmatter.summary`. Instead, compile's LLM prompt receives both `frontmatter.summary` AND `frontmatter.key_themes`, and the LLM produces a merged Source.summary that weaves themes into the summary prose.
 
 `key_themes` stays as a separate field in the frontmatter (visible to user, replay-archive-corresponding). It does NOT get its own GraphDB column (no `Source.themes`); the LLM merge integrates them into `Source.summary`.
 
-**Rationale:** Joseph 2026-05-26: *"compile LLM merge is a better idea because it forces the LLM to process both sections instead of treating it as a pass through."* A deterministic Python concatenation would be cheaper but mechanical; the LLM merge ensures both fields are processed and integrated meaningfully into a coherent Source.summary. The cost — one extra LLM step — is justified by the engagement guarantee.
+**Rationale (historical):** Joseph 2026-05-26: *"compile LLM merge is a better idea because it forces the LLM to process both sections instead of treating it as a pass through."* A deterministic Python concatenation would be cheaper but mechanical; the LLM merge ensures both fields are processed and integrated meaningfully into a coherent Source.summary. The cost — one extra LLM step — is justified by the engagement guarantee.
 
-This eliminates the need for a Theme node type in v1 (themes-as-prose-in-summary covers the use case). NW-8 (Theme node design) is filed as a v0.3+ deliberation if telemetry later shows graph-traversal queries on themes would add value beyond string-matching in Source.summary.
+**Why retracted:** D-89-20 moved key_themes' load-bearing structural role to `entity_search_keys` → context_loader T2-rewrite (Task #90), upstream of Pass-2. With themes participating in the graph through that channel, their appearance in Source.summary becomes purely descriptive — the "forces engagement" rationale no longer holds because engagement happens elsewhere. Mechanical concat (D-89-19) is honest and sufficient for the descriptive role.
+
+### D-89-19 — Source.summary: mechanical append of key_themes (replaces D-89-18) (2026-05-26 night)
+
+**Decision:** When `kdb_compiler/compiler.py` builds `source_meta.summary` for Pass-2, it deterministically appends `key_themes` to the Pass-1 verbatim summary:
+
+```
+source_meta["summary"] = pass1.summary.rstrip(". ") + ". Themes: " + ", ".join(pass1.key_themes) + "."
+```
+
+The appended string is what Pass-2 sees in its prompt **AND** what gets persisted as `Source.summary` in the GraphDB (single source of truth — Pass-2 view matches the persisted value). No LLM-merge step.
+
+`key_themes` remains a separate field in the frontmatter (visible to user, replay-archive-corresponding). It does NOT get its own GraphDB column.
+
+**Rationale:** D-89-18's "force LLM engagement" rationale was load-bearing only when key_themes had no other structural channel into the graph. D-89-20 moved that role to `entity_search_keys` → context_loader T2-rewrite (Task #90). With themes participating structurally upstream of Pass-2, Source.summary becomes a descriptive surface where mechanical concat is honest and sufficient.
+
+Source.summary's contract becomes: *"a brief summary of the source followed by its key themes."* Persisting the appended version means a single source of truth (no Pass-2-view-vs-persisted desync), richer cross-source semantic linking material for future context-loading, and more searchable Source.summary content.
+
+Per [[feedback_no_parallel_storage_to_authority]]: frontmatter remains the authority for `key_themes`; Source.summary's appended form is a derived view, regeneratable from frontmatter — not a parallel store.
+
+**Cost saving:** removes the LLM merge step and dissolves Bug #2 from the 2026-05-26 implementation checkpoint (no field-landing-place needed for "merged summary"; there is no merged summary). Bug #1 (Source.source_type hardcoded at `graphdb_kdb/ingestor.py:144`) remains and is independent.
+
+### D-89-20 — Drop `key_entities`; add `entity_search_keys` (2026-05-26 night)
+
+**Decision:**
+
+1. **Drop `key_entities` from the Pass-1 output schema entirely.**
+2. **Add `entity_search_keys: list[string]`** (up to 10 kebab-case slugs) as a new Pass-1 field in the GraphDB-input section (per D-89-16).
+3. Pass-1 generates `entity_search_keys` via prompt instruction with broad scope: include each item in `key_themes`, slug variants of themes, slugs for entity names mentioned in the source (people, organizations, named frameworks), and closely-related concepts that frequently co-occur with the source's themes. Cap at 10; lowercase kebab-case; prefer specificity ("value-investing" beats "investing").
+4. `entity_search_keys` is **NOT** seen by Pass-2 (compile LLM). Its sole consumer is the context_loader's T2-rewrite (Task #90 input contract — `entity_search_keys` is the load-bearing structured signal that replaces the current whole-word regex in `graph_context_loader._t2_slug_in_text`).
+5. **D-89-17 partial retract:** the "TREAT `key_entities` as seed candidates" clause of D-89-17 is RETRACTED. The rest of D-89-17 (USE `domain` / `source_type` / `author` directly; Source schema additions) remains in force.
+6. **Pass-2 source_meta_dict shrinks to:** `{domain, source_type, author, summary (with themes appended per D-89-19)}`. `key_entities` and `key_themes` are no longer threaded into Pass-2's PASS-1 META block.
+
+**Rationale:** `key_entities` was an unconscientious attempt to create `entity_search_keys` — a flat-list descriptive field without a clear consumer-purpose. Applying the consumer-purpose test:
+- Pass-2 has the full body → can extract entities directly from primary source
+- Pass-2's EXISTING CONTEXT snapshot strictly dominates a flat-string seed list (carries `{slug, title, page_type, outgoing_links}` per row — graph-structural detail, not just names)
+- `key_entities`' "fresh-eyes pre-pick" value is marginal at best; Pass-2 won't miss what's literally in the body in front of it
+
+`entity_search_keys` has a single sharp purpose: produce slug candidates designed to maximize hit rate against `Entity.slug` PK lookups at context_loader's T2 stage. Pass-1 does one well-defined job for this signal; the named consumer (T2-rewrite per Task #90) has a clean input contract.
+
+The earlier sequencing-guardrail caution ("keep `key_entities` until #90 lands") was imaginary-risk hedging — `[[feedback_no_imaginary_risk]]`. Pass-2 loses nothing meaningful when `key_entities` goes away; it loses something meaningful when EXISTING CONTEXT is poor, which is exactly what Task #90 will fix.
+
+**Architectural alignment:** matches `[[feedback_integration_preconditions_are_architectural]]` (each Pass-1 field has a named downstream consumer whose purpose shapes the field's content) and the consumer-purpose discipline that emerged from tonight's deliberation arc.
+
+**Implementation footprint (pure deletions + additive; no schema migration):**
+
+| File | Change |
+|---|---|
+| `kdb_compiler/ingestion/pass1_schema.py` | Remove `key_entities` from `Pass1Envelope` + JSON schema; add `entity_search_keys: list[str]` (max 10, kebab-case-string pattern) |
+| `kdb_compiler/ingestion/pass1_prompt.j2` | Remove `key_entities` bullet (line ~60); add `entity_search_keys` section per the prompt draft in the session checkpoint |
+| `kdb_compiler/ingestion/frontmatter_embedder.py` | Field list: drop `key_entities`, add `entity_search_keys` |
+| `kdb_compiler/ingestion/enrich.py` | Default-empty dict: drop `key_entities`, add `entity_search_keys` |
+| `kdb_compiler/compiler.py` (lines 115, 130, 299, 456) | Remove `key_entities` references; replace `summary` in source_meta_dict with `fm.summary.rstrip(". ") + ". Themes: " + ", ".join(fm.key_themes) + "."` per D-89-19 |
+| `kdb_compiler/prompt_builder.py` (lines 130-145, 154-170, 186-191) | Remove `key_entities` from `_PASS1_META_BLOCK_TEMPLATE` + rendering helper; remove the "MERGE" + "TREAT key_entities as seed candidates" instructions; replace with simplified "USE three fields + summary is authoritative" guidance |
+| `graphdb_kdb/ingestor.py:144` (Bug #1) | Independent fix — set `Source.source_type` from `source_meta.source_type` when present (small edit) |
+
+Net code-line delta: roughly net-zero. Architecturally simpler, not larger.
 
 ---
 
@@ -1045,8 +1111,10 @@ The round-1 property-additions survey returned 5/5 with substantive proposals �
 | D-89-14 | v0.2 deliberation 2026-05-26 (D-88-11 amended; path-override mechanism) | Locked + propagated to parent blueprint commit `092b44f` | §8.2 + §12 |
 | D-89-15 | v0.2 deliberation 2026-05-26 (no pre-LLM short-circuit) | Locked | §4.7 + §12 |
 | D-89-16 | v0.2.1 deliberation 2026-05-26 evening (frontmatter sectionalized: GraphDB-input + Audit) | Locked | §2 + §12 |
-| D-89-17 | v0.2.1 deliberation 2026-05-26 evening (compile consumes frontmatter in v1; schema additions; OQ-89-12 rescoped) | Locked | §10.4 + §12 |
-| D-89-18 | v0.2.1 deliberation 2026-05-26 evening (compile LLM merges summary + key_themes) | Locked | §10.4 + §12 |
+| D-89-17 | v0.2.1 deliberation 2026-05-26 evening (compile consumes frontmatter in v1; schema additions; OQ-89-12 rescoped) | **Partial retract 2026-05-26 night** — "TREAT key_entities as seed candidates" clause retracted by D-89-20; rest stays in force | §10.4 + §12 |
+| D-89-18 | v0.2.1 deliberation 2026-05-26 evening (compile LLM merges summary + key_themes) | **RETRACTED 2026-05-26 night** — superseded by D-89-19 + D-89-20 | §12 (historical record) |
+| D-89-19 | v0.2.2 deliberation 2026-05-26 night (Source.summary: mechanical append of key_themes; persisted; replaces D-89-18) | Locked | §12 |
+| D-89-20 | v0.2.2 deliberation 2026-05-26 night (drop `key_entities`; add `entity_search_keys` as T2-rewrite input contract; D-89-17 partial retract) | Locked | §12 |
 
 ### Round-2 panel non-controversial fixes folded into v0.2
 
@@ -1077,6 +1145,20 @@ Round-1 property-additions survey returned 5/5 with substantive proposals. v0.2 
 | OQ-89-12 rescoped from "strip ship-blocker" → integration enhancement absorbed into Pass-1 implementation arc | D-89-17 | §10.5, §13 OQ-89-12 |
 | OQ-89-15 — NW-8 Theme node design (new, deferred) | D-89-18 covers themes via summary-merge in v1; Theme node design is v0.3+ if telemetry justifies | §13 OQ-89-15 |
 | Memory captures | New: [[feedback_integration_preconditions_are_architectural]]; [[feedback_prompt_template_definition_plus_examples]]. Sharpened: [[feedback_no_edge_predeclaration_no_hints]] (examples-for-shape OK; examples-for-edges NOT) | — |
+
+### v0.2.2 amendments (2026-05-26 night — Joseph-led Pass-1↔Pass-2↔context-loader integration loop-close)
+
+Discussion arc: Phase E checkpoint (Bug #1 + Bug #2 surfaced via E.1 static analysis) → forensic walk of how the existing context (graph snapshot) is built (`graph_context_loader` T1/T2/T3 algorithm) → recognition that T2's whole-word slug regex is a pre-Pass-1 heuristic that strictly dominates by Pass-1 structured signals → consumer-purpose test applied to `key_themes` (no Pass-2 use case after dominance shift) and then to `key_entities` (same conclusion) → ratification of `entity_search_keys` as the single purpose-built Pass-1 → context_loader signal channel.
+
+| Decision / change | Origin | Where in v0.2.2 |
+|---|---|---|
+| D-89-19 — Source.summary: mechanical append of key_themes; persisted to GraphDB Source.summary | Joseph 2026-05-26 night: "key_themes is a form of summary" — concession on prompt-only-vs-persisted question; single source of truth | §12 |
+| D-89-20 — Drop `key_entities`; add `entity_search_keys` (≤10 slugs); T2-rewrite input contract | Joseph 2026-05-26 night: "key_entities was an unconscientious attempt to create entity_search_keys" | §12 |
+| D-89-18 retracted | D-89-19 replaces (mechanical append) + D-89-20 moves structural-graph signal upstream (entity_search_keys → context_loader) | §12 D-89-18 marker |
+| D-89-17 partial retract | "TREAT key_entities as seed candidates" clause retracted; rest (USE domain/source_type/author + Source schema additions) stays | §14 table |
+| Task #90 (Context-loader T2-rewrite) input contract locked | `entity_search_keys` is the sole structured input | `docs/TASKS.md` #90 |
+| Bug #2 from 2026-05-26 implementation checkpoint dissolved | D-89-19 + D-89-20 eliminate the "where does merged_summary land" problem entirely | session-handoff doc |
+| Memory captures | Sharpened: `[[feedback_no_imaginary_risk]]` (caught in transition-guardrail hedging during the discussion) | — |
 
 ---
 
