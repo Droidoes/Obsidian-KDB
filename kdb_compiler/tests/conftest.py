@@ -38,7 +38,7 @@ def _stub_planner_graph_context(request, monkeypatch):
         yield
         return
 
-    def _empty_snapshot(conn, *, source_id, source_text, page_cap=50):
+    def _empty_snapshot(conn, *, source_id, source_text, page_cap=50, **_kwargs):
         return ContextSnapshot(source_id=source_id, pages=[])
 
     monkeypatch.setattr(

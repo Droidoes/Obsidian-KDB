@@ -38,6 +38,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from kdb_compiler import graph_context_loader
+from kdb_compiler.graph_context_loader import T2Mode
+from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
 
@@ -78,18 +80,50 @@ def eligible_source_ids(scan: dict) -> list[str]:
     return [sid for sid in to_compile if sid not in binary_paths]
 
 
+# ---------- env-var resolution (Task #90 v0.2 — D-90-9) ----------
+
+def _resolve_t2_mode_from_env() -> T2Mode:
+    """Resolve KDB_T2_MODE to a T2Mode value. Default STRUCTURED per D-90-1.
+
+    Case-insensitive. Invalid value raises RuntimeError (loud failure on
+    misconfiguration — silent fallback to default would hide operator error).
+    """
+    raw = os.environ.get("KDB_T2_MODE", "").strip().lower()
+    if not raw:
+        return T2Mode.STRUCTURED
+    try:
+        return T2Mode(raw)
+    except ValueError as exc:
+        valid = ", ".join(m.value for m in T2Mode)
+        raise RuntimeError(
+            f"KDB_T2_MODE={raw!r} is invalid. Expected one of: {valid}."
+        ) from exc
+
+
+def _resolve_t2_resolver_from_env() -> str:
+    """Resolve KDB_T2_RESOLVER to "simple" or "batch". Default "simple" per D-90-9."""
+    raw = os.environ.get("KDB_T2_RESOLVER", "").strip().lower()
+    if not raw:
+        return "simple"
+    if raw not in ("simple", "batch"):
+        raise RuntimeError(
+            f"KDB_T2_RESOLVER={raw!r} is invalid. Expected: 'simple' or 'batch'."
+        )
+    return raw
+
+
 # ---------- job construction ----------
 
-def _read_source_text(abs_path: Path) -> str:
-    """Best-effort UTF-8 read. Returns '' on any I/O or decode failure.
+def _parse_source_for_plan(abs_path: Path) -> tuple[SourceFrontmatter | None, str]:
+    """Plan-time wrapper around source_io.parse_source_file with degrade.
 
-    See module docstring — compile_one is the authoritative source-read
-    gate; planner degrades to empty context rather than block.
+    Returns (None, "") on any I/O or decode failure — compile_one is the
+    authoritative source-read gate; planner degrades to empty context.
     """
     try:
-        return abs_path.read_text(encoding="utf-8")
+        return parse_source_file(abs_path)
     except (OSError, UnicodeDecodeError):
-        return ""
+        return None, ""
 
 
 def build_jobs(
@@ -113,14 +147,18 @@ def build_jobs(
             "Unset the variable or run `graphdb-kdb rebuild`."
         )
 
+    t2_mode = _resolve_t2_mode_from_env()
+    t2_resolver = _resolve_t2_resolver_from_env()
+
     with _graph_conn_or_raise() as conn:
         jobs: list[CompileJob] = []
         for source_id in eligible_source_ids(scan):
             abs_path = vault_root / source_id
-            source_text = _read_source_text(abs_path)
+            frontmatter, source_text = _parse_source_for_plan(abs_path)
             snapshot = _build_context(
                 conn, source_id=source_id,
                 source_text=source_text, page_cap=context_page_cap,
+                frontmatter=frontmatter, mode=t2_mode, resolver=t2_resolver,
             )
             jobs.append(CompileJob(
                 source_id=source_id,
@@ -131,11 +169,19 @@ def build_jobs(
 
 
 def _build_context(
-    conn, *, source_id: str, source_text: str, page_cap: int = 50
+    conn,
+    *,
+    source_id: str,
+    source_text: str,
+    page_cap: int = 50,
+    frontmatter: SourceFrontmatter | None = None,
+    mode: T2Mode = T2Mode.STRUCTURED,
+    resolver: str = "simple",
 ) -> ContextSnapshot:
     """Thin delegation to graph_context_loader (seam for test stubbing)."""
     return graph_context_loader.build_context_snapshot(
         conn, source_id=source_id, source_text=source_text, page_cap=page_cap,
+        frontmatter=frontmatter, mode=mode, resolver=resolver,
     )
 
 

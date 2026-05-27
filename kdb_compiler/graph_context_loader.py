@@ -1,14 +1,20 @@
 """graph_context_loader — GraphDB-backed context snapshot for one compile job.
 
 Selected by planner.py via KDB_CONTEXT_SOURCE=graphdb. Does NOT read env vars
-itself — planner owns the branch. Fails explicitly if graph state is
+itself (Codex F-5 purity invariant) — planner owns env-var parsing and threads
+T2Mode/resolver as explicit params. Fails explicitly if graph state is
 insufficient.
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
-    T2 (score=2): entities whose slug appears as whole-word in source_text
-                  Cold-start widening (D48): when T1 is empty, T2 also matches
-                  eligible entity titles as exact phrases in source_text.
+    T2 (score=2): entities seeded into context per T2Mode (Task #90 v0.2):
+                  - STRUCTURED (default, D-90-1): Pass-1 enriched sources use
+                    `entity_search_keys` (D-89-20); pre-Pass-1 sources fall
+                    back to legacy regex; explicit `[]` honored as empty T2
+                    (State C, D-90-8).
+                  - LAYERED (benchmark-only): union of structured + legacy.
+                  - LEGACY (benchmark-only / pre-Pass-1 fallback): whole-word
+                    regex + cold-start title-phrase widening (D48 / Task #71).
     T3 (score=1): 1-hop neighbors (in+out) of T1∪T2 seeds, excluding seeds
                   Cold-start widening: expands to 2-hop when T1 empty and
                   |T2| < _MIN_SEED_THRESHOLD.
@@ -17,6 +23,7 @@ Ranking tiers (strict ordering — no cross-tier promotion):
 from __future__ import annotations
 
 import re
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import kuzu
@@ -24,12 +31,24 @@ import kuzu
 from kdb_compiler.types import ContextPage, ContextSnapshot
 
 if TYPE_CHECKING:
-    pass
+    from kdb_compiler.source_io import SourceFrontmatter
 
 _VALID_PAGE_TYPES = frozenset({"summary", "concept", "article"})
 
 
 _MIN_SEED_THRESHOLD = 5
+
+
+class T2Mode(str, Enum):
+    """T2 production strategy (Task #90 D-90-2).
+
+    STRUCTURED is the v1 production default per D-90-1. LAYERED and LEGACY
+    exist for the NW-9 benchmark (D-90-4) — they are not expected to be
+    selected in normal compile runs.
+    """
+    STRUCTURED = "structured"
+    LAYERED = "layered"
+    LEGACY = "legacy"
 
 
 def build_context_snapshot(
@@ -38,11 +57,21 @@ def build_context_snapshot(
     source_id: str,
     source_text: str,
     page_cap: int = 50,
+    frontmatter: "SourceFrontmatter | None" = None,
+    mode: T2Mode = T2Mode.STRUCTURED,
+    resolver: str = "simple",
 ) -> ContextSnapshot:
     """Build a tier-ranked, source-specific context snapshot from GraphDB.
 
     Pure graph reads — no manifest access, no env var reads.
     Empty/missing source or empty graph → empty snapshot (never raises).
+
+    Task #90 v0.2 params:
+        frontmatter: Pass-1 SourceFrontmatter or None for pre-Pass-1 sources.
+            Drives T2 branch under STRUCTURED/LAYERED modes.
+        mode: T2 production strategy (default STRUCTURED per D-90-1).
+        resolver: "simple" (2-query default per D-90-9) or "batch" (Codex-tested
+            escape hatch via KDB_T2_RESOLVER=batch).
     """
     active_entities = _load_active_entities(conn)
     if not active_entities:
@@ -54,12 +83,16 @@ def build_context_snapshot(
     t1_slugs = _t1_source_supported(conn, source_id, slug_set)
     cold_start = len(t1_slugs) == 0
 
-    t2_slugs = _t2_slug_in_text(source_text, slug_set - t1_slugs)
-    if cold_start:
-        t2_title_slugs = _t2_title_in_text(
-            source_text, slug_set - t1_slugs - t2_slugs, active_entities
-        )
-        t2_slugs = t2_slugs | t2_title_slugs
+    t2_slugs = _build_t2(
+        conn,
+        source_text=source_text,
+        candidate_slugs=slug_set - t1_slugs,
+        active_entities=active_entities,
+        cold_start=cold_start,
+        frontmatter=frontmatter,
+        mode=mode,
+        resolver=resolver,
+    )
 
     seeds = t1_slugs | t2_slugs
     max_hops = 1
@@ -297,3 +330,239 @@ def _whole_word_alternation(slugs: list[str]) -> re.Pattern[str]:
         r"(?<![\w-])(" + "|".join(escaped) + r")(?![\w-])",
         re.IGNORECASE,
     )
+
+
+# ---------- T2 dispatcher (Task #90 v0.2 — D-90-2) ----------
+
+
+def _build_t2(
+    conn: kuzu.Connection,
+    *,
+    source_text: str,
+    candidate_slugs: set[str],
+    active_entities: dict[str, dict],
+    cold_start: bool,
+    frontmatter: "SourceFrontmatter | None",
+    mode: T2Mode,
+    resolver: str,
+) -> set[str]:
+    """Dispatch T2 construction by mode. STRUCTURED is the v1 default."""
+    if mode == T2Mode.STRUCTURED:
+        return _t2_structured(
+            conn, frontmatter, source_text, candidate_slugs, cold_start,
+            active_entities, resolver,
+        )
+    if mode == T2Mode.LAYERED:
+        return _t2_layered(
+            conn, frontmatter, source_text, candidate_slugs, cold_start,
+            active_entities, resolver,
+        )
+    if mode == T2Mode.LEGACY:
+        return _t2_legacy(source_text, candidate_slugs, cold_start, active_entities)
+    raise ValueError(f"unknown T2Mode: {mode!r}")
+
+
+def _t2_structured(
+    conn: kuzu.Connection,
+    frontmatter: "SourceFrontmatter | None",
+    source_text: str,
+    candidate_slugs: set[str],
+    cold_start: bool,
+    active_entities: dict[str, dict],
+    resolver: str,
+) -> set[str]:
+    """STRUCTURED mode (Option A, D-90-1). Three-state branch per D-90-8.
+
+    State A — frontmatter is None: pre-Pass-1 source → legacy regex + cold-start
+        title-phrase widening.
+    State B — frontmatter.entity_search_keys non-empty: use structured lookup.
+    State C — frontmatter present but entity_search_keys explicitly []: honor
+        the LLM's "no graph anchors" judgment; emit empty T2.
+    """
+    if frontmatter is None:
+        return _t2_legacy(source_text, candidate_slugs, cold_start, active_entities)
+    if frontmatter.entity_search_keys:
+        return _t2_from_search_keys(
+            conn, frontmatter.entity_search_keys, candidate_slugs, resolver,
+        )
+    # State C — explicit empty signal honored.
+    return set()
+
+
+def _t2_layered(
+    conn: kuzu.Connection,
+    frontmatter: "SourceFrontmatter | None",
+    source_text: str,
+    candidate_slugs: set[str],
+    cold_start: bool,
+    active_entities: dict[str, dict],
+    resolver: str,
+) -> set[str]:
+    """LAYERED mode (Option B, benchmark-only). structured ∪ legacy.
+
+    Deliberately diverges from STRUCTURED on State C — when entity_search_keys
+    is explicitly [], LAYERED still runs the legacy regex over the full candidate
+    pool. Lets NW-9 measure the cost of honoring State C vs. always-regex.
+    """
+    structured: set[str] = set()
+    if frontmatter is not None and frontmatter.entity_search_keys:
+        structured = _t2_from_search_keys(
+            conn, frontmatter.entity_search_keys, candidate_slugs, resolver,
+        )
+    regex_pool = candidate_slugs - structured
+    legacy = _t2_legacy(source_text, regex_pool, cold_start, active_entities)
+    return structured | legacy
+
+
+def _t2_legacy(
+    source_text: str,
+    candidate_slugs: set[str],
+    cold_start: bool,
+    active_entities: dict[str, dict],
+) -> set[str]:
+    """LEGACY mode (pre-Pass-1 fallback or benchmark baseline). Whole-word
+    slug regex + cold-start title-phrase widening (D48 / Task #71).
+
+    Transitional behavior — sunsets under D-90-12 once vault is 100% enriched
+    and NW-9 confirms STRUCTURED ≥ LEGACY on cold-start density + precision.
+    """
+    t2 = _t2_slug_in_text(source_text, candidate_slugs)
+    if cold_start:
+        t2 = t2 | _t2_title_in_text(
+            source_text, candidate_slugs - t2, active_entities,
+        )
+    return t2
+
+
+# ---------- Structured-key lookup (Task #90 v0.2 — D-90-9) ----------
+
+
+def _t2_from_search_keys(
+    conn: kuzu.Connection,
+    raw_keys: list[str],
+    candidate_slugs: set[str],
+    resolver: str,
+) -> set[str]:
+    """Batched resolution of Pass-1 entity_search_keys → canonical T2 slugs.
+
+    Set semantics naturally deduplicate when multiple raw keys resolve to the
+    same canonical entity.
+    """
+    if not raw_keys:
+        return set()
+    if resolver == "batch":
+        resolved_map = _resolve_to_canonical_slugs_batch(conn, raw_keys)
+    else:
+        resolved_map = _resolve_to_canonical_slugs(conn, raw_keys)
+    return {canonical for canonical in resolved_map.values()
+            if canonical in candidate_slugs}
+
+
+def _resolve_to_canonical_slugs(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
+
+    Reachability per §3.1: direct PK → canonical_id (with target.status='active'
+    check — fixes B-2) → ALIAS_OF (canonical.status='active' check).
+
+    Returns {raw_slug: canonical_slug} for every raw key that resolves to an
+    active canonical entity. Unresolved raws are absent from the dict.
+
+    Defensive: trims whitespace + drops empty/whitespace-only entries (Qwen O-2).
+    """
+    if not raw_slugs:
+        return {}
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+
+    resolved: dict[str, str] = {}
+
+    # Single MATCH with two OPTIONAL chains: surface direct PK, canonical_id
+    # target status, and ALIAS_OF canonical info in one round-trip. Path
+    # precedence applied in Python: Path 2 (canonical_id) > Path 3 (ALIAS_OF)
+    # > Path 1 (direct leaf). Path 3 before Path 1 is required so that an
+    # entity with NO canonical_id but WITH an outgoing ALIAS_OF resolves via
+    # the alias target — and so that an alias with a DEAD target stays
+    # unresolved (does not fall back to self).
+    q = conn.execute(
+        """
+        MATCH (e:Entity)
+        WHERE e.slug IN $slugs
+        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
+        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
+        RETURN e.slug, e.status, e.canonical_id,
+               CASE WHEN target IS NULL THEN NULL ELSE target.status END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.slug END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END
+        """,
+        {"slugs": cleaned},
+    )
+    while q.has_next():
+        slug, status, canonical_id, target_status, alias_canon, alias_canon_status = q.get_next()
+        if canonical_id is not None:
+            # Path 2 — canonical_id resolution (B-2 active check)
+            if target_status == "active":
+                resolved[slug] = canonical_id
+            # else: dead canonical_id target — unresolved
+        elif alias_canon is not None:
+            # Path 3 — ALIAS_OF safety net (entity declared itself an alias)
+            if alias_canon_status == "active":
+                resolved[slug] = alias_canon
+            # else: dead alias target — unresolved (NOT Path 1 fallback)
+        elif status == "active":
+            # Path 1 — direct leaf entity (no canonical_id, no outgoing ALIAS_OF)
+            resolved[slug] = slug
+
+    return resolved
+
+
+def _resolve_to_canonical_slugs_batch(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Codex-tested batch resolver (D-90-9 escape hatch, KDB_T2_RESOLVER=batch).
+
+    Single Cypher with UNWIND + chained OPTIONAL MATCH + CASE; empirically
+    validated on Kuzu 0.11.3 in the v0.1 panel review. Functional parity with
+    the simple resolver is enforced by test_t2_resolver_parity.py.
+    """
+    if not raw_slugs:
+        return {}
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+
+    # CASE precedence: Path 2 (canonical_id) > Path 3 (ALIAS_OF) > Path 1 (direct leaf).
+    # An entity that has DECLARED itself an alias (either via canonical_id or
+    # an outgoing ALIAS_OF edge) must NOT fall back to Path 1 if its declared
+    # target is inactive — the explicit-null clauses suppress that fallback.
+    # This keeps Path 1 reserved for true canonical leaves.
+    q = conn.execute(
+        """
+        UNWIND $raw_slugs AS raw
+        OPTIONAL MATCH (e:Entity {slug: raw})
+        WITH raw, e
+        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
+        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
+        RETURN raw,
+               CASE
+                 WHEN e IS NULL THEN NULL
+                 WHEN e.canonical_id IS NOT NULL AND target IS NOT NULL AND target.status = 'active' THEN e.canonical_id
+                 WHEN e.canonical_id IS NOT NULL THEN NULL
+                 WHEN canon IS NOT NULL AND canon.status = 'active' THEN canon.slug
+                 WHEN canon IS NOT NULL THEN NULL
+                 WHEN e.status = 'active' THEN e.slug
+                 ELSE NULL
+               END AS canonical
+        """,
+        {"raw_slugs": cleaned},
+    )
+    resolved: dict[str, str] = {}
+    while q.has_next():
+        raw, canonical = q.get_next()
+        if canonical is not None:
+            resolved[raw] = canonical
+    return resolved
