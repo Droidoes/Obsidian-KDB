@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from kdb_compiler.ingestion.enrich import enrich_one
+from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
 from kdb_compiler.ingestion.run_journal import IngestRunJournal, write_journal
 from kdb_compiler.ingestion.config_loader import load_scope_config
 
@@ -48,7 +49,7 @@ def main():
     scope = load_scope_config()
     journal = IngestRunJournal(
         run_id=run_id,
-        prompt_version="1.0.0",
+        prompt_version=PASS1_PROMPT_VERSION,
         model=args.model,
         force_signal_globs=list(scope.force_signal),
         force_noise_globs=list(scope.force_noise),

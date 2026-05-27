@@ -9,6 +9,7 @@ from pathlib import Path
 
 from kdb_compiler.ingestion.config_loader import load_scope_config
 from kdb_compiler.ingestion.pass1_caller import call_pass1, Pass1CallError
+from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
 from kdb_compiler.ingestion.overrides import apply_overrides
 from kdb_compiler.ingestion.frontmatter_embedder import (
     embed_frontmatter, parse_existing_frontmatter,
@@ -99,7 +100,7 @@ def _empty_source_envelope(model: str) -> dict:
         "summary": "", "key_themes": [], "entity_search_keys": [],
         "confidence": 1.0, "uncertainty_reason": None,
         "reject_reason": "empty source",
-        "prompt_version": "1.0.0", "model": model, "schema_version": 1,
+        "prompt_version": PASS1_PROMPT_VERSION, "model": model, "schema_version": 1,
         "override": {"applied": None, "rule": None, "match": None,
                      "llm_original": "noise", "reject_reason_cleared": None},
         "other_reason": "empty source — no content to classify",

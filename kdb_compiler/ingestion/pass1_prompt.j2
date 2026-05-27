@@ -60,28 +60,57 @@ relationships.)
 - `key_themes`: list of 2-5 strings. Finer-grained themes than `domain`
   capturing substantive sub-topics within the source.
 - `entity_search_keys`: list of up to 10 kebab-case slug candidates designed
-  to find related existing entities in a downstream knowledge graph (where
-  each entity is keyed by a concept slug). The graph contains entities for
-  notable people, concepts, frameworks, themes, and named ideas across many
-  sources. What to include:
+  to seed a downstream context-loader that looks up existing entities in a
+  knowledge graph. The graph contains entities for notable people, concepts,
+  frameworks, themes, and named ideas across many sources. These keys are
+  matched against entity slugs by exact string comparison, with an
+  alias-resolution layer that maps known variant slugs (and "ALIAS_OF"
+  edges) to their canonical form — so emit the slug form most likely to
+  match an existing entity record directly, and avoid emitting multiple
+  variants of the same entity. What to include:
     1. Each item in `key_themes` (themes themselves are often already entity slugs).
-    2. Common slug variants of each theme (e.g., for "value-investing" you might
-       also include "value-investor" or a closely-related concept like
-       "intrinsic-value").
-    3. Slugs for entity names mentioned substantively in the source — people,
-       organizations, named frameworks. Use surname-only for well-known figures
-       ("buffett") and/or full-name form ("warren-buffett") when ambiguity is
-       possible.
-    4. Closely-related concepts that frequently co-occur with the source's
-       themes, even if not named explicitly (a small fanout for graph discovery).
-  Format: lowercase, hyphens between words, no spaces, no punctuation other than
-  hyphens. Prefer specificity over breadth: "value-investing" beats "investing";
-  "graham-and-doddsville" beats "investors". Cap at 10 keys total; aim for 5–10.
-  Example: source about Warren Buffett and Charlie Munger's value-investing
-  approach with key_themes ["value-investing", "margin-of-safety", "compounding"]
-  → `["value-investing", "margin-of-safety", "compounding", "warren-buffett",
-       "buffett", "charlie-munger", "munger", "intrinsic-value",
-       "berkshire-hathaway", "circle-of-competence"]`.
+    2. Common slug variants of each theme — but only if the variant is a
+       distinct concept (e.g., for "value-investing" the related concept
+       "intrinsic-value" is a distinct entity, not an orthographic variant
+       of "value-investing").
+    3. Slugs for entity names mentioned substantively in the source —
+       people, organizations, named frameworks. Prefer the full-name form
+       ("warren-buffett") over surname-only ("buffett"). Do NOT emit both
+       forms for the same individual; the alias-resolution layer handles
+       variant matching downstream.
+    4. Closely-related concepts that are substantively referenced or
+       load-bearing to the source's core argument, and that you believe
+       likely have their own entity records in a well-populated graph
+       (e.g., a framework's foundational principle, a theory's key critic).
+       Emit only concepts the source actually engages — do not include
+       speculative or weak co-occurrences.
+  Format: lowercase, hyphens between words, no spaces, no punctuation other
+  than hyphens. Conjunctions and prepositions inside slugs are fine
+  ("graham-and-doddsville", "theory-of-mind"). Prefer specificity over
+  breadth: "value-investing" beats "investing"; "graham-and-doddsville"
+  beats "investors". Cap at 10 keys total; aim for 5–10.
+
+  Examples (domain-diverse):
+
+  - Finance: source about Warren Buffett and Charlie Munger's value-investing
+    approach with key_themes ["value-investing", "margin-of-safety",
+    "compounding"]
+    → `["value-investing", "margin-of-safety", "compounding",
+         "warren-buffett", "charlie-munger", "intrinsic-value",
+         "berkshire-hathaway", "circle-of-competence",
+         "graham-and-doddsville"]`.
+
+  - AI/ML: source about transformer architectures in NLP with key_themes
+    ["attention-mechanism", "self-attention", "transformers"]
+    → `["attention-mechanism", "self-attention", "transformers",
+         "multi-head-attention", "positional-encoding",
+         "sequence-to-sequence", "bert", "scaling-laws"]`.
+
+  - Philosophy: source about Rawls' veil of ignorance with key_themes
+    ["veil-of-ignorance", "distributive-justice", "original-position"]
+    → `["veil-of-ignorance", "distributive-justice", "original-position",
+         "john-rawls", "theory-of-justice", "social-contract",
+         "kantian-ethics"]`.
 
 ### Audit section
 

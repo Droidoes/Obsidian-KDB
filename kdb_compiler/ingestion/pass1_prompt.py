@@ -9,7 +9,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from kdb_compiler.ingestion.config_loader import load_domains, load_source_types
 from kdb_compiler.ingestion.pass1_schema import PASS1_SCHEMA_VERSION
 
-PASS1_PROMPT_VERSION = "1.0.0"
+PASS1_PROMPT_VERSION = "1.1.0"  # Task #90 v0.2 §4 entity_search_keys amendments (2026-05-27)
 
 _TEMPLATE_DIR = Path(__file__).parent
 _env = Environment(
