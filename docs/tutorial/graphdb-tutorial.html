@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraphDB-KDB Tutorial</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f4;
+      --paper: #ffffff;
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #d9ddd6;
+      --accent: #0f766e;
+      --accent-dark: #115e59;
+      --code-bg: #18201f;
+      --code-ink: #eef7f4;
+      --note: #eef6f3;
+      --warn: #fff7e6;
+      --shadow: 0 16px 40px rgba(25, 38, 34, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-dark);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 36px 24px 64px;
+    }
+
+    header {
+      padding: 34px 0 26px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent-dark);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 820px;
+      font-size: clamp(2.25rem, 5vw, 4.25rem);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .lede {
+      max-width: 820px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.16rem;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 270px minmax(0, 1fr);
+      gap: 34px;
+      align-items: start;
+      margin-top: 30px;
+    }
+
+    nav {
+      position: sticky;
+      top: 18px;
+      padding: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 0.95rem;
+    }
+
+    nav a {
+      display: block;
+      padding: 7px 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+      text-decoration: none;
+      border-top: 1px solid transparent;
+    }
+
+    nav a:hover {
+      color: var(--accent-dark);
+    }
+
+    main {
+      min-width: 0;
+    }
+
+    section {
+      padding: 28px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    section:first-child {
+      padding-top: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.52rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 1.08rem;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ul, ol {
+      margin: 0 0 16px 1.25rem;
+      padding: 0;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    code {
+      padding: 0.12rem 0.32rem;
+      background: #e8ece8;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 14px 0 18px;
+      padding: 16px;
+      color: var(--code-ink);
+      background: var(--code-bg);
+      border-radius: 8px;
+      line-height: 1.45;
+    }
+
+    pre code {
+      padding: 0;
+      color: inherit;
+      background: transparent;
+      border-radius: 0;
+      font-size: 0.9rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0 20px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      color: #2d3734;
+      background: #edf2ef;
+      font-size: 0.88rem;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .callout {
+      margin: 16px 0;
+      padding: 14px 16px;
+      background: var(--note);
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+    }
+
+    .warning {
+      background: var(--warn);
+      border-left-color: #b45309;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .card {
+      min-height: 100%;
+      padding: 15px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .diagram {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .diagram div {
+      display: flex;
+      min-height: 78px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      text-align: center;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-weight: 700;
+    }
+
+    .graph-figure {
+      margin: 20px 0;
+      padding: 16px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .graph-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .node-source {
+      fill: #e6f4ea;
+      stroke: #137333;
+      stroke-width: 2;
+    }
+
+    .node-entity {
+      fill: #e8f0fe;
+      stroke: #1a73e8;
+      stroke-width: 2;
+    }
+
+    .node-domain {
+      fill: #fce8e6;
+      stroke: #c5221f;
+      stroke-width: 2;
+    }
+
+    .node-claim {
+      fill: #fef7e0;
+      stroke: #b06000;
+      stroke-width: 2;
+    }
+
+    .edge-line {
+      stroke: #4d5b57;
+      stroke-width: 2;
+      fill: none;
+      marker-end: url(#arrow);
+    }
+
+    .edge-label {
+      fill: #283632;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .node-label {
+      fill: #1f2933;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .node-sub {
+      fill: #52605d;
+      font-size: 12px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid currentColor;
+    }
+
+    .swatch.source {
+      border-radius: 4px;
+      color: #137333;
+      background: #e6f4ea;
+    }
+
+    .swatch.entity {
+      border-radius: 50%;
+      color: #1a73e8;
+      background: #e8f0fe;
+    }
+
+    .swatch.domain {
+      width: 0;
+      height: 0;
+      border-left: 10px solid transparent;
+      border-right: 10px solid transparent;
+      border-bottom: 18px solid #c5221f;
+      background: transparent;
+      color: #c5221f;
+    }
+
+    .swatch.claim {
+      color: #b06000;
+      background: #fef7e0;
+      transform: skew(-10deg);
+    }
+
+    .kicker {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .footer {
+      padding-top: 24px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      nav {
+        position: static;
+      }
+
+      .diagram {
+        grid-template-columns: 1fr;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <p class="eyebrow">Obsidian-KDB Architecture Tutorial</p>
+      <h1>GraphDB-KDB: the queryable memory behind the compiled knowledge base</h1>
+      <p class="lede">
+        GraphDB-KDB is the Kuzu-backed ontology layer for Obsidian-KDB. The Markdown wiki is the
+        readable surface; the graph is the live structure that stores entities, sources, links,
+        provenance, domains, aliases, and eventually belief-revision claims.
+      </p>
+    </header>
+
+    <div class="layout">
+      <nav aria-label="Table of contents">
+        <h2>Contents</h2>
+        <a href="#mental-model">Mental model</a>
+        <a href="#locations">Locations</a>
+        <a href="#components">Components</a>
+        <a href="#graph-basics">Graph basics</a>
+        <a href="#schema">Schema</a>
+        <a href="#pipeline">Pipeline</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#build">Build and populate</a>
+        <a href="#query">Query examples</a>
+        <a href="#use-cases">Practical use cases</a>
+        <a href="#current-state">Current state</a>
+      </nav>
+
+      <main>
+        <section id="mental-model">
+          <h2>1. Mental Model</h2>
+          <p>
+            The project is best understood as a <strong>raw-text to knowledge-graph compiler</strong>.
+            The compiler reads sources from <code>KDB/raw/</code>, asks the model to emit structured page
+            intents, validates and canonicalizes them, writes Markdown for Obsidian, then syncs the
+            same structured result into GraphDB-KDB.
+          </p>
+          <p>
+            Longer term, there can be multiple source-preparation pipelines upstream of this compiler.
+            Most of those pipelines will produce enriched raw text and place it into <code>KDB/raw/</code>.
+            The Obsidian vault is a special case: because the vault itself hosts <code>KDB/raw/</code>,
+            vault-native sources can stay in place and be enriched in place, while <code>KDB/raw/</code>
+            remains the compiler's source boundary.
+          </p>
+          <div class="diagram" aria-label="Pipeline diagram">
+            <div>Raw sources</div>
+            <div>LLM compiler</div>
+            <div>Validated JSON</div>
+            <div>Markdown wiki</div>
+            <div>Kuzu GraphDB</div>
+          </div>
+          <div class="callout">
+            <strong>Core distinction:</strong> Obsidian is the IDE and human-readable rendering.
+            GraphDB-KDB is the queryable memory of relationships.
+          </div>
+        </section>
+
+        <section id="locations">
+          <h2>2. Where Things Live</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Concern</th>
+                <th>Path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>GraphDB code</td>
+                <td><code>~/Droidoes/Obsidian-KDB/graphdb_kdb/</code></td>
+                <td>Python package for schema, graph-write application, queries, analytics, verification, and rebuild.</td>
+              </tr>
+              <tr>
+                <td>Kuzu graph store</td>
+                <td><code>~/Droidoes/GraphDB-KDB</code></td>
+                <td>Live Kuzu database file used by the CLI and compiler sync.</td>
+              </tr>
+              <tr>
+                <td>Vault data</td>
+                <td><code>~/Obsidian/KDB/</code></td>
+                <td>Raw sources, generated wiki, run journals, sidecars, snapshots, and state files.</td>
+              </tr>
+              <tr>
+                <td>North Star docs</td>
+                <td><code>docs/CODEBASE_OVERVIEW.md</code></td>
+                <td>Current architectural source of truth.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="components">
+          <h2>3. Components</h2>
+          <div class="grid">
+            <div class="card">
+              <h3>Schema</h3>
+              <p><code>schema.py</code> defines Kuzu node and relationship tables plus migrations.</p>
+            </div>
+            <div class="card">
+              <h3>Connection manager</h3>
+              <p><code>graphdb.py</code> opens Kuzu, bootstraps schema, and exposes the public API.</p>
+            </div>
+            <div class="card">
+              <h3>Graph write engine</h3>
+              <p>
+                <code>ingestor.py</code> is named from the graph's point of view: it applies one
+                compiler result into Kuzu. This is different from the upstream ingestion pipelines
+                that prepare enriched raw text before the compiler sees it.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Adapter</h3>
+              <p>
+                <code>adapters/obsidian_runs.py</code> translates Obsidian-KDB's run files into graph
+                writes. A run file says "these pages and links were produced"; the adapter turns
+                that into the specific <code>Entity</code>, <code>LINKS_TO</code>, and
+                <code>SUPPORTS</code> operations GraphDB-KDB understands.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Queries</h3>
+              <p>
+                <code>queries.py</code> answers graph questions: what is near this entity, what links
+                into it, what route connects two entities, which sources support it, and what custom
+                Cypher query should Kuzu run.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Analytics</h3>
+              <p>
+                <code>analytics.py</code> computes graph-level signals: central entities with
+                PageRank, clusters with Louvain community detection, and weak bridges with
+                structural-hole detection.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Verifier and rebuilder</h3>
+              <p>
+                <code>verifier.py</code> and <code>rebuilder.py</code> are the recovery proof. The
+                intended recovery path is replaying saved run sidecars into a clean Kuzu graph, then
+                checking that replayed graph against the live graph.
+              </p>
+            </div>
+            <div class="card">
+              <h3>CLI</h3>
+              <p><code>cli.py</code> powers the <code>graphdb-kdb</code> command-line interface.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="graph-basics">
+          <h2>4. Graph Basics</h2>
+          <p>
+            A Kuzu GraphDB is easiest to picture as a property graph with three pieces:
+            <strong>nodes</strong>, <strong>edges</strong>, and <strong>properties</strong>.
+            Nodes are the circles, squares, triangles, or other objects. Edges are the labeled
+            lines between them. Properties are the data attached to either nodes or edges.
+          </p>
+          <div class="graph-figure" role="img" aria-label="Typed Kuzu graph diagram showing Source, Entity, Domain, and Claim nodes connected by labeled edges.">
+            <svg class="graph-svg" viewBox="0 0 900 430" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#4d5b57"></path>
+                </marker>
+              </defs>
+
+              <rect class="node-source" x="35" y="148" width="150" height="82" rx="8"></rect>
+              <text class="node-label" x="110" y="180" text-anchor="middle">Source</text>
+              <text class="node-sub" x="110" y="202" text-anchor="middle">raw file</text>
+
+              <circle class="node-entity" cx="345" cy="115" r="55"></circle>
+              <text class="node-label" x="345" y="108" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="345" y="129" text-anchor="middle">summary page</text>
+
+              <circle class="node-entity" cx="345" cy="275" r="55"></circle>
+              <text class="node-label" x="345" y="268" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="345" y="289" text-anchor="middle">concept page</text>
+
+              <circle class="node-entity" cx="585" cy="195" r="58"></circle>
+              <text class="node-label" x="585" y="188" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="585" y="209" text-anchor="middle">article page</text>
+
+              <polygon class="node-domain" points="745,70 820,190 670,190"></polygon>
+              <text class="node-label" x="745" y="145" text-anchor="middle">Domain</text>
+
+              <polygon class="node-claim" points="690,280 810,280 850,330 810,380 690,380 650,330"></polygon>
+              <text class="node-label" x="750" y="323" text-anchor="middle">Claim</text>
+              <text class="node-sub" x="750" y="344" text-anchor="middle">belief/assertion</text>
+
+              <path class="edge-line" d="M185,170 C230,150 255,130 292,120"></path>
+              <text class="edge-label" x="218" y="137">SUPPORTS</text>
+
+              <path class="edge-line" d="M185,210 C230,235 255,260 292,272"></path>
+              <text class="edge-label" x="220" y="258">SUPPORTS</text>
+
+              <path class="edge-line" d="M397,130 C450,145 495,165 531,184"></path>
+              <text class="edge-label" x="445" y="151">LINKS_TO</text>
+
+              <path class="edge-line" d="M398,260 C450,245 492,225 531,205"></path>
+              <text class="edge-label" x="445" y="254">LINKS_TO</text>
+
+              <path class="edge-line" d="M632,168 C655,150 670,142 696,134"></path>
+              <text class="edge-label" x="635" y="127">BELONGS_TO</text>
+
+              <path class="edge-line" d="M650,318 C620,290 605,260 594,252"></path>
+              <text class="edge-label" x="604" y="306">ABOUT</text>
+
+              <path class="edge-line" d="M185,225 C350,380 510,390 650,342"></path>
+              <text class="edge-label" x="370" y="382">EVIDENCES</text>
+            </svg>
+            <div class="legend">
+              <span><i class="swatch source"></i>Source node: one raw source file</span>
+              <span><i class="swatch entity"></i>Entity node: one summary, concept, article, or alias page</span>
+              <span><i class="swatch domain"></i>Domain node: classification bucket</span>
+              <span><i class="swatch claim"></i>Claim node: belief/assertion</span>
+            </div>
+          </div>
+          <h3>Node</h3>
+          <p>
+            A node is one stored object in the graph. Node types are the graph equivalent of classes
+            in the schema: <code>Entity</code>, <code>Source</code>, <code>Domain</code>, and
+            <code>Claim</code>. Each type has its own allowed properties.
+          </p>
+          <h3>Connection</h3>
+          <p>
+            A connection is always between two nodes. The two nodes can be the same type or different
+            types, but only if the schema allows that edge type. For example, <code>rationality</code>
+            is an <code>Entity</code> node whose <code>page_type</code> is <code>concept</code>.
+            If it links to <code>mungers-four-levels-of-rationality</code>, another
+            <code>Entity</code> node, the graph-write code creates a <code>LINKS_TO</code> edge
+            between them. If a raw source supports <code>rationality</code>, that is a
+            <code>SUPPORTS</code> edge from a <code>Source</code> node to an <code>Entity</code> node.
+          </p>
+          <h3>Edge</h3>
+          <p>
+            An edge sits between two nodes. It does not live "on" either node. It is a separate
+            relationship record with a start node, an end node, a type, and optional properties like
+            <code>run_id</code> or <code>created_at</code>. The Markdown wikilink
+            <code>[[mungers-four-levels-of-rationality]]</code> becomes a <code>LINKS_TO</code>
+            edge from the page containing the wikilink to the page being linked.
+          </p>
+          <h3>Properties</h3>
+          <p>
+            Properties are data fields attached to nodes or edges. A node property might be
+            <code>Entity.slug = "rationality"</code> or <code>Entity.page_type = "concept"</code>.
+            An edge property might be <code>LINKS_TO.run_id</code>, which records which compile run
+            created that relationship.
+          </p>
+          <h3>Other Terms</h3>
+          <ul>
+            <li><code>slug</code>: stable ID for an entity.</li>
+            <li><code>canonical_id</code>: alias/canonicalization pointer; null means self-canonical.</li>
+            <li><code>neighbor</code>: query result for a node reached by following one or more edges.</li>
+            <li><code>depth</code>: number of hops to traverse.</li>
+            <li><code>subgraph</code>: selected nodes plus the selected edges among those nodes.</li>
+            <li><code>provenance</code>: standard data/knowledge-graph term for origin or evidence trail. In this tutorial, it means source-to-entity support metadata: "which source produced or supports this entity?"</li>
+            <li><code>orphan</code>: an entity with no current source support.</li>
+            <li><code>community</code>: an algorithmically detected cluster with denser internal links than external links.</li>
+            <li><code>structural hole</code>: a weak bridge between communities.</li>
+          </ul>
+        </section>
+
+        <section id="schema">
+          <h2>5. Current Schema</h2>
+          <p>
+            Obsidian's graph view can feel like one kind of node connected by one kind of line.
+            Kuzu is a typed graph: nodes have different types, and only schema-declared edge types
+            can connect them. The visual picture is still a mesh, but the mesh has labeled node
+            classes and labeled relationship classes.
+          </p>
+          <p>
+            Yes: each generated summary, concept, article, and alias page is one
+            <code>Entity</code> node. Each raw source is one <code>Source</code> node. A source connects
+            to every generated page it supports through <code>SUPPORTS</code> edges. The generated
+            pages then connect to each other through <code>LINKS_TO</code> edges, which are the graph
+            form of wikilinks.
+          </p>
+          <pre><code>Source --SUPPORTS--> Entity --LINKS_TO--> Entity
+Entity --BELONGS_TO--> Domain
+Entity --ALIAS_OF--> Entity
+Source --EVIDENCES--> Claim --ABOUT--> Entity
+Claim --SUPERSEDES / CONTRADICTS / QUALIFIES--> Claim</code></pre>
+          <p>
+            The important shift: an edge is not a property of a node. It is its own typed record.
+            That is what lets queries ask relationship questions directly, such as "which sources
+            support this entity?" or "what entities point into this entity?"
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Name</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Node</td>
+                <td><code>Entity</code></td>
+                <td>Compiled knowledge object: summary, concept, article, or alias.</td>
+              </tr>
+              <tr>
+                <td>Node</td>
+                <td><code>Source</code></td>
+                <td>Raw input source with hash, path, status, source type, summary, author, and domain fields.</td>
+              </tr>
+              <tr>
+                <td>Node</td>
+                <td><code>Domain</code></td>
+                <td>Normalized classification bucket.</td>
+              </tr>
+              <tr>
+                <td>Node</td>
+                <td><code>Claim</code></td>
+                <td>Versioned belief/assertion used by the promotion and belief-revision layer.</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td><code>LINKS_TO</code></td>
+                <td>Entity-to-entity wikilink relationship.</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td><code>SUPPORTS</code></td>
+                <td>Source-to-entity provenance relationship.</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td><code>ALIAS_OF</code></td>
+                <td>Alias entity to canonical entity.</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td><code>BELONGS_TO</code></td>
+                <td>Entity-to-domain classification.</td>
+              </tr>
+              <tr>
+                <td>Edge</td>
+                <td><code>EVIDENCES</code>, <code>ABOUT</code>, <code>SUPERSEDES</code>, <code>CONTRADICTS</code>, <code>QUALIFIES</code></td>
+                <td>Claim-layer relationships for belief revision.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="pipeline">
+          <h2>6. How GraphDB Is Populated</h2>
+          <ol>
+            <li><code>kdb-scan</code> identifies changed raw sources.</li>
+            <li>The compiler produces structured JSON page intents.</li>
+            <li>Validation rejects malformed compile output before writes.</li>
+            <li>Reconciliation and canonicalization normalize slugs and links.</li>
+            <li>Python writes Markdown pages and state journals.</li>
+            <li>Stage 10 archives sidecars and syncs the canonical compile result into GraphDB.</li>
+          </ol>
+          <div class="callout">
+            Plain version of the adapter boundary: the compiler produces run data; the adapter
+            translates that run data; the GraphDB core writes Kuzu records. The compiler does not
+            open Kuzu and hand-write tables itself because that would mix producer-specific logic
+            with graph-storage logic.
+          </div>
+          <pre><code>compile_result pages/outgoing_links
+  -> ObsidianRunsAdapter translates producer-shaped JSON
+  -> graph write engine creates Entity, LINKS_TO, SUPPORTS records</code></pre>
+        </section>
+
+        <section id="capabilities">
+          <h2>7. Capabilities</h2>
+          <ul>
+            <li>Lookup central concepts via PageRank, which ranks entities by graph importance based on incoming and outgoing link structure.</li>
+            <li>Traverse nearby concepts with directed or bidirectional neighbors. A neighbor is reached by following edges from a starting node.</li>
+            <li>Find incoming references to a concept. An incoming reference is another entity with a <code>LINKS_TO</code> edge pointing into the current entity.</li>
+            <li>Find shortest paths between entities. A shortest path is the minimum number of edge hops between two nodes, subject to direction and max-hop settings.</li>
+            <li>Extract all entities created from a source through <code>SUPPORTS</code> provenance edges.</li>
+            <li>Inspect a source-specific subgraph: the selected source's supported nodes plus links among those nodes.</li>
+            <li>Detect orphan candidates.</li>
+            <li>Detect topic communities with Louvain clustering: groups of entities that link more densely to each other than to the rest of the graph.</li>
+            <li>Detect structural holes between communities: sparse bridges where a missing concept or source might improve the knowledge structure.</li>
+            <li>Rebuild from run history.</li>
+            <li>Verify live graph against replayed graph.</li>
+            <li>Snapshot graph state into diffable JSONL backup.</li>
+          </ul>
+        </section>
+
+        <section id="build">
+          <h2>8. Build And Populate</h2>
+          <p>Install the project in editable mode:</p>
+          <pre><code>cd ~/Droidoes/Obsidian-KDB
+pip install -e ".[dev]"</code></pre>
+
+          <p>Initialize the graph schema:</p>
+          <pre><code>graphdb-kdb init</code></pre>
+
+          <p>Populate through the normal compile pipeline:</p>
+          <pre><code>kdb-compile</code></pre>
+
+          <p>Rebuild the graph from historical sidecars:</p>
+          <pre><code>graphdb-kdb rebuild --vault-root ~/Obsidian --yes</code></pre>
+
+          <p>Verify the live graph:</p>
+          <pre><code>graphdb-kdb verify --vault-root ~/Obsidian</code></pre>
+
+          <p>Snapshot the graph:</p>
+          <pre><code>graphdb-kdb snapshot --vault-root ~/Obsidian</code></pre>
+
+          <div class="callout warning">
+            <strong>Operational note:</strong> avoid running multiple <code>graphdb-kdb</code>
+            commands in parallel against the same Kuzu file. Kuzu can reject concurrent opens
+            with a file-lock error.
+          </div>
+        </section>
+
+        <section id="query">
+          <h2>9. Query Examples</h2>
+          <p>Basic counts:</p>
+          <pre><code>graphdb-kdb stats</code></pre>
+
+          <p>Bidirectional depth-1 neighborhood around <code>rationality</code>:</p>
+          <pre><code>graphdb-kdb neighbors rationality --direction both --depth 1</code></pre>
+
+          <p>Incoming links to <code>corruption-in-governance</code>:</p>
+          <pre><code>graphdb-kdb incoming corruption-in-governance</code></pre>
+
+          <p>Shortest directed path:</p>
+          <pre><code>graphdb-kdb path rationality value-investing --max-hops 5</code></pre>
+
+          <p>Top PageRank entities:</p>
+          <pre><code>graphdb-kdb pagerank --top 10</code></pre>
+
+          <p>Community assignments:</p>
+          <pre><code>graphdb-kdb communities</code></pre>
+
+          <p>Structural holes:</p>
+          <pre><code>graphdb-kdb structural-holes</code></pre>
+
+          <p>Source-specific subgraph:</p>
+          <pre><code>graphdb-kdb subgraph-by-source "KDB/raw/Li_Lu_Munger_College_Dec_2024.md"</code></pre>
+
+          <p>Ad-hoc Cypher:</p>
+          <pre><code>graphdb-kdb cypher "MATCH (e:Entity) RETURN e.slug, e.page_type ORDER BY e.slug LIMIT 10"</code></pre>
+        </section>
+
+        <section id="use-cases">
+          <h2>10. Practical Use Cases</h2>
+          <div class="grid">
+            <div class="card">
+              <h3>Compile context</h3>
+              <p>Query relevant existing entities before compiling a new source instead of relying on static top-50 lists.</p>
+            </div>
+            <div class="card">
+              <h3>Knowledge-hole detection</h3>
+              <p>Use weak inter-community bridges to identify missing concepts that could connect topic clusters.</p>
+            </div>
+            <div class="card">
+              <h3>Learning paths</h3>
+              <p>Start from a concept, traverse neighbors, then expand through communities.</p>
+            </div>
+            <div class="card">
+              <h3>Source audit</h3>
+              <p>Ask which entities a source contributed and which relationships were created from it.</p>
+            </div>
+            <div class="card">
+              <h3>Concept provenance</h3>
+              <p>Ask which raw sources currently support a concept.</p>
+            </div>
+            <div class="card">
+              <h3>Belief revision</h3>
+              <p>Use the claim layer to track when new information reinforces, qualifies, contradicts, or supersedes prior beliefs.</p>
+            </div>
+            <div class="card">
+              <h3>Model evaluation</h3>
+              <p>Evaluate whether a compile result integrates into the existing graph or creates disconnected islands.</p>
+            </div>
+            <div class="card">
+              <h3>Relationship search</h3>
+              <p>Search over structure and provenance instead of only matching text.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="current-state">
+          <h2>11. Current Live Graph Snapshot</h2>
+          <p class="kicker">Observed from <code>graphdb-kdb stats --json</code> during tutorial preparation.</p>
+          <pre><code>{
+  "entities": 83,
+  "sources": 8,
+  "links_to": 126,
+  "supports": 80,
+  "alias_of": 0,
+  "domains": 0,
+  "belongs_to": 0,
+  "claims": 0,
+  "evidences": 0,
+  "about": 0,
+  "supersedes": 0,
+  "contradicts": 0,
+  "qualifies": 0
+}</code></pre>
+
+          <p>Top PageRank examples from the current graph:</p>
+          <pre><code>corruption-in-governance
+dynastic-cycle
+confucianism
+ruling-by-rights-versus-law
+rationality
+mungers-four-levels-of-rationality
+distressed-investing
+market-psychology</code></pre>
+
+          <div class="callout">
+            The current live graph has the core entity, source, link, and support layers populated.
+            The schema already supports aliases, domains, and claims; those layers are available as the
+            upstream compile/enrichment flow begins populating them.
+          </div>
+        </section>
+
+        <section>
+          <h2>Summary</h2>
+          <p>
+            GraphDB-KDB is the system's memory of relationships. It stores the ontology that the
+            compiler builds from raw text, while Obsidian Markdown gives that ontology a readable
+            surface. The value is not the graph visualization; the value is queryable structure,
+            provenance, verification, and adaptive learning workflows on top of that structure.
+          </p>
+          <p class="footer">Generated as a static tutorial page under <code>docs/tutorial/</code>.</p>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
