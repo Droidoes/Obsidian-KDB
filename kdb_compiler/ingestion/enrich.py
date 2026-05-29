@@ -24,6 +24,20 @@ class EnrichResult:
     parsed_envelope: dict | None
     sidecar_path: Path | None
     error: str | None
+    # Task #91 egress: the orchestrator reuses these in-memory instead of
+    # re-reading/re-hashing the file. `body` is the frontmatter-stripped body
+    # (what Pass-2 compiles). `post_embed_hash`/`post_embed_mtime` are the
+    # WHOLE-FILE hash + mtime AFTER frontmatter was embedded — what the manifest
+    # must store as the current hash so the next scan sees the source as
+    # UNCHANGED (else the embed itself triggers a recompile every run).
+    body: str | None = None
+    post_embed_hash: str | None = None
+    post_embed_mtime: float | None = None
+
+
+def _whole_file_hash(source_path: Path) -> str:
+    """sha256 of the on-disk bytes (matches kdb_scan's whole-file hashing)."""
+    return "sha256:" + hashlib.sha256(source_path.read_bytes()).hexdigest()
 
 
 def enrich_one(
@@ -42,7 +56,12 @@ def enrich_one(
         sidecar = _write_sidecar_skipped(
             runs_root, run_id, source_id, source_path, content_hash, envelope
         )
-        return EnrichResult(source_id, "enrich_skipped", envelope, sidecar, None)
+        # No embed for empty sources; the on-disk file is unchanged, so the
+        # whole-file hash is well-defined and lets the noise/skip commit store a
+        # stable last_compiled_hash (M2 — avoids re-enriching every run).
+        return EnrichResult(source_id, "enrich_skipped", envelope, sidecar, None,
+                            body=body, post_embed_hash=_whole_file_hash(source_path),
+                            post_embed_mtime=source_path.stat().st_mtime)
 
     try:
         call_result = call_pass1(
@@ -53,7 +72,10 @@ def enrich_one(
         sidecar = _write_sidecar_failed(
             runs_root, run_id, source_id, source_path, content_hash, str(e), model,
         )
-        return EnrichResult(source_id, "enrich_failed", None, sidecar, str(e))
+        # Pre-embed failure: body is known but no embed happened, so post-embed
+        # fields stay None (the orchestrator fail-fasts on enrich failure anyway).
+        return EnrichResult(source_id, "enrich_failed", None, sidecar, str(e),
+                            body=body)
 
     envelope = apply_overrides(
         call_result.parsed, source_path=source_id,
@@ -61,6 +83,10 @@ def enrich_one(
     )
 
     embed_frontmatter(source_path, envelope)
+    # Whole-file hash + mtime AFTER embed — the orchestrator stamps these into
+    # the manifest so the embed doesn't look like an edit on the next scan.
+    post_embed_hash = _whole_file_hash(source_path)
+    post_embed_mtime = source_path.stat().st_mtime
 
     outcome = ("enriched_force_overridden"
                if envelope["override"]["applied"] is not None
@@ -84,7 +110,9 @@ def enrich_one(
         outcome=outcome,
     )
     sidecar = write_sidecar(runs_root, run_id, sidecar_payload)
-    return EnrichResult(source_id, outcome, envelope, sidecar, None)
+    return EnrichResult(source_id, outcome, envelope, sidecar, None,
+                        body=body, post_embed_hash=post_embed_hash,
+                        post_embed_mtime=post_embed_mtime)
 
 
 def _local_iso() -> str:
