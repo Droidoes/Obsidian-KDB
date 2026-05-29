@@ -151,7 +151,7 @@ Change-detection keys off the **whole-file hash**, recalculated **after** [A] em
 - **Rejected — body-only hash:** more efficient on frontmatter-only edits, but it depends on splitting frontmatter from body cleanly (whitespace / delimiter edge cases make the hash fragile). The whole-file byte hash is unambiguous and simpler.
 - **Non-issue:** a `PASS1_PROMPT_VERSION` bump does *not* mass-flag the corpus — UNCHANGED files are never re-enriched, so their stored hash and on-disk frontmatter stay put until the body itself changes.
 - **Requirement:** `embed_frontmatter` must be deterministic (same envelope → byte-identical output). It is today (fixed field tuples + stable YAML dump).
-- **Sequencing note (for the orchestrator loop):** run [A]'s embed as part of the per-source *commit* (after [B] compile succeeds) so a failed / fail-fast source does not leave orphan frontmatter on disk without a matching manifest entry. Minor residual cost: editing only one's own non-Pass-1 frontmatter keys (not the body) re-triggers enrich — rare and harmless.
+- **Embed-timing — RESOLVED (decision 2026-05-29, Joseph): embed during enrich + recompute the post-embed hash right there.** `enrich_one` keeps its immediate `embed_frontmatter` and, right after, recomputes the **post-embed whole-file hash** and returns it (plus the body) for the orchestrator's manifest commit. The cleaner-but-reworking "embed-at-commit" alternative is **rejected** per [[feedback_no_imaginary_risk]]: with fail-fast, the only downside is the **self-healing edge** — a source that enriches then fails compile leaves frontmatter on disk with no manifest entry, which the *next* run auto-corrects (no manifest entry → re-enrich → `embed_frontmatter` deterministically strips-and-rewrites → re-compile). The window is bounded to one source per failed run, transient, single-user, and `kdb-audit` (#93) reconciles it out-of-band. Accepted for v1.
 
 ### Pass-2 no longer scans — `kdb-compile` rebuild (decision 2026-05-28)
 Pass-2 takes the egress handoff `(source_id, body, keep-frontmatter)` for **one source directly — no scan at the Pass-2 stage** (the orchestrator already scanned once). Resolution (make-before-break, Task #73 precedent):
@@ -277,14 +277,15 @@ The loop runs on the single shared read-write connection. Scan output splits int
 
 **Branch 1 — NEW/MOD + `kdb_signal=signal` (full path).**
 ```
-Pass-1 enrich (in-memory: body + frontmatter + kdb_signal)
+Pass-1 enrich_one → embeds frontmatter into the .md AND recomputes the
+                    post-embed whole-file hash right there (decision 2026-05-29);
+                    returns (body, envelope incl. kdb_signal, post_embed_hash)
   → gate: signal
-  → Pass-2 compile_source(source_id, body, frontmatter, conn)   # validate→reconcile→canonicalize inside
+  → Pass-2 compile_source(source_id, body, frontmatter, conn)   # validate→reconcile→canonicalize inside; returns cr
   → COMMIT sequence:
-       patch-apply wiki pages to disk
-       [A] embed Pass-1 frontmatter into source .md + recalc whole-file hash
+       apply-wiki pages (build_page_patches + write, stage 8)
        manifest write (post-embed hash)            ← COMMIT BOUNDARY (D-91-13 case a│b)
-       journal sidecar
+       archive sidecar + run journal (replayable for graphdb-kdb rebuild)
        graph-sync: apply_compile_result(cr, single-source scan, conn, detect_orphans=False)
 ```
 Next source's context read sees this source's committed graph mutation (verified: interleaved auto-commit read + explicit `BEGIN/COMMIT` write on one connection).
