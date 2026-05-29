@@ -104,3 +104,49 @@ def test_compile_source_result_error_not_ok() -> None:
     r = CompileSourceResult(cr=None, failure_stage="validate", error="boom")
     assert r.ok is False
     assert r.failure_stage == "validate"
+
+
+# ---------- Task 3: compile_source produce-don't-write core ----------
+
+def test_compile_source_produces_cr_and_writes_nothing(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.cr is not None
+    assert len(result.cr["compiled_sources"]) == 1
+    assert result.cr["compiled_sources"][0]["source_id"] == "KDB/raw/s.md"
+    assert "canonical_meta" in result.cr            # canonicalize ran (stage 6)
+    # produce-don't-write: no wiki pages written anywhere under the vault
+    assert not list((vault / "KDB").rglob("summary-foo.md")), "compile_source must not write"
+
+
+def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+    snap = ContextSnapshot(source_id="KDB/raw/s.md", pages=[])
+
+    # conn=None proves the pre-built snapshot path does no graph read.
+    result = compiler.compile_source(
+        source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=None,
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096, context_snapshot=snap,
+    )
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.cr is not None

@@ -35,15 +35,20 @@ from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
 
 from kdb_compiler import (
+    canonicalize,
     planner,
     prompt_builder,
+    reconcile,
     response_normalizer,
+    validate_compile_result,
     validate_compiled_source_response,
 )
 from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
+from kdb_compiler.canonicalize import AliasLedger
+from kdb_compiler.graph_context_loader import T2Mode, build_context_snapshot
 from kdb_compiler.reconcile import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext, now_iso
@@ -52,6 +57,8 @@ from kdb_compiler.types import (
     CompileJob,
     CompileMeta,
     CompileResult,
+    CompileSourceResult,
+    ContextSnapshot,
     LogEntry,
     PageIntent,
     RespStatsRecord,
@@ -612,6 +619,84 @@ def run_compile(
         write_compile_result(result, state_root)
 
     return result
+
+
+def compile_source(
+    source_id: str,
+    body: str,
+    frontmatter: SourceFrontmatter | None,
+    conn,
+    *,
+    vault_root: Path,
+    state_root: Path,
+    ctx: RunContext,
+    ledger: AliasLedger,
+    provider: str,
+    model: str,
+    max_tokens: int,
+    context_snapshot: ContextSnapshot | None = None,
+    mode: T2Mode = T2Mode.STRUCTURED,
+    resolver: str = "simple",
+) -> CompileSourceResult:
+    """Per-source Pass-2 PRODUCE core (spec stages 3->6) on in-memory inputs.
+
+    Writes NOTHING. Returns the compiled `cr`; the orchestrator owns stage-8
+    apply-pages, provenance, manifest commit, and graph-sync at the commit
+    boundary (Task #91 produce-don't-write decision). All pre-commit failures
+    return CompileSourceResult(cr=None, failure_stage=..., error=...) so the
+    orchestrator routes case-(a) (D-91-13) uniformly without string-parsing.
+    """
+    vault_root = Path(vault_root)
+
+    # 1. context snapshot — caller-supplied, or the only graph read
+    if context_snapshot is None:
+        try:
+            context_snapshot = build_context_snapshot(
+                conn, source_id=source_id, source_text=body,
+                frontmatter=frontmatter, mode=mode, resolver=resolver,
+            )
+        except Exception as e:
+            return CompileSourceResult(
+                cr=None, failure_stage="context",
+                exception_type=type(e).__name__, error=str(e))
+
+    # 2. compile (stage 3) on an in-memory job — no disk read
+    job = CompileJob(
+        source_id=source_id, abs_path="",
+        context_snapshot=context_snapshot, source_text=body, frontmatter=frontmatter,
+    )
+    cs, logs, warns, err = compile_one(
+        job, vault_root=vault_root, state_root=state_root, ctx=ctx,
+        provider=provider, model=model, max_tokens=max_tokens,
+    )
+    if err is not None:
+        return CompileSourceResult(cr=None, failure_stage="compile", error=err)
+
+    cr: dict = {
+        "run_id": ctx.run_id, "success": True,
+        "compiled_sources": [cs.to_dict()],
+        "log_entries": list(logs), "errors": [], "warnings": list(warns),
+    }
+
+    # 3. validate (stage 4) — gate
+    vres = validate_compile_result.validate(cr)
+    if vres.gate_errors:
+        return CompileSourceResult(
+            cr=None, failure_stage="validate",
+            error="; ".join(f.detail for f in vres.gate_errors))
+
+    # 4. reconcile (stage 5) — mutates cr in place
+    reconcile.reconcile(cr, vres.measure_findings)
+
+    # 5. canonicalize (stage 6) — mutates cr in place, emits canonical_meta
+    try:
+        canonicalize.run(cr, ledger, ctx.run_id)
+    except canonicalize.CircularAliasError as e:
+        return CompileSourceResult(
+            cr=None, failure_stage="canonicalize",
+            exception_type=type(e).__name__, error=str(e))
+
+    return CompileSourceResult(cr=cr)
 
 
 def write_compile_result(result: CompileResult, state_root: Path) -> None:
