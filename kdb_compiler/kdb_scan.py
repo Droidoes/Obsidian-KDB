@@ -441,6 +441,51 @@ def scan(
     return result
 
 
+def scan_scope(
+    root_abs: Path,
+    vault_root: Path,
+    *,
+    pipeline_id: str,
+    prior: dict[str, dict],
+    run_ctx: RunContext,
+    excludes: "list[str] | None" = None,
+    file_types: "frozenset[str] | set[str] | None" = None,
+    settings: SettingsSnapshot | None = None,
+) -> ScanResult:
+    """Scope-driven scan for one ingestion pipeline (Task #91).
+
+    Walks root_abs (vault-relative source_ids), classifies against `prior`
+    FILTERED to this pipeline's sources (by pipeline_id) — so the DELETED pass
+    only flags this pipeline's absent sources and MOVED only matches within the
+    pipeline (D-91-9). Stamps pipeline_id on every emitted entry. Does NOT write;
+    the orchestrator owns persistence.
+    """
+    settings = settings if settings is not None else _DEFAULT_SETTINGS
+    root_abs = Path(root_abs).resolve()
+    vault_root = Path(vault_root).resolve()
+
+    current, skipped_symlinks, errors = walk_scope(
+        root_abs, vault_root,
+        file_types=file_types, excludes=excludes, prune_hidden=True,
+    )
+    prior_scoped = {
+        p: r for p, r in prior.items() if r.get("pipeline_id") == pipeline_id
+    }
+    files, reconcile_ops = classify(current, prior_scoped)
+    for e in files:
+        e.pipeline_id = pipeline_id
+
+    return build_scan_result(
+        run_ctx=run_ctx,
+        raw_root_rel=_rel_to_vault(root_abs, vault_root) if root_abs != vault_root else ".",
+        files=files,
+        reconcile_ops=reconcile_ops,
+        errors=errors,
+        skipped_symlinks=skipped_symlinks,
+        settings=settings,
+    )
+
+
 # -------- CLI --------
 
 def main(argv: list[str] | None = None) -> int:

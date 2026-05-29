@@ -449,3 +449,48 @@ def test_seed_source_record_carries_pipeline_id():
          "current_mtime": 1.0, "size_bytes": 3, "is_binary": False,
          "pipeline_id": "test-pipe"}, ctx)
     assert rec["pipeline_id"] == "test-pipe"
+
+
+def test_scan_scope_stamps_pipeline_id(tmp_path):
+    from kdb_compiler.run_context import RunContext
+    vault = tmp_path
+    root = vault / "P"; root.mkdir()
+    (root / "a.md").write_text("x", encoding="utf-8")
+    res = kdb_scan.scan_scope(
+        root, vault, pipeline_id="test-pipe", prior={},
+        run_ctx=RunContext.new(vault_root=vault), excludes=[], file_types={".md"})
+    e = next(f for f in res.files if f.path == "P/a.md")
+    assert e.pipeline_id == "test-pipe"
+    assert e.to_dict()["pipeline_id"] == "test-pipe"
+
+
+def test_scan_scope_deleted_scoped_to_pipeline(tmp_path):
+    """DELETED pass only flags THIS pipeline's absent sources (D-91 scanner)."""
+    from kdb_compiler.run_context import RunContext
+    vault = tmp_path
+    root_a = vault / "A"; root_a.mkdir()   # empty on disk → A/gone.md deleted
+    prior = {
+        "A/gone.md": {"hash": "sha256:1", "mtime": 1.0, "pipeline_id": "A"},
+        "B/keep.md": {"hash": "sha256:2", "mtime": 1.0, "pipeline_id": "B"},
+    }
+    res = kdb_scan.scan_scope(
+        root_a, vault, pipeline_id="A", prior=prior,
+        run_ctx=RunContext.new(vault_root=vault), excludes=[], file_types={".md"})
+    deleted = sorted(op.path for op in res.to_reconcile if op.type == "DELETED")
+    assert deleted == ["A/gone.md"]        # B/keep.md (other pipeline) untouched
+
+
+def test_scan_scope_no_cross_pipeline_move(tmp_path):
+    """A same-hash file in another pipeline is NOT matched as MOVED (D-91-9)."""
+    from kdb_compiler.run_context import RunContext
+    vault = tmp_path
+    root_a = vault / "A"; root_a.mkdir()
+    (root_a / "x.md").write_text("same", encoding="utf-8")
+    h = _sha256_text("same")
+    prior = {"B/y.md": {"hash": h, "mtime": 1.0, "pipeline_id": "B"}}
+    res = kdb_scan.scan_scope(
+        root_a, vault, pipeline_id="A", prior=prior,
+        run_ctx=RunContext.new(vault_root=vault), excludes=[], file_types={".md"})
+    x = next(f for f in res.files if f.path == "A/x.md")
+    assert x.action == "NEW"               # not MOVED-from-B
+    assert not [op for op in res.to_reconcile if op.type == "MOVED"]
