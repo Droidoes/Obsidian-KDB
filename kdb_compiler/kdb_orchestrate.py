@@ -17,16 +17,23 @@ and writes last_orchestrate.json.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from graphdb_kdb.graphdb import GraphDB
 from graphdb_kdb.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
-from kdb_compiler import patch_applier, source_state_update
+from kdb_compiler import patch_applier, pipeline_registry, source_state_update
 from kdb_compiler.atomic_io import atomic_write_json
+from kdb_compiler.canonicalize import load_or_empty
+from kdb_compiler.compiler import compile_source
+from kdb_compiler.ingestion.enrich import enrich_one
 from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
+from kdb_compiler.kdb_scan import scan_scope
 from kdb_compiler.run_context import RunContext, now_iso
+from kdb_compiler.source_io import SourceFrontmatter
 
 MANIFEST_NAME = "manifest.json"
 
@@ -222,3 +229,253 @@ def write_last_orchestrate_json(
     path = state_root / "last_orchestrate.json"
     atomic_write_json(path, summary)
     return path
+
+
+# ---------- manifest loading (full v3.0 dict for build_source_state_update) ----------
+
+def _load_full_manifest(manifest_path: Path) -> dict:
+    """Load the full v3.0 manifest dict (sources{}/tombstones{}/runs{}). Missing
+    or malformed → {} (first-run). v1.0 manifests auto-migrate to v3.0."""
+    if not manifest_path.exists():
+        return {}
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if data:
+        data = source_state_update.migrate_manifest_to_source_state(data)
+    return data
+
+
+def _stamp_legacy_pipeline_id(manifest: dict, pipeline_id: str) -> dict:
+    """T0a: stamp pipeline_id on legacy records lacking it so scan_scope's
+    per-pipeline prior filter sees them this run (else they'd be filtered out →
+    spurious whole-vault recompile). Fresh sandbox: no-op."""
+    for rec in manifest.get("sources", {}).values():
+        if rec.get("pipeline_id") is None:
+            rec["pipeline_id"] = pipeline_id
+    return manifest
+
+
+def _flat_prior(manifest: dict) -> dict:
+    """Project the full v3.0 manifest to the flat {source_id: {...}} view
+    scan_scope/classify consume (mirrors kdb_scan.load_manifest_sources, but from
+    the in-memory legacy-stamped dict so this run's scan sees the stamps)."""
+    out: dict = {}
+    for sid, rec in manifest.get("sources", {}).items():
+        out[sid] = {
+            "hash": rec.get("hash"), "mtime": rec.get("mtime"),
+            "size_bytes": rec.get("size_bytes"), "file_type": rec.get("file_type"),
+            "is_binary": rec.get("is_binary"),
+            "last_compiled_hash": rec.get("last_compiled_hash"),
+            "pipeline_id": rec.get("pipeline_id"),
+        }
+    return out
+
+
+def _manifest_delta(prior: dict, final: dict) -> dict:
+    p = prior.get("sources", {}) if prior else {}
+    f = final.get("sources", {}) if final else {}
+    pk, fk = set(p), set(f)
+    return {
+        "added": sorted(fk - pk),
+        "removed": sorted(pk - fk),
+        "changed": sorted(s for s in (pk & fk) if p[s].get("hash") != f[s].get("hash")),
+    }
+
+
+# ---------- noise + reconcile commits ----------
+
+def _commit_noise_source(
+    *, source_id: str, post_embed_hash: str, post_embed_mtime: float,
+    scan_entry: dict, prior_manifest: dict, state_root: Path, ctx: RunContext,
+) -> dict:
+    """Commit a noise source: manifest metadata_only, NO graph, NO wiki. M2:
+    last_compiled_hash = post_embed_hash so the embed doesn't re-trigger enrich
+    next run. to_compile=[] so apply_compile_sources doesn't error-mark it."""
+    entry = dict(scan_entry)
+    entry["current_hash"] = post_embed_hash
+    entry["current_mtime"] = post_embed_mtime
+    single_scan = {"files": [entry], "to_compile": [], "to_reconcile": []}
+    next_manifest, _ = source_state_update.build_source_state_update(
+        prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
+    rec = next_manifest["sources"][source_id]
+    rec["compile_state"] = "metadata_only"
+    rec["last_compiled_hash"] = post_embed_hash
+    atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
+    return next_manifest
+
+
+def _commit_reconcile_op(
+    op, *, moved_entry, prior_manifest: dict, conn, state_root: Path, ctx: RunContext,
+) -> dict:
+    """Commit a MOVED/DELETED reconcile op. Graph handles both via to_reconcile
+    (Phase 2); manifest handles MOVED via files[] + DELETED via to_reconcile[]."""
+    op_dict = op.to_dict()
+    files = [moved_entry.to_dict()] if (op.type == "MOVED" and moved_entry) else []
+    single_scan = {"files": files, "to_compile": [], "to_reconcile": [op_dict]}
+    apply_compile_result(
+        {"compiled_sources": []}, single_scan, ctx.run_id,
+        conn=conn, detect_orphans=False, wire_links=False)
+    next_manifest, _ = source_state_update.build_source_state_update(
+        prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
+    atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
+    return next_manifest
+
+
+# ---------- the conductor ----------
+
+@dataclass
+class OrchestrateResult:
+    run_id: str
+    exit_code: int                 # 0 success, 1 abort/crash
+    exit_reason: str               # "ok" | "<stage>:<source_id>" | "unexpected:<Exc>"
+    counts: dict
+    manifest_delta: dict
+    finalize: dict | None = None
+    failed_source: str | None = None
+    failure_stage: str | None = None
+    summary_path: Path | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.exit_code == 0
+
+
+def _empty_counts() -> dict:
+    return {
+        "sources_scanned": 0, "sources_enriched": 0, "sources_compiled": 0,
+        "sources_noise": 0, "sources_moved": 0, "sources_deleted": 0,
+        "sources_failed": 0,
+    }
+
+
+def run(
+    *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
+    provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
+) -> OrchestrateResult:
+    """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
+    commit (β) → reconcile → finalize. Fail-fast (D-91-8): the first enrich/
+    compile/commit failure aborts the run; already-committed sources stay
+    committed (β makes each commit self-contained). The run summary
+    (last_orchestrate.json) is written ALWAYS — success, abort, or crash."""
+    vault_root = Path(vault_root)
+    state_root = Path(state_root)
+    graph_path = Path(graph_path)
+    manifest_path = state_root / MANIFEST_NAME
+
+    pipeline = pipeline_registry.get_pipeline(state_root, pipeline_id)
+    prior_full = _stamp_legacy_pipeline_id(_load_full_manifest(manifest_path), pipeline_id)
+    prior_flat = _flat_prior(prior_full)
+    ctx = RunContext.new(dry_run=dry_run, vault_root=vault_root)
+    ledger = load_or_empty(state_root / "canonicalization" / "aliases.json")
+    runs_root = state_root / "runs"
+
+    full_manifest = prior_full
+    accumulated_crs: list[dict] = []
+    counts = _empty_counts()
+    finalize_stats: dict | None = None
+    abort: tuple[str, str, str | None] | None = None   # (stage, source_id, error)
+    crashed_reason: str | None = None
+
+    try:
+        with GraphDB(graph_path) as g:
+            scan = scan_scope(
+                Path(pipeline.root), vault_root, pipeline_id=pipeline_id,
+                prior=prior_flat, run_ctx=ctx,
+                excludes=pipeline.excludes, file_types=set(pipeline.file_types))
+            counts["sources_scanned"] = len(scan.files)
+            files_by_id = {e.path: e for e in scan.files}
+
+            # --- compile queue: NEW/CHANGED (+ MOVED+CHANGED) ---
+            for source_id in scan.to_compile:
+                scan_entry = files_by_id[source_id]
+                enrich = enrich_one(
+                    source_path=vault_root / source_id, source_id=source_id,
+                    runs_root=runs_root, run_id=ctx.run_id,
+                    provider=provider, model=model,
+                    force_signal=pipeline.force_signal, force_noise=pipeline.force_noise)
+                if enrich.outcome == "enrich_failed":
+                    abort = ("enrich", source_id, enrich.error)
+                    break
+                counts["sources_enriched"] += 1
+
+                if enrich.parsed_envelope["kdb_signal"] == "noise":
+                    full_manifest = _commit_noise_source(
+                        source_id=source_id, post_embed_hash=enrich.post_embed_hash,
+                        post_embed_mtime=enrich.post_embed_mtime,
+                        scan_entry=scan_entry.to_dict(), prior_manifest=full_manifest,
+                        state_root=state_root, ctx=ctx)
+                    counts["sources_noise"] += 1
+                    continue
+
+                result = compile_source(
+                    source_id=source_id, body=enrich.body,
+                    frontmatter=SourceFrontmatter.from_dict(enrich.parsed_envelope),
+                    conn=g.conn, vault_root=vault_root, state_root=state_root, ctx=ctx,
+                    ledger=ledger, provider=provider, model=model, max_tokens=max_tokens)
+                if not result.ok:
+                    abort = (result.failure_stage or "compile", source_id, result.error)
+                    break
+
+                commit = _commit_source(
+                    cr=result.cr, source_id=source_id,
+                    post_embed_hash=enrich.post_embed_hash,
+                    post_embed_mtime=enrich.post_embed_mtime,
+                    scan_entry=scan_entry.to_dict(), prior_manifest=full_manifest,
+                    vault_root=vault_root, state_root=state_root, conn=g.conn, ctx=ctx)
+                if not commit.ok:
+                    abort = (commit.failure_stage or "commit", source_id, commit.error)
+                    break
+                full_manifest = commit.next_manifest
+                accumulated_crs.append(commit.cr)
+                counts["sources_compiled"] += 1
+
+            # --- reconcile queue: MOVED + DELETED (skipped on abort) ---
+            if abort is None:
+                for op in scan.to_reconcile:
+                    # MOVED+CHANGED (OQ-91-8): the file is in BOTH queues; the
+                    # compile path already recompiled it at the new path → skip here.
+                    if op.type == "MOVED" and op.to_path in scan.to_compile:
+                        continue
+                    moved_entry = (files_by_id.get(op.to_path)
+                                   if op.type == "MOVED" else None)
+                    full_manifest = _commit_reconcile_op(
+                        op, moved_entry=moved_entry, prior_manifest=full_manifest,
+                        conn=g.conn, state_root=state_root, ctx=ctx)
+                    if op.type == "MOVED":
+                        counts["sources_moved"] += 1
+                    else:
+                        counts["sources_deleted"] += 1
+
+                finalize_stats = _finalize(
+                    g.conn, accumulated_crs, state_root=state_root, ctx=ctx,
+                    dry_run=dry_run)
+    except Exception as e:  # unexpected — still write the summary, then propagate
+        crashed_reason = f"unexpected:{type(e).__name__}"
+        raise
+    finally:
+        finished_at = now_iso()
+        if crashed_reason is not None:
+            exit_code, exit_reason = 1, crashed_reason
+            counts["sources_failed"] = 1
+            failed_source, failure_stage = None, "unexpected"
+        elif abort is not None:
+            stage, sid, _err = abort
+            exit_code, exit_reason = 1, f"{stage}:{sid}"
+            counts["sources_failed"] = 1
+            failed_source, failure_stage = sid, stage
+        else:
+            exit_code, exit_reason = 0, "ok"
+            failed_source, failure_stage = None, None
+        delta = _manifest_delta(prior_full, full_manifest)
+        summary_path = write_last_orchestrate_json(
+            state_root, run_id=ctx.run_id, started_at=ctx.started_at,
+            finished_at=finished_at, exit_code=exit_code, exit_reason=exit_reason,
+            counts=counts, manifest_delta=delta, finalize=finalize_stats)
+
+    return OrchestrateResult(
+        run_id=ctx.run_id, exit_code=exit_code, exit_reason=exit_reason,
+        counts=counts, manifest_delta=delta, finalize=finalize_stats,
+        failed_source=failed_source, failure_stage=failure_stage,
+        summary_path=summary_path)

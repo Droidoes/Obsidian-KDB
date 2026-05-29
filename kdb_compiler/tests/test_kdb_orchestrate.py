@@ -11,6 +11,7 @@ import pytest
 from kdb_compiler import compiler, kdb_orchestrate, prompt_builder
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.canonicalize import load_or_empty
+from kdb_compiler.ingestion.pass1_caller import Pass1CallResult
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.source_io import SourceFrontmatter
 from graphdb_kdb.graphdb import GraphDB
@@ -203,3 +204,100 @@ def test_write_last_orchestrate_json_fields(tmp_path):
     assert d["counts"]["sources_compiled"] == 1
     assert d["finalize"]["links_wired"] == 1
     assert d["manifest_delta"]["added"] == ["a.md"]
+
+
+# ---------- Task 3: run() loop — routing + fail-fast ----------
+
+def _pass1_signal_envelope(model: str = "m") -> dict:
+    return {
+        "kdb_signal": "signal", "domain": "value-investing", "source_type": "essay",
+        "author": "T", "summary": "S.", "key_themes": ["a"],
+        "entity_search_keys": ["value-investing"],
+        "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,
+        "prompt_version": "p1", "model": model, "schema_version": 1,
+        "override": {"applied": None, "rule": None, "match": None,
+                     "llm_original": "signal", "reject_reason_cleared": None},
+        "other_reason": None,
+    }
+
+
+def _compiled_response(source_name: str, summary_slug: str) -> dict:
+    return {
+        "source_name": source_name, "summary_slug": summary_slug,
+        "concept_slugs": [], "article_slugs": [],
+        "pages": [{"slug": summary_slug, "page_type": "summary", "title": "T",
+                   "body": "Body.", "status": "active", "outgoing_links": [],
+                   "confidence": "medium"}],
+        "log_entries": [], "warnings": [],
+    }
+
+
+def _fake_pass1(**kwargs):
+    return Pass1CallResult(
+        parsed=_pass1_signal_envelope(kwargs["model"]), raw_response_text="{}",
+        request_prompt="p", request_model=kwargs["model"],
+        request_provider=kwargs["provider"], input_tokens=1, output_tokens=1,
+        latency_ms=1, attempts=1)
+
+
+def _write_pipelines(state_root: Path, vault_root: Path) -> None:
+    state_root.mkdir(parents=True, exist_ok=True)
+    (state_root / "pipelines.json").write_text(json.dumps({"pipelines": [
+        {"id": "vt", "type": "in-place", "root": str(vault_root),
+         "excludes": ["KDB/"], "force_noise": ["noise/*"], "file_types": [".md"]}
+    ]}), encoding="utf-8")
+
+
+def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    (vault / "noise").mkdir()
+    (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+    assert res.counts["sources_compiled"] == 1
+    assert res.counts["sources_noise"] == 1
+    with GraphDB(tmp_path / "graph") as g:
+        assert _count(g, "MATCH (:Source {source_id: 'AIML/a.md'})-[r:SUPPORTS]->() "
+                         "RETURN COUNT(r)") == 1            # signal graphed
+        assert _count(g, "MATCH (s:Source {source_id: 'noise/b.md'}) "
+                         "RETURN COUNT(s)") == 0            # noise NOT in graph
+    assert list((vault / "KDB").rglob("summary-a.md"))      # signal wiki page
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["sources"]["noise/b.md"]["compile_state"] == "metadata_only"
+    assert manifest["sources"]["noise/b.md"]["last_compiled_hash"] is not None  # M2
+    assert manifest["sources"]["AIML/a.md"]["pipeline_id"] == "vt"
+    assert res.summary_path.exists()
+
+
+def test_run_fail_fast_on_compile_error(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def boom(req):
+        raise RuntimeError("model down")
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert not res.ok and res.exit_code == 1
+    assert res.failure_stage == "compile"
+    assert res.failed_source == "AIML/a.md"
+    assert res.counts["sources_failed"] == 1
+    assert res.summary_path.exists()       # summary written on abort (advisor #1)
