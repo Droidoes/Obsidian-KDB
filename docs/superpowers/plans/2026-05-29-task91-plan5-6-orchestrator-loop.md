@@ -25,13 +25,30 @@
 - **m5 REFUTED (Qwen):** MOVED+CHANGED decomposes to NEW+DELETED in `classify()` and is handled correctly — the deferred comment is removed from Task 3.
 - **m6 (Low):** `to_compile` is alphabetical, not dependency-ordered — accept v1, document in the loop.
 
-## ⚠️ OPEN — gates execution (fresh deliberation, full effort)
+## RESOLVED (5-model panel + Joseph, 2026-05-29 — `docs/task91-c1-ford-synthesis.md`)
 
-**C1 (Critical — cross-source `LINKS_TO` edge-skip).** `_replace_outgoing_links` (ingestor.py:326) silently skips an edge when the target Entity doesn't exist yet; the monolith avoided this by upserting all entities batch-wide before wiring. Per-source graph-sync breaks it → cross-source edges lost → incomplete graph. **Per-source graph-sync (needed for read-after-write) vs batch edge-completeness is the tension.** Options: (a) **stub-upsert** missing targets as `status='inactive'` Entities (preserves read-after-write; excluded from context; promoted when their real source compiles — *lean*); (b) finalize link-rewire; (c) accept + `kdb-audit` reconciles; (d) single-apply-at-finalize (**rejected** — defeats read-after-write). **Weigh F-ord with this** (next).
+**C1 (cross-source `LINKS_TO`) → defer link-wiring to finalize batch-wire, NO stubs** (panel 4/5; stubs rejected — break live≡replay, "ghost links", mask dangling-link signal). Per-source `apply_compile_result(wire_links=False)` skips only `_replace_outgoing_links` (keeps SUPPORTS/ingest-state/meta → read-after-write for T1/T2). A standalone `wire_links(cr, conn, run_id, now)` (extracted from `_replace_outgoing_links`) runs once at finalize over the accumulated `cr`s with all entities present → **live≡replay by construction**. Mid-run T3 degradation accepted (monolith had no intra-batch T3 either). *Optional later enhancement: Codex's incremental-prefix-rewire after each source for mid-run T3 — default OFF.*
 
-**F-ord (Gemini, 1/5 — commit ordering).** Graph-sync *before* manifest-write would convert case-(b) (manifest committed, graph stale → rebuild) into a clean self-healing case-(a) via Kuzu rollback — eliminating case-(b) and simplifying journaling. But it **revises ratified D-91-13** (manifest-first), so scrutinize against the D50 sidecar-authority intent before adopting; don't adopt on one voice. Lives in the same commit sequence as C1 — decide together.
+**F-ord (commit ordering) → β, graph-sync-first** (panel UNANIMOUS 5/5; **Joseph approved revising ratified D-91-13 → see D-91-15**). Graph-sync (Kuzu txn) runs *before* manifest-write; manifest + sidecar are written only on graph-sync success. A graph-sync failure rolls back cleanly → manifest never written → case-(a) self-heal. **Case-(b) is eliminated.** Invariant strengthened: `sidecar exists ⇒ manifest written ⇒ graph consistent`.
 
-**Scope-collision check** (deferred from Plans 3-4) — validate cross-pipeline path overlap at orchestrator startup, or keep deferred. Decide during the C1/F-ord deliberation.
+**The convergent combined commit sequence** (drives Tasks 2 + 4):
+```
+per-source (_commit_source):
+  1. patch_applier.apply(write=True)                                  # wiki (stage 8)
+  2. apply_compile_result(cr, single_scan, conn,                      # Kuzu txn: Source+Entities+SUPPORTS+aliases+meta
+        detect_orphans=False, wire_links=False)                       #   rollback-clean on failure (case-a)
+  3. [on success] atomic_write_json(manifest)                         # ← COMMIT BOUNDARY (post-graph-sync, β)
+  4. write per-source sidecar state/runs/<run_id>/<source_id>.json    # best-effort replay payload; accumulate cr
+finalize:
+  5. wire_links(accumulated_crs, conn)                                # C1 batch link-wire, all entities present (own txn, idempotent)
+  6. detect_orphans(conn, run_id)                                     # single deferred pass
+  7. reap_orphans_from_graph + apply_cleanup + build_cleanup_artifacts # kdb-clean (+ cleanup journal/retraction = m1)
+  8. compact sidecars → combined compile_result.json + run journal + last_orchestrate.json
+noise: no graph step → manifest metadata_only, last_compiled_hash=post_embed_hash (M2)
+```
+`last_orchestrate.json` distinguishes `manifest_failed_after_graph_commit` (Codex). Finalize-crash resume via a `state/runs/<run_id>_state.json` phase marker (v1-optional).
+
+**Scope-collision check** — still deferred; validate cross-pipeline path overlap at orchestrator startup in a later pass (not gating the sandbox run).
 
 ---
 
@@ -61,7 +78,12 @@
   ```
 - Test: a `ReconcileError`-triggering cr → `result.failure_stage == "reconcile"` (not a raised exception).
 
-> Both are safe, low-risk, and don't depend on the C1/F-ord decision — they could be executed first. The rest of Plan 5+6 waits on the C1/F-ord deliberation.
+**T0c — C1 mechanism: `wire_links` flag + standalone `wire_links()` (ingestor).**
+- `apply_compile_result` gains `wire_links: bool = True`; when `False`, Phase-3 pass-2 **skips only `_replace_outgoing_links`** (keeps `_replace_supports_for_source` / `_update_source_ingest_state` / `_write_source_meta` → SUPPORTS + meta still per-source for read-after-write). Default `True` preserves the monolith/batch path.
+- Extract a public `wire_links(cr, conn, run_id, now) -> int` that runs `_replace_outgoing_links` over every page in `cr["compiled_sources"]` (idempotent drop+recreate). The orchestrator calls it once at finalize over the accumulated batch `cr`.
+- Tests: (a) `apply_compile_result(wire_links=False)` upserts entities+SUPPORTS but creates **zero** `LINKS_TO`; (b) a later `wire_links(batch_cr)` with both entities present creates the cross-source edge that per-source sync skipped; (c) default `wire_links=True` unchanged (existing ingestion tests green).
+
+> T0a + T0b are independent of C1/F-ord (could run first). T0c is the C1 fix mechanism (panel-resolved); it + the β commit ordering now drive Tasks 2 + 4 (see the RESOLVED combined sequence above).
 
 ---
 
