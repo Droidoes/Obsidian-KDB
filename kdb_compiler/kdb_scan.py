@@ -102,27 +102,49 @@ def _classify_file(abs_path: Path) -> tuple[FileType, bool]:
     return "unknown", False
 
 
-# -------- phase A: walk raw/ --------
+# -------- phase A: walk a pipeline scope --------
 
-def walk_raw(raw_abs: Path) -> tuple[list[_RawFile], list[SkippedSymlinkEntry], list[ErrorEntry]]:
-    """os.walk raw/; return (files, skipped_symlinks, errors). All lists sorted by path."""
+def walk_scope(
+    root_abs: Path,
+    vault_root: Path,
+    *,
+    file_types: "frozenset[str] | set[str] | None" = None,
+    excludes: "list[str] | None" = None,
+    prune_hidden: bool = True,
+) -> tuple[list[_RawFile], list[SkippedSymlinkEntry], list[ErrorEntry]]:
+    """os.walk root_abs; return (files, skipped_symlinks, errors), all sorted by
+    vault-relative path (Task #91).
+
+    - source_ids are vault-relative (abs.relative_to(vault_root)).
+    - prune_hidden: skip dot-dirs (.*) — default True; the legacy raw walk opts
+      out for exact back-compat.
+    - excludes: directory names (trailing '/' tolerated) pruned at walk time.
+    - file_types: when given, only files with these suffixes are recorded;
+      None = record all (legacy raw behavior — binary files included).
+    """
     files: list[_RawFile] = []
     symlinks: list[SkippedSymlinkEntry] = []
     errors: list[ErrorEntry] = []
 
-    if not raw_abs.exists():
+    if not root_abs.exists():
         return files, symlinks, errors
 
-    raw_abs = raw_abs.resolve()
+    root_abs = root_abs.resolve()
+    vault_root = vault_root.resolve()
+    exclude_names = {e.rstrip("/") for e in (excludes or [])}
 
-    for dirpath, dirnames, filenames in os.walk(raw_abs, followlinks=False):
-        # Stable traversal order; also filter symlinked subdirs.
+    for dirpath, dirnames, filenames in os.walk(root_abs, followlinks=False):
+        # Stable traversal order; prune hidden/excluded; filter symlinked subdirs.
         dirnames.sort()
         pruned: list[str] = []
         for d in dirnames:
+            if prune_hidden and d.startswith("."):
+                continue
+            if d in exclude_names:
+                continue
             dp = Path(dirpath) / d
             if dp.is_symlink():
-                rel = _rel_to_vault(dp, raw_abs)
+                rel = _rel_to_vault(dp, vault_root)
                 target = _readlink_target(dp)
                 symlinks.append(SkippedSymlinkEntry(path=rel, link_target=target))
             else:
@@ -131,11 +153,14 @@ def walk_raw(raw_abs: Path) -> tuple[list[_RawFile], list[SkippedSymlinkEntry], 
 
         for name in sorted(filenames):
             p = Path(dirpath) / name
-            rel = _rel_to_vault(p, raw_abs)
+            rel = _rel_to_vault(p, vault_root)
 
             if p.is_symlink():
                 target = _readlink_target(p)
                 symlinks.append(SkippedSymlinkEntry(path=rel, link_target=target))
+                continue
+
+            if file_types is not None and p.suffix not in file_types:
                 continue
 
             try:
@@ -161,10 +186,21 @@ def walk_raw(raw_abs: Path) -> tuple[list[_RawFile], list[SkippedSymlinkEntry], 
     return files, symlinks, errors
 
 
-def _rel_to_vault(abs_path: Path, raw_abs: Path) -> str:
-    """Return POSIX 'KDB/raw/...' relpath for a path under raw_abs."""
-    rel = abs_path.relative_to(raw_abs.parent.parent)  # vault/KDB/raw/... -> KDB/raw/...
-    return rel.as_posix()
+def walk_raw(raw_abs: Path) -> tuple[list[_RawFile], list[SkippedSymlinkEntry], list[ErrorEntry]]:
+    """Back-compat wrapper for the legacy KDB/raw/ scan. Delegates to walk_scope
+    with vault_root = raw_abs.parent.parent, no suffix filter, and no
+    hidden-pruning — preserving the original behavior exactly (binary files
+    recorded; dot-dirs walked). The .md-only restriction (D-91-2) is applied
+    per-pipeline via scan_scope's file_types, not here."""
+    return walk_scope(
+        raw_abs, raw_abs.parent.parent,
+        file_types=None, excludes=[], prune_hidden=False,
+    )
+
+
+def _rel_to_vault(abs_path: Path, vault_root: Path) -> str:
+    """Return POSIX vault-relative path for abs_path under vault_root."""
+    return abs_path.relative_to(vault_root).as_posix()
 
 
 def _readlink_target(p: Path) -> str | None:

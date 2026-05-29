@@ -410,3 +410,22 @@ def test_moved_with_compiled_content_is_skipped(tmp_path: Path) -> None:
     assert moved.compiled_hash == h
     assert res.to_skip == ["KDB/raw/sub/b.md"]
     assert res.to_compile == []
+
+
+# ---------- Task #91 Plan 4: generalized scope walk ----------
+
+def test_walk_scope_arbitrary_root_vault_relative(tmp_path):
+    vault = tmp_path
+    root = vault / "Vault-test" / "AIML"
+    (root / "Claude").mkdir(parents=True)
+    (root / "Claude" / "a.md").write_text("x", encoding="utf-8")
+    (root / "b.txt").write_text("y", encoding="utf-8")             # non-.md: filtered
+    (root / ".hidden").mkdir()
+    (root / ".hidden" / "c.md").write_text("z", encoding="utf-8")  # hidden dir: pruned
+    (root / "Daily Notes").mkdir()
+    (root / "Daily Notes" / "d.md").write_text("w", encoding="utf-8")  # excluded
+
+    files, _sym, _err = kdb_scan.walk_scope(
+        root, vault, file_types={".md"}, excludes=["Daily Notes/"])
+    paths = sorted(f.rel_path for f in files)
+    assert paths == ["Vault-test/AIML/Claude/a.md"]   # vault-relative; rest filtered
