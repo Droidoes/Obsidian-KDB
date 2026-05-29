@@ -127,6 +127,22 @@ def test_load_manifest_reads_sources(tmp_path: Path) -> None:
     assert out["KDB/raw/a.md"]["hash"] == "sha256:" + "a" * 64
 
 
+def test_load_manifest_returns_pipeline_id(tmp_path: Path) -> None:
+    # Task #91 (M1): pipeline_id must round-trip so scan_scope's per-pipeline
+    # prior filter can match committed rows; legacy records (no field) -> None.
+    p = tmp_path / "m.json"
+    p.write_text(json.dumps({"sources": {
+        "AIML/a.md": {"hash": "sha256:" + "a" * 64, "mtime": 1.0, "size_bytes": 3,
+                      "file_type": "markdown", "is_binary": False,
+                      "pipeline_id": "vault-test"},
+        "legacy/b.md": {"hash": "sha256:" + "b" * 64, "mtime": 1.0, "size_bytes": 3,
+                        "file_type": "markdown", "is_binary": False},
+    }}))
+    out = load_manifest_sources(p)
+    assert out["AIML/a.md"]["pipeline_id"] == "vault-test"
+    assert out["legacy/b.md"]["pipeline_id"] is None
+
+
 # ---------- classify ----------
 
 def _raw(path: str, hash_: str, mtime: float = 1.0, size: int = 1,

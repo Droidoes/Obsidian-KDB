@@ -30,6 +30,7 @@ def apply_compile_result(
     conn: kuzu.Connection,
     now: str | None = None,
     detect_orphans: bool = True,
+    wire_links: bool = True,
 ) -> SyncResult:
     """Apply one compile run's deltas to the Kuzu graph (atomic per run).
 
@@ -39,6 +40,15 @@ def apply_compile_result(
         run_id: run id string.
         conn: open kuzu.Connection.
         now: ISO timestamp; defaults to datetime.now().astimezone().isoformat().
+        detect_orphans: when False, skip Phase-4 orphan marking (Task #91 —
+            orchestrator runs one end-of-run detect_orphans() pass).
+        wire_links: when False, skip Phase-3 LINKS_TO wiring only (Task #91 C1 —
+            orchestrator defers link-wiring to a single finalize wire_links()
+            pass over the accumulated batch, so cross-source edges resolve with
+            all entities present → live≡replay by construction). SUPPORTS,
+            ingest-state, meta, domains and aliases still apply per-source for
+            read-after-write of T1/T2 context. Default True preserves the
+            batch/monolith path.
 
     Returns:
         SyncResult with counts + newly-orphaned page slugs.
@@ -83,8 +93,9 @@ def apply_compile_result(
                 _upsert_entity(conn, page, run_id, now, result)
                 _ingest_page_domains(conn, page, alias_to_canonical, run_id, now, result)
         for cs in cr.get("compiled_sources", []):
-            for page in cs.get("pages", []):
-                _replace_outgoing_links(conn, page, run_id, now, result)
+            if wire_links:
+                for page in cs.get("pages", []):
+                    _replace_outgoing_links(conn, page, run_id, now, result)
             _replace_supports_for_source(conn, cs, run_id, now, result)
             _update_source_ingest_state(conn, cs, run_id, now)
             _write_source_meta(conn, cs)
@@ -731,6 +742,37 @@ def detect_orphans(
             pass
         raise
     return orphans
+
+
+def wire_links(
+    cr: dict, conn: kuzu.Connection, run_id: str, *, now: str | None = None
+) -> SyncResult:
+    """Task #91 (C1): standalone end-of-run LINKS_TO batch-wiring pass.
+
+    The orchestrator calls this ONCE at finalize over the accumulated batch
+    `cr` (all sources' compiled pages), after every per-source
+    apply_compile_result ran with wire_links=False. By the time this runs every
+    Entity that any page links to has been upserted, so the cross-source edges
+    that per-source wiring silently skipped (target not yet present) are now
+    created — restoring the monolith's complete LINKS_TO set → live≡replay by
+    construction. Idempotent (drop+recreate per page). Owns its own transaction,
+    mirroring detect_orphans. Returns the SyncResult (edges_upserted populated)."""
+    if now is None:
+        now = datetime.now().astimezone().isoformat()
+    result = SyncResult(run_id=run_id)
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        for cs in cr.get("compiled_sources", []):
+            for page in cs.get("pages", []):
+                _replace_outgoing_links(conn, page, run_id, now, result)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    return result
 
 
 # ---------- Cleanup retraction (#68) ----------

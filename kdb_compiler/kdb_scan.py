@@ -213,9 +213,15 @@ def _readlink_target(p: Path) -> str | None:
 # -------- manifest loading --------
 
 def load_manifest_sources(manifest_abs: Path) -> dict[str, dict]:
-    """Return {source_id: {hash, mtime, size_bytes, file_type, is_binary}}.
+    """Return {source_id: {hash, mtime, size_bytes, file_type, is_binary,
+    last_compiled_hash, pipeline_id}}.
 
     Missing file or empty-sources -> {}. Malformed manifest -> {} (first-run behavior).
+
+    Task #91 (M1): `pipeline_id` is surfaced so `scan_scope`'s per-pipeline prior
+    filter (`r.get("pipeline_id") == pipeline_id`) can match committed rows.
+    Legacy records lacking the field read back as None (the orchestrator stamps
+    them at startup before scanning).
     """
     if not manifest_abs.exists():
         return {}
@@ -237,6 +243,7 @@ def load_manifest_sources(manifest_abs: Path) -> dict[str, dict]:
             "file_type": rec.get("file_type"),
             "is_binary": rec.get("is_binary"),
             "last_compiled_hash": rec.get("last_compiled_hash"),
+            "pipeline_id": rec.get("pipeline_id"),
         }
     return out
 

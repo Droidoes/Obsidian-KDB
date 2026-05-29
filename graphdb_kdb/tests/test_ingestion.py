@@ -55,6 +55,59 @@ def test_multi_page_upsert(graph_dir):
     assert stats["entities"] == 3
 
 
+# ---------- 1b. Task #91 C1: wire_links=False + finalize wire_links() ----------
+
+def _count(gdb, query: str) -> int:
+    r = gdb.conn.execute(query)
+    return int(r.get_next()[0]) if r.has_next() else 0
+
+
+def test_apply_wire_links_false_skips_links_keeps_supports(graph_dir):
+    """wire_links=False: entities + SUPPORTS upserted, but zero LINKS_TO edges
+    (read-after-write for T1/T2 preserved; T3 deferred to finalize)."""
+    cr = make_compile_result([
+        make_compiled_source("KDB/raw/a.md", [
+            make_page("a", outgoing_links=["b"]),
+            make_page("b"),
+        ])
+    ])
+    scan = make_scan([make_scan_entry("KDB/raw/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1", wire_links=False)
+        n_links = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+        n_supports = _count(gdb, "MATCH (:Source)-[r:SUPPORTS]->() RETURN COUNT(r)")
+        ent = gdb.get_entity("a")
+    assert n_links == 0          # LINKS_TO skipped
+    assert n_supports == 2       # SUPPORTS still wired per-source
+    assert ent is not None       # entity upserted
+
+
+def test_finalize_wire_links_wires_cross_source_edge(graph_dir):
+    """Per-source wire_links=False skips an edge whose target is in a later
+    source; the finalize wire_links() batch pass creates it (C1 fix)."""
+    cr1 = make_compile_result([
+        make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])])])
+    cr2 = make_compile_result([
+        make_compiled_source("KDB/raw/b.md", [make_page("b")])])
+    scan1 = make_scan([make_scan_entry("KDB/raw/a.md")])
+    scan2 = make_scan([make_scan_entry("KDB/raw/b.md")])
+    edge_q = ("MATCH (:Entity {slug: 'a'})-[r:LINKS_TO]->(:Entity {slug: 'b'}) "
+              "RETURN COUNT(r)")
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan1, "run-1", wire_links=False)
+        gdb.apply_compile_result(cr2, scan2, "run-1", wire_links=False)
+        before = _count(gdb, edge_q)
+        batch_cr = make_compile_result([
+            make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])]),
+            make_compiled_source("KDB/raw/b.md", [make_page("b")]),
+        ])
+        res = gdb.wire_links(batch_cr, "run-1")
+        after = _count(gdb, edge_q)
+    assert before == 0           # per-source sync skipped the cross-source edge
+    assert after == 1            # finalize batch-wire created it
+    assert res.edges_upserted >= 1
+
+
 # ---------- 2. outgoing edges replace (add / remove / change) ----------
 
 def test_outgoing_edges_replace_add(graph_dir):

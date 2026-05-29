@@ -685,8 +685,15 @@ def compile_source(
             cr=None, failure_stage="validate",
             error="; ".join(f.detail for f in vres.gate_errors))
 
-    # 4. reconcile (stage 5) — mutates cr in place
-    reconcile.reconcile(cr, vres.measure_findings)
+    # 4. reconcile (stage 5) — mutates cr in place. Task #91 (m3): wrap so a
+    # ReconcileError returns case-(a) failure instead of escaping the
+    # CompileSourceResult contract (orchestrator routes it uniformly).
+    try:
+        reconcile.reconcile(cr, vres.measure_findings)
+    except reconcile.ReconcileError as e:
+        return CompileSourceResult(
+            cr=None, failure_stage="reconcile",
+            exception_type=type(e).__name__, error=str(e))
 
     # 5. canonicalize (stage 6) — mutates cr in place, emits canonical_meta
     try:

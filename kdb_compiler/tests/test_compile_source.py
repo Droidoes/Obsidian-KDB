@@ -242,3 +242,30 @@ def test_compile_source_gate_error(tmp_path, monkeypatch):
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "validate" and "forced for test" in result.error
+
+
+def test_compile_source_reconcile_error(tmp_path, monkeypatch):
+    # Task #91 (m3): a ReconcileError must surface as a case-(a) failure result,
+    # not escape the CompileSourceResult contract.
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    from kdb_compiler import reconcile as _rec
+
+    def boom(cr, findings):
+        raise _rec.ReconcileError("forced reconcile failure")
+    monkeypatch.setattr("kdb_compiler.compiler.reconcile.reconcile", boom)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "reconcile"
+    assert result.exception_type == "ReconcileError"
