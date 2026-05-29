@@ -429,3 +429,23 @@ def test_walk_scope_arbitrary_root_vault_relative(tmp_path):
         root, vault, file_types={".md"}, excludes=["Daily Notes/"])
     paths = sorted(f.rel_path for f in files)
     assert paths == ["Vault-test/AIML/Claude/a.md"]   # vault-relative; rest filtered
+
+
+def test_scan_entry_pipeline_id_field():
+    from kdb_compiler.types import ScanEntry
+    e = ScanEntry(path="P/a.md", action="NEW", current_hash="sha256:x",
+                  current_mtime=1.0, size_bytes=3, file_type="markdown",
+                  is_binary=False, compiled_hash=None, pipeline_id="test-pipe")
+    assert e.pipeline_id == "test-pipe"
+    assert e.to_dict()["pipeline_id"] == "test-pipe"
+
+
+def test_seed_source_record_carries_pipeline_id():
+    from kdb_compiler.source_state_update import _seed_source_record
+    from kdb_compiler.run_context import RunContext
+    ctx = RunContext.new(dry_run=True, vault_root=Path("/tmp/x"))
+    rec = _seed_source_record(
+        {"path": "P/a.md", "file_type": "markdown", "current_hash": "sha256:x",
+         "current_mtime": 1.0, "size_bytes": 3, "is_binary": False,
+         "pipeline_id": "test-pipe"}, ctx)
+    assert rec["pipeline_id"] == "test-pipe"

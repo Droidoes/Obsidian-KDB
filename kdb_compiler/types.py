@@ -44,6 +44,7 @@ class ScanEntry:
     previous_hash: Optional[str] = None    # CHANGED/UNCHANGED/MOVED
     previous_mtime: Optional[float] = None # CHANGED/UNCHANGED/MOVED
     previous_path: Optional[str] = None    # MOVED only
+    pipeline_id: Optional[str] = None      # Task #91: owning ingestion pipeline
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
@@ -62,6 +63,8 @@ class ScanEntry:
             d["previous_mtime"] = self.previous_mtime
         if self.previous_path is not None:
             d["previous_path"] = self.previous_path
+        if self.pipeline_id is not None:
+            d["pipeline_id"] = self.pipeline_id
         return d
 
 

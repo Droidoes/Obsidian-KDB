@@ -43,6 +43,7 @@ _SOURCE_META_FIELDS = frozenset({
     "compile_state", "compile_count", "last_compiled_hash",
     "summary_slug", "compiled_title", "parser", "compiler_version",
     "schema_version_used", "previous_versions",
+    "pipeline_id",                       # Task #91: owning ingestion pipeline
 })
 
 
@@ -93,6 +94,7 @@ def _seed_source_record(file_entry: dict, ctx: RunContext) -> dict:
         "compiler_version": None,
         "schema_version_used": None,
         "previous_versions": [],
+        "pipeline_id": file_entry.get("pipeline_id"),
     }
 
 
