@@ -20,10 +20,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from graphdb_kdb.ingestor import apply_compile_result
+from graphdb_kdb.ingestor import (
+    apply_cleanup, apply_compile_result, detect_orphans, wire_links,
+)
 from kdb_compiler import patch_applier, source_state_update
 from kdb_compiler.atomic_io import atomic_write_json
-from kdb_compiler.run_context import RunContext
+from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
+from kdb_compiler.run_context import RunContext, now_iso
 
 MANIFEST_NAME = "manifest.json"
 
@@ -122,3 +125,100 @@ def _commit_source(
     return CommitResult(
         next_manifest=next_manifest, pages_written=apply_res.pages_written,
         cr=cr, graph_committed=True)
+
+
+# ---------- finalize: merge crs → wire_links → orphans → cleanup → summary ----------
+
+def _combine_crs(crs: list[dict], run_id: str) -> dict:
+    """Merge the per-source compile_results accumulated over the loop into one
+    batch compile_result (the replay payload → compile_result.json).
+
+    Entities/SUPPORTS/LINKS_TO/domains all live in compiled_sources[].pages[],
+    but alias Entities + ALIAS_OF edges live ONLY in canonical_meta.aliases_emitted
+    — the one per-source graph effect outside compiled_sources. Dropping it would
+    make the replayed compile_result fail to recreate aliases → live≢replay. So
+    the union of aliases_emitted is load-bearing, not cosmetic.
+    """
+    compiled_sources: list[dict] = []
+    log_entries: list[dict] = []
+    warnings: list[str] = []
+    aliases_emitted: list[dict] = []
+    for cr in crs:
+        compiled_sources.extend(cr.get("compiled_sources", []))
+        log_entries.extend(cr.get("log_entries", []))
+        warnings.extend(cr.get("warnings", []))
+        cm = cr.get("canonical_meta") or {}
+        aliases_emitted.extend(cm.get("aliases_emitted") or [])
+    combined: dict = {
+        "run_id": run_id, "success": True,
+        "compiled_sources": compiled_sources,
+        "log_entries": log_entries, "errors": [], "warnings": warnings,
+    }
+    if aliases_emitted:
+        combined["canonical_meta"] = {"aliases_emitted": aliases_emitted}
+    return combined
+
+
+def _finalize(
+    conn, accumulated_crs: list[dict], *,
+    state_root: Path, ctx: RunContext, dry_run: bool = False,
+) -> dict:
+    """End-of-run passes over the final graph (combined commit sequence 5-8):
+
+      5. wire_links(combined)  — batch LINKS_TO, all entities present (C1 fix).
+      6. detect_orphans()      — single deferred orphan-marking pass.
+      7. kdb-clean orphans     — reap_orphans_from_graph + build_cleanup_artifacts
+                                 (cleanup journal + retraction.json, m1) + apply_cleanup.
+      8. write compile_result.json (combined replay payload).
+
+    Returns finalize counts for the run summary.
+    """
+    combined = _combine_crs(accumulated_crs, ctx.run_id)
+
+    wl = wire_links(combined, conn, ctx.run_id)
+    orphans = detect_orphans(conn, ctx.run_id)
+
+    report = reap_orphans_from_graph(conn)
+    reaped = len(report["reaped"])
+    if not dry_run and report["reaped"]:
+        finished = now_iso()
+        journal, retraction = build_cleanup_artifacts(
+            report, ctx.run_id, ctx.started_at, finished)
+        runs_root = state_root / "runs"
+        sidecar_dir = runs_root / ctx.run_id
+        sidecar_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(sidecar_dir / "retraction.json", retraction, sort_keys=True)
+        atomic_write_json(runs_root / f"{ctx.run_id}.json", journal, sort_keys=True)
+        apply_cleanup(retraction, ctx.run_id, conn=conn)
+
+    if not dry_run:
+        atomic_write_json(state_root / "compile_result.json", combined)
+
+    return {
+        "links_wired": wl.edges_upserted,
+        "orphans_marked": len(orphans),
+        "reaped": reaped,
+    }
+
+
+def write_last_orchestrate_json(
+    state_root: Path, *, run_id: str, started_at: str, finished_at: str,
+    exit_code: int, exit_reason: str, counts: dict, manifest_delta: dict,
+    finalize: dict | None = None,
+) -> Path:
+    """Write the slim run summary (D-91-10). Written ALWAYS — success and abort —
+    so a fail-fast still leaves an inspectable record of where the run stopped."""
+    summary = {
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "exit_code": exit_code,
+        "exit_reason": exit_reason,
+        "counts": counts,
+        "manifest_delta": manifest_delta,
+    }
+    if finalize is not None:
+        summary["finalize"] = finalize
+    path = state_root / "last_orchestrate.json"
+    atomic_write_json(path, summary)
+    return path

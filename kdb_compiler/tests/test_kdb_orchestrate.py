@@ -123,3 +123,83 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     assert rec["pipeline_id"] == "vault-test"
     # cr accumulated for the finalize passes
     assert result.cr is produced.cr
+
+
+# ---------- Task 4+5: finalize (merge → wire_links → orphans → cleanup → summary) ----------
+
+def _page(slug: str, *, page_type="concept", outgoing=None) -> dict:
+    return {"slug": slug, "page_type": page_type, "title": slug.title(),
+            "body": "Body.", "status": "active",
+            "outgoing_links": outgoing or [], "confidence": "medium"}
+
+
+def _cr(source_id: str, pages: list[dict], *, aliases=None) -> dict:
+    cs = {"source_id": source_id, "summary_slug": pages[0]["slug"],
+          "pages": pages, "concept_slugs": [], "article_slugs": [],
+          "compile_meta": {"provider": "p", "model": "m"}, "source_meta": None}
+    cr = {"run_id": "r1", "success": True, "compiled_sources": [cs],
+          "log_entries": [], "errors": [], "warnings": []}
+    if aliases:
+        cr["canonical_meta"] = {"aliases_emitted": aliases}
+    return cr
+
+
+def _scan_files(source_id: str) -> dict:
+    return {"files": [{"path": source_id, "action": "NEW",
+                       "current_hash": "sha256:" + "1" * 64, "current_mtime": 1.0,
+                       "size_bytes": 1, "file_type": "markdown", "is_binary": False}],
+            "to_compile": [source_id], "to_reconcile": []}
+
+
+def test_combine_crs_unions_aliases_emitted():
+    # Load-bearing for live≡replay: aliases live ONLY in canonical_meta, outside
+    # compiled_sources — the merge must union them or replay loses ALIAS_OF edges.
+    crA = _cr("a.md", [_page("ent-a")],
+              aliases=[{"alias_slug": "al-a", "canonical_slug": "ent-a", "algorithm": "ledger"}])
+    crB = _cr("b.md", [_page("ent-b")],
+              aliases=[{"alias_slug": "al-b", "canonical_slug": "ent-b", "algorithm": "ledger"}])
+    combined = kdb_orchestrate._combine_crs([crA, crB], "r1")
+    assert len(combined["compiled_sources"]) == 2
+    emitted = combined["canonical_meta"]["aliases_emitted"]
+    assert {e["alias_slug"] for e in emitted} == {"al-a", "al-b"}
+
+
+def test_finalize_wires_links_and_writes_compile_result(tmp_path):
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    ctx = RunContext.new(vault_root=tmp_path)
+    crA = _cr("a.md", [_page("ent-a", outgoing=["ent-b"])])
+    crB = _cr("b.md", [_page("ent-b")])
+    edge_q = ("MATCH (:Entity {slug: 'ent-a'})-[r:LINKS_TO]->(:Entity {slug: 'ent-b'}) "
+              "RETURN COUNT(r)")
+    with GraphDB(tmp_path / "graph") as g:
+        # Per-source sync with links deferred (mirrors the orchestrator loop).
+        g.apply_compile_result(crA, _scan_files("a.md"), ctx.run_id,
+                               detect_orphans=False, wire_links=False)
+        g.apply_compile_result(crB, _scan_files("b.md"), ctx.run_id,
+                               detect_orphans=False, wire_links=False)
+        before = _count(g, edge_q)
+        stats = kdb_orchestrate._finalize(
+            g.conn, [crA, crB], state_root=state_root, ctx=ctx)
+        after = _count(g, edge_q)
+    assert before == 0 and after == 1          # finalize wire_links wired the edge
+    assert stats["links_wired"] >= 1
+    assert stats["reaped"] == 0                # both entities supported → no orphans
+    cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
+    assert len(cr_json["compiled_sources"]) == 2
+
+
+def test_write_last_orchestrate_json_fields(tmp_path):
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    path = kdb_orchestrate.write_last_orchestrate_json(
+        state_root, run_id="r1", started_at="t0", finished_at="t1",
+        exit_code=0, exit_reason="ok",
+        counts={"sources_scanned": 2, "sources_compiled": 1, "sources_failed": 0},
+        manifest_delta={"added": ["a.md"], "removed": [], "changed": []},
+        finalize={"links_wired": 1, "orphans_marked": 0, "reaped": 0})
+    d = json.loads(path.read_text(encoding="utf-8"))
+    assert d["run_id"] == "r1" and d["exit_code"] == 0 and d["exit_reason"] == "ok"
+    assert d["counts"]["sources_compiled"] == 1
+    assert d["finalize"]["links_wired"] == 1
+    assert d["manifest_delta"]["added"] == ["a.md"]
