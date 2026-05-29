@@ -35,6 +35,7 @@ kdb-compile           = "kdb_compiler.kdb_compile:main"
 kdb-clean             = "kdb_compiler.kdb_clean:main"
 kdb-replay            = "kdb_compiler.response_replay:main"
 kdb-benchmark         = "kdb_benchmark.cli:main"
+kdb-orchestrate       = "kdb_compiler.kdb_orchestrate:main"
 graphdb-kdb           = "graphdb_kdb.cli:main"
 
 [build-system]

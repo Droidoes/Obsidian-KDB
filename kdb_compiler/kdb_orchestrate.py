@@ -17,7 +17,9 @@ and writes last_orchestrate.json.
 """
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -336,6 +338,7 @@ class OrchestrateResult:
     failed_source: str | None = None
     failure_stage: str | None = None
     summary_path: Path | None = None
+    planned: dict | None = None     # dry-run plan preview
 
     @property
     def ok(self) -> bool:
@@ -375,16 +378,36 @@ def run(
     accumulated_crs: list[dict] = []
     counts = _empty_counts()
     finalize_stats: dict | None = None
+    planned: dict | None = None
     abort: tuple[str, str, str | None] | None = None   # (stage, source_id, error)
     crashed_reason: str | None = None
 
+    # Scan needs no graph — do it first so --dry-run can preview without opening
+    # (or mutating) the graph and without firing any API call.
+    scan = scan_scope(
+        Path(pipeline.root), vault_root, pipeline_id=pipeline_id,
+        prior=prior_flat, run_ctx=ctx,
+        excludes=pipeline.excludes, file_types=set(pipeline.file_types))
+    counts["sources_scanned"] = len(scan.files)
+
+    if dry_run:
+        planned = {
+            "to_compile": list(scan.to_compile),
+            "deleted": [op.to_dict() for op in scan.to_reconcile if op.type == "DELETED"],
+            "moved": [op.to_dict() for op in scan.to_reconcile if op.type == "MOVED"],
+        }
+        finished_at = now_iso()
+        summary_path = write_last_orchestrate_json(
+            state_root, run_id=ctx.run_id, started_at=ctx.started_at,
+            finished_at=finished_at, exit_code=0, exit_reason="dry-run",
+            counts=counts, manifest_delta={"added": [], "removed": [], "changed": []})
+        return OrchestrateResult(
+            run_id=ctx.run_id, exit_code=0, exit_reason="dry-run", counts=counts,
+            manifest_delta={"added": [], "removed": [], "changed": []},
+            summary_path=summary_path, planned=planned)
+
     try:
         with GraphDB(graph_path) as g:
-            scan = scan_scope(
-                Path(pipeline.root), vault_root, pipeline_id=pipeline_id,
-                prior=prior_flat, run_ctx=ctx,
-                excludes=pipeline.excludes, file_types=set(pipeline.file_types))
-            counts["sources_scanned"] = len(scan.files)
             files_by_id = {e.path: e for e in scan.files}
 
             # --- compile queue: NEW/CHANGED (+ MOVED+CHANGED) ---
@@ -479,3 +502,64 @@ def run(
         counts=counts, manifest_delta=delta, finalize=finalize_stats,
         failed_source=failed_source, failure_stage=failure_stage,
         summary_path=summary_path)
+
+
+# ---------- CLI ----------
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="kdb-orchestrate",
+        description=(
+            "End-to-end KDB conductor: scan one pipeline → per-source "
+            "Pass-1 enrich → Pass-2 compile → GraphDB sync → finalize."))
+    p.add_argument("--pipeline", help="pipeline id from <state-root>/pipelines.json "
+                                      "(omit to list available pipelines)")
+    p.add_argument("--vault-root", required=True, help="absolute vault root path")
+    p.add_argument("--state-root", help="defaults to <vault-root>/KDB/state")
+    p.add_argument("--graph-path", help="defaults to <vault-root>/KDB/graph "
+                                        "(KDB_GRAPH_PATH env also honored by callers)")
+    p.add_argument("--provider", default="deepseek")
+    p.add_argument("--model", default="deepseek-v4-flash")
+    p.add_argument("--max-tokens", type=int, default=32768)
+    p.add_argument("--dry-run", action="store_true",
+                   help="scan + print the plan; no enrich/compile/graph writes, no API")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    vault_root = Path(args.vault_root).resolve()
+    state_root = (Path(args.state_root).resolve() if args.state_root
+                  else vault_root / "KDB" / "state")
+    graph_path = (Path(args.graph_path).resolve() if args.graph_path
+                  else vault_root / "KDB" / "graph")
+
+    if not args.pipeline:
+        ids = pipeline_registry.list_pipelines(state_root)
+        print("available pipelines: " + (", ".join(ids) if ids else "(none)"))
+        return 0
+
+    res = run(
+        pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
+        graph_path=graph_path, provider=args.provider, model=args.model,
+        max_tokens=args.max_tokens, dry_run=args.dry_run)
+
+    print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
+          f"reason={res.exit_reason}")
+    c = res.counts
+    print(f"  scanned={c['sources_scanned']} compiled={c['sources_compiled']} "
+          f"noise={c['sources_noise']} moved={c['sources_moved']} "
+          f"deleted={c['sources_deleted']} failed={c['sources_failed']}")
+    if res.planned is not None:
+        print(f"  plan: {len(res.planned['to_compile'])} to compile, "
+              f"{len(res.planned['deleted'])} to delete, "
+              f"{len(res.planned['moved'])} to move")
+    if res.finalize is not None:
+        print(f"  finalize: {res.finalize}")
+    if res.summary_path is not None:
+        print(f"  summary: {res.summary_path}")
+    return res.exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

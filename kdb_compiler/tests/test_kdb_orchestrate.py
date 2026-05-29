@@ -301,3 +301,35 @@ def test_run_fail_fast_on_compile_error(tmp_path, monkeypatch):
     assert res.failed_source == "AIML/a.md"
     assert res.counts["sources_failed"] == 1
     assert res.summary_path.exists()       # summary written on abort (advisor #1)
+
+
+# ---------- Task 6: CLI ----------
+
+def test_cli_dry_run_smoke(tmp_path, capsys):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+
+    rc = kdb_orchestrate.main(
+        ["--pipeline", "vt", "--vault-root", str(vault), "--dry-run"])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "dry-run" in out and "to compile" in out
+    # dry-run fires no API and mutates nothing: no graph, no manifest
+    assert not (vault / "KDB" / "graph").exists()
+    assert not (state_root / "manifest.json").exists()
+    assert (state_root / "last_orchestrate.json").exists()
+
+
+def test_cli_lists_pipelines_when_omitted(tmp_path, capsys):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    _write_pipelines(state_root, vault)
+
+    rc = kdb_orchestrate.main(["--vault-root", str(vault)])
+
+    assert rc == 0
+    assert "vt" in capsys.readouterr().out
