@@ -10,7 +10,10 @@ dataclass field names already match the JSON shape.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+
+if TYPE_CHECKING:
+    from kdb_compiler.source_io import SourceFrontmatter
 
 FileType = Literal["markdown", "binary", "unknown"]
 ScanAction = Literal["NEW", "CHANGED", "UNCHANGED", "MOVED"]  # DELETED lives in ReconcileOp only
@@ -230,6 +233,24 @@ class CompiledSource:
 
 
 @dataclass
+class CompileSourceResult:
+    """Per-source Pass-2 PRODUCE result from compiler.compile_source().
+    Produce-don't-write: holds the compiled `cr` only — the orchestrator
+    owns stage-8 apply-pages, provenance, manifest commit, and graph-sync.
+    error non-None ==> pre-commit failure (D-91-13 case a); cr is None and
+    `failure_stage` in {context, compile, validate, canonicalize} routes the
+    orchestrator's case-aware summary without string-parsing."""
+    cr: Optional[dict]
+    failure_stage: Optional[str] = None
+    exception_type: Optional[str] = None
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+@dataclass
 class LogEntry:
     level: Literal["info", "notice", "contradiction", "warning"]
     message: str
@@ -291,10 +312,13 @@ class ContextSnapshot:
 @dataclass
 class CompileJob:
     """One unit of compile work: a source_id + resolved path + its
-    pre-built context snapshot."""
+    pre-built context snapshot. The orchestrator (in-memory path) also
+    supplies source_text + frontmatter so compile reads nothing from disk."""
     source_id: str                 # "KDB/raw/..."
-    abs_path: str                  # absolute filesystem path
+    abs_path: str                  # absolute filesystem path (legacy path only)
     context_snapshot: ContextSnapshot
+    source_text: str | None = None              # in-memory body (orchestrator path)
+    frontmatter: "SourceFrontmatter | None" = None
 
 
 @dataclass

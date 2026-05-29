@@ -127,7 +127,12 @@ def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
 
     Migrated to kdb_compiler.source_io 2026-05-27 (Task #90 D-90-10) to break
     the planner→compiler.py circular-import cycle B-1.
+
+    Task #91: prefers the orchestrator's in-memory (source_text, frontmatter)
+    when present — zero disk reads; else falls back to disk (legacy path).
     """
+    if job.source_text is not None:
+        return job.frontmatter, job.source_text
     return parse_source_file(Path(job.abs_path))
 
 
@@ -232,7 +237,11 @@ def compile_one(
     payload (no source-id-space fields).
     """
     source_id = job.source_id
-    source_name = Path(job.abs_path).name
+    # Task #91: derive from source_id, not abs_path — the in-memory orchestrator
+    # path has abs_path="" (Path("").name == ""), which would fail the
+    # validate_compiled_source_response source_name-echo check. Equal to
+    # Path(abs_path).name for all legacy sources (same basename).
+    source_name = Path(job.source_id).name
 
     state: dict = {
         "prompt": None,
