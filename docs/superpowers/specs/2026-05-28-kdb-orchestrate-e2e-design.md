@@ -157,10 +157,10 @@ Change-detection keys off the **whole-file hash**, recalculated **after** [A] em
 Pass-2 takes the egress handoff `(source_id, body, keep-frontmatter)` for **one source directly — no scan at the Pass-2 stage** (the orchestrator already scanned once). Resolution (make-before-break, Task #73 precedent):
 
 - **`kdb-old-compile`** — the current monolithic `kdb-compile` is renamed and frozen as a transitional safety net / reference. Retired once the orchestrator is validated.
-- **`kdb-compile` (rebuilt)** — the per-source **compiler core**: a library function (e.g. `compile_source(source_id, body, frontmatter, …) → artifacts`) holding stages **3 → 6 + 8** (Pass-2 compile · validate · reconcile · canonicalize · apply-pages). The orchestrator imports it directly (no subprocess, per D-91-12). May retain a thin CLI for single-source debug compiles.
-- **`kdb-orchestrate`** — the E2E conductor: scan (1–2) + per-source loop calling the compiler core + manifest commit (7+9) + graph-sync (10) + cleanup.
+- **`kdb-compile` (rebuilt)** — the per-source **compiler core**: a **produce-not-write** library function (`compile_source(source_id, body, frontmatter, …) → cr`) holding stages **3 → 6** (Pass-2 compile · validate · reconcile · canonicalize). It writes **nothing** to disk and returns the compiled `cr`. The orchestrator imports it directly (no subprocess, per D-91-12). May retain a thin CLI for single-source debug compiles.
+- **`kdb-orchestrate`** — the E2E conductor: scan (1–2) + per-source loop calling the compiler core + **apply-pages (8) + manifest commit (7+9) + graph-sync (10), all at the per-source commit boundary** + cleanup.
 
-Stage redistribution (accepted):
+Stage redistribution (revised 2026-05-29 per panel review — apply-pages moved to the orchestrator; see *Produce-don't-write* below):
 
 | Stage | New home |
 |---|---|
@@ -170,7 +170,7 @@ Stage redistribution (accepted):
 | 5 reconcile | compiler core |
 | 6 canonicalize | compiler core (per-source; not cross-source-batch-bound) |
 | 7 manifest delta | orchestrator commit (uses post-embed hash) |
-| 8 apply pages | compiler core |
+| **8 apply pages** | **orchestrator (at commit boundary)** — `build_page_patches` + write; owns provenance (`current_hash`/`current_mtime`) |
 | 9 persist | orchestrator (per-source commit) |
 | 10 graph sync | orchestrator |
 
@@ -192,14 +192,26 @@ Today `CompileJob` carries only `(source_id, abs_path, context_snapshot)`, so `c
 The egress handoff `(source_id, body, keep-frontmatter)` already carries everything `compile_one` needs (keep-frontmatter maps directly onto `source_meta_dict`). The rebuilt core exposes:
 
 ```
-compile_source(source_id, body, frontmatter, conn, *, mode, resolver, …) → artifacts
-   1. context_snapshot = build_context_snapshot(conn, source_id, source_text=body, frontmatter, mode, resolver)   # only GraphDB read
+compile_source(source_id, body, frontmatter, conn, *, context_snapshot=None, mode, resolver, …) → CompileSourceResult
+   1. context_snapshot = context_snapshot or build_context_snapshot(conn, source_id, source_text=body, frontmatter, mode, resolver)  # only GraphDB read; or pre-built by caller
    2. Pass-2 (compile_one internals) on in-memory (source_id, source_name, body, frontmatter, context_snapshot)   # NO disk read
-   3. validate (4) → reconcile (5) → canonicalize (6) → apply-pages (8)
-   → artifacts (page, manifest-delta, graph-mutation)
+   3. validate (4) → reconcile (5) → canonicalize (6)
+   → CompileSourceResult(cr, failure_stage, exception_type, error)   # produce-not-write: NO apply-pages, NO disk writes
 ```
 
-This eliminates **both** downstream re-reads — Pass-2 runs entirely on the in-memory egress payload.
+This eliminates **both** downstream re-reads — Pass-2 runs entirely on the in-memory egress payload — and writes nothing. The orchestrator consumes `cr` for **stage 8 apply-pages (`build_page_patches` + write)**, **graph-sync**, and **manifest commit**, all at the per-source commit boundary.
+
+### Produce-don't-write — `compile_source` returns `cr`, orchestrator owns writes (decision 2026-05-29, 5-model panel)
+Earlier drafts had `compile_source` run apply-pages (stage 8) and write wiki files itself. The external panel (`docs/task91-plan1-review-synthesis.md`) flagged two coupled problems, both resolved by moving stage 8 out:
+
+- **Dirty disk on pre-commit failure (5/5 unanimous).** Wiki writes inside `compile_source` land *before* the orchestrator's manifest commit, so a case-(a) failure (D-91-13) could leave wiki pages on disk for an un-committed source — violating "manifest untouched." **Fix:** `compile_source` writes nothing; the orchestrator runs `build_page_patches` + write at the commit boundary, alongside manifest + graph-sync, so wiki/manifest/graph commit together (subject to the D-91-13 case-(a)/(b) boundary).
+- **Provenance leak.** `build_page_patches` needs the source's `current_hash`/`current_mtime` for page frontmatter — orchestrator-owned values. With stage 8 in the orchestrator, `compile_source` sheds the `source_hash`/`source_mtime` params entirely; the orchestrator already holds the post-embed hash + stat mtime at commit.
+
+**Cross-source page-merge — accepted single-user trade-off (4/5, code-confirmed).** In the monolith, `canonicalize._merge_page_intents` merged same-canonical-slug pages *across* a batch of sources (union of `outgoing_links`/`supports_page_existence`). Per-source compilation passes a **one-element `cr`**, so that cross-source merge is vacuous — two sources defining the same concept page in one run become **last-writer-wins** on the wiki page. This is **accepted for v1**: the **graph stays authoritative** (each source's `apply_compile_result` lands its `SUPPORTS` edges correctly, so the graph knows all supporters); only the wiki *page body* loses the union, and per `[[feedback_obsidian_wikilinks_are_vanity]]` the wiki is a projection. `kdb-audit` (Task #93) is the out-of-band reconciler that detects + (opt-in `--fix`) repairs wiki↔graph `source_refs` drift from the graph's `SUPPORTS` truth.
+
+**Error model.** All pre-commit failure modes (model / validate-gate / canonicalize / context-snapshot read) return `CompileSourceResult(cr=None, failure_stage, exception_type, error)` — the orchestrator routes on `failure_stage` (no string parsing) for the D-91-13 case-aware run summary.
+
+**Optional pre-built snapshot.** `compile_source` builds the snapshot from `conn` by default, but accepts an optional `context_snapshot` so the orchestrator can own all graph reads if a later connection strategy or the #92 context-loader redesign wants it — and so the core can be unit-tested graph-free.
 
 > **Validated content seam (test evidence).** `kdb_compiler/tests/test_t2_end_to_end_pass1_path.py::test_t2_structured_path_live` (Task #90 Phase E, Joseph-fired live) proves the *content* contract this ingress depends on: Pass-1's `entity_search_keys` → `build_context_snapshot` → `ContextSnapshot.pages` resolves to the seeded entities (keys → T2 hits). This is the "two ends of the tunnel meet in the middle" run. **Caveat:** it exercises the *old* plumbing — `enrich_one` writes to disk, then `planner.plan` re-reads from disk (`planner.py:157`) and opens its own batch connection. The new in-memory egress→ingress handoff (`compile_source` with zero disk reads) is **not** covered by it; the Phase-2 test plan must add coverage for the in-memory path.
 
@@ -308,7 +320,7 @@ Per D-91-14 (Shape A): zero new mutation channel — reuses the existing compile
 
 ### Fail-fast (D-91-8 + D-91-13 carried forward)
 Any source's Pass-1 OR Pass-2 failure aborts the whole run immediately — no skip-and-continue, no partial commit. Two-phase boundary = the manifest write:
-- **(a) pre-commit failure** (model / validate / canonicalize / patch-apply / manifest-write) → source NOT committed, manifest untouched; the in-flight graph-sync (if reached) `ROLLBACK`s cleanly (verified: rolled-back txn leaves no leak).
+- **(a) pre-commit failure** (model / validate / canonicalize / patch-apply / manifest-write) → source NOT committed, manifest untouched; the in-flight graph-sync (if reached) `ROLLBACK`s cleanly (verified: rolled-back txn leaves no leak). A **patch-apply** failure may leave orphan wiki pages on disk with no manifest entry — the accepted **self-healing edge**: the next run re-detects the source (hash mismatch) and overwrites, and `kdb-audit` (#93) reconciles any orphan wiki pages out-of-band.
 - **(b) post-manifest graph-sync failure** → manifest + wiki + sidecar committed, live graph stale → remediation `graphdb-kdb rebuild`. Exit 4; summary distinguishes "not committed" vs "committed-but-graph-sync-failed."
 
 **Connection-model note (D-91-13 still maps cleanly):** graph-sync moved from batch-end to per-source on the live shared connection, but the commit boundary is unchanged — manifest-write still separates case (a) from (b); the per-source `BEGIN/COMMIT` is what makes a case-(a) rollback leak-free.

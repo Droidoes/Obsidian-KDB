@@ -1,44 +1,56 @@
 # Plan 1 — `kdb-compile` Rebuild (`compile_source` core) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract a per-source `compile_source()` library function that runs Pass-2 stages 3→6+8 on **in-memory** inputs (zero disk re-read), and freeze the current monolithic CLI as `kdb-old-compile`.
+**Goal:** Extract a per-source **produce-don't-write** `compile_source()` library function that runs Pass-2 stages 3→6 (compile → validate → reconcile → canonicalize) on **in-memory** inputs and returns a `cr` — writing nothing to disk — and freeze the current monolithic CLI as `kdb-old-compile`.
 
-**Architecture:** The monolith's stages 4 (validate) / 5 (reconcile) / 6 (canonicalize) already operate on a `cr`-shaped dict and merely iterate `compiled_sources` — so `compile_source` wraps a **one-element `cr`** and calls the same functions. It builds the context snapshot from a caller-supplied Kuzu connection (the orchestrator's shared read-write conn), runs `compile_one` on an in-memory `CompileJob`, then validate→reconcile→canonicalize→apply-pages. No batch write-back (the orchestrator owns per-source persistence). The monolith (`kdb_compiler/kdb_compile.py`) is untouched and stays runnable as `kdb-old-compile`.
+**Architecture:** The monolith's stages 4 (validate) / 5 (reconcile) / 6 (canonicalize) already operate on a `cr`-shaped dict and iterate `compiled_sources` — so `compile_source` wraps a **one-element `cr`** and calls the same functions. It builds the context snapshot from a caller-supplied Kuzu connection (or accepts a pre-built one), runs `compile_one` on an in-memory `CompileJob`, then validate→reconcile→canonicalize, and **returns the `cr`**. Stage 8 (apply-pages / wiki write) and provenance are the **orchestrator's** job at the commit boundary (Plan 6) — not the core's. The monolith (`kdb_compiler/kdb_compile.py`) is untouched and stays runnable as `kdb-old-compile`.
 
-**Tech Stack:** Python 3, pytest, Kuzu (GraphDB), existing `kdb_compiler` modules (`compiler.compile_one`, `validate_compile_result.validate`, `reconcile.reconcile`, `canonicalize.run`, `patch_applier.apply`, `graph_context_loader.build_context_snapshot`).
+**Tech Stack:** Python 3, pytest, Kuzu (GraphDB), existing `kdb_compiler` modules (`compiler.compile_one`, `validate_compile_result.validate`, `reconcile.reconcile`, `canonicalize.run`, `graph_context_loader.build_context_snapshot`).
 
-**Spec:** `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Pass-2 ingress + stage-redistribution table). This is Plan 1 of 6 (see spec roadmap). Leaves the app green: `kdb-old-compile` still runs E2E; `compile_source` is unit-tested.
+**Spec:** `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Pass-2 ingress, "Produce-don't-write" + stage-redistribution table). **Review basis:** `docs/task91-plan1-review-synthesis.md` (workflow + 5-model panel; Forks 1+2 ratified). Plan 1 of 6 (see spec roadmap). Leaves the app green: `kdb-old-compile` still runs E2E; `compile_source` is unit-tested.
 
-**Run tests with `-m "not live"`** — `.env` auto-loads API keys; plain `pytest` fires live tests. All tests here are non-live (fake the model via monkeypatch).
+**Run tests with `-m "not live"`** — `.env` auto-loads API keys; plain `pytest` fires live tests. All tests here are non-live (fake the model via monkeypatch, the established `test_compiler.py` pattern).
 
 ---
 
 ## File Structure
 
-- **Modify** `kdb_compiler/types.py` — add `source_text` + `frontmatter` optional fields to `CompileJob`; add `CompileSourceResult` dataclass.
-- **Modify** `kdb_compiler/compiler.py` — `source_text_for` prefers in-memory job fields; **`source_name` derives from `source_id` not `abs_path`** (in-memory path has `abs_path=""`); add `compile_source()`.
-- **Modify** `pyproject.toml` — add `kdb-old-compile` console script (freeze the monolith under its new name).
+- **Modify** `kdb_compiler/types.py` — add `source_text`/`frontmatter` optional fields to `CompileJob`; add `CompileSourceResult` dataclass.
+- **Modify** `kdb_compiler/compiler.py` — `source_text_for` prefers in-memory job fields; `source_name` derives from `source_id`; add `compile_source()` (produce-don't-write).
+- **Modify** `pyproject.toml` — add `kdb-old-compile` console script.
 - **Create** `kdb_compiler/tests/test_compile_source.py` — all new tests.
+
+> **Deferred to Plan 6 (orchestrator), NOT here:** stage 8 apply-pages (`build_page_patches` + write), source provenance (`current_hash`/`current_mtime`), manifest commit, graph-sync. `compile_source` writes nothing.
 
 ---
 
-## Task 1: `CompileJob` in-memory fields + `source_text_for` preference
+## Task 1: `CompileJob` in-memory fields + `source_text_for` preference + `source_name` fix
 
-**Files:**
-- Modify: `kdb_compiler/types.py:291-297` (CompileJob)
-- Modify: `kdb_compiler/compiler.py:121-131` (source_text_for)
-- Test: `kdb_compiler/tests/test_compile_source.py`
+**Files:** Modify `kdb_compiler/types.py:291-297`, `kdb_compiler/compiler.py:121-131` and `:235`; Test `kdb_compiler/tests/test_compile_source.py`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the failing tests + shared helpers** (helpers defined here once; later tasks reuse them)
 
 ```python
 # kdb_compiler/tests/test_compile_source.py
+import json
 from pathlib import Path
 
-from kdb_compiler import compiler
+import pytest
+
+from kdb_compiler import compiler, prompt_builder
+from kdb_compiler.call_model import ModelResponse
+from kdb_compiler.canonicalize import load_or_empty
+from kdb_compiler.run_context import RunContext
 from kdb_compiler.source_io import SourceFrontmatter
-from kdb_compiler.types import CompileJob, ContextSnapshot
+from kdb_compiler.types import CompileJob, CompileSourceResult, ContextSnapshot
+from graphdb_kdb.graphdb import GraphDB
+
+
+@pytest.fixture(autouse=True)
+def _clear_prompt_caches():
+    prompt_builder.load_system_prompt.cache_clear()
+    prompt_builder.load_response_schema_text.cache_clear()
 
 
 def _fm() -> SourceFrontmatter:
@@ -49,8 +61,38 @@ def _fm() -> SourceFrontmatter:
     )
 
 
+def _vault(tmp_path: Path) -> Path:
+    (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
+        "# KDB invariants\n", encoding="utf-8")
+    (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+def _good_response(source_name: str, *, summary_slug="summary-foo",
+                   concept_slugs=None, pages=None) -> dict:
+    return {
+        "source_name": source_name, "summary_slug": summary_slug,
+        "concept_slugs": concept_slugs or [], "article_slugs": [],
+        "pages": pages or [{
+            "slug": summary_slug, "page_type": "summary", "title": "Foo",
+            "body": "Body.", "status": "active", "outgoing_links": [],
+            "confidence": "medium",
+        }],
+        "log_entries": [], "warnings": [],
+    }
+
+
+def _fake_model(response: dict):
+    def fake(req):
+        return ModelResponse(
+            text=json.dumps(response), input_tokens=100, output_tokens=50,
+            latency_ms=10, model="m", provider="p", attempts=1,
+        )
+    return fake
+
+
 def test_source_text_for_prefers_in_memory(tmp_path: Path) -> None:
-    # On-disk body differs from the in-memory body to prove disk is NOT read.
     p = tmp_path / "s.md"
     p.write_text("DISK BODY", encoding="utf-8")
     fm = _fm()
@@ -65,6 +107,8 @@ def test_source_text_for_prefers_in_memory(tmp_path: Path) -> None:
 
 
 def test_source_text_for_falls_back_to_disk(tmp_path: Path) -> None:
+    # Regression guard (NOT a red test — passes pre-impl too): the in-memory
+    # path is the genuine red test (CompileJob rejects source_text= until impl).
     p = tmp_path / "s.md"
     p.write_text("DISK BODY", encoding="utf-8")
     job = CompileJob(
@@ -73,17 +117,17 @@ def test_source_text_for_falls_back_to_disk(tmp_path: Path) -> None:
     )
     got_fm, got_text = compiler.source_text_for(job)
     assert got_text == "DISK BODY"
-    assert got_fm is None  # no frontmatter delimiter in the file
+    assert got_fm is None
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"`
-Expected: FAIL — `CompileJob.__init__() got an unexpected keyword argument 'source_text'`.
+Expected: FAIL — `CompileJob.__init__() got an unexpected keyword argument 'source_text'` (and `cannot import name 'CompileSourceResult'` — added in Task 2).
 
-- [ ] **Step 3: Add the fields to `CompileJob`**
+- [ ] **Step 3: Add the in-memory fields to `CompileJob`**
 
-In `kdb_compiler/types.py`, add a `TYPE_CHECKING` import near the top (after the existing `from __future__ import annotations` on line 10 — string annotations avoid a runtime import cycle with `source_io`):
+In `kdb_compiler/types.py` (it already has `from __future__ import annotations` at line 10), add a `TYPE_CHECKING` import so `SourceFrontmatter` is a string annotation (no runtime import cycle with `source_io`):
 
 ```python
 from typing import TYPE_CHECKING
@@ -91,7 +135,7 @@ if TYPE_CHECKING:
     from kdb_compiler.source_io import SourceFrontmatter
 ```
 
-Then extend `CompileJob` (currently lines 291-297):
+Extend `CompileJob` (currently lines 291-297):
 
 ```python
 @dataclass
@@ -106,80 +150,78 @@ class CompileJob:
     frontmatter: "SourceFrontmatter | None" = None
 ```
 
-- [ ] **Step 4: Make `source_text_for` prefer the in-memory fields**
+- [ ] **Step 4: `source_text_for` prefers in-memory; `source_name` derives from `source_id`**
 
-In `kdb_compiler/compiler.py`, replace the body of `source_text_for` (lines 121-131):
+In `kdb_compiler/compiler.py`, replace `source_text_for` (lines 121-131):
 
 ```python
 def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
-    """Return (frontmatter, body) for a job. Prefers the orchestrator's
-    in-memory (source_text, frontmatter) when present — zero disk reads;
-    falls back to parse_source_file(abs_path) for the legacy planner path.
-    See spec 'Pass-2 ingress — Adaptation'."""
+    """Return (frontmatter, body). Prefers the orchestrator's in-memory
+    (source_text, frontmatter) when present — zero disk reads; else falls
+    back to parse_source_file(abs_path) for the legacy planner path."""
     if job.source_text is not None:
         return job.frontmatter, job.source_text
     return parse_source_file(Path(job.abs_path))
 ```
 
-- [ ] **Step 5: Run to verify they pass**
+And change `compile_one`'s `source_name` derivation (compiler.py:235) — required because the in-memory path has `abs_path=""`, which would yield `source_name=""` and `validate_compiled_source_response.semantic_check` (line 68-72) hard-errors when the model's echoed `source_name` ≠ the prompt's:
 
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"`
-Expected: PASS (2 tests).
+```python
+    source_name = Path(job.source_id).name
+```
+
+Safe for the legacy path: for a normal source `Path(abs_path).name == Path(source_id).name`. (Lines 131 and 235 are `abs_path`'s only uses; 131 short-circuits on in-memory text — so `abs_path=""` is never dereferenced on the orchestrator path.)
+
+- [ ] **Step 5: Run** — `python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"` → the two `source_text_for` tests PASS (the `CompileSourceResult` import still fails until Task 2; comment those imports out or proceed to Task 2 first if running the whole file).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add kdb_compiler/types.py kdb_compiler/compiler.py kdb_compiler/tests/test_compile_source.py
-git commit -m "feat(task91): CompileJob in-memory fields + source_text_for preference"
+git commit -m "feat(task91): CompileJob in-memory fields + source_text_for + source_name fix"
 ```
 
 ---
 
 ## Task 2: `CompileSourceResult` type + freeze monolith as `kdb-old-compile`
 
-**Files:**
-- Modify: `kdb_compiler/types.py` (add dataclass near CompiledSource ~line 232)
-- Modify: `pyproject.toml` (`[project.scripts]`)
-- Test: `kdb_compiler/tests/test_compile_source.py`
+**Files:** Modify `kdb_compiler/types.py` (near `CompiledSource`, ~line 232); `pyproject.toml`; Test `test_compile_source.py`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # append to test_compile_source.py
-from kdb_compiler.types import CompileSourceResult
-
-
 def test_compile_source_result_shape() -> None:
-    r = CompileSourceResult(cr={"run_id": "x"}, pages_written=["a.md"], error=None)
+    r = CompileSourceResult(cr={"run_id": "x"})
     assert r.cr["run_id"] == "x"
-    assert r.pages_written == ["a.md"]
-    assert r.error is None
+    assert r.failure_stage is None and r.exception_type is None and r.error is None
     assert r.ok is True
 
 
 def test_compile_source_result_error_not_ok() -> None:
-    r = CompileSourceResult(cr=None, pages_written=[], error="boom")
+    r = CompileSourceResult(cr=None, failure_stage="validate", error="boom")
     assert r.ok is False
+    assert r.failure_stage == "validate"
 ```
 
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_result_shape -v -m "not live"`
-Expected: FAIL — `cannot import name 'CompileSourceResult'`.
+- [ ] **Step 2: Run** — `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_result_shape -v -m "not live"` → FAIL (`cannot import name 'CompileSourceResult'`).
 
 - [ ] **Step 3: Add the dataclass**
 
-In `kdb_compiler/types.py`, after the `CompiledSource` block (before `CompileResult`), add. Keep it dependency-light (no `patch_applier`/`ApplyResult` import — store the page list directly) so `types.py` gains no new imports:
+In `kdb_compiler/types.py`, after the `CompiledSource` block (before `CompileResult`). Dependency-light — no new imports:
 
 ```python
 @dataclass
 class CompileSourceResult:
-    """Per-source Pass-2 result returned by compiler.compile_source().
-    The orchestrator feeds `cr` to graph-sync (apply_compile_result) and
-    uses `pages_written` for the run summary. `error` non-None ==> the
-    source failed pre-commit (D-91-13 case a); cr is None."""
+    """Per-source Pass-2 PRODUCE result from compiler.compile_source().
+    Produce-don't-write: holds the compiled `cr` only — the orchestrator
+    owns stage-8 apply-pages, provenance, manifest commit, and graph-sync.
+    error non-None ==> pre-commit failure (D-91-13 case a); cr is None and
+    `failure_stage` ∈ {context, compile, validate, canonicalize} routes the
+    orchestrator's case-aware summary without string-parsing."""
     cr: dict | None
-    pages_written: list[str] = field(default_factory=list)
+    failure_stage: str | None = None
+    exception_type: str | None = None
     error: str | None = None
 
     @property
@@ -187,147 +229,87 @@ class CompileSourceResult:
         return self.error is None
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run** — PASS.
 
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"`
-Expected: PASS.
-
-- [ ] **Step 5: Freeze the monolith CLI under its new name**
-
-In `pyproject.toml`, under `[project.scripts]`, add the alias **above** the existing `kdb-compile` line (keep `kdb-compile` for now — it gets repointed/removed in a later cleanup, per make-before-break):
+- [ ] **Step 5: Freeze the monolith CLI** — in `pyproject.toml` `[project.scripts]`, add above the existing `kdb-compile` line (keep `kdb-compile` for now; repointed in a later cleanup):
 
 ```toml
 kdb-old-compile       = "kdb_compiler.kdb_compile:main"
 kdb-compile           = "kdb_compiler.kdb_compile:main"
 ```
 
-- [ ] **Step 6: Reinstall console scripts + verify the frozen monolith runs**
+- [ ] **Step 6: Reinstall + verify the frozen monolith runs** — `pip install -e . >/dev/null && kdb-old-compile --help` → argparse help, exit 0.
 
-Run: `pip install -e . >/dev/null && kdb-old-compile --help`
-Expected: argparse help for the monolith prints; exit 0.
-
-- [ ] **Step 7: Confirm the existing monolith suite is still green**
-
-Run: `python -m pytest kdb_compiler/tests/test_kdb_compile.py -m "not live" -q`
-Expected: all pass (the rename added a script alias; no module logic changed).
+- [ ] **Step 7: Monolith suite still green** — `python -m pytest kdb_compiler/tests/test_kdb_compile.py -m "not live" -q` → all pass.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add kdb_compiler/types.py pyproject.toml kdb_compiler/tests/test_compile_source.py
-git commit -m "feat(task91): CompileSourceResult + freeze monolith as kdb-old-compile"
+git commit -m "feat(task91): CompileSourceResult (produce result) + freeze monolith as kdb-old-compile"
 ```
 
 ---
 
-## Task 3: `compile_source()` — snapshot → compile_one → validate → reconcile → canonicalize
+## Task 3: `compile_source()` — produce-don't-write core (snapshot → compile → validate → reconcile → canonicalize → cr)
 
-**Files:**
-- Modify: `kdb_compiler/compiler.py` (add `compile_source` after `run_compile`)
-- Test: `kdb_compiler/tests/test_compile_source.py`
+**Files:** Modify `kdb_compiler/compiler.py` (add `compile_source` after `run_compile`); Test `test_compile_source.py`.
 
 - [ ] **Step 1: Write the failing test**
 
-This test uses a **real empty test GraphDB** (empty graph → empty snapshot, never raises) and a **monkeypatched model call** (real-but-not-live, the established pattern). Reuse the `test_compiler.py` helpers by importing them.
+Uses a real empty test GraphDB (empty graph → empty snapshot, never raises) + a monkeypatched model. (No `uses_real_graph_context` marker needed — the conftest stub targets `planner._build_context`, not `build_context_snapshot` which `compile_source` calls directly.)
 
 ```python
 # append to test_compile_source.py
-import pytest
-
-from kdb_compiler import compiler, prompt_builder
-from kdb_compiler.call_model import ModelResponse
-from kdb_compiler.canonicalize import load_or_empty
-from kdb_compiler.run_context import RunContext
-from graphdb_kdb.graphdb import GraphDB
-import json
-
-
-@pytest.fixture(autouse=True)
-def _clear_prompt_caches():
-    prompt_builder.load_system_prompt.cache_clear()
-    prompt_builder.load_response_schema_text.cache_clear()
-
-
-def _vault(tmp_path: Path) -> Path:
-    (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n", encoding="utf-8")
-    (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
-    return tmp_path
-
-
-def _good_response(source_name: str) -> dict:
-    return {
-        "source_name": source_name, "summary_slug": "summary-foo",
-        "concept_slugs": [], "article_slugs": [],
-        "pages": [{
-            "slug": "summary-foo", "page_type": "summary", "title": "Foo",
-            "body": "Body.", "status": "active", "outgoing_links": [],
-            "confidence": "medium",
-        }],
-        "log_entries": [], "warnings": [],
-    }
-
-
-def _fake_model(source_name: str):
-    def fake(req):
-        return ModelResponse(
-            text=json.dumps(_good_response(source_name)),
-            input_tokens=100, output_tokens=50, latency_ms=10,
-            model="m", provider="p", attempts=1,
-        )
-    return fake
-
-
-def test_compile_source_happy_path(tmp_path, monkeypatch):
+def test_compile_source_produces_cr_and_writes_nothing(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model("s.md"))
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
-            source_id="KDB/raw/s.md",
-            body="A note about value investing.",
-            frontmatter=_fm(),
-            conn=g.conn,
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
-            source_hash="sha256:test", source_mtime=0.0,
-            write=False,  # apply-pages added in Task 4
         )
 
-    assert result.ok, result.error
+    assert result.ok, (result.failure_stage, result.error)
     assert result.cr is not None
     assert len(result.cr["compiled_sources"]) == 1
     assert result.cr["compiled_sources"][0]["source_id"] == "KDB/raw/s.md"
-    # canonicalize ran (Pass 5 emits canonical_meta into the cr)
-    assert "canonical_meta" in result.cr
+    assert "canonical_meta" in result.cr            # canonicalize ran (stage 6)
+    # produce-don't-write: no wiki pages written anywhere under the vault
+    assert not list((vault / "KDB").rglob("*/summary-foo.md")), "compile_source must not write"
+
+
+def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+    snap = ContextSnapshot(source_id="KDB/raw/s.md", pages=[])
+
+    # conn=None proves the pre-built snapshot path does no graph read.
+    result = compiler.compile_source(
+        source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=None,
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096, context_snapshot=snap,
+    )
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.cr is not None
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 2: Run** — FAIL (`module 'kdb_compiler.compiler' has no attribute 'compile_source'`).
 
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_happy_path -v -m "not live"`
-Expected: FAIL — `module 'kdb_compiler.compiler' has no attribute 'compile_source'`.
+- [ ] **Step 3: Confirm no import cycle, then implement**
 
-- [ ] **Step 3a: Fix `source_name` derivation (REQUIRED for the in-memory path — spec line 214).**
-
-`compile_source` builds the job with `abs_path=""`, so `compile_one`'s `source_name = Path(job.abs_path).name` (compiler.py:235) would yield `""` — and `validate_compiled_source_response.semantic_check` (line 68-72) **hard-errors** when the model's echoed `source_name` ≠ the prompt's. Change compiler.py:235:
-
-```python
-    source_name = Path(job.source_id).name
-```
-
-Safe for the legacy path too: for a normal source `Path(abs_path).name == Path(source_id).name`. Lines 131 and 235 are `abs_path`'s only uses, and 131 already short-circuits on in-memory `source_text` — so `abs_path=""` is never dereferenced on the orchestrator path. `test_compile_source_happy_path` (Step 1, which uses `abs_path=""` + `source_id="KDB/raw/s.md"` and a model echoing `"s.md"`) is the failing test that proves this fix.
-
-- [ ] **Step 3b: Implement `compile_source` (validate gate + reconcile + canonicalize; apply-pages added in Task 4)**
-
-First, a one-line import smoke after adding the imports below confirms no cycle (you were bitten by the planner→compiler B-1 cycle before — though `graph_context_loader`/`canonicalize`/`reconcile` were verified *not* to import `compiler`):
-`python -c "import kdb_compiler.compiler"` → exit 0.
-
-Add imports at the top of `kdb_compiler/compiler.py` (alongside existing imports):
+Add imports at the top of `kdb_compiler/compiler.py`:
 
 ```python
 from kdb_compiler import canonicalize, reconcile, validate_compile_result
@@ -335,6 +317,8 @@ from kdb_compiler.graph_context_loader import T2Mode, build_context_snapshot
 from kdb_compiler.canonicalize import AliasLedger
 from kdb_compiler.types import CompileSourceResult
 ```
+
+Cycle smoke (these modules were verified NOT to import `compiler`): `python -c "import kdb_compiler.compiler"` → exit 0.
 
 Add the function after `run_compile`:
 
@@ -352,40 +336,41 @@ def compile_source(
     provider: str,
     model: str,
     max_tokens: int,
-    source_hash: str,
-    source_mtime: float,
+    context_snapshot: "ContextSnapshot | None" = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
-    write: bool = True,
 ) -> CompileSourceResult:
-    """Per-source Pass-2 core (spec stages 3->6+8) on in-memory inputs.
-
-    1. build context snapshot from `conn` (the only graph read)
-    2. compile_one on an in-memory CompileJob (no disk read)
-    3. wrap a one-element cr -> validate (gate) -> reconcile -> canonicalize
-    4. apply-pages (Task 4)
-    `source_hash`/`source_mtime` are the source's real provenance (the
-    orchestrator owns these: post-embed hash + stat mtime); they flow into
-    each page's frontmatter via patch_applier. ALL pre-commit failure modes
-    (compile / validate / canonicalize / apply) return CompileSourceResult(
-    cr=None, error=...) so the orchestrator's D-91-13 case-(a) handler is
-    uniform; error non-None => source NOT committed.
+    """Per-source Pass-2 PRODUCE core (spec stages 3->6) on in-memory inputs.
+    Writes NOTHING. Returns the compiled `cr`; the orchestrator owns stage-8
+    apply-pages, provenance, manifest commit, and graph-sync at the commit
+    boundary. All pre-commit failures return CompileSourceResult(cr=None,
+    failure_stage=..., error=...) so the orchestrator routes case-(a) uniformly.
     """
     vault_root = Path(vault_root)
-    snapshot = build_context_snapshot(
-        conn, source_id=source_id, source_text=body,
-        frontmatter=frontmatter, mode=mode, resolver=resolver,
-    )
+
+    # 1. context snapshot — caller-supplied, or the only graph read
+    if context_snapshot is None:
+        try:
+            context_snapshot = build_context_snapshot(
+                conn, source_id=source_id, source_text=body,
+                frontmatter=frontmatter, mode=mode, resolver=resolver,
+            )
+        except Exception as e:
+            return CompileSourceResult(
+                cr=None, failure_stage="context",
+                exception_type=type(e).__name__, error=str(e))
+
+    # 2. compile (stage 3) on an in-memory job — no disk read
     job = CompileJob(
         source_id=source_id, abs_path="",
-        context_snapshot=snapshot, source_text=body, frontmatter=frontmatter,
+        context_snapshot=context_snapshot, source_text=body, frontmatter=frontmatter,
     )
     cs, logs, warns, err = compile_one(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
     )
     if err is not None:
-        return CompileSourceResult(cr=None, error=err)
+        return CompileSourceResult(cr=None, failure_stage="compile", error=err)
 
     cr: dict = {
         "run_id": ctx.run_id, "success": True,
@@ -393,130 +378,113 @@ def compile_source(
         "log_entries": list(logs), "errors": [], "warnings": list(warns),
     }
 
+    # 3. validate (stage 4) — gate
     vres = validate_compile_result.validate(cr)
     if vres.gate_errors:
         return CompileSourceResult(
-            cr=None, error="; ".join(f.detail for f in vres.gate_errors))
+            cr=None, failure_stage="validate",
+            error="; ".join(f.detail for f in vres.gate_errors))
 
+    # 4. reconcile (stage 5) — mutates cr in place
     reconcile.reconcile(cr, vres.measure_findings)
+
+    # 5. canonicalize (stage 6) — mutates cr in place, emits canonical_meta
     try:
         canonicalize.run(cr, ledger, ctx.run_id)
     except canonicalize.CircularAliasError as e:
-        return CompileSourceResult(cr=None, error=f"canonicalize failed: {e}")
+        return CompileSourceResult(
+            cr=None, failure_stage="canonicalize",
+            exception_type=type(e).__name__, error=str(e))
 
-    return CompileSourceResult(cr=cr, pages_written=[], error=None)
+    return CompileSourceResult(cr=cr)
 ```
 
-> **Wrapping rationale (workflow finding #3):** the spec lists canonicalize + apply-pages among case-(a) pre-commit modes. Wrapping `CircularAliasError` (and `PagePatchError` in Task 4) into `CompileSourceResult(error=...)` keeps the result model honest — every pre-commit failure is reported the same way, so the orchestrator's fail-fast handler (Plan 6) treats them uniformly. Dedicated triggering tests for these two modes are deferred (they need a cyclic ledger / forced apply failure); Task 5 locks the two easy-to-trigger modes and the wrap covers the rest at the result-model level.
-
-- [ ] **Step 4: Run to verify it passes**
-
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_happy_path -v -m "not live"`
-Expected: PASS.
+- [ ] **Step 4: Run** — both Task-3 tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add kdb_compiler/compiler.py kdb_compiler/tests/test_compile_source.py
-git commit -m "feat(task91): compile_source core — snapshot/compile/validate/reconcile/canonicalize"
+git commit -m "feat(task91): compile_source produce-don't-write core (stages 3->6, returns cr)"
 ```
 
 ---
 
-## Task 4: `compile_source` apply-pages (wiki write)
+## Task 4: lock the alias-singleton-rename path (the novel one-element-`cr` behavior)
 
-**Files:**
-- Modify: `kdb_compiler/compiler.py` (`compile_source` — add patch_applier.apply)
-- Test: `kdb_compiler/tests/test_compile_source.py`
+Cross-source page *merging* is vacuous on a one-element `cr` (accepted trade-off, spec). But the **alias-singleton rename** path (`canonicalize._merge_page_intents`, the `len(contenders)==1` branch) *does* fire on one source — Qwen flagged it as the most novel untested behavior. Lock it.
+
+**Files:** Test `test_compile_source.py`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # append to test_compile_source.py
-def test_compile_source_writes_wiki_pages(tmp_path, monkeypatch):
+def test_compile_source_alias_singleton_rename(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    # Ledger mapping surface "aapl" -> canonical "apple-inc".
+    # NOTE: confirm the on-disk aliases.json schema against canonicalize.load_or_empty
+    # (canonicalize.py:88) + AliasEntry (surface/canonical/note) before running;
+    # adjust this dict to match the loader's expected shape.
+    ledger_dir = state_root / "canonicalization"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    (ledger_dir / "aliases.json").write_text(
+        json.dumps({"aliases": [{"surface": "aapl", "canonical": "apple-inc"}]}),
+        encoding="utf-8")
+    ledger = load_or_empty(ledger_dir / "aliases.json")
+
+    # Model emits a concept page whose slug is the alias surface.
+    resp = _good_response(
+        "s.md", concept_slugs=["aapl"],
+        pages=[
+            {"slug": "summary-foo", "page_type": "summary", "title": "Foo",
+             "body": "About [[aapl]].", "status": "active",
+             "outgoing_links": ["aapl"], "confidence": "medium"},
+            {"slug": "aapl", "page_type": "concept", "title": "AAPL",
+             "body": "Apple Inc.", "status": "active",
+             "outgoing_links": [], "confidence": "medium"},
+        ])
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model("s.md"))
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(resp))
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
-            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(),
-            conn=g.conn, vault_root=vault, state_root=state_root, ctx=ctx,
-            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx, ledger=ledger,
             provider="p", model="m", max_tokens=4096,
-            source_hash="sha256:test", source_mtime=0.0, write=True,
         )
 
-    assert result.ok, result.error
-    assert result.pages_written, "expected at least one wiki page written"
-    # the summary page exists on disk under the vault
-    assert any((vault).rglob("summary-foo.md")), "summary page not written"
+    assert result.ok, (result.failure_stage, result.error)
+    slugs = {p["slug"] for p in result.cr["compiled_sources"][0]["pages"]}
+    assert "apple-inc" in slugs and "aapl" not in slugs, "alias not renamed to canonical"
+    aliases = {(a["alias_slug"], a["canonical_slug"])
+               for a in result.cr["canonical_meta"]["aliases_emitted"]}
+    assert ("aapl", "apple-inc") in aliases
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 2: Run** — confirm it passes (the rename path is already implemented in `canonicalize`; this test locks it on the one-element `cr` route). If it errors on the `aliases.json` schema, fix the JSON shape to match `load_or_empty` and re-run. If the `aliases_emitted` entry key names differ (`alias_slug`/`canonical_slug`), align to `ingestor.py:75-78` which reads those exact keys.
 
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_writes_wiki_pages -v -m "not live"`
-Expected: FAIL — `result.pages_written` is empty (apply not wired).
-
-- [ ] **Step 3: Wire `patch_applier.apply`**
-
-Add import to `kdb_compiler/compiler.py`:
-
-```python
-from kdb_compiler import patch_applier
-```
-
-In `compile_source`, replace the final return with an apply-pages step. `patch_applier.apply` needs a `last_scan` dict whose `files` entry carries **`current_mtime`** (mandatory — `_source_mtime_from_scan`, patch_applier.py:154-156, raises `PagePatchError` on a non-numeric mtime) and **`current_hash`** (becomes each page's `raw_hash` frontmatter). Feed the real provenance params:
-
-```python
-    single_scan = {
-        "files": [{
-            "path": source_id, "is_binary": False,
-            "current_hash": source_hash, "current_mtime": source_mtime,
-        }],
-        "to_compile": [source_id],
-        "to_reconcile": [],
-    }
-    try:
-        apply_result = patch_applier.apply(
-            vault_root, compile_result=cr, last_scan=single_scan,
-            run_ctx=ctx, write=write,
-        )
-    except patch_applier.PagePatchError as e:
-        return CompileSourceResult(cr=None, error=f"apply-pages failed: {e}")
-    return CompileSourceResult(
-        cr=cr, pages_written=list(apply_result.pages_written), error=None)
-```
-
-- [ ] **Step 4: Run to verify it passes**
-
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py::test_compile_source_writes_wiki_pages -v -m "not live"`
-Expected: PASS.
-
-> The `single_scan` entry now carries `current_mtime` + `current_hash`, so `apply` no longer raises `PagePatchError` (it did when `current_mtime` was absent — `_source_mtime_from_scan`, patch_applier.py:154-156, raises *before* the dry-run return). If the page-path assertion still fails, the summary page lands at `paths.slug_to_relpath("summary-foo","summary")` → `KDB/wiki/summaries/summary-foo.md`; tighten the assertion to that exact path rather than loosening the write check.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add kdb_compiler/compiler.py kdb_compiler/tests/test_compile_source.py
-git commit -m "feat(task91): compile_source apply-pages (wiki write)"
+git add kdb_compiler/tests/test_compile_source.py
+git commit -m "test(task91): lock alias-singleton-rename on one-element cr (Qwen F-1)"
 ```
 
 ---
 
-## Task 5: `compile_source` error paths (D-91-13 case a)
+## Task 5: error paths with `failure_stage` (D-91-13 case a)
 
-**Files:**
-- Test: `kdb_compiler/tests/test_compile_source.py`
-- (No implementation expected — the branches exist from Tasks 3-4; this locks them.)
+**Files:** Test `test_compile_source.py`. (Branches exist from Task 3; this locks them + the `failure_stage` routing.)
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the tests**
 
 ```python
 # append to test_compile_source.py
-def test_compile_source_propagates_compile_one_error(tmp_path, monkeypatch):
+def test_compile_source_compile_error(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
@@ -527,28 +495,26 @@ def test_compile_source_propagates_compile_one_error(tmp_path, monkeypatch):
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
-            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(),
-            conn=g.conn, vault_root=vault, state_root=state_root, ctx=ctx,
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
-            source_hash="sha256:test", source_mtime=0.0, write=True,
         )
-
-    assert not result.ok
-    assert result.cr is None
-    assert result.error  # non-empty message
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "compile" and result.error
 
 
-def test_compile_source_gate_error_returns_error(tmp_path, monkeypatch):
+def test_compile_source_gate_error(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model("s.md"))
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
-    # Force a gate error to exercise compile_source's fail-fast branch.
-    # validate itself is covered by test_validate_compile_result.py; here we
-    # test ONLY that compile_source halts and reports when a gate error exists.
+    # Force a gate error to exercise the fail-fast branch (validate itself is
+    # covered by test_validate_compile_result.py). ValidationFinding fields are
+    # (type, severity, detail, source_id=None, ...) — severity is the 2nd
+    # positional with NO default, so it is required (omitting raises TypeError).
     from kdb_compiler.validate_compile_result import ValidationResult, ValidationFinding
     def fake_validate(cr):
         r = ValidationResult()
@@ -561,41 +527,30 @@ def test_compile_source_gate_error_returns_error(tmp_path, monkeypatch):
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
-            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(),
-            conn=g.conn, vault_root=vault, state_root=state_root, ctx=ctx,
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
-            source_hash="sha256:test", source_mtime=0.0, write=True,
         )
-
-    assert not result.ok
-    assert result.cr is None
-    assert "forced for test" in result.error
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "validate" and "forced for test" in result.error
 ```
 
-> Note on `ValidationFinding` (`validate_compile_result.py:52-60`): fields are `type, severity, detail, source_id=None, ...` — **`severity` is the 2nd positional and has NO default**, so it is required (omitting it raises `TypeError`). The construction above includes `severity="gate"`. If the dataclass has changed, re-confirm against the source.
+- [ ] **Step 2: Run** — both PASS. If the `ValidationFinding` constructor signature has changed, align kwargs to the real dataclass (`validate_compile_result.py:52-60`) and re-run.
 
-- [ ] **Step 2: Run to verify they pass (branches already implemented)**
-
-Run: `python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"`
-Expected: both new tests PASS. If `test_compile_source_gate_error_returns_error` fails on the `ValidationFinding` constructor, fix the kwargs to match the real dataclass and re-run.
-
-- [ ] **Step 3: Full Plan-1 regression**
-
-Run: `python -m pytest kdb_compiler/tests/ -m "not live" -q`
-Expected: all pass (new `compile_source` tests + untouched monolith suite green).
+- [ ] **Step 3: Full Plan-1 regression** — `python -m pytest kdb_compiler/tests/ -m "not live" -q` → all pass (new `compile_source` tests + untouched monolith suite).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add kdb_compiler/tests/test_compile_source.py
-git commit -m "test(task91): lock compile_source error paths (D-91-13 case a)"
+git commit -m "test(task91): compile_source error paths + failure_stage routing (D-91-13 a)"
 ```
 
 ---
 
-## Self-Review checklist (run before handoff to execution)
+## Self-Review checklist (run before execution)
 
-1. **Spec coverage:** stages 3 (compile_one) → 4 (validate) → 5 (reconcile) → 6 (canonicalize) → 8 (apply) all wired into `compile_source` (Tasks 3-4). In-memory `CompileJob` + `source_text_for` preference (Task 1) + `source_name`-from-`source_id` fix (Task 3a, spec line 214) = the "Adaptation to existing compile_one" spec section. `kdb-old-compile` freeze (Task 2) = the rebuild's make-before-break. **Not in Plan 1 (later plans):** `detect_orphans` flag (Plan 2), registry (Plan 3), scanner (Plan 4), the loop (Plan 6).
-2. **Type consistency:** `CompileSourceResult(cr, pages_written, error, .ok)` defined Task 2, used Tasks 3-5. `compile_source(...)` signature identical across Tasks 3-5.
-3. **Open verification points flagged inline:** the `patch_applier` page-path assertion (Task 4 Step 4) and the `ValidationFinding` constructor kwargs (Task 5) are the two places to confirm against real code during execution.
+1. **Spec coverage:** stages 3 (compile_one) → 4 (validate) → 5 (reconcile) → 6 (canonicalize) wired into `compile_source` returning `cr` (Task 3); **stage 8 apply-pages + provenance are NOT here — deferred to the orchestrator (Plan 6)** per the produce-don't-write decision. In-memory `CompileJob` + `source_text_for` + `source_name`-from-`source_id` (Task 1) = the ingress "Adaptation" section. Optional `context_snapshot` param (panel finding D). `failure_stage`/`exception_type` (panel finding C). `kdb-old-compile` freeze (Task 2) = make-before-break. Alias-singleton-rename locked (Task 4, Qwen F-1).
+2. **Type consistency:** `CompileSourceResult(cr, failure_stage, exception_type, error, .ok)` defined Task 2, used Tasks 3-5. `compile_source(...)` signature identical across Tasks 3-5 (note `conn` may be `None` when `context_snapshot` is supplied).
+3. **Execution-time verify points (flagged inline):** the `aliases.json` schema + `aliases_emitted` key names (Task 4), and the `ValidationFinding` constructor kwargs (Task 5). Both are isolated and self-flagged.
