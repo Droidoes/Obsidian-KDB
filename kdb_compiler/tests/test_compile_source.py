@@ -150,3 +150,95 @@ def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
     )
     assert result.ok, (result.failure_stage, result.error)
     assert result.cr is not None
+
+
+# ---------- Task 4: alias-singleton-rename on one-element cr (Qwen F-1) ----------
+
+def test_compile_source_alias_singleton_rename(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    ledger_dir = state_root / "canonicalization"
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    (ledger_dir / "aliases.json").write_text(
+        json.dumps({"aliases": [{"surface": "aapl", "canonical": "apple-inc"}]}),
+        encoding="utf-8")
+    ledger = load_or_empty(ledger_dir / "aliases.json")
+
+    resp = _good_response(
+        "s.md", concept_slugs=["aapl"],
+        pages=[
+            {"slug": "summary-foo", "page_type": "summary", "title": "Foo",
+             "body": "About [[aapl]].", "status": "active",
+             "outgoing_links": ["aapl"], "confidence": "medium"},
+            {"slug": "aapl", "page_type": "concept", "title": "AAPL",
+             "body": "Apple Inc.", "status": "active",
+             "outgoing_links": [], "confidence": "medium"},
+        ])
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(resp))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx, ledger=ledger,
+            provider="p", model="m", max_tokens=4096,
+        )
+
+    assert result.ok, (result.failure_stage, result.error)
+    slugs = {p["slug"] for p in result.cr["compiled_sources"][0]["pages"]}
+    assert "apple-inc" in slugs and "aapl" not in slugs, "alias not renamed to canonical"
+    aliases = {(a["alias_slug"], a["canonical_slug"])
+               for a in result.cr["canonical_meta"]["aliases_emitted"]}
+    assert ("aapl", "apple-inc") in aliases
+
+
+# ---------- Task 5: error paths + failure_stage (D-91-13 case a) ----------
+
+def test_compile_source_compile_error(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def boom(req):
+        raise RuntimeError("model exploded")
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "compile" and result.error
+
+
+def test_compile_source_gate_error(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    from kdb_compiler.validate_compile_result import ValidationResult, ValidationFinding
+    def fake_validate(cr):
+        r = ValidationResult()
+        r.gate_errors.append(ValidationFinding(
+            type="forced_gate", severity="gate", detail="forced for test",
+            source_id="KDB/raw/s.md"))
+        return r
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.validate_compile_result.validate", fake_validate)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "validate" and "forced for test" in result.error
