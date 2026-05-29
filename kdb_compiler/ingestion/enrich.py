@@ -43,8 +43,16 @@ def _whole_file_hash(source_path: Path) -> str:
 def enrich_one(
     *, source_path: Path, source_id: str, runs_root: Path, run_id: str,
     provider: str, model: str,
+    force_signal: list[str] | None = None,
+    force_noise: list[str] | None = None,
 ) -> EnrichResult:
+    # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
+    # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
+    # noise) takes effect; falling back to the global scope-config.yaml when a
+    # caller (legacy / standalone enrich) supplies neither.
     scope = load_scope_config()
+    eff_force_signal = scope.force_signal if force_signal is None else force_signal
+    eff_force_noise = scope.force_noise if force_noise is None else force_noise
 
     raw_text = source_path.read_text(encoding="utf-8")
     existing_fm, body = parse_existing_frontmatter(raw_text)
@@ -79,7 +87,7 @@ def enrich_one(
 
     envelope = apply_overrides(
         call_result.parsed, source_path=source_id,
-        force_signal=scope.force_signal, force_noise=scope.force_noise,
+        force_signal=eff_force_signal, force_noise=eff_force_noise,
     )
 
     embed_frontmatter(source_path, envelope)

@@ -47,6 +47,29 @@ def test_enrich_returns_body_and_post_embed_hash(tmp_path, monkeypatch):
     assert res.post_embed_mtime == pytest.approx(src.stat().st_mtime)
 
 
+def test_enrich_pipeline_force_noise_param_overrides(tmp_path, monkeypatch):
+    # Task #91: the orchestrator threads the pipeline's force_noise globs; a
+    # signal envelope under Daily Notes/* must be deterministically routed noise.
+    src = tmp_path / "daily.md"
+    src.write_text("# Standup\n\nNotes for today.\n", encoding="utf-8")
+    runs = tmp_path / "ingest_runs"
+
+    def fake_call_pass1(*, source_text, source_path, provider, model):
+        return Pass1CallResult(
+            parsed=_signal_parsed(model), raw_response_text="{}",
+            request_prompt="p", request_model=model, request_provider=provider,
+            input_tokens=1, output_tokens=1, latency_ms=1, attempts=1)
+    monkeypatch.setattr(enrich_mod, "call_pass1", fake_call_pass1)
+
+    res = enrich_one(source_path=src, source_id="Daily Notes/daily.md",
+                     runs_root=runs, run_id="r1", provider="p", model="m",
+                     force_noise=["Daily Notes/*"])
+
+    assert res.parsed_envelope["kdb_signal"] == "noise"
+    assert res.parsed_envelope["override"]["rule"] == "force_noise"
+    assert res.parsed_envelope["override"]["match"] == "Daily Notes/*"
+
+
 @pytest.mark.live
 @pytest.mark.skipif(not os.getenv("DEEPSEEK_API_KEY"),
                      reason="No DEEPSEEK_API_KEY in env")
