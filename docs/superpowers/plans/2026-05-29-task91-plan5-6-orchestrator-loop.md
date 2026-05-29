@@ -12,11 +12,26 @@
 
 ---
 
-## ⚠️ Design points for advisor + panel review (resolve before/at execution)
+## Panel-review status (5-model panel, 2026-05-29 — synthesis: `docs/task91-plan5-6-review-synthesis.md`)
 
-1. **Per-source journaling / replayability granularity.** The monolith writes ONE run journal (`state/runs/<run_id>.json`) + archives one batch `compile_result.json` sidecar; `graphdb-kdb rebuild` replays journals. The per-source loop graph-syncs + commits the manifest **per source** (for read-after-write + resume), but the rebuild safety net needs the per-source `cr`s to be replayable. **Lean:** accumulate per-source `cr`s into one run-level `compile_result` and write the journal + sidecar **once at finalize** (reuses the existing journal/rebuild machinery unchanged). **Trade-off the panel should weigh:** a crash *mid-loop, before finalize* leaves committed-but-not-yet-journaled sources — the live graph has them (per-source committed) so no rebuild is needed unless the graph is *also* lost; that double-fault is the residual gap. Alternative: append a per-source journal entry inside the loop (more machinery). **Decide with the panel.**
-2. **`scan_scope` prior source** — the orchestrator loads the unified manifest (`load_manifest_sources`) as `prior`; `scan_scope` filters it by `pipeline_id`. Confirm the manifest record exposes `pipeline_id` for the filter (Plan 4 T2 added it to the seed record — verify older records degrade gracefully).
-3. **Scope-collision check (deferred from Plans 3-4)** — validate at orchestrator startup once all pipelines are loaded (cross-pipeline path overlap → error), OR keep deferred. Decide.
+**Convergent fixes — FOLDED into the tasks below:**
+- **M1 (Critical, 3/5):** `load_manifest_sources` must return `pipeline_id` (else `scan_scope` filters all prior out → whole-vault recompile every run). **Task 0** below: add it + stamp legacy records (no `pipeline_id`) with a default at startup + regression test.
+- **M2 (High, 2/5):** noise commit sets `last_compiled_hash = post_embed_hash` (else re-enriched every run). **Task 3** noise branch.
+- **Journaling — RESOLVED → per-source sidecar:** each committed source's `cr` → `state/sidecars/<run_id>/` right after its manifest commit; finalize concatenates into the batch `compile_result.json` + run journal. **Tasks 2 + 4.**
+- **m1:** finalize cleanup writes its cleanup journal + `retraction.json` via `build_cleanup_artifacts` (else rebuild resurrects reaped entities). **Task 4.**
+- **m2 (2/5):** `enrich_one` also returns `post_embed_mtime` (+ size); `_commit_source` overrides `current_mtime` in `single_scan`. **Tasks 1 + 2.**
+- **m3:** wrap `reconcile.reconcile` in `compile_source` → `failure_stage="reconcile"` (a shipped Plan-1 gap). **Task 0.**
+- **m4:** load the alias ledger ONCE before the loop (shared config), thread into each `compile_source`. **Task 3.**
+- **m5 REFUTED (Qwen):** MOVED+CHANGED decomposes to NEW+DELETED in `classify()` and is handled correctly — the deferred comment is removed from Task 3.
+- **m6 (Low):** `to_compile` is alphabetical, not dependency-ordered — accept v1, document in the loop.
+
+## ⚠️ OPEN — gates execution (fresh deliberation, full effort)
+
+**C1 (Critical — cross-source `LINKS_TO` edge-skip).** `_replace_outgoing_links` (ingestor.py:326) silently skips an edge when the target Entity doesn't exist yet; the monolith avoided this by upserting all entities batch-wide before wiring. Per-source graph-sync breaks it → cross-source edges lost → incomplete graph. **Per-source graph-sync (needed for read-after-write) vs batch edge-completeness is the tension.** Options: (a) **stub-upsert** missing targets as `status='inactive'` Entities (preserves read-after-write; excluded from context; promoted when their real source compiles — *lean*); (b) finalize link-rewire; (c) accept + `kdb-audit` reconciles; (d) single-apply-at-finalize (**rejected** — defeats read-after-write). **Weigh F-ord with this** (next).
+
+**F-ord (Gemini, 1/5 — commit ordering).** Graph-sync *before* manifest-write would convert case-(b) (manifest committed, graph stale → rebuild) into a clean self-healing case-(a) via Kuzu rollback — eliminating case-(b) and simplifying journaling. But it **revises ratified D-91-13** (manifest-first), so scrutinize against the D50 sidecar-authority intent before adopting; don't adopt on one voice. Lives in the same commit sequence as C1 — decide together.
+
+**Scope-collision check** (deferred from Plans 3-4) — validate cross-pipeline path overlap at orchestrator startup, or keep deferred. Decide during the C1/F-ord deliberation.
 
 ---
 
@@ -28,7 +43,29 @@
 
 ---
 
-## Task 1 (Plan 5): `enrich_one` egress — return body + post-embed hash
+## Task 0 (prerequisite fixes — independent of the C1/F-ord deliberation)
+
+**T0a — M1: `load_manifest_sources` returns `pipeline_id` + legacy-record migration.**
+- `kdb_scan.load_manifest_sources` (kdb_scan.py:215-241): add `"pipeline_id": rec.get("pipeline_id")` to the returned dict; update docstring. **Without this, `scan_scope`'s `r.get("pipeline_id") == pipeline_id` filter drops every prior row → whole-vault recompile every run.**
+- Orchestrator startup: load the full manifest; any source record lacking `pipeline_id` → stamp the selected (or a configured default) `pipeline_id` and rewrite, so legacy records are visible to `scan_scope`. (For the fresh sandbox this is a no-op; matters for real vaults later.)
+- Test: a source committed under pipeline `p1` scans `UNCHANGED`/`to_skip` on the next `p1` run (the resume regression M1 would break).
+
+**T0b — m3: wrap `reconcile.reconcile` in `compile_source` (shipped Plan-1 gap).**
+- `kdb_compiler/compiler.py` `compile_source` (the shipped function): `reconcile.reconcile(cr, vres.measure_findings)` is unwrapped → `ReconcileError` escapes the `CompileSourceResult` contract. Wrap it:
+  ```python
+  try:
+      reconcile.reconcile(cr, vres.measure_findings)
+  except reconcile.ReconcileError as e:
+      return CompileSourceResult(cr=None, failure_stage="reconcile",
+                                 exception_type=type(e).__name__, error=str(e))
+  ```
+- Test: a `ReconcileError`-triggering cr → `result.failure_stage == "reconcile"` (not a raised exception).
+
+> Both are safe, low-risk, and don't depend on the C1/F-ord decision — they could be executed first. The rest of Plan 5+6 waits on the C1/F-ord deliberation.
+
+---
+
+## Task 1 (Plan 5): `enrich_one` egress — return body + post-embed hash + mtime
 
 **Files:** `kdb_compiler/ingestion/enrich.py`; Test `tests/test_enrich*.py` (mirror existing enrich tests).
 
