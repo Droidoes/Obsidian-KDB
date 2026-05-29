@@ -52,8 +52,8 @@
     },
     "sourceId": {
       "type": "string",
-      "description": "Canonical relative path of a raw source (set by Python; the LLM echoes back the one it was given).",
-      "pattern": "^KDB/raw/.+",
+      "description": "Vault-relative POSIX path of a source (set by Python; the LLM echoes back the one it was given). Task #91: any pipeline scope, not just legacy KDB/raw/ — in-place pipelines produce ids like 'AIML/foo.md'. Must be relative (no leading slash).",
+      "pattern": "^(?!/).+",
       "minLength": 1
     },
     "pageType": {
