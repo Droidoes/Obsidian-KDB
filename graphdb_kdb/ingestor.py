@@ -29,6 +29,7 @@ def apply_compile_result(
     *,
     conn: kuzu.Connection,
     now: str | None = None,
+    detect_orphans: bool = True,
 ) -> SyncResult:
     """Apply one compile run's deltas to the Kuzu graph (atomic per run).
 
@@ -94,8 +95,11 @@ def apply_compile_result(
         _upsert_alias_entities_and_edges(conn, cr, run_id, now, result)
 
         # Phase 4: orphan detection (mark orphans + revive previously-orphaned pages
-        # that have regained SUPPORTS)
-        result.orphans_detected = _detect_and_mark_orphans(conn, run_id, now)
+        # that have regained SUPPORTS). Task #91: skipped when detect_orphans=False
+        # — the orchestrator runs a single end-of-run detect_orphans() pass instead
+        # (deferred-marking decision, avoids transient-orphan context pollution).
+        if detect_orphans:
+            result.orphans_detected = _detect_and_mark_orphans(conn, run_id, now)
 
         conn.execute("COMMIT")
     except Exception:
@@ -703,6 +707,30 @@ def _detect_and_mark_orphans(
         )
 
     return new_orphans
+
+
+def detect_orphans(
+    conn: kuzu.Connection, run_id: str, *, now: str | None = None
+) -> list[str]:
+    """Task #91: standalone end-of-run orphan-marking pass. The orchestrator
+    calls this ONCE at finalize — after all per-source apply_compile_result
+    calls (which run with detect_orphans=False) — so orphan status is computed
+    once over the final graph, not per-source (avoids transient-orphan context
+    pollution / variant creation). Owns its own transaction. Returns the newly
+    orphan_candidate slugs."""
+    if now is None:
+        now = datetime.now().astimezone().isoformat()
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        orphans = _detect_and_mark_orphans(conn, run_id, now)
+        conn.execute("COMMIT")
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    return orphans
 
 
 # ---------- Cleanup retraction (#68) ----------

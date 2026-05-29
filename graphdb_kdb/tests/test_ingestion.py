@@ -561,3 +561,41 @@ def test_ingest_source_meta_without_source_type_preserves_default(graph_dir):
         source = gdb.get_source(src)
     assert source.summary == "Some summary"
     assert source.source_type == "obsidian-kdb-raw"
+
+
+# ---------- Task #91 Plan 2: deferred orphan-marking ----------
+
+def test_apply_skips_orphan_marking_when_disabled(graph_dir):
+    src = "KDB/raw/s.md"
+    scan = make_scan([make_scan_entry(src)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
+            scan, "r1")
+        # Source drops 'b' but with detect_orphans=False — 'b' must NOT be flagged.
+        res = gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(src, [make_page("a")])]),
+            scan, "r2", detect_orphans=False)
+        b = gdb.get_entity("b")
+    assert res.orphans_detected == []
+    assert b.status == "active"  # marking deferred to finalize
+
+
+def test_standalone_detect_orphans_marks_after_deferred_apply(graph_dir):
+    """Deferred model: per-source apply with detect_orphans=False leaves the
+    orphan unmarked; the end-of-run detect_orphans() pass then marks it."""
+    src = "KDB/raw/s.md"
+    scan = make_scan([make_scan_entry(src)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
+            scan, "r1")
+        gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(src, [make_page("a")])]),
+            scan, "r2", detect_orphans=False)
+        assert gdb.get_entity("b").status == "active"   # not yet marked
+
+        orphans = gdb.detect_orphans("r2")              # finalize pass
+        b = gdb.get_entity("b")
+    assert "b" in orphans
+    assert b.status == "orphan_candidate"

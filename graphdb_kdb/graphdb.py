@@ -169,15 +169,25 @@ class GraphDB:
         run_id: str,
         *,
         now: str | None = None,
+        detect_orphans: bool = True,
     ) -> SyncResult:
-        """Apply one compile run's deltas. Atomic per run. Delegates to ingestor."""
+        """Apply one compile run's deltas. Atomic per run. Delegates to ingestor.
+
+        Task #91: detect_orphans=False skips Phase-4 orphan-marking (the
+        orchestrator runs a single end-of-run detect_orphans() pass instead)."""
         from graphdb_kdb.ingestor import apply_compile_result as _apply
-        return _apply(cr, scan_dict, run_id, conn=self.conn, now=now)
+        return _apply(cr, scan_dict, run_id, conn=self.conn, now=now,
+                      detect_orphans=detect_orphans)
 
     def apply_cleanup(self, retraction: dict, run_id: str) -> SyncResult:
         """Retract entities a cleanup run removed. Delegates to ingestor (#68)."""
         from graphdb_kdb.ingestor import apply_cleanup as _apply
         return _apply(retraction, run_id, conn=self.conn)
+
+    def detect_orphans(self, run_id: str, *, now: str | None = None) -> list[str]:
+        """End-of-run orphan-marking pass (Task #91). Delegates to ingestor."""
+        from graphdb_kdb.ingestor import detect_orphans as _detect
+        return _detect(self.conn, run_id, now=now)
 
     # ---- minimal read API (full set lands in #63.3) ----
 
