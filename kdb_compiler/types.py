@@ -247,6 +247,7 @@ class CompileSourceResult:
     failure_stage: Optional[str] = None
     exception_type: Optional[str] = None
     error: Optional[str] = None
+    artifacts: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:

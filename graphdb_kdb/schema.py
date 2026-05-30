@@ -24,7 +24,7 @@ STRING to stay consistent with all prior tables.)
 
 Naming history:
 - `Page` → `Entity` per D-A1 (2026-05-14).
-- Source's `compile_state/compile_count/last_compiled_at` → `ingest_state/
+- Source's `run_state/compile_count/last_compiled_at` → `ingest_state/
   ingest_count/last_ingested_at` per D-A2.
 - Producer payloads (compile_result.json) retain the older names — adapters translate.
 

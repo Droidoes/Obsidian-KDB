@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +34,8 @@ class EnrichResult:
     body: str | None = None
     post_embed_hash: str | None = None
     post_embed_mtime: float | None = None
+    artifacts: dict[str, str] = field(default_factory=dict)
+    raw_response_available: bool = False
 
 
 def _whole_file_hash(source_path: Path) -> str:
@@ -79,12 +81,15 @@ def enrich_one(
         )
     except Pass1CallError as e:
         sidecar = _write_sidecar_failed(
-            runs_root, run_id, source_id, source_path, content_hash, str(e), model,
+            runs_root, run_id, source_id, source_path, content_hash, e, model, provider,
         )
         # Pre-embed failure: body is known but no embed happened, so post-embed
         # fields stay None (the orchestrator fail-fasts on enrich failure anyway).
         return EnrichResult(source_id, "enrich_failed", None, sidecar, str(e),
-                            body=body)
+                            body=body,
+                            artifacts={"pass1_sidecar": str(sidecar),
+                                       "raw_response": str(sidecar)},
+                            raw_response_available=bool(e.raw_response_text))
 
     envelope = apply_overrides(
         call_result.parsed, source_path=source_id,
@@ -92,7 +97,29 @@ def enrich_one(
     )
     # STAGE 2 (Task #95): validate the COMPLETE assembled envelope (content +
     # stamped code-owned fields + constructed override) before it is embedded.
-    validate_envelope(envelope)
+    try:
+        validate_envelope(envelope)
+    except Exception as e:
+        wrapped = Pass1CallError(
+            f"Pass-1 assembled envelope failed validation: {e}",
+            raw_response_text=call_result.raw_response_text,
+            request_prompt=call_result.request_prompt,
+            request_model=call_result.request_model,
+            request_provider=call_result.request_provider,
+            input_tokens=call_result.input_tokens,
+            output_tokens=call_result.output_tokens,
+            latency_ms=call_result.latency_ms,
+            attempts=call_result.attempts,
+        )
+        sidecar = _write_sidecar_failed(
+            runs_root, run_id, source_id, source_path,
+            content_hash, wrapped, model, provider,
+        )
+        return EnrichResult(source_id, "enrich_failed", None, sidecar, str(wrapped),
+                            body=body,
+                            artifacts={"pass1_sidecar": str(sidecar),
+                                       "raw_response": str(sidecar)},
+                            raw_response_available=bool(call_result.raw_response_text))
 
     embed_frontmatter(source_path, envelope)
     # Whole-file hash + mtime AFTER embed — the orchestrator stamps these into
@@ -165,12 +192,24 @@ def _write_sidecar_skipped(runs_root, run_id, source_id, source_path,
 
 
 def _write_sidecar_failed(runs_root, run_id, source_id, source_path,
-                           content_hash, error_msg, model):
+                           content_hash, error, model, provider):
+    raw_response_text = getattr(error, "raw_response_text", "")
+    request_prompt = getattr(error, "request_prompt", None) or "<unavailable>"
+    request_model = getattr(error, "request_model", None) or model
+    request_provider = getattr(error, "request_provider", None) or provider
     payload = SidecarPayload(
         source_id=source_id, source_path=str(source_path),
         source_content_hash=content_hash,
-        request={"prompt": "<see error>", "model": model},
-        raw_response={"body": "", "error": error_msg},
+        request={"prompt": request_prompt, "model": request_model,
+                 "provider": request_provider},
+        raw_response={
+            "body": raw_response_text,
+            "error": str(error),
+            "input_tokens": getattr(error, "input_tokens", 0),
+            "output_tokens": getattr(error, "output_tokens", 0),
+            "latency_ms": getattr(error, "latency_ms", 0),
+            "attempts": getattr(error, "attempts", 0),
+        },
         parsed_envelope=None,
         override=build_override_block("?"),
         user_overrides_detected=[],

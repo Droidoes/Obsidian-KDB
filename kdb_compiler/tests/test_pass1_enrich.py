@@ -1,9 +1,11 @@
 import hashlib
+import json
 import os
 import pytest
 from pathlib import Path
 
 from kdb_compiler.ingestion import enrich as enrich_mod
+from kdb_compiler.ingestion import pass1_caller as caller_mod
 from kdb_compiler.ingestion.enrich import enrich_one
 from kdb_compiler.ingestion.pass1_caller import Pass1CallResult
 
@@ -105,3 +107,34 @@ def test_enrich_one_empty_source_skipped(tmp_path):
     )
     assert result.outcome == "enrich_skipped"
     assert result.parsed_envelope["kdb_signal"] == "noise"
+
+
+def test_enrich_failed_sidecar_preserves_last_raw_response(tmp_path, monkeypatch):
+    src = tmp_path / "bad.md"
+    src.write_text("# Bad\n\nA note.\n", encoding="utf-8")
+    runs_root = tmp_path / "ingest_runs"
+
+    monkeypatch.setattr(
+        caller_mod,
+        "call_model",
+        lambda req: caller_mod.ModelResponse(
+            text="{not valid json",
+            input_tokens=7,
+            output_tokens=3,
+            latency_ms=11,
+            model="m",
+            provider="p",
+        ),
+    )
+
+    result = enrich_one(
+        source_path=src, source_id="bad.md", runs_root=runs_root,
+        run_id="r1", provider="p", model="m",
+    )
+
+    sidecar = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    assert result.outcome == "enrich_failed"
+    assert result.raw_response_available is True
+    assert sidecar["raw_response"]["body"] == "{not valid json"
+    assert sidecar["raw_response"]["input_tokens"] == 7
+    assert sidecar["request"]["prompt"] != "<see error>"

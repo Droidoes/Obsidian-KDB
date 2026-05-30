@@ -229,6 +229,7 @@ def compile_one(
     max_tokens: int,
     use_completion_tokens: bool = False,
     extra_body: dict | None = None,
+    resp_stats_dir: Path | None = None,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
@@ -485,7 +486,8 @@ def compile_one(
             source_words=state["source_words"],
             failure=state["failure"],
         )
-        resp_stats_path = write_resp_stats(record, state_root)
+        resp_stats_path = write_resp_stats(
+            record, state_root, artifact_dir=resp_stats_dir)
         if stats_record_sink is not None:
             try:
                 stats_record_sink(record, resp_stats_path)
@@ -665,12 +667,28 @@ def compile_source(
         source_id=source_id, abs_path="",
         context_snapshot=context_snapshot, source_text=body, frontmatter=frontmatter,
     )
+    captured: dict[str, Any] = {"record": None, "path": None}
+
+    def _capture(record: RespStatsRecord, path: Path) -> None:
+        captured["record"] = record
+        captured["path"] = path
+
     cs, logs, warns, err = compile_one(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
+        resp_stats_dir=state_root / "runs" / ctx.run_id / "pass2",
+        stats_record_sink=_capture,
     )
     if err is not None:
-        return CompileSourceResult(cr=None, failure_stage="compile", error=err)
+        artifacts = {}
+        if captured["path"] is not None:
+            artifacts["resp_stats"] = str(captured["path"])
+            if getattr(captured["record"], "raw_response_text", None) is not None:
+                artifacts["raw_response"] = str(captured["path"])
+        return CompileSourceResult(
+            cr=None, failure_stage="compile",
+            exception_type=getattr(captured["record"], "failure_exception_type", None),
+            error=err, artifacts=artifacts)
 
     cr: dict = {
         "run_id": ctx.run_id, "success": True,
@@ -683,7 +701,9 @@ def compile_source(
     if vres.gate_errors:
         return CompileSourceResult(
             cr=None, failure_stage="validate",
-            error="; ".join(f.detail for f in vres.gate_errors))
+            error="; ".join(f.detail for f in vres.gate_errors),
+            artifacts=({"resp_stats": str(captured["path"])}
+                       if captured["path"] is not None else {}))
 
     # 4. reconcile (stage 5) — mutates cr in place. Task #91 (m3): wrap so a
     # ReconcileError returns case-(a) failure instead of escaping the

@@ -63,28 +63,40 @@ is **validation-only — never sent to the model** (the contract is the prompt t
       after F** (benchmark failure data drives it).
 - [ ] Review rigor TBD (systemic contract → external-panel candidate).
 
-## B — [propose #96] Orchestrator error-handling architecture  **(GATING)**
+## B — [#96 BLUEPRINTED 2026-05-30] Orchestrator error-handling architecture  **(GATING)**
 
 Joseph: circuit-breaker is *downstream* of severity — design the foundation first.
 
-- [ ] **Severity taxonomy** for every failure point (e.g. recoverable-skip /
-      source-quarantine / run-fatal — naming TBD).
-- [ ] **Comprehensive structured logging** at each failure point (assert-grade).
-- [ ] **Alarm / summary surface** — failures visible, not silent.
-- [ ] **Circuit-breaker policy derived from severities** (not a standalone toggle).
-- [ ] Subsumes the observability fix: **persist the raw model response on
-      failure** (real-run-1 discarded it → undiagnosable).
+- [x] **Severity taxonomy** for every failure point (`debug`/`info`/`warning`/
+      `source_quarantine`/`run_fatal`/`invariant_violation`). [B1]
+- [x] **Comprehensive structured logging** at each failure point (assert-grade
+      `OrchestratorEvent` JSONL + always-on typed invariant checks). [B1-B4,B7]
+- [x] **Alarm / summary surface** — failures visible, not silent (`last_orchestrate.json`
+      counts + CLI quarantine alarm). [B5]
+- [~] **Circuit-breaker policy derived from severities** — **DEFERRED 2026-05-30**
+      (C3): attended runs + `--limit N` cap blast radius; thresholds need a measured
+      baseline. Revisit on first real multi-source run or unattended scheduling.
+- [x] Subsumes the observability fix: **persist the raw model response on
+      failure** (Pass-1 sidecar + Pass-2 resp_stats + `raw_response_unavailable`). [B6]
+- [x] **Architecture path selected:** B then C — structured observability first,
+      quarantine-and-continue second. Blueprint:
+      `docs/archive/tasks/task96-orchestrator-error-handling-blueprint.md`.
+- [x] **Implementation plan drafted:**
+      `docs/superpowers/plans/2026-05-30-task96-orchestrator-error-handling.md`.
 
 ## C — [#94] Resilience redesign: quarantine-and-continue  **(GATING)**
 
 Replaces fail-fast (D-91-8). One bad source must not kill the batch.
 
-- [ ] A failed source (enrich OR compile) is logged + quarantined; the loop
+- [x] A failed source (enrich OR compile) is logged + quarantined; the loop
       **continues**. Finalize runs over everything that succeeded.
-- [ ] **Dissolves #94 stranding** — finalize always runs → `wire_links` always
+- [x] **Dissolves #94 stranding** — finalize always runs → `wire_links` always
       runs over the committed set → no orphaned `LINKS_TO`.
-- [ ] Depends on **B** (severity decides skip-vs-abort).
-- [ ] Revises ratified D-91-8 → record as new decision (devil's-advocate gate).
+- [x] Depends on **B** (severity decides skip-vs-abort). [C1 uses B's severity model]
+- [x] Revises ratified D-91-8 → recorded as **D-96-1**: source-local failures
+      (`source_quarantine`) no longer abort; the loop continues and finalize runs
+      over the committed set. `run_fatal` + `invariant_violation` still abort —
+      D-91-8 fail-fast is *narrowed to run-fatal scope*, not removed.
 
 ## D — Graph-setup fix  **(GATING, small — fold into #91)**
 

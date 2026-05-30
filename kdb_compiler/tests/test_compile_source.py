@@ -97,6 +97,7 @@ def test_compile_source_result_shape() -> None:
     r = CompileSourceResult(cr={"run_id": "x"})
     assert r.cr["run_id"] == "x"
     assert r.failure_stage is None and r.exception_type is None and r.error is None
+    assert r.artifacts == {}
     assert r.ok is True
 
 
@@ -214,6 +215,43 @@ def test_compile_source_compile_error(tmp_path, monkeypatch):
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "compile" and result.error
+    assert "resp_stats" in result.artifacts
+    assert Path(result.artifacts["resp_stats"]).parent == (
+        state_root / "runs" / ctx.run_id / "pass2"
+    )
+    assert "raw_response" not in result.artifacts
+
+
+def test_compile_source_parse_error_exposes_raw_resp_stats_artifact(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def bad_json(req):
+        return ModelResponse(
+            text='{"source_name": "s.md",,}',
+            input_tokens=10,
+            output_tokens=5,
+            latency_ms=10,
+            model="m",
+            provider="p",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", bad_json)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+
+    assert not result.ok and result.failure_stage == "compile"
+    assert "raw_response" in result.artifacts
+    record = json.loads(Path(result.artifacts["raw_response"]).read_text(encoding="utf-8"))
+    assert record["raw_response_text"] == '{"source_name": "s.md",,}'
 
 
 def test_compile_source_gate_error(tmp_path, monkeypatch):

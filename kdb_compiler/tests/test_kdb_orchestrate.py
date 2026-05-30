@@ -11,9 +11,10 @@ import pytest
 from kdb_compiler import compiler, kdb_orchestrate, prompt_builder
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.canonicalize import load_or_empty
-from kdb_compiler.ingestion.pass1_caller import Pass1CallResult
+from kdb_compiler.ingestion.pass1_caller import Pass1CallError, Pass1CallResult
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.source_io import SourceFrontmatter
+from kdb_compiler.types import CompileSourceResult
 from graphdb_kdb.graphdb import GraphDB
 
 
@@ -78,6 +79,10 @@ def _scan_entry(source_id: str, *, pipeline_id="vault-test") -> dict:
 def _count(g, query: str) -> int:
     r = g.conn.execute(query)
     return int(r.get_next()[0]) if r.has_next() else 0
+
+
+def _event_rows(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
 def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
@@ -193,17 +198,29 @@ def test_finalize_wires_links_and_writes_compile_result(tmp_path):
 def test_write_last_orchestrate_json_fields(tmp_path):
     state_root = tmp_path / "state"
     state_root.mkdir()
+    event_log = state_root / "runs" / "r1" / "orchestrator_events.jsonl"
     path = kdb_orchestrate.write_last_orchestrate_json(
         state_root, run_id="r1", started_at="t0", finished_at="t1",
         exit_code=0, exit_reason="ok",
         counts={"sources_scanned": 2, "sources_compiled": 1, "sources_failed": 0},
         manifest_delta={"added": ["a.md"], "removed": [], "changed": []},
-        finalize={"links_wired": 1, "orphans_marked": 0, "reaped": 0})
+        finalize={"links_wired": 1, "orphans_marked": 0, "reaped": 0},
+        event_log_path=event_log,
+        warnings=2,
+        sources_quarantined=1,
+        invariant_violations=0,
+        quarantined_sources=[{"source_id": "a.md", "stage": "compile"}])
     d = json.loads(path.read_text(encoding="utf-8"))
     assert d["run_id"] == "r1" and d["exit_code"] == 0 and d["exit_reason"] == "ok"
     assert d["counts"]["sources_compiled"] == 1
     assert d["finalize"]["links_wired"] == 1
     assert d["manifest_delta"]["added"] == ["a.md"]
+    assert d["event_log_path"] == str(event_log)
+    assert d["event_log_failed"] is False
+    assert d["counts"]["warnings"] == 2
+    assert d["counts"]["sources_quarantined"] == 1
+    assert d["counts"]["invariant_violations"] == 0
+    assert d["quarantined_sources"] == [{"source_id": "a.md", "stage": "compile"}]
 
 
 # ---------- Task 3: run() loop — routing + fail-fast ----------
@@ -274,13 +291,102 @@ def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
                          "RETURN COUNT(s)") == 0            # noise NOT in graph
     assert list((vault / "KDB").rglob("summary-a.md"))      # signal wiki page
     manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["sources"]["noise/b.md"]["compile_state"] == "metadata_only"
+    assert manifest["sources"]["noise/b.md"]["run_state"] == "no_graph_db"
     assert manifest["sources"]["noise/b.md"]["last_compiled_hash"] is not None  # M2
     assert manifest["sources"]["AIML/a.md"]["pipeline_id"] == "vt"
     assert res.summary_path.exists()
 
 
-def test_run_fail_fast_on_compile_error(tmp_path, monkeypatch):
+def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        log_level="debug")
+
+    rows = _event_rows(res.event_log_path)
+    event_types = [row["event_type"] for row in rows]
+    assert res.ok
+    assert "run_started" in event_types
+    assert "scan_completed" in event_types
+    assert "source_started" in event_types
+    assert "pass1_enrich_completed" in event_types
+    assert "pass1_gate_signal" in event_types
+    assert "pass2_compile_completed" in event_types
+    assert "source_commit_completed" in event_types
+    assert "finalize_completed" in event_types
+    assert event_types[-1] == "run_finished"
+    assert any(row["source_id"] == "AIML/a.md" for row in rows)
+    summary = json.loads(res.summary_path.read_text(encoding="utf-8"))
+    assert summary["counts"]["warnings"] == 0
+    assert summary["counts"]["sources_quarantined"] == 0
+    assert summary["counts"]["invariant_violations"] == 0
+    assert summary["quarantined_sources"] == []
+
+
+def test_run_quarantines_compile_error_and_continues(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def boom(req):
+        if "a.md" in req.prompt:
+            raise RuntimeError("model down")
+        return _fake_model(_compiled_response("b.md", "summary-b"))(req)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
+    assert res.failed_source is None
+    assert res.counts["sources_failed"] == 1
+    assert res.counts["sources_compiled"] == 1
+    assert res.counts["sources_quarantined"] == 1
+    assert res.quarantined_sources == [{
+        "source_id": "AIML/a.md",
+        "stage": "compile",
+        "exception_type": "RuntimeError",
+    }]
+    assert res.summary_path.exists()
+    summary = json.loads(res.summary_path.read_text(encoding="utf-8"))
+    assert summary["exit_reason"] == "completed_with_quarantines"
+    assert summary["finalize"] == res.finalize
+    assert summary["counts"]["sources_quarantined"] == 1
+    assert summary["quarantined_sources"] == res.quarantined_sources
+    cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
+    assert [cs["source_id"] for cs in cr_json["compiled_sources"]] == ["AIML/b.md"]
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    failed = manifest["sources"]["AIML/a.md"]
+    assert failed["run_state"] == "error_compile"
+    assert failed["last_compiled_hash"] is None
+    assert failed["last_failure"]["stage"] == "compile"
+    assert failed["last_failure"]["exception_type"] == "RuntimeError"
+    assert manifest["sources"]["AIML/b.md"]["run_state"] == "in_graph_db"
+    rows = _event_rows(res.event_log_path)
+    assert any(
+        row["event_type"] == "source_quarantined"
+        and row["severity"] == "source_quarantine"
+        and row["stage"] == "compile"
+        and row["source_id"] == "AIML/a.md"
+        for row in rows
+    )
+
+
+def test_event_log_failure_is_surfaced_in_summary(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     (vault / "AIML").mkdir()
@@ -292,15 +398,330 @@ def test_run_fail_fast_on_compile_error(tmp_path, monkeypatch):
         raise RuntimeError("model down")
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
 
+    def broken_recorder(cls, *, state_root, run_id, log_level="warning"):
+        return cls(run_id=run_id, events_path=Path(state_root), log_level=log_level)
+
+    monkeypatch.setattr(
+        kdb_orchestrate.EventRecorder,
+        "for_state_root",
+        classmethod(broken_recorder),
+    )
+
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
         graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
 
-    assert not res.ok and res.exit_code == 1
-    assert res.failure_stage == "compile"
-    assert res.failed_source == "AIML/a.md"
+    summary = json.loads(res.summary_path.read_text(encoding="utf-8"))
+    assert res.event_log_failed is True
+    assert summary["event_log_failed"] is True
+    assert summary["counts"]["sources_quarantined"] == 1
+
+
+def test_pass1_failure_event_references_raw_response_sidecar(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+
+    def bad_pass1(**kwargs):
+        if str(kwargs["source_path"]).endswith("b.md"):
+            return _fake_pass1(**kwargs)
+        raise Pass1CallError(
+            "bad pass1",
+            raw_response_text="{bad json",
+            request_prompt="prompt",
+            request_model="m",
+            request_provider="p",
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=1,
+            attempts=1,
+        )
+
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", bad_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("b.md", "summary-b")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
     assert res.counts["sources_failed"] == 1
-    assert res.summary_path.exists()       # summary written on abort (advisor #1)
+    assert res.counts["sources_compiled"] == 1
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    failed = manifest["sources"]["AIML/a.md"]
+    assert failed["run_state"] == "error_ingest"
+    assert failed["last_compiled_hash"] is None
+    assert failed["last_failure"]["stage"] == "pass1_enrich"
+    assert failed["last_failure"]["exception_type"] == "Pass1EnrichError"
+    assert failed["last_failure"]["artifacts"]["raw_response"].endswith("AIML__a.md.json")
+    assert manifest["sources"]["AIML/b.md"]["run_state"] == "in_graph_db"
+    rows = _event_rows(res.event_log_path)
+    event = next(row for row in rows if row["event_type"] == "source_quarantined")
+    assert event["stage"] == "pass1_enrich"
+    assert event["artifacts"]["raw_response"].endswith("AIML__a.md.json")
+    sidecar = json.loads(Path(event["artifacts"]["raw_response"]).read_text(encoding="utf-8"))
+    assert sidecar["raw_response"]["body"] == "{bad json"
+    assert not any(row["event_type"] == "raw_response_unavailable" for row in rows)
+
+
+def test_pass2_invalid_response_event_references_raw_resp_stats(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def bad_json(req):
+        return ModelResponse(
+            text='{"source_name": "a.md",,}',
+            input_tokens=10,
+            output_tokens=5,
+            latency_ms=10,
+            model="m",
+            provider="p",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", bad_json)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    failed = manifest["sources"]["AIML/a.md"]
+    assert failed["run_state"] == "error_compile"
+    assert failed["last_compiled_hash"] is None
+    assert failed["last_failure"]["stage"] == "compile"
+    assert failed["last_failure"]["artifacts"]["raw_response"].endswith(".json")
+    assert not (state_root / "compile_result.json").exists()
+    assert res.finalize is None
+    rows = _event_rows(res.event_log_path)
+    event = next(row for row in rows if row["event_type"] == "source_quarantined")
+    assert event["stage"] == "compile"
+    assert "raw_response" in event["artifacts"]
+    record = json.loads(Path(event["artifacts"]["raw_response"]).read_text(encoding="utf-8"))
+    assert record["raw_response_text"] == '{"source_name": "a.md",,}'
+    assert not any(row["event_type"] == "raw_response_unavailable" for row in rows)
+
+
+def test_finalize_runs_after_later_source_quarantine_and_wires_committed_links(
+    tmp_path, monkeypatch
+):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    calls = {"n": 0}
+
+    def model(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            response = _two_page_response()
+            response["source_name"] = "a.md"
+            return _fake_model(response)(req)
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", model)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
+    assert res.counts["sources_compiled"] == 1
+    assert res.counts["sources_failed"] == 1
+    assert res.finalize is not None
+    assert res.finalize["links_wired"] >= 1
+    with GraphDB(tmp_path / "graph") as g:
+        assert _count(
+            g,
+            "MATCH (:Entity {slug: 'summary-foo'})-[r:LINKS_TO]->"
+            "(:Entity {slug: 'concept-b'}) RETURN COUNT(r)",
+        ) == 1
+    cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
+    assert [cs["source_id"] for cs in cr_json["compiled_sources"]] == ["AIML/a.md"]
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["sources"]["AIML/a.md"]["run_state"] == "in_graph_db"
+    assert manifest["sources"]["AIML/b.md"]["run_state"] == "error_compile"
+
+
+def test_all_quarantined_skips_finalize_but_writes_summary_and_event_log(
+    tmp_path, monkeypatch
+):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def boom(req):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
+    assert res.finalize is None
+    assert res.summary_path.exists()
+    assert res.event_log_path.exists()
+    assert not (state_root / "compile_result.json").exists()
+    rows = _event_rows(res.event_log_path)
+    assert any(row["event_type"] == "finalize_skipped" for row in rows)
+
+
+def test_source_local_commit_failure_marks_error_commit_and_continues(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def model(req):
+        if "a.md" in req.prompt:
+            return _fake_model(_compiled_response("a.md", "summary-a"))(req)
+        return _fake_model(_compiled_response("b.md", "summary-b"))(req)
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", model)
+    original_commit_source = kdb_orchestrate._commit_source
+
+    def flaky_commit(*args, **kwargs):
+        if kwargs["source_id"] == "AIML/a.md":
+            return kdb_orchestrate.CommitResult(
+                failure_stage="apply",
+                exception_type="RuntimeError",
+                error="apply down",
+            )
+        return original_commit_source(*args, **kwargs)
+
+    monkeypatch.setattr(kdb_orchestrate, "_commit_source", flaky_commit)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok and res.exit_reason == "completed_with_quarantines"
+    assert res.counts["sources_failed"] == 1
+    assert res.counts["sources_compiled"] == 1
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["sources"]["AIML/a.md"]["run_state"] == "error_commit"
+    assert manifest["sources"]["AIML/a.md"]["last_failure"]["stage"] == "apply"
+    assert manifest["sources"]["AIML/b.md"]["run_state"] == "in_graph_db"
+
+
+def test_missing_raw_response_emits_unavailable_event(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def boom(req):
+        raise RuntimeError("model down")
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    rows = _event_rows(res.event_log_path)
+    event = next(row for row in rows if row["event_type"] == "raw_response_unavailable")
+    assert event["severity"] == "warning"
+    assert event["source_id"] == "AIML/a.md"
+    assert event["artifacts"]["resp_stats"].endswith(".json")
+
+
+def test_unexpected_exception_writes_run_fatal_event_and_summary(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    def boom_finalize(*_args, **_kwargs):
+        raise RuntimeError("finalize down")
+
+    monkeypatch.setattr(kdb_orchestrate, "_finalize", boom_finalize)
+
+    with pytest.raises(RuntimeError, match="finalize down"):
+        kdb_orchestrate.run(
+            pipeline_id="vt", vault_root=vault, state_root=state_root,
+            graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    summary = json.loads((state_root / "last_orchestrate.json").read_text(encoding="utf-8"))
+    assert summary["exit_reason"] == "unexpected:RuntimeError"
+    event_logs = list((state_root / "runs").glob("*/orchestrator_events.jsonl"))
+    assert len(event_logs) == 1
+    rows = _event_rows(event_logs[0])
+    assert any(
+        row["event_type"] == "run_fatal"
+        and row["severity"] == "run_fatal"
+        and row["exception_type"] == "RuntimeError"
+        and row["error"] == "finalize down"
+        for row in rows
+    )
+
+
+def test_orchestrator_invariant_violation_writes_event_and_summary(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def malformed_compile_source(*_args, **_kwargs):
+        return CompileSourceResult(cr={
+            "run_id": "bad",
+            "success": True,
+            "compiled_sources": [],
+            "log_entries": [],
+            "errors": [],
+            "warnings": [],
+        })
+
+    monkeypatch.setattr(kdb_orchestrate, "compile_source", malformed_compile_source)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.exit_code == 1
+    assert res.exit_reason == "invariant:compile_success_single_source_cr"
+    assert res.failure_stage == "invariant_violation"
+    assert res.counts["invariant_violations"] == 1
+    summary = json.loads(res.summary_path.read_text(encoding="utf-8"))
+    assert summary["exit_reason"] == "invariant:compile_success_single_source_cr"
+    assert summary["counts"]["invariant_violations"] == 1
+    rows = _event_rows(res.event_log_path)
+    assert any(
+        row["event_type"] == "invariant_violation"
+        and row["severity"] == "invariant_violation"
+        and row["stage"] == "pass2_compile"
+        and row["source_id"] == "AIML/a.md"
+        for row in rows
+    )
 
 
 # ---------- Task 6: CLI ----------
@@ -318,10 +739,104 @@ def test_cli_dry_run_smoke(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "dry-run" in out and "to compile" in out
+    assert "event_log:" in out
     # dry-run fires no API and mutates nothing: no graph, no manifest
     assert not (vault / "KDB" / "graph").exists()
     assert not (state_root / "manifest.json").exists()
     assert (state_root / "last_orchestrate.json").exists()
+
+
+def test_cli_makes_quarantine_alarm_visible(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+
+    def boom(req):
+        raise RuntimeError("model down")
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+
+    rc = kdb_orchestrate.main([
+        "--pipeline", "vt", "--vault-root", str(vault),
+        "--graph-path", str(tmp_path / "graph"),
+        "--provider", "p", "--model", "m",
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "reason=completed_with_quarantines" in captured.out
+    assert "alarm: quarantined=1" in captured.err
+    assert "AIML/a.md" in captured.err
+
+
+def test_cli_log_level_warning_default(tmp_path):
+    args = kdb_orchestrate._build_parser().parse_args(
+        ["--vault-root", str(tmp_path)])
+
+    assert kdb_orchestrate._resolve_log_level(args) == "warning"
+
+
+def test_cli_verbose_sets_info(tmp_path):
+    args = kdb_orchestrate._build_parser().parse_args(
+        ["--vault-root", str(tmp_path), "--verbose"])
+
+    assert kdb_orchestrate._resolve_log_level(args) == "info"
+
+
+def test_cli_debug_sets_debug(tmp_path):
+    args = kdb_orchestrate._build_parser().parse_args(
+        ["--vault-root", str(tmp_path), "--debug"])
+
+    assert kdb_orchestrate._resolve_log_level(args) == "debug"
+
+
+def test_cli_explicit_log_level_wins_over_alias(tmp_path):
+    args = kdb_orchestrate._build_parser().parse_args(
+        ["--vault-root", str(tmp_path), "--debug", "--log-level", "warning"])
+
+    assert kdb_orchestrate._resolve_log_level(args) == "warning"
+
+
+def test_run_writes_event_log_path_to_summary(tmp_path):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        dry_run=True, log_level="debug")
+
+    summary = json.loads(res.summary_path.read_text(encoding="utf-8"))
+    assert res.event_log_path == state_root / "runs" / res.run_id / "orchestrator_events.jsonl"
+    assert summary["event_log_path"] == str(res.event_log_path)
+    assert summary["event_log_failed"] is False
+
+
+def test_dry_run_writes_plan_events_when_info_enabled(tmp_path):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        dry_run=True, log_level="info")
+
+    rows = _event_rows(res.event_log_path)
+    event_types = [row["event_type"] for row in rows]
+    assert event_types == [
+        "run_started",
+        "scan_completed",
+        "dry_run_planned",
+        "run_finished",
+    ]
 
 
 def test_cli_lists_pipelines_when_omitted(tmp_path, capsys):

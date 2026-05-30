@@ -53,7 +53,7 @@ class Source:
     first_seen_at: str
     last_seen_at: str
     last_ingested_at: str    # renamed from last_compiled_at per D-A2 (graph-side ingestion concept, not producer's compile concept)
-    ingest_state: str         # renamed from compile_state per D-A2
+    ingest_state: str         # graph-side name for producer run_state
     ingest_count: int         # renamed from compile_count per D-A2
     last_run_id: str
     moved_to: str

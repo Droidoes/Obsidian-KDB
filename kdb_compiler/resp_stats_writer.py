@@ -1,6 +1,8 @@
 """resp_stats_writer — build + atomically write one RespStatsRecord per compile call.
 
-Writes to `<state_root>/llm_resp/<run_id>/<safe_source_id>.json`.
+By default, writes to `<state_root>/llm_resp/<run_id>/<safe_source_id>.json`.
+Callers that own a run-specific artifact directory may pass `artifact_dir`
+to place the record there instead.
 Directory creation is handled by atomic_io.atomic_write_bytes (mkdir
 parents=True, exist_ok=True on the target's parent).
 
@@ -183,6 +185,10 @@ def build_resp_stats(
     else:
         summary = None
 
+    failed_after_response = bool(raw_response_text) and not (
+        extract_ok and parse_ok and schema_ok and semantic_ok
+    )
+
     return RespStatsRecord(
         run_id=ctx.run_id,
         source_id=source_id,
@@ -204,7 +210,9 @@ def build_resp_stats(
         parsed_json=(parsed_json if capture_full else None),
         system_prompt=(prompt.system if capture_full and prompt is not None else None),
         user_prompt=(prompt.user if capture_full and prompt is not None else None),
-        raw_response_text=(raw_response_text if capture_full else None),
+        raw_response_text=(
+            raw_response_text if (capture_full or failed_after_response) else None
+        ),
         stop_reason=stop_reason,
         token_overrun=token_overrun,
         source_words=source_words,
@@ -214,12 +222,24 @@ def build_resp_stats(
     )
 
 
-def write_resp_stats(record: RespStatsRecord, state_root: Path) -> Path:
-    """Atomic write to <state_root>/llm_resp/<run_id>/<safe_source_id>.json.
+def write_resp_stats(
+    record: RespStatsRecord,
+    state_root: Path,
+    *,
+    artifact_dir: Path | None = None,
+) -> Path:
+    """Atomic write one response-stats record.
+
+    Default target:
+        <state_root>/llm_resp/<run_id>/<safe_source_id>.json
+
+    Run-owned target:
+        <artifact_dir>/<safe_source_id>.json
 
     Returns the written path. atomic_write_json creates the parent dirs
     (parents=True, exist_ok=True) so no explicit mkdir is needed here.
     """
-    target = state_root / "llm_resp" / record.run_id / f"{safe_source_id(record.source_id)}.json"
+    base = artifact_dir if artifact_dir is not None else state_root / "llm_resp" / record.run_id
+    target = base / f"{safe_source_id(record.source_id)}.json"
     atomic_write_json(target, record.to_dict())
     return target

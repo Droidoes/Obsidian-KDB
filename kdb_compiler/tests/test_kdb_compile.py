@@ -10,7 +10,11 @@ import pytest
 
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.kdb_compile import CompileRunResult, compile
-from kdb_compiler.run_context import SCHEMA_VERSION, RunContext
+from kdb_compiler.run_context import (
+    SCHEMA_VERSION,
+    SOURCE_STATE_SCHEMA_VERSION,
+    RunContext,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -1237,7 +1241,7 @@ def test_rebuild_after_compile_reproduces_graph(tmp_path: Path) -> None:
 
 def test_manifest_is_source_state_only_after_compile(tmp_path: Path) -> None:
     """Phase F: manifest.json written by compile has no pages{} or orphans{}
-    and carries schema_version 3.0."""
+    and carries the current source-state schema version."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
     ctx = _ctx(_RUN1_ID, _RUN1_AT, vault)
@@ -1248,13 +1252,13 @@ def test_manifest_is_source_state_only_after_compile(tmp_path: Path) -> None:
     manifest = json.loads((state / "manifest.json").read_text())
     assert "pages" not in manifest
     assert "orphans" not in manifest
-    assert manifest["schema_version"] == "3.0"
+    assert manifest["schema_version"] == SOURCE_STATE_SCHEMA_VERSION
     assert "KDB/raw/paper.md" in manifest["sources"]
 
 
 def test_compile_auto_migrates_v1_manifest(tmp_path: Path) -> None:
     """If a v1.0 manifest with pages{} exists on disk, compile auto-migrates
-    it to v3.0 source-state-only format."""
+    it to the current source-state-only format."""
     vault, raw, state = _make_vault(tmp_path)
     (raw / "paper.md").write_text("# Paper\nContent.", encoding="utf-8")
 
@@ -1282,6 +1286,6 @@ def test_compile_auto_migrates_v1_manifest(tmp_path: Path) -> None:
     manifest = json.loads((state / "manifest.json").read_text())
     assert "pages" not in manifest
     assert "orphans" not in manifest
-    assert manifest["schema_version"] == "3.0"
+    assert manifest["schema_version"] == SOURCE_STATE_SCHEMA_VERSION
     assert manifest["kb_id"] == "joseph-kdb"
     assert manifest["created_at"] == "2026-04-01T10:00:00-04:00"

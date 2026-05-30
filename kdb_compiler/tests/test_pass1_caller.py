@@ -52,9 +52,15 @@ def test_caller_retries_on_invalid_content_then_raises(monkeypatch):
         caller_mod, "call_model",
         lambda req: _fake_response(_content_json(domain="not-a-domain")),
     )
-    with pytest.raises(Pass1CallError):
+    with pytest.raises(Pass1CallError) as exc:
         call_pass1(source_text="body", source_path="x.md",
                    provider="deepseek", model="deepseek-v4-flash")
+    assert exc.value.raw_response_text
+    assert "not-a-domain" in exc.value.raw_response_text
+    assert exc.value.request_provider == "deepseek"
+    assert exc.value.request_model == "deepseek-v4-flash"
+    assert exc.value.input_tokens == 10
+    assert exc.value.attempts == 2
 
 
 def test_caller_recovers_on_second_attempt(monkeypatch):
@@ -71,3 +77,19 @@ def test_caller_recovers_on_second_attempt(monkeypatch):
                      provider="deepseek", model="deepseek-v4-flash")
     assert res.attempts == 2
     assert res.parsed["domain"] == "ai-ml"
+
+
+def test_caller_model_failure_raises_pass1_error_without_raw(monkeypatch):
+    def boom(req):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(caller_mod, "call_model", boom)
+
+    with pytest.raises(Pass1CallError) as exc:
+        call_pass1(source_text="body", source_path="x.md",
+                   provider="deepseek", model="deepseek-v4-flash")
+
+    assert "provider down" in str(exc.value)
+    assert exc.value.raw_response_text == ""
+    assert exc.value.request_prompt is not None
+    assert exc.value.attempts == 2

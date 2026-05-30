@@ -347,6 +347,28 @@ def test_write_resp_stats_target_path(tmp_path: Path) -> None:
     assert out.exists()
 
 
+def test_write_resp_stats_can_target_run_artifact_dir(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="KDB/raw/foo.md",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text='{"x": 1}',
+        model_response=_model_response(),
+        extract_ok=True, parse_ok=True, parsed_json={"x": 1},
+        schema_ok=True, schema_errors=[],
+        semantic_ok=True, semantic_errors=[],
+    )
+    state_root = tmp_path / "state"
+    artifact_dir = state_root / "runs" / ctx.run_id / "pass2"
+    out = resp_stats_writer.write_resp_stats(
+        record, state_root, artifact_dir=artifact_dir)
+
+    expected_name = resp_stats_writer.safe_source_id("KDB/raw/foo.md") + ".json"
+    assert out == artifact_dir / expected_name
+    assert out.exists()
+    assert not (state_root / "llm_resp" / ctx.run_id).exists()
+
+
 def test_write_resp_stats_creates_parent_dirs(tmp_path: Path) -> None:
     """atomic_write_json creates parents=True; state_root/llm_resp/<run_id>
     does not need to pre-exist."""

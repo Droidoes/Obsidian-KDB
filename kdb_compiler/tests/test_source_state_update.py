@@ -1,7 +1,7 @@
 """Tests for source_state_update — source-meta-only ledger (D50 Phase D).
 
 Covers: scan reconciliation (NEW/CHANGED/UNCHANGED/MOVED/DELETED),
-compile-state advancement, previous_versions cap, tombstone semantics,
+run-state advancement, previous_versions cap, tombstone semantics,
 runs pointer, and stats recomputation. No pages, no orphans, no links.
 """
 from __future__ import annotations
@@ -116,7 +116,7 @@ def test_scan_new_seeds_source_record() -> None:
     assert rec["canonical_path"] == "KDB/raw/a.md"
     assert rec["status"] == "active"
     assert rec["hash"] == "sha256:aaa"
-    assert rec["compile_state"] == "pending"
+    assert rec["run_state"] == "pending"
     assert rec["compile_count"] == 0
     assert rec["last_compiled_hash"] is None
     assert rec["previous_versions"] == []
@@ -130,7 +130,7 @@ def test_scan_new_binary_sets_last_compiled_hash() -> None:
                                    file_type="image")])
     state = apply_scan_reconciliation(state, scan, ctx)
     rec = state["sources"]["KDB/raw/img.png"]
-    assert rec["compile_state"] == "metadata_only"
+    assert rec["run_state"] == "no_graph_db"
     assert rec["last_compiled_hash"] == "sha256:aaa"
 
 
@@ -144,7 +144,7 @@ def test_scan_changed_appends_previous_version() -> None:
         "hash": "sha256:old", "mtime": 1600000000.0, "size_bytes": 50,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": "2026-01-01", "last_run_id": "r0",
-        "compile_state": "compiled", "compile_count": 1,
+        "run_state": "in_graph_db", "compile_count": 1,
         "last_compiled_hash": "sha256:old",
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -174,7 +174,7 @@ def test_scan_unchanged_only_bumps_last_seen() -> None:
         "hash": "sha256:aaa", "mtime": 1700000000.0, "size_bytes": 100,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": "2026-01-01", "last_run_id": "r0",
-        "compile_state": "compiled", "compile_count": 1,
+        "run_state": "in_graph_db", "compile_count": 1,
         "last_compiled_hash": "sha256:aaa",
         "summary_slug": "a", "compiled_title": "A",
         "parser": "markdown-basic", "compiler_version": "0.8.0",
@@ -199,7 +199,7 @@ def test_scan_moved_writes_tombstone_and_relocates() -> None:
         "hash": "sha256:aaa", "mtime": 1700000000.0, "size_bytes": 100,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": None, "last_run_id": "r0",
-        "compile_state": "pending", "compile_count": 0,
+        "run_state": "pending", "compile_count": 0,
         "last_compiled_hash": None,
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -228,7 +228,7 @@ def test_scan_deleted_writes_tombstone_and_removes_source() -> None:
         "hash": "sha256:dead", "mtime": 1700000000.0, "size_bytes": 50,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": None, "last_run_id": "r0",
-        "compile_state": "pending", "compile_count": 0,
+        "run_state": "pending", "compile_count": 0,
         "last_compiled_hash": None,
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -256,7 +256,7 @@ def test_compile_advances_source_state() -> None:
         "hash": "sha256:aaa", "mtime": 1700000000.0, "size_bytes": 100,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": None, "last_run_id": "r0",
-        "compile_state": "pending", "compile_count": 0,
+        "run_state": "pending", "compile_count": 0,
         "last_compiled_hash": None,
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -269,7 +269,7 @@ def test_compile_advances_source_state() -> None:
                  to_compile=["KDB/raw/a.md"])
     state = apply_compile_sources(state, cr, scan, ctx)
     rec = state["sources"]["KDB/raw/a.md"]
-    assert rec["compile_state"] == "compiled"
+    assert rec["run_state"] == "in_graph_db"
     assert rec["compile_count"] == 1
     assert rec["last_compiled_at"] == ctx.started_at
     assert rec["last_compiled_hash"] == "sha256:aaa"
@@ -281,7 +281,7 @@ def test_compile_advances_source_state() -> None:
 
 
 def test_recompile_increments_count() -> None:
-    """Second compile bumps compile_count and sets state to 'recompiled'."""
+    """Second compile bumps compile_count; run_state stays current-state in_graph_db."""
     ctx = _ctx()
     state = ensure_source_state_shape({}, ctx=ctx)
     state["sources"]["KDB/raw/a.md"] = {
@@ -290,7 +290,7 @@ def test_recompile_increments_count() -> None:
         "hash": "sha256:bbb", "mtime": 1700000001.0, "size_bytes": 200,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-05-17",
         "last_compiled_at": "2026-01-01", "last_run_id": "r0",
-        "compile_state": "compiled", "compile_count": 1,
+        "run_state": "in_graph_db", "compile_count": 1,
         "last_compiled_hash": "sha256:aaa",
         "summary_slug": "a-summary", "compiled_title": "A",
         "parser": "markdown-basic", "compiler_version": "0.8.0",
@@ -305,14 +305,14 @@ def test_recompile_increments_count() -> None:
                  to_compile=["KDB/raw/a.md"])
     state = apply_compile_sources(state, cr, scan, ctx)
     rec = state["sources"]["KDB/raw/a.md"]
-    assert rec["compile_state"] == "recompiled"
+    assert rec["run_state"] == "in_graph_db"
     assert rec["compile_count"] == 2
     assert rec["last_compiled_hash"] == "sha256:bbb"
     assert rec["compiled_title"] == "A v2"
 
 
 def test_missing_compile_marks_error() -> None:
-    """Source in to_compile but not in compiled_sources → compile_state=error."""
+    """Source in to_compile but not in compiled_sources → error_compile."""
     ctx = _ctx()
     state = ensure_source_state_shape({}, ctx=ctx)
     state["sources"]["KDB/raw/a.md"] = {
@@ -321,7 +321,7 @@ def test_missing_compile_marks_error() -> None:
         "hash": "sha256:aaa", "mtime": 1700000000.0, "size_bytes": 100,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": None, "last_run_id": "r0",
-        "compile_state": "pending", "compile_count": 0,
+        "run_state": "pending", "compile_count": 0,
         "last_compiled_hash": None,
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -331,7 +331,7 @@ def test_missing_compile_marks_error() -> None:
     scan = _scan(to_compile=["KDB/raw/a.md"])
     state = apply_compile_sources(state, cr, scan, ctx)
     rec = state["sources"]["KDB/raw/a.md"]
-    assert rec["compile_state"] == "error"
+    assert rec["run_state"] == "error_compile"
     assert rec["last_run_id"] == ctx.run_id
 
 
@@ -349,7 +349,7 @@ def test_previous_versions_capped_at_20() -> None:
         "hash": "sha256:old", "mtime": 1600000000.0, "size_bytes": 50,
         "first_seen_at": "2026-01-01", "last_seen_at": "2026-01-01",
         "last_compiled_at": "2026-01-01", "last_run_id": "r0",
-        "compile_state": "compiled", "compile_count": 1,
+        "run_state": "in_graph_db", "compile_count": 1,
         "last_compiled_hash": "sha256:old",
         "summary_slug": None, "compiled_title": None,
         "parser": None, "compiler_version": None, "schema_version_used": None,
@@ -416,7 +416,7 @@ def test_build_source_state_update_bootstrap() -> None:
     next_state, payload = build_source_state_update({}, scan, cr, ctx)
     assert "KDB/raw/a.md" in next_state["sources"]
     rec = next_state["sources"]["KDB/raw/a.md"]
-    assert rec["compile_state"] == "compiled"
+    assert rec["run_state"] == "in_graph_db"
     assert rec["summary_slug"] == "a-summary"
     assert next_state["stats"]["total_raw_files"] == 1
     assert payload["deltas"]["sources_added"] == ["KDB/raw/a.md"]
@@ -437,7 +437,7 @@ def test_build_source_state_update_second_run() -> None:
                 "last_seen_at": "2026-05-17T10:00:00-04:00",
                 "last_compiled_at": "2026-05-17T10:00:00-04:00",
                 "last_run_id": "2026-05-17T10-00-00-04-00",
-                "compile_state": "compiled", "compile_count": 1,
+                "run_state": "in_graph_db", "compile_count": 1,
                 "last_compiled_hash": "sha256:aaa",
                 "summary_slug": "a-summary", "compiled_title": "A",
                 "parser": "markdown-basic", "compiler_version": "0.8.0",
@@ -461,7 +461,7 @@ def test_build_source_state_update_second_run() -> None:
           "success": True, "run_id": ctx.run_id}
     next_state, payload = build_source_state_update(prior, scan, cr, ctx)
     rec = next_state["sources"]["KDB/raw/a.md"]
-    assert rec["compile_state"] == "recompiled"
+    assert rec["run_state"] == "in_graph_db"
     assert rec["compile_count"] == 2
     assert rec["hash"] == "sha256:bbb"
     assert rec["compiled_title"] == "A v2"
@@ -558,9 +558,9 @@ class TestMigrateManifestToSourceState:
         assert "pages" not in result
         assert "orphans" not in result
 
-    def test_bumps_schema_to_3_0(self):
+    def test_bumps_schema_to_3_1(self):
         result = migrate_manifest_to_source_state(_v1_manifest())
-        assert result["schema_version"] == "3.0"
+        assert result["schema_version"] == SOURCE_STATE_SCHEMA_VERSION
 
     def test_preserves_kb_id(self):
         result = migrate_manifest_to_source_state(_v1_manifest())
@@ -608,7 +608,8 @@ class TestMigrateManifestToSourceState:
         assert src["size_bytes"] == 1024
         assert src["last_compiled_at"] == "2026-05-16T22:00:32-04:00"
         assert src["last_run_id"] == "2026-05-16T22-00-32_EDT"
-        assert src["compile_state"] == "compiled"
+        assert src["run_state"] == "in_graph_db"
+        assert "compile_state" not in src
         assert src["last_compiled_hash"] == "sha256:abc"
         assert src["previous_versions"] == []
 
@@ -646,6 +647,39 @@ class TestMigrateManifestToSourceState:
         second = migrate_manifest_to_source_state(first)
         assert first == second
 
+    def test_migrates_v3_0_compile_state_to_run_state(self):
+        old = migrate_manifest_to_source_state(_v1_manifest())
+        old["schema_version"] = "3.0"
+        src = old["sources"]["KDB/raw/a.md"]
+        src["compile_state"] = "recompiled"
+        src.pop("run_state", None)
+
+        result = migrate_manifest_to_source_state(old)
+        src2 = result["sources"]["KDB/raw/a.md"]
+        assert result["schema_version"] == SOURCE_STATE_SCHEMA_VERSION
+        assert src2["run_state"] == "in_graph_db"
+        assert "compile_state" not in src2
+
+    def test_legacy_error_compile_state_maps_to_error_compile(self):
+        old = migrate_manifest_to_source_state(_v1_manifest())
+        old["schema_version"] = "3.0"
+        src = old["sources"]["KDB/raw/a.md"]
+        src["compile_state"] = "error"
+        src.pop("run_state", None)
+
+        result = migrate_manifest_to_source_state(old)
+        assert result["sources"]["KDB/raw/a.md"]["run_state"] == "error_compile"
+
+    def test_legacy_metadata_only_maps_to_no_graph_db(self):
+        old = migrate_manifest_to_source_state(_v1_manifest())
+        old["schema_version"] = "3.0"
+        src = old["sources"]["KDB/raw/a.md"]
+        src["compile_state"] = "metadata_only"
+        src.pop("run_state", None)
+
+        result = migrate_manifest_to_source_state(old)
+        assert result["sources"]["KDB/raw/a.md"]["run_state"] == "no_graph_db"
+
     def test_adds_summary_slug_from_summary_page(self):
         result = migrate_manifest_to_source_state(_v1_manifest())
         src = result["sources"]["KDB/raw/a.md"]
@@ -682,6 +716,18 @@ class TestAssertSourceStateInvariants:
             {"hash": f"h{i}", "mtime": 0, "size_bytes": 0, "compiled_at": None, "run_id": None}
             for i in range(PREV_VERSIONS_CAP + 1)
         ]
+        with pytest.raises(Exception):
+            assert_source_state_invariants(state)
+
+    def test_fails_on_deprecated_compile_state(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["sources"]["KDB/raw/a.md"]["compile_state"] = "compiled"
+        with pytest.raises(Exception):
+            assert_source_state_invariants(state)
+
+    def test_fails_on_invalid_run_state(self):
+        state = migrate_manifest_to_source_state(_v1_manifest())
+        state["sources"]["KDB/raw/a.md"]["run_state"] = "confused"
         with pytest.raises(Exception):
             assert_source_state_invariants(state)
 

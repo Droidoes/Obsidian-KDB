@@ -34,6 +34,12 @@ from kdb_compiler.compiler import compile_source
 from kdb_compiler.ingestion.enrich import enrich_one
 from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
 from kdb_compiler.kdb_scan import scan_scope
+from kdb_compiler.orchestrator_events import (
+    EventRecorder,
+    OrchestratorInvariantError,
+    OrchestratorLogLevel,
+    check_orchestrator_invariant,
+)
 from kdb_compiler.run_context import RunContext, now_iso
 from kdb_compiler.source_io import SourceFrontmatter
 
@@ -213,18 +219,28 @@ def _finalize(
 def write_last_orchestrate_json(
     state_root: Path, *, run_id: str, started_at: str, finished_at: str,
     exit_code: int, exit_reason: str, counts: dict, manifest_delta: dict,
-    finalize: dict | None = None,
+    finalize: dict | None = None, event_log_path: Path | str | None = None,
+    event_log_failed: bool = False, warnings: int = 0,
+    sources_quarantined: int = 0, invariant_violations: int = 0,
+    quarantined_sources: list[dict] | None = None,
 ) -> Path:
     """Write the slim run summary (D-91-10). Written ALWAYS — success and abort —
     so a fail-fast still leaves an inspectable record of where the run stopped."""
+    summary_counts = dict(counts)
+    summary_counts["warnings"] = warnings
+    summary_counts["sources_quarantined"] = sources_quarantined
+    summary_counts["invariant_violations"] = invariant_violations
     summary = {
         "run_id": run_id,
         "started_at": started_at,
         "finished_at": finished_at,
         "exit_code": exit_code,
         "exit_reason": exit_reason,
-        "counts": counts,
+        "counts": summary_counts,
         "manifest_delta": manifest_delta,
+        "event_log_path": str(event_log_path) if event_log_path is not None else None,
+        "event_log_failed": event_log_failed,
+        "quarantined_sources": list(quarantined_sources or []),
     }
     if finalize is not None:
         summary["finalize"] = finalize
@@ -292,7 +308,7 @@ def _commit_noise_source(
     *, source_id: str, post_embed_hash: str, post_embed_mtime: float,
     scan_entry: dict, prior_manifest: dict, state_root: Path, ctx: RunContext,
 ) -> dict:
-    """Commit a noise source: manifest metadata_only, NO graph, NO wiki. M2:
+    """Commit a noise source: manifest no_graph_db, NO graph, NO wiki. M2:
     last_compiled_hash = post_embed_hash so the embed doesn't re-trigger enrich
     next run. to_compile=[] so apply_compile_sources doesn't error-mark it."""
     entry = dict(scan_entry)
@@ -302,8 +318,64 @@ def _commit_noise_source(
     next_manifest, _ = source_state_update.build_source_state_update(
         prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
     rec = next_manifest["sources"][source_id]
-    rec["compile_state"] = "metadata_only"
+    rec["run_state"] = source_state_update.RUN_STATE_NO_GRAPH_DB
     rec["last_compiled_hash"] = post_embed_hash
+    rec["last_failure"] = None
+    atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
+    return next_manifest
+
+
+def _json_safe_artifacts(artifacts: dict | None) -> dict:
+    return {str(k): str(v) for k, v in (artifacts or {}).items()}
+
+
+def _last_failure(
+    *,
+    ctx: RunContext,
+    stage: str,
+    error: str | None,
+    exception_type: str | None = None,
+    artifacts: dict | None = None,
+) -> dict:
+    failure = {
+        "stage": stage,
+        "run_id": ctx.run_id,
+        "at": ctx.started_at,
+        "error": error,
+        "artifacts": _json_safe_artifacts(artifacts),
+    }
+    if exception_type is not None:
+        failure["exception_type"] = exception_type
+    return failure
+
+
+def _commit_source_failure(
+    *,
+    source_id: str,
+    run_state: str,
+    failure: dict,
+    scan_entry: dict,
+    prior_manifest: dict,
+    state_root: Path,
+    ctx: RunContext,
+    current_hash: str | None = None,
+    current_mtime: float | None = None,
+) -> dict:
+    """Commit source-local failure state; never advances last_compiled_hash."""
+    entry = dict(scan_entry)
+    if current_hash is not None:
+        entry["current_hash"] = current_hash
+    if current_mtime is not None:
+        entry["current_mtime"] = current_mtime
+    single_scan = {"files": [entry], "to_compile": [], "to_reconcile": []}
+    next_manifest, _ = source_state_update.build_source_failure_update(
+        prior_manifest,
+        single_scan,
+        ctx,
+        source_id=source_id,
+        run_state=run_state,
+        last_failure=failure,
+    )
     atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
     return next_manifest
 
@@ -338,6 +410,9 @@ class OrchestrateResult:
     failed_source: str | None = None
     failure_stage: str | None = None
     summary_path: Path | None = None
+    event_log_path: Path | None = None
+    event_log_failed: bool = False
+    quarantined_sources: list[dict] = field(default_factory=list)
     planned: dict | None = None     # dry-run plan preview
 
     @property
@@ -350,18 +425,61 @@ def _empty_counts() -> dict:
         "sources_scanned": 0, "sources_enriched": 0, "sources_compiled": 0,
         "sources_noise": 0, "sources_moved": 0, "sources_deleted": 0,
         "sources_failed": 0,
+        "warnings": 0, "sources_quarantined": 0, "invariant_violations": 0,
     }
+
+
+def _quarantined_sources(recorder: EventRecorder) -> list[dict]:
+    rows: list[dict] = []
+    for event in recorder.recorded_events:
+        if event.severity != "source_quarantine":
+            continue
+        row = {"source_id": event.source_id, "stage": event.stage}
+        if event.exception_type is not None:
+            row["exception_type"] = event.exception_type
+        rows.append(row)
+    return rows
+
+
+def _event_alarm_counts(recorder: EventRecorder) -> dict:
+    return {
+        "warnings": recorder.count("warning"),
+        "sources_quarantined": recorder.count("source_quarantine"),
+        "invariant_violations": recorder.count("invariant_violation"),
+    }
+
+
+def _check_invariant(
+    condition: bool,
+    *,
+    recorder: EventRecorder,
+    code: str,
+    stage: str,
+    message: str,
+    source_id: str | None = None,
+    context: dict | None = None,
+) -> None:
+    check_orchestrator_invariant(
+        condition,
+        recorder=recorder,
+        code=code,
+        stage=stage,
+        message=message,
+        source_id=source_id,
+        context=context,
+    )
 
 
 def run(
     *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
-    limit: int | None = None,
+    limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
-    commit (β) → reconcile → finalize. Fail-fast (D-91-8): the first enrich/
-    compile/commit failure aborts the run; already-committed sources stay
-    committed (β makes each commit self-contained). The run summary
+    commit (β) → reconcile → finalize. Source-local failures are quarantined
+    into source-state and the loop continues; run_fatal / invariant failures
+    still abort. Already-committed sources stay committed (β makes each commit
+    self-contained). The run summary
     (last_orchestrate.json) is written ALWAYS — success, abort, or crash.
 
     `limit`: if set, stop compiling after this many signal sources have been
@@ -378,6 +496,12 @@ def run(
     prior_full = _stamp_legacy_pipeline_id(_load_full_manifest(manifest_path), pipeline_id)
     prior_flat = _flat_prior(prior_full)
     ctx = RunContext.new(dry_run=dry_run, vault_root=vault_root)
+    recorder = EventRecorder.for_state_root(
+        state_root=state_root, run_id=ctx.run_id, log_level=log_level)
+    recorder.record(
+        stage="run", event_type="run_started", severity="info",
+        message="orchestrator run started",
+        context={"pipeline_id": pipeline_id, "dry_run": dry_run, "limit": limit})
     ledger = load_or_empty(state_root / "canonicalization" / "aliases.json")
     runs_root = state_root / "runs"
 
@@ -397,6 +521,15 @@ def run(
         prior=prior_flat, run_ctx=ctx,
         excludes=pipeline.excludes, file_types=set(pipeline.file_types))
     counts["sources_scanned"] = len(scan.files)
+    recorder.record(
+        stage="scan", event_type="scan_completed", severity="info",
+        message="pipeline scan completed",
+        context={
+            "pipeline_id": pipeline_id,
+            "files": len(scan.files),
+            "to_compile": len(scan.to_compile),
+            "to_reconcile": len(scan.to_reconcile),
+        })
 
     if dry_run:
         planned = {
@@ -404,15 +537,35 @@ def run(
             "deleted": [op.to_dict() for op in scan.to_reconcile if op.type == "DELETED"],
             "moved": [op.to_dict() for op in scan.to_reconcile if op.type == "MOVED"],
         }
+        recorder.record(
+            stage="dry_run", event_type="dry_run_planned", severity="info",
+            message="dry-run plan generated",
+            context={
+                "to_compile": len(planned["to_compile"]),
+                "deleted": len(planned["deleted"]),
+                "moved": len(planned["moved"]),
+            })
         finished_at = now_iso()
+        recorder.record(
+            stage="run", event_type="run_finished", severity="info",
+            message="orchestrator run finished",
+            context={"exit_code": 0, "exit_reason": "dry-run"})
         summary_path = write_last_orchestrate_json(
             state_root, run_id=ctx.run_id, started_at=ctx.started_at,
             finished_at=finished_at, exit_code=0, exit_reason="dry-run",
-            counts=counts, manifest_delta={"added": [], "removed": [], "changed": []})
+            counts=counts, manifest_delta={"added": [], "removed": [], "changed": []},
+            event_log_path=recorder.events_path,
+            event_log_failed=recorder.event_log_failed,
+            quarantined_sources=_quarantined_sources(recorder),
+            **_event_alarm_counts(recorder))
+        alarm_counts = _event_alarm_counts(recorder)
+        counts.update(alarm_counts)
         return OrchestrateResult(
             run_id=ctx.run_id, exit_code=0, exit_reason="dry-run", counts=counts,
             manifest_delta={"added": [], "removed": [], "changed": []},
-            summary_path=summary_path, planned=planned)
+            summary_path=summary_path, event_log_path=recorder.events_path,
+            event_log_failed=recorder.event_log_failed,
+            quarantined_sources=_quarantined_sources(recorder), planned=planned)
 
     try:
         with GraphDB(graph_path) as g:
@@ -421,17 +574,77 @@ def run(
             # --- compile queue: NEW/CHANGED (+ MOVED+CHANGED) ---
             for source_id in scan.to_compile:
                 scan_entry = files_by_id[source_id]
+                recorder.record(
+                    stage="source", event_type="source_started", severity="info",
+                    message="source processing started", source_id=source_id,
+                    context={"action": scan_entry.action})
                 enrich = enrich_one(
                     source_path=vault_root / source_id, source_id=source_id,
                     runs_root=runs_root, run_id=ctx.run_id,
                     provider=provider, model=model,
                     force_signal=pipeline.force_signal, force_noise=pipeline.force_noise)
                 if enrich.outcome == "enrich_failed":
-                    abort = ("enrich", source_id, enrich.error)
-                    break
+                    failure = _last_failure(
+                        ctx=ctx,
+                        stage="pass1_enrich",
+                        exception_type="Pass1EnrichError",
+                        error=enrich.error,
+                        artifacts=enrich.artifacts,
+                    )
+                    recorder.record(
+                        stage="pass1_enrich", event_type="source_quarantined",
+                        severity="source_quarantine",
+                        message="Pass-1 enrich failed",
+                        source_id=source_id,
+                        exception_type="Pass1EnrichError",
+                        error=enrich.error,
+                        artifacts=enrich.artifacts)
+                    if not enrich.raw_response_available:
+                        recorder.record(
+                            stage="pass1_enrich",
+                            event_type="raw_response_unavailable",
+                            severity="warning",
+                            message="Pass-1 raw response unavailable for failure",
+                            source_id=source_id,
+                            context={"reason": "model call failed before a response "
+                                      "body was captured"})
+                    full_manifest = _commit_source_failure(
+                        source_id=source_id,
+                        run_state=source_state_update.RUN_STATE_ERROR_INGEST,
+                        failure=failure,
+                        scan_entry=scan_entry.to_dict(),
+                        prior_manifest=full_manifest,
+                        state_root=state_root,
+                        ctx=ctx,
+                    )
+                    counts["sources_failed"] += 1
+                    continue
+                _check_invariant(
+                    enrich.parsed_envelope is not None
+                    and enrich.body is not None
+                    and bool(enrich.post_embed_hash)
+                    and enrich.post_embed_mtime is not None,
+                    recorder=recorder,
+                    code="pass1_success_payload_complete",
+                    stage="pass1_enrich",
+                    source_id=source_id,
+                    message="Pass-1 success must return envelope, body, post-embed hash, and mtime.",
+                    context={"outcome": enrich.outcome},
+                )
                 counts["sources_enriched"] += 1
+                recorder.record(
+                    stage="pass1_enrich", event_type="pass1_enrich_completed",
+                    severity="info",
+                    message="Pass-1 enrich completed",
+                    source_id=source_id,
+                    context={"outcome": enrich.outcome})
 
                 if enrich.parsed_envelope["kdb_signal"] == "noise":
+                    recorder.record(
+                        stage="pass1_gate", event_type="pass1_gate_noise",
+                        severity="info",
+                        message="source gated as noise",
+                        source_id=source_id)
                     full_manifest = _commit_noise_source(
                         source_id=source_id, post_embed_hash=enrich.post_embed_hash,
                         post_embed_mtime=enrich.post_embed_mtime,
@@ -439,6 +652,11 @@ def run(
                         state_root=state_root, ctx=ctx)
                     counts["sources_noise"] += 1
                     continue
+                recorder.record(
+                    stage="pass1_gate", event_type="pass1_gate_signal",
+                    severity="debug",
+                    message="source gated as signal",
+                    source_id=source_id)
 
                 result = compile_source(
                     source_id=source_id, body=enrich.body,
@@ -446,8 +664,82 @@ def run(
                     conn=g.conn, vault_root=vault_root, state_root=state_root, ctx=ctx,
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens)
                 if not result.ok:
-                    abort = (result.failure_stage or "compile", source_id, result.error)
-                    break
+                    _check_invariant(
+                        bool(result.failure_stage) and bool(result.error),
+                        recorder=recorder,
+                        code="compile_failure_payload_complete",
+                        stage=result.failure_stage or "pass2_compile",
+                        source_id=source_id,
+                        message="Failed compile_source result must expose failure_stage and error.",
+                        context={
+                            "failure_stage": result.failure_stage,
+                            "exception_type": result.exception_type,
+                        },
+                    )
+                    recorder.record(
+                        stage=result.failure_stage or "pass2_compile",
+                        event_type="source_quarantined",
+                        severity="source_quarantine",
+                        message="Pass-2 compile failed",
+                        source_id=source_id,
+                        exception_type=result.exception_type,
+                        error=result.error,
+                        context={"failure_stage": result.failure_stage},
+                        artifacts=result.artifacts)
+                    if "raw_response" not in result.artifacts:
+                        recorder.record(
+                            stage=result.failure_stage or "pass2_compile",
+                            event_type="raw_response_unavailable",
+                            severity="warning",
+                            message="Pass-2 raw response unavailable for failure",
+                            source_id=source_id,
+                            context={
+                                "failure_stage": result.failure_stage,
+                                "reason": "failure occurred before a response body "
+                                          "was captured or the lower layer exposed "
+                                          "only metadata",
+                            },
+                            artifacts=result.artifacts)
+                    full_manifest = _commit_source_failure(
+                        source_id=source_id,
+                        run_state=source_state_update.RUN_STATE_ERROR_COMPILE,
+                        failure=_last_failure(
+                            ctx=ctx,
+                            stage=result.failure_stage or "pass2_compile",
+                            exception_type=result.exception_type,
+                            error=result.error,
+                            artifacts=result.artifacts,
+                        ),
+                        scan_entry=scan_entry.to_dict(),
+                        prior_manifest=full_manifest,
+                        state_root=state_root,
+                        ctx=ctx,
+                        current_hash=enrich.post_embed_hash,
+                        current_mtime=enrich.post_embed_mtime,
+                    )
+                    counts["sources_failed"] += 1
+                    continue
+                _check_invariant(
+                    result.cr is not None
+                    and len(result.cr.get("compiled_sources", [])) == 1
+                    and result.cr["compiled_sources"][0].get("source_id") == source_id,
+                    recorder=recorder,
+                    code="compile_success_single_source_cr",
+                    stage="pass2_compile",
+                    source_id=source_id,
+                    message="Successful compile_source must return exactly one compiled source for the current source_id.",
+                    context={
+                        "compiled_source_count": (
+                            len(result.cr.get("compiled_sources", []))
+                            if result.cr is not None else None
+                        ),
+                    },
+                )
+                recorder.record(
+                    stage="pass2_compile", event_type="pass2_compile_completed",
+                    severity="info",
+                    message="Pass-2 compile completed",
+                    source_id=source_id)
 
                 commit = _commit_source(
                     cr=result.cr, source_id=source_id,
@@ -456,11 +748,61 @@ def run(
                     scan_entry=scan_entry.to_dict(), prior_manifest=full_manifest,
                     vault_root=vault_root, state_root=state_root, conn=g.conn, ctx=ctx)
                 if not commit.ok:
-                    abort = (commit.failure_stage or "commit", source_id, commit.error)
-                    break
+                    severity = ("run_fatal" if commit.failure_stage == "manifest_post_graph"
+                                else "source_quarantine")
+                    recorder.record(
+                        stage=commit.failure_stage or "commit",
+                        event_type=("run_fatal" if severity == "run_fatal"
+                                    else "source_quarantined"),
+                        severity=severity,
+                        message="source commit failed",
+                        source_id=source_id,
+                        exception_type=commit.exception_type,
+                        error=commit.error,
+                        context={"failure_stage": commit.failure_stage,
+                                 "graph_committed": commit.graph_committed})
+                    if severity == "run_fatal":
+                        abort = (commit.failure_stage or "commit", source_id, commit.error)
+                        break
+                    full_manifest = _commit_source_failure(
+                        source_id=source_id,
+                        run_state=source_state_update.RUN_STATE_ERROR_COMMIT,
+                        failure=_last_failure(
+                            ctx=ctx,
+                            stage=commit.failure_stage or "commit",
+                            exception_type=commit.exception_type,
+                            error=commit.error,
+                            artifacts={},
+                        ),
+                        scan_entry=scan_entry.to_dict(),
+                        prior_manifest=full_manifest,
+                        state_root=state_root,
+                        ctx=ctx,
+                        current_hash=enrich.post_embed_hash,
+                        current_mtime=enrich.post_embed_mtime,
+                    )
+                    counts["sources_failed"] += 1
+                    continue
+                _check_invariant(
+                    commit.graph_committed
+                    and commit.next_manifest is not None
+                    and commit.cr is not None,
+                    recorder=recorder,
+                    code="commit_success_payload_complete",
+                    stage="commit",
+                    source_id=source_id,
+                    message="Successful source commit must expose graph_committed, next_manifest, and cr.",
+                    context={"pages_written": len(commit.pages_written)},
+                )
                 full_manifest = commit.next_manifest
                 accumulated_crs.append(commit.cr)
                 counts["sources_compiled"] += 1
+                recorder.record(
+                    stage="commit", event_type="source_commit_completed",
+                    severity="info",
+                    message="source commit completed",
+                    source_id=source_id,
+                    context={"pages_written": len(commit.pages_written)})
                 if limit is not None and counts["sources_compiled"] >= limit:
                     limit_reached = True
                     break
@@ -477,45 +819,95 @@ def run(
                     full_manifest = _commit_reconcile_op(
                         op, moved_entry=moved_entry, prior_manifest=full_manifest,
                         conn=g.conn, state_root=state_root, ctx=ctx)
+                    recorder.record(
+                        stage="reconcile", event_type="reconcile_completed",
+                        severity="info",
+                        message="source reconcile op completed",
+                        source_id=(op.to_path if op.type == "MOVED" else op.path),
+                        context={"op": op.to_dict()})
                     if op.type == "MOVED":
                         counts["sources_moved"] += 1
                     else:
                         counts["sources_deleted"] += 1
 
-                finalize_stats = _finalize(
-                    g.conn, accumulated_crs, state_root=state_root, ctx=ctx,
-                    dry_run=dry_run)
+                if accumulated_crs:
+                    finalize_stats = _finalize(
+                        g.conn, accumulated_crs, state_root=state_root, ctx=ctx,
+                        dry_run=dry_run)
+                    recorder.record(
+                        stage="finalize", event_type="finalize_completed",
+                        severity="info",
+                        message="finalize completed",
+                        context=finalize_stats)
+                else:
+                    recorder.record(
+                        stage="finalize", event_type="finalize_skipped",
+                        severity="warning",
+                        message="finalize skipped because no sources committed",
+                        context={"committed_sources": 0})
+    except OrchestratorInvariantError as e:
+        crashed_reason = f"invariant:{e.code}"
     except Exception as e:  # unexpected — still write the summary, then propagate
         crashed_reason = f"unexpected:{type(e).__name__}"
+        recorder.record(
+            stage="unexpected", event_type="run_fatal", severity="run_fatal",
+            message="unexpected orchestrator exception",
+            exception_type=type(e).__name__, error=str(e))
         raise
     finally:
         finished_at = now_iso()
         if crashed_reason is not None:
             exit_code, exit_reason = 1, crashed_reason
-            counts["sources_failed"] = 1
-            failed_source, failure_stage = None, "unexpected"
+            counts["sources_failed"] = max(counts["sources_failed"], 1)
+            failed_source = None
+            failure_stage = (
+                "invariant_violation"
+                if crashed_reason.startswith("invariant:")
+                else "unexpected"
+            )
         elif abort is not None:
             stage, sid, _err = abort
             exit_code, exit_reason = 1, f"{stage}:{sid}"
-            counts["sources_failed"] = 1
+            counts["sources_failed"] = max(counts["sources_failed"], 1)
             failed_source, failure_stage = sid, stage
         elif limit_reached:
-            exit_code, exit_reason = 0, "limit-reached"
+            exit_code = 0
+            exit_reason = (
+                "limit-reached-with-quarantines"
+                if counts["sources_failed"] > 0
+                else "limit-reached"
+            )
+            failed_source, failure_stage = None, None
+        elif counts["sources_failed"] > 0:
+            exit_code, exit_reason = 0, "completed_with_quarantines"
             failed_source, failure_stage = None, None
         else:
             exit_code, exit_reason = 0, "ok"
             failed_source, failure_stage = None, None
         delta = _manifest_delta(prior_full, full_manifest)
+        recorder.record(
+            stage="run", event_type="run_finished", severity="info",
+            message="orchestrator run finished",
+            context={"exit_code": exit_code, "exit_reason": exit_reason})
+        alarm_counts = _event_alarm_counts(recorder)
+        counts.update(alarm_counts)
+        quarantined_sources = _quarantined_sources(recorder)
         summary_path = write_last_orchestrate_json(
             state_root, run_id=ctx.run_id, started_at=ctx.started_at,
             finished_at=finished_at, exit_code=exit_code, exit_reason=exit_reason,
-            counts=counts, manifest_delta=delta, finalize=finalize_stats)
+            counts=counts, manifest_delta=delta, finalize=finalize_stats,
+            event_log_path=recorder.events_path,
+            event_log_failed=recorder.event_log_failed,
+            quarantined_sources=quarantined_sources,
+            **alarm_counts)
 
     return OrchestrateResult(
         run_id=ctx.run_id, exit_code=exit_code, exit_reason=exit_reason,
         counts=counts, manifest_delta=delta, finalize=finalize_stats,
         failed_source=failed_source, failure_stage=failure_stage,
-        summary_path=summary_path)
+        summary_path=summary_path, event_log_path=recorder.events_path,
+        event_log_failed=recorder.event_log_failed,
+        quarantined_sources=quarantined_sources)
 
 
 # ---------- CLI ----------
@@ -541,7 +933,24 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="stop after N signal sources have been compiled; "
                         "noise is free and does not count. Finalize still runs "
                         "over the compiled batch. Remainder is picked up next run.")
+    p.add_argument("--log-level", choices=["warning", "info", "debug"],
+                   help="operator-visible logging level; explicit value wins "
+                        "over --verbose/--debug aliases")
+    p.add_argument("--verbose", action="store_true",
+                   help="alias for --log-level info when --log-level is omitted")
+    p.add_argument("--debug", action="store_true",
+                   help="alias for --log-level debug when --log-level is omitted")
     return p
+
+
+def _resolve_log_level(args: argparse.Namespace) -> OrchestratorLogLevel:
+    if args.log_level is not None:
+        return args.log_level
+    if args.debug:
+        return "debug"
+    if args.verbose:
+        return "info"
+    return "warning"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -560,7 +969,8 @@ def main(argv: list[str] | None = None) -> int:
     res = run(
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
         graph_path=graph_path, provider=args.provider, model=args.model,
-        max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit)
+        max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit,
+        log_level=_resolve_log_level(args))
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")
@@ -576,6 +986,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  finalize: {res.finalize}")
     if res.summary_path is not None:
         print(f"  summary: {res.summary_path}")
+    if res.event_log_path is not None:
+        print(f"  event_log: {res.event_log_path}")
+    if c.get("sources_quarantined", 0) > 0:
+        source_ids = ", ".join(
+            str(row.get("source_id")) for row in res.quarantined_sources
+            if row.get("source_id") is not None)
+        detail = f" ({source_ids})" if source_ids else ""
+        print(f"  alarm: quarantined={c['sources_quarantined']}{detail}",
+              file=sys.stderr)
     return res.exit_code
 
 

@@ -371,7 +371,7 @@ def build_scan_result(
 ) -> ScanResult:
     # Task #66 (D46): compile eligibility is one honest comparison.
     # A file compiles iff its current content hash differs from the hash
-    # last successfully compiled. compile_state plays no part.
+    # last successfully compiled. run_state plays no part.
     to_compile = sorted(e.path for e in files if e.current_hash != e.compiled_hash)
     to_skip = sorted(e.path for e in files if e.current_hash == e.compiled_hash)
 

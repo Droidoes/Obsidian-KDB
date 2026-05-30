@@ -34,6 +34,29 @@ class Pass1CallResult:
 class Pass1CallError(Exception):
     """Pass-1 call failed after all retries."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw_response_text: str = "",
+        request_prompt: str | None = None,
+        request_model: str | None = None,
+        request_provider: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        latency_ms: int = 0,
+        attempts: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.raw_response_text = raw_response_text
+        self.request_prompt = request_prompt
+        self.request_model = request_model
+        self.request_provider = request_provider
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.latency_ms = latency_ms
+        self.attempts = attempts
+
 
 def call_pass1(
     *, source_text: str, source_path: str, provider: str, model: str,
@@ -85,7 +108,19 @@ def call_pass1(
             last_err = e
             log.warning(f"Pass-1 attempt {attempt}/{max_retries+1} failed: {e}")
             continue
+        except Exception as e:
+            last_err = e
+            log.warning(f"Pass-1 attempt {attempt}/{max_retries+1} failed: {e}")
+            continue
 
     raise Pass1CallError(
-        f"Pass-1 call failed after {max_retries + 1} attempts: {last_err}"
+        f"Pass-1 call failed after {max_retries + 1} attempts: {last_err}",
+        raw_response_text=raw_text,
+        request_prompt=prompt,
+        request_model=model,
+        request_provider=provider,
+        input_tokens=(last_resp.input_tokens if last_resp is not None else 0),
+        output_tokens=(last_resp.output_tokens if last_resp is not None else 0),
+        latency_ms=(last_resp.latency_ms if last_resp is not None else 0),
+        attempts=max_retries + 1,
     )

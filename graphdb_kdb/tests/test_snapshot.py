@@ -38,7 +38,7 @@ def _seed_graph(graph_dir: Path) -> None:
         "compiled_sources": [
             {
                 "source_id": "KDB/raw/paper.md",
-                "compile_meta": {"compile_state": "compiled"},
+                "compile_meta": {"run_state": "in_graph_db"},
                 "pages": [
                     {
                         "slug": "summary-paper",
@@ -295,7 +295,7 @@ def _seed_graph_with_aliases(graph_dir: Path) -> None:
         "compiled_sources": [
             {
                 "source_id": "KDB/raw/equities.md",
-                "compile_meta": {"compile_state": "compiled"},
+                "compile_meta": {"run_state": "in_graph_db"},
                 "pages": [
                     {
                         "slug": "apple-inc",
@@ -410,7 +410,7 @@ def _seed_graph_with_domains(graph_dir: Path) -> None:
         "compiled_sources": [
             {
                 "source_id": "KDB/raw/markets.md",
-                "compile_meta": {"compile_state": "compiled"},
+                "compile_meta": {"run_state": "in_graph_db"},
                 "pages": [
                     {
                         "slug": "alpha",

@@ -53,7 +53,7 @@ def make_compiled_source(
     source_id: str,
     pages: list[dict],
     *,
-    compile_state: str = "compiled",
+    run_state: str = "in_graph_db",
     source_hash: str = "sha256:abc",
     source_meta: dict | None = None,
 ) -> dict:
@@ -68,7 +68,7 @@ def make_compiled_source(
         "source_id": source_id,
         "pages": pages,
         "compile_meta": {
-            "compile_state": compile_state,
+            "run_state": run_state,
             "hash": source_hash,
         },
     }

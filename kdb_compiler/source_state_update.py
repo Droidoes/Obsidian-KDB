@@ -1,6 +1,6 @@
 """source_state_update — source-meta-only manifest writer (D50 Phase F).
 
-The sole writer of manifest.json (schema v3.0). Owns the source lifecycle
+The sole writer of manifest.json (schema v3.1). Owns the source lifecycle
 (sources{}, tombstones{}, runs{}, stats{}) with NO dependency on pages,
 orphans, links, or any ontology concept. GraphDB owns all ontology state;
 this module owns source-file metadata only.
@@ -9,12 +9,12 @@ Source record shape:
     Identity:   source_id, canonical_path, status
     File meta:  file_type, hash, mtime, size_bytes
     Lifecycle:  first_seen_at, last_seen_at, last_compiled_at, last_run_id,
-                compile_state, compile_count, last_compiled_hash
+                run_state, compile_count, last_compiled_hash, last_failure
     Compile:    summary_slug, compiled_title, parser, compiler_version,
                 schema_version_used
     History:    previous_versions[]
 
-Migration: `migrate_manifest_to_source_state()` performs the one-time v1.0→v3.0
+Migration: `migrate_manifest_to_source_state()` performs the one-time v1.0→v3.1
 strip (removes pages{}, orphans{}, page-derived stats). The orchestrator
 auto-migrates on first read if the loaded manifest has pages{}.
 """
@@ -40,11 +40,57 @@ _SOURCE_META_FIELDS = frozenset({
     "source_id", "canonical_path", "status", "file_type",
     "hash", "mtime", "size_bytes",
     "first_seen_at", "last_seen_at", "last_compiled_at", "last_run_id",
-    "compile_state", "compile_count", "last_compiled_hash",
+    "run_state", "compile_count", "last_compiled_hash", "last_failure",
     "summary_slug", "compiled_title", "parser", "compiler_version",
     "schema_version_used", "previous_versions",
     "pipeline_id",                       # Task #91: owning ingestion pipeline
 })
+
+RUN_STATE_PENDING = "pending"
+RUN_STATE_NO_GRAPH_DB = "no_graph_db"
+RUN_STATE_IN_GRAPH_DB = "in_graph_db"
+RUN_STATE_ERROR_INGEST = "error_ingest"
+RUN_STATE_ERROR_COMPILE = "error_compile"
+RUN_STATE_ERROR_COMMIT = "error_commit"
+
+RUN_STATES = frozenset({
+    RUN_STATE_PENDING,
+    RUN_STATE_NO_GRAPH_DB,
+    RUN_STATE_IN_GRAPH_DB,
+    RUN_STATE_ERROR_INGEST,
+    RUN_STATE_ERROR_COMPILE,
+    RUN_STATE_ERROR_COMMIT,
+})
+
+_LEGACY_COMPILE_STATE_MAP = {
+    "pending": RUN_STATE_PENDING,
+    "metadata_only": RUN_STATE_NO_GRAPH_DB,
+    "no_graph_db": RUN_STATE_NO_GRAPH_DB,
+    "compiled": RUN_STATE_IN_GRAPH_DB,
+    "recompiled": RUN_STATE_IN_GRAPH_DB,
+    "in_graph_db": RUN_STATE_IN_GRAPH_DB,
+    "error": RUN_STATE_ERROR_COMPILE,
+    "error_ingest": RUN_STATE_ERROR_INGEST,
+    "error_compile": RUN_STATE_ERROR_COMPILE,
+    "error_commit": RUN_STATE_ERROR_COMMIT,
+}
+
+
+def _normalize_run_state(value: Any) -> str:
+    if value in RUN_STATES:
+        return value
+    return _LEGACY_COMPILE_STATE_MAP.get(str(value), RUN_STATE_PENDING)
+
+
+def _migrate_run_state_fields(rec: dict) -> dict:
+    """Move deprecated compile_state into run_state in one source record."""
+    out = dict(rec)
+    if "run_state" not in out:
+        out["run_state"] = _normalize_run_state(out.get("compile_state"))
+    else:
+        out["run_state"] = _normalize_run_state(out.get("run_state"))
+    out.pop("compile_state", None)
+    return out
 
 
 # ---- shape bootstrap ----
@@ -85,9 +131,10 @@ def _seed_source_record(file_entry: dict, ctx: RunContext) -> dict:
         "last_seen_at": ctx.started_at,
         "last_compiled_at": None,
         "last_run_id": ctx.run_id,
-        "compile_state": "metadata_only" if is_binary else "pending",
+        "run_state": RUN_STATE_NO_GRAPH_DB if is_binary else RUN_STATE_PENDING,
         "compile_count": 0,
         "last_compiled_hash": file_entry["current_hash"] if is_binary else None,
+        "last_failure": None,
         "summary_slug": None,
         "compiled_title": None,
         "parser": None,
@@ -257,8 +304,9 @@ def apply_compile_sources(state: dict, compile_result: dict,
                 "hash": source_hash, "mtime": None, "size_bytes": None,
                 "first_seen_at": ctx.started_at, "last_seen_at": ctx.started_at,
                 "last_compiled_at": None, "last_run_id": ctx.run_id,
-                "compile_state": "pending", "compile_count": 0,
+                "run_state": RUN_STATE_PENDING, "compile_count": 0,
                 "last_compiled_hash": None,
+                "last_failure": None,
                 "summary_slug": None, "compiled_title": None,
                 "parser": None, "compiler_version": None,
                 "schema_version_used": None,
@@ -266,11 +314,12 @@ def apply_compile_sources(state: dict, compile_result: dict,
             }
             state["sources"][source_id] = rec
 
-        rec["compile_state"] = "recompiled" if rec.get("compile_count", 0) > 0 else "compiled"
+        rec["run_state"] = RUN_STATE_IN_GRAPH_DB
         rec["compile_count"] = int(rec.get("compile_count", 0)) + 1
         rec["last_compiled_at"] = ctx.started_at
         rec["last_run_id"] = ctx.run_id
         rec["last_compiled_hash"] = source_hash
+        rec["last_failure"] = None
         rec["summary_slug"] = summary_slug
         rec["compiled_title"] = summary_title
         rec["parser"] = "markdown-basic"
@@ -282,10 +331,51 @@ def apply_compile_sources(state: dict, compile_result: dict,
     for path in sorted(missing):
         rec = state["sources"].get(path)
         if rec is not None:
-            rec["compile_state"] = "error"
+            rec["run_state"] = RUN_STATE_ERROR_COMPILE
             rec["last_run_id"] = ctx.run_id
         ctx.append_log("warning", f"missing compile output for {path}", path=path)
 
+    return state
+
+
+def apply_source_failure(
+    state: dict,
+    last_scan: dict,
+    ctx: RunContext,
+    *,
+    source_id: str,
+    run_state: str,
+    last_failure: dict,
+) -> dict:
+    """Mark one source as failed without advancing last_compiled_hash.
+
+    Used by the orchestrator quarantine path. The scan reconciliation records
+    what bytes were seen this run; `last_compiled_hash` remains the last
+    successfully graphed/no-graph-handled content hash, so the source remains
+    eligible on the next run.
+    """
+    if run_state not in {
+        RUN_STATE_ERROR_INGEST,
+        RUN_STATE_ERROR_COMPILE,
+        RUN_STATE_ERROR_COMMIT,
+    }:
+        raise ValueError(f"source failure run_state must be error_*, got {run_state!r}")
+
+    state = apply_scan_reconciliation(state, last_scan, ctx)
+    rec = state["sources"].get(source_id)
+    if rec is None:
+        file_entry = next(
+            (fe for fe in last_scan.get("files", []) if fe.get("path") == source_id),
+            None,
+        )
+        if file_entry is None:
+            raise KeyError(f"cannot mark failure for unknown source {source_id!r}")
+        rec = _seed_source_record(file_entry, ctx)
+        state["sources"][source_id] = rec
+
+    rec["run_state"] = run_state
+    rec["last_run_id"] = ctx.run_id
+    rec["last_failure"] = copy.deepcopy(last_failure)
     return state
 
 
@@ -311,11 +401,12 @@ def recompute_source_stats(state: dict, compile_result: dict, ctx: RunContext,
     return state
 
 
-# ---- v1.0 → v3.0 migration (Phase F) ----
+# ---- v1.0/v3.0 → v3.1 migration (Phase F + Task #96 C1 prep) ----
 
 def _migrate_source_record(rec: dict) -> dict:
     """Strip ontology fields from a v1.0 source record, add missing v3.0 fields."""
     out = {k: v for k, v in rec.items() if k not in _ONTOLOGY_SOURCE_FIELDS}
+    out = _migrate_run_state_fields(out)
     # v1.0 had summary_page (path); v3.0 uses summary_slug (bare slug).
     if "summary_slug" not in out and "summary_page" in rec:
         sp = rec["summary_page"]
@@ -328,20 +419,26 @@ def _migrate_source_record(rec: dict) -> dict:
     out.setdefault("parser", None)
     out.setdefault("compiler_version", None)
     out.setdefault("schema_version_used", None)
+    out.setdefault("last_failure", None)
     return out
 
 
 def migrate_manifest_to_source_state(old: dict) -> dict:
-    """One-time deterministic migration: v1.0 manifest → v3.0 source-state.
+    """One-time deterministic migration: old manifest → v3.1 source-state.
 
     Strips pages{}, orphans{}, and page-derived stats. Preserves source
     lineage (first_seen_at, previous_versions, compile_count, etc.),
     tombstones, runs, settings, kb_id, and created_at.
 
-    Idempotent — safe to call on an already-migrated v3.0 dict.
+    Idempotent — safe to call on an already-migrated v3.1 dict.
     """
     if old.get("schema_version") == SOURCE_STATE_SCHEMA_VERSION:
-        return copy.deepcopy(old)
+        result = copy.deepcopy(old)
+        result["sources"] = {
+            sid: _migrate_run_state_fields(rec)
+            for sid, rec in result.get("sources", {}).items()
+        }
+        return result
 
     result: dict[str, Any] = {
         "schema_version": SOURCE_STATE_SCHEMA_VERSION,
@@ -368,13 +465,21 @@ class SourceStateInvariantError(AssertionError):
 
 
 def assert_source_state_invariants(state: dict) -> None:
-    """Structural sanity checks for source-state-only manifest (v3.0)."""
+    """Structural sanity checks for source-state-only manifest (v3.1)."""
     if state.get("schema_version") != SOURCE_STATE_SCHEMA_VERSION:
         raise SourceStateInvariantError(
             f"schema_version mismatch: got {state.get('schema_version')!r}, "
             f"expected {SOURCE_STATE_SCHEMA_VERSION!r}"
         )
     for sid, rec in state.get("sources", {}).items():
+        if "compile_state" in rec:
+            raise SourceStateInvariantError(
+                f"source {sid} still has deprecated compile_state"
+            )
+        if rec.get("run_state") not in RUN_STATES:
+            raise SourceStateInvariantError(
+                f"source {sid} has invalid run_state {rec.get('run_state')!r}"
+            )
         tomb = state.get("tombstones", {}).get(sid)
         if tomb and tomb.get("status") == "deleted":
             raise SourceStateInvariantError(
@@ -445,6 +550,42 @@ def build_source_state_update(
     next_state = apply_compile_sources(next_state, compile_result, last_scan, ctx)
     next_state = recompute_source_stats(
         next_state, compile_result, ctx, prior_runs=prior_runs_snapshot,
+    )
+
+    payload = _build_stage_payload(prior, next_state, last_scan)
+    return next_state, payload
+
+
+def build_source_failure_update(
+    prior: dict,
+    last_scan: dict,
+    ctx: RunContext,
+    *,
+    source_id: str,
+    run_state: str,
+    last_failure: dict,
+) -> tuple[dict, dict]:
+    """Pure. Return source-state update for a quarantined source failure."""
+    next_state = copy.deepcopy(prior) if prior else {}
+    prior_runs_snapshot: dict[str, Any] = {}
+    if next_state:
+        prior_runs_snapshot = dict(next_state.get("runs", {}))
+        prior_runs_snapshot["total_runs"] = next_state.get("stats", {}).get("total_runs", 0)
+
+    next_state = ensure_source_state_shape(next_state, ctx=ctx)
+    next_state = apply_source_failure(
+        next_state,
+        last_scan,
+        ctx,
+        source_id=source_id,
+        run_state=run_state,
+        last_failure=last_failure,
+    )
+    next_state = recompute_source_stats(
+        next_state,
+        {"success": False, "compiled_sources": []},
+        ctx,
+        prior_runs=prior_runs_snapshot,
     )
 
     payload = _build_stage_payload(prior, next_state, last_scan)

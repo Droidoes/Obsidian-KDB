@@ -66,7 +66,7 @@ class VerifyResult:
 
 _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("status", "status"),
-    ("compile_state", "ingest_state"),
+    ("run_state", "ingest_state"),
     ("compile_count", "ingest_count"),
     ("hash", "hash"),
     ("file_type", "file_type"),
@@ -259,7 +259,7 @@ def _manifest_sources(manifest: dict) -> dict[str, dict[str, Any]]:
         out[sid] = {
             "source_id": sid,
             "status": src.get("status"),
-            "compile_state": src.get("compile_state"),
+            "run_state": src.get("run_state"),
             "compile_count": int(src.get("compile_count") or 0),
             "hash": src.get("hash"),
             "file_type": src.get("file_type"),

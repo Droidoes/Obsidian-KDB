@@ -139,7 +139,7 @@ def _upsert_source_from_scan(
     defaults (including last_run_id='') so later Phase 3 increments work
     cleanly.
 
-    Naming note: producer's payload uses 'compile_state/count/last_compiled_at';
+    Naming note: producer's manifest uses 'run_state/compile_count/last_compiled_at';
     graph-side renames to 'ingest_*' per D-A2. Reads stay producer-side; writes
     use graph-side names.
 
@@ -410,14 +410,21 @@ def _update_source_ingest_state(
     `cr.compiled_sources`. Increments `ingest_count` and stamps ingest
     metadata. Phase 1 left these fields untouched (Codex v2 NEW M1).
 
-    Naming note: reads producer-side 'compile_state' (from compile_meta /
-    compiled_source dicts); writes graph-side 'ingest_state' per D-A2.
+    Naming note: reads producer-side 'run_state' when present; accepts legacy
+    'compile_state' from older replay payloads; writes graph-side 'ingest_state'
+    per D-A2.
     """
     source_id = cs.get("source_id")
     if not source_id:
         return
     compile_meta = cs.get("compile_meta", {}) or {}
-    state = compile_meta.get("compile_state") or cs.get("compile_state") or "compiled"
+    state = _normalize_source_run_state(
+        compile_meta.get("run_state")
+        or cs.get("run_state")
+        or compile_meta.get("compile_state")
+        or cs.get("compile_state")
+        or "in_graph_db"
+    )
     conn.execute(
         """
         MATCH (s:Source {source_id: $sid})
@@ -426,6 +433,18 @@ def _update_source_ingest_state(
         """,
         {"sid": source_id, "ts": now, "state": state, "run_id": run_id},
     )
+
+
+def _normalize_source_run_state(value: object) -> str:
+    """Normalize producer lifecycle state before writing Source.ingest_state."""
+    aliases = {
+        "metadata_only": "no_graph_db",
+        "compiled": "in_graph_db",
+        "recompiled": "in_graph_db",
+        "error": "error_compile",
+    }
+    text = str(value)
+    return aliases.get(text, text)
 
 
 def _write_source_meta(

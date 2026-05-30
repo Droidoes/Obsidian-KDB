@@ -352,11 +352,11 @@ def _sha256_text(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _src_rec(*, hash, last_compiled_hash, compile_state="compiled"):
+def _src_rec(*, hash, last_compiled_hash, run_state="in_graph_db"):
     return {
         "hash": hash, "mtime": 0.0, "size_bytes": 1,
         "file_type": "markdown", "is_binary": False,
-        "compile_state": compile_state, "last_compiled_hash": last_compiled_hash,
+        "run_state": run_state, "last_compiled_hash": last_compiled_hash,
     }
 
 
@@ -407,7 +407,7 @@ def test_error_state_does_not_force_recompile(tmp_path: Path) -> None:
     _write(raw / "a.md", "hello")
     h = _sha256_text("hello")
     _write_manifest(state, {
-        "KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=h, compile_state="error"),
+        "KDB/raw/a.md": _src_rec(hash=h, last_compiled_hash=h, run_state="error_compile"),
     })
     res = scan(vault, write=False)
     assert res.to_skip == ["KDB/raw/a.md"]

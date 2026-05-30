@@ -488,7 +488,7 @@ def test_phase1_does_not_mutate_ingest_state(graph_dir):
         )
         s1 = gdb.get_source(src)
     assert s1.ingest_count == 1
-    assert s1.ingest_state == "compiled"
+    assert s1.ingest_state == "in_graph_db"
     assert s1.last_ingested_at == t1
 
     # Scan-only run (no compiled_sources). Phase 1 fires; Phase 3 does NOT.
@@ -501,7 +501,7 @@ def test_phase1_does_not_mutate_ingest_state(graph_dir):
         s2 = gdb.get_source(src)
     # Compile-state fields are UNCHANGED.
     assert s2.ingest_count == 1
-    assert s2.ingest_state == "compiled"
+    assert s2.ingest_state == "in_graph_db"
     assert s2.last_ingested_at == t1  # still the original compile timestamp
     # Scan-derived fields ARE refreshed.
     assert s2.hash == "sha256:v2"

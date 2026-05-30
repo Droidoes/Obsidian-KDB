@@ -215,7 +215,7 @@ def test_source_state_preflight_reports_divergences(graph_dir, tmp_path):
             "sources": {
                 SRC_ID: {
                     "status": "active",
-                    "compile_state": "compiled",
+                    "run_state": "in_graph_db",
                     "compile_count": 1,
                     "hash": "sha256:abc",
                     "file_type": "markdown",
@@ -224,7 +224,7 @@ def test_source_state_preflight_reports_divergences(graph_dir, tmp_path):
                 },
                 "KDB/raw/extra.md": {
                     "status": "active",
-                    "compile_state": "compiled",
+                    "run_state": "in_graph_db",
                     "compile_count": 1,
                     "hash": "sha256:xyz",
                     "file_type": "markdown",
@@ -260,7 +260,7 @@ def test_divergences_are_properly_tagged(graph_dir, tmp_path):
             "sources": {
                 SRC_ID: {
                     "status": "active",
-                    "compile_state": "compiled",
+                    "run_state": "in_graph_db",
                     "compile_count": 1,
                     "hash": "sha256:abc",
                     "file_type": "markdown",
@@ -269,7 +269,7 @@ def test_divergences_are_properly_tagged(graph_dir, tmp_path):
                 },
                 "KDB/raw/ghost.md": {
                     "status": "active",
-                    "compile_state": "compiled",
+                    "run_state": "in_graph_db",
                     "compile_count": 1,
                     "hash": "sha256:ghost",
                     "file_type": "markdown",

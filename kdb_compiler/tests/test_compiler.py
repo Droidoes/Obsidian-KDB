@@ -537,6 +537,7 @@ def test_compile_one_parse_failure_writes_resp_stats_record(
     assert record["extract_ok"] is True
     assert record["parse_ok"] is False
     assert record["parsed_summary"] is None
+    assert record["raw_response_text"] == '{"source_id": "x",,}'
 
 
 def test_compile_one_schema_failure_writes_resp_stats_record(
@@ -579,6 +580,7 @@ def test_compile_one_schema_failure_writes_resp_stats_record(
     # parsed_summary populated from the parsed (even if schema-invalid) payload
     assert record["parsed_summary"] is not None
     assert record["parsed_summary"]["page_count"] == 1
+    assert record["raw_response_text"] == json.dumps(bad_payload)
 
 
 def test_compile_one_semantic_failure_writes_resp_stats_record(
