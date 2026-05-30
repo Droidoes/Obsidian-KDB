@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from kdb_compiler.call_model import ModelRequest, call_model, ModelResponse
 from kdb_compiler.ingestion.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
-from kdb_compiler.ingestion.pass1_schema import validate_envelope
+from kdb_compiler.ingestion.pass1_schema import validate_llm_content, PASS1_SCHEMA_VERSION
 
 log = logging.getLogger(__name__)
 
@@ -60,11 +60,16 @@ def call_pass1(
             last_resp = resp
             raw_text = resp.text
             parsed = json.loads(raw_text)
-            # Stamp prompt_version + model into the parsed envelope
-            # (LLM emits "model_to_be_filled"; we replace with the actual model id)
+            # STAGE 1 (Task #95): validate the LLM-owned content fields ONLY,
+            # BEFORE stamping. This is the retry gate — bad content (off-enum
+            # domain, >10 keys, missing other_reason) triggers another attempt.
+            validate_llm_content(parsed)
+            # Code-stamp the 3 code-owned scalar fields the LLM no longer emits.
+            # The `override` block is constructed downstream by apply_overrides
+            # (overrides.py), which is its sole producer.
             parsed["prompt_version"] = PASS1_PROMPT_VERSION
             parsed["model"] = model
-            validate_envelope(parsed)
+            parsed["schema_version"] = PASS1_SCHEMA_VERSION
             return Pass1CallResult(
                 parsed=parsed,
                 raw_response_text=raw_text,

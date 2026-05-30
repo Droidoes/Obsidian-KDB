@@ -11,7 +11,7 @@ from kdb_compiler.ingestion.pass1_caller import Pass1CallResult
 def _signal_parsed(model: str = "m") -> dict:
     return {
         "kdb_signal": "signal",
-        "domain": "value-investing", "source_type": "essay", "author": "T",
+        "domain": "value-investing", "source_type": "paper", "author": "T",
         "summary": "A summary.", "key_themes": ["a"],
         "entity_search_keys": ["value-investing"],
         "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,

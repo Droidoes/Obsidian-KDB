@@ -1,5 +1,41 @@
 # kdb_compiler/tests/test_pass1_overrides.py
-from kdb_compiler.ingestion.overrides import apply_overrides
+from kdb_compiler.ingestion.overrides import apply_overrides, build_override_block
+
+
+# --- Task #95: single-producer override constructor ---
+
+def test_build_override_block_default_is_null_block():
+    block = build_override_block("signal")
+    assert block == {
+        "applied": None, "rule": None, "match": None,
+        "llm_original": "signal", "reject_reason_cleared": None,
+    }
+
+
+def test_build_override_block_carries_all_fields():
+    block = build_override_block(
+        "noise", applied="signal", rule="force_signal",
+        match="curated/**", reject_reason_cleared="diary-shaped",
+    )
+    assert block == {
+        "applied": "signal", "rule": "force_signal", "match": "curated/**",
+        "llm_original": "noise", "reject_reason_cleared": "diary-shaped",
+    }
+
+
+def test_apply_overrides_uses_the_constructor_shape():
+    """The block apply_overrides emits is structurally identical to the
+    constructor's output (one source of truth)."""
+    env = {
+        "kdb_signal": "signal", "domain": "ai-ml", "source_type": "post",
+        "author": None, "summary": "x", "key_themes": [], "entity_search_keys": [],
+        "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,
+        "prompt_version": "1.0.0", "model": "x", "schema_version": 1,
+        "override": build_override_block("signal"), "other_reason": None,
+    }
+    out = apply_overrides(env, source_path="essays/x.md",
+                          force_signal=(), force_noise=())
+    assert set(out["override"].keys()) == set(build_override_block("signal").keys())
 
 
 def _envelope(kdb_signal="signal", reject_reason=None):

@@ -1,0 +1,42 @@
+# AIML__Programing-Algorithm__Vibe Coding__VS Code system prompts at different levels
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "ai-ml",
+  "source_type": "blog",
+  "author": null,
+  "summary": "This document explains the four-layer architecture of VS Code Copilot instructions: Global Instructions, Custom Agents, Slash Commands, and Skills, including their purposes, file structures, and a decision matrix for where to place rules.",
+  "key_themes": [
+    "copilot-architecture",
+    "prompt-engineering",
+    "ai-coding-assistant",
+    "instruction-layering",
+    "custom-agents"
+  ],
+  "entity_search_keys": [
+    "vs-code",
+    "github-copilot",
+    "prompt-engineering",
+    "custom-agent",
+    "slash-command",
+    "skill",
+    "instruction-layering",
+    "copilot-architecture",
+    "ai-assistant",
+    "code-generation"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

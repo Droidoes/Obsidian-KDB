@@ -1,0 +1,41 @@
+# Daily Notes__2026-05-25
+# outcome: enriched_force_overridden
+{
+  "kdb_signal": "noise",
+  "domain": "software",
+  "source_type": "daily-note",
+  "author": null,
+  "summary": "Daily note documenting architectural session for Task #88 pipeline design, including decisions, reviewer feedback, and deferred tasks for domain canonicalization list NW-4.",
+  "key_themes": [
+    "pipeline architecture",
+    "domain classification",
+    "architectural decisions",
+    "review process"
+  ],
+  "entity_search_keys": [
+    "codex",
+    "deepseek",
+    "qwen",
+    "gemini",
+    "grok",
+    "knowledge-graph",
+    "pipeline-architecture",
+    "domain-classification",
+    "pass-1",
+    "pass-2"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": "Workflow/task tracking and meta-commentary without substantive knowledge content.",
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "noise",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

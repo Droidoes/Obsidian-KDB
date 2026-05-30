@@ -1,0 +1,42 @@
+# AIML__Programing-Algorithm__Vibe Coding__Windows-ports-not-visible-WSL-Ubuntu
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "software",
+  "source_type": "documentation",
+  "author": null,
+  "summary": "Troubleshooting guide for port conflicts in WSL2 caused by Hyper-V port exclusion and stale service workers. Documents steps using netstat, netsh, and port switching to resolve 404 errors when serving static files via Python HTTP server.",
+  "key_themes": [
+    "wsl2-troubleshooting",
+    "hyper-v-port-exclusion",
+    "stale-service-worker",
+    "network-diagnostics",
+    "port-conflict-resolution"
+  ],
+  "entity_search_keys": [
+    "wsl2",
+    "hyper-v",
+    "service-worker",
+    "netstat",
+    "netsh",
+    "python-http-server",
+    "localhost",
+    "port-forwarding",
+    "google-oauth",
+    "troubleshooting"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

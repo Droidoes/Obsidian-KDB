@@ -14,6 +14,26 @@ from pathlib import PurePosixPath
 from typing import Iterable
 
 
+def build_override_block(
+    llm_original: str, *,
+    applied: str | None = None, rule: str | None = None,
+    match: str | None = None, reject_reason_cleared: str | None = None,
+) -> dict:
+    """Single producer of the `override` audit block (Task #95).
+
+    Every override block in the system is constructed here — apply_overrides
+    (success path) + enrich.py's empty/failed paths — so there is one source of
+    truth for the block's structure. `llm_original` is the model's pre-override
+    kdb_signal; the other fields default to null (no override fired)."""
+    return {
+        "applied": applied,
+        "rule": rule,
+        "match": match,
+        "llm_original": llm_original,
+        "reject_reason_cleared": reject_reason_cleared,
+    }
+
+
 def _match_any(source_path: str, globs: Iterable[str]) -> str | None:
     """Return the first matching glob, or None. Match against POSIX-style
     vault-relative path (forward slashes only)."""
@@ -41,13 +61,9 @@ def apply_overrides(
 
     if noise_match is not None:
         envelope["kdb_signal"] = "noise"
-        envelope["override"] = {
-            "applied": "noise",
-            "rule": "force_noise",
-            "match": noise_match,
-            "llm_original": llm_original,
-            "reject_reason_cleared": None,
-        }
+        envelope["override"] = build_override_block(
+            llm_original, applied="noise", rule="force_noise", match=noise_match,
+        )
         # reject_reason survival: if LLM had emitted signal, synthesize a reject_reason
         if llm_original == "signal":
             envelope["reject_reason"] = (
@@ -56,23 +72,14 @@ def apply_overrides(
     elif signal_match is not None:
         envelope["kdb_signal"] = "signal"
         cleared = envelope["reject_reason"]
-        envelope["override"] = {
-            "applied": "signal",
-            "rule": "force_signal",
-            "match": signal_match,
-            "llm_original": llm_original,
-            "reject_reason_cleared": cleared,
-        }
+        envelope["override"] = build_override_block(
+            llm_original, applied="signal", rule="force_signal", match=signal_match,
+            reject_reason_cleared=cleared,
+        )
         # reject_reason survival: if LLM had emitted noise + reject_reason, clear it.
         if llm_original == "noise":
             envelope["reject_reason"] = None
     else:
-        envelope["override"] = {
-            "applied": None,
-            "rule": None,
-            "match": None,
-            "llm_original": llm_original,
-            "reject_reason_cleared": None,
-        }
+        envelope["override"] = build_override_block(llm_original)
 
     return envelope

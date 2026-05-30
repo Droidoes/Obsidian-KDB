@@ -1,0 +1,33 @@
+# AIML__Claude__cowork-health-report-2026-03-23
+# outcome: enriched
+{
+  "kdb_signal": "noise",
+  "domain": "software",
+  "source_type": "daily-note",
+  "author": null,
+  "summary": "A weekly health check report for a Cowork VM, verifying VM status, mounted folders, and cache maintenance schedule. Contains status tables and minor actionable items like a broken symlink.",
+  "key_themes": [
+    "vm-health",
+    "system-administration"
+  ],
+  "entity_search_keys": [
+    "vm-health",
+    "claude-cowork",
+    "ollama",
+    "obsidian-vault"
+  ],
+  "confidence": 1.0,
+  "uncertainty_reason": null,
+  "reject_reason": "Workflow/operational report with no substantive knowledge content.",
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "noise",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

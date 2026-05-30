@@ -1,0 +1,42 @@
+# AIML__Claude__Claude Desktop Cowork VM -- Service Failed to Start Fix
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "ai-ml",
+  "source_type": "documentation",
+  "author": null,
+  "summary": "A detailed troubleshooting guide for fixing Claude Desktop's Cowork VM service failure on Windows 11. Covers root cause (MSIX package corruption, stale cache, missing Hyper-V tools), step-by-step fix (process kill, cache nuke, service reset, Hyper-V reconfiguration), and automated weekly health check setup.",
+  "key_themes": [
+    "Claude Desktop Cowork VM troubleshooting",
+    "Hyper-V repair",
+    "MSIX cleanup",
+    "Windows service management",
+    "automated health checks"
+  ],
+  "entity_search_keys": [
+    "cowork-vm",
+    "hyper-v",
+    "msix",
+    "vm-bundle",
+    "windows-service",
+    "claude-desktop",
+    "vm-boot",
+    "cowork-svc",
+    "hns",
+    "hyper-v-administrators"
+  ],
+  "confidence": 1.0,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

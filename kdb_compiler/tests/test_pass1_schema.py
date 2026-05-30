@@ -3,8 +3,69 @@ import json
 import pytest
 from kdb_compiler.ingestion.pass1_schema import (
     Pass1Envelope, OverrideAudit, validate_envelope, build_json_schema,
-    PASS1_SCHEMA_VERSION,
+    build_content_schema, validate_llm_content, PASS1_SCHEMA_VERSION,
 )
+
+
+# --- Task #95: Stage-1 content-only validation ---
+
+def _content_only():
+    """The 11 LLM-owned fields — NO override/model/prompt_version/schema_version."""
+    return {
+        "kdb_signal": "signal", "domain": "ai-ml",
+        "source_type": "paper", "author": None, "summary": "Test.",
+        "key_themes": [], "entity_search_keys": [],
+        "confidence": 0.8, "uncertainty_reason": None,
+        "reject_reason": None, "other_reason": None,
+    }
+
+
+def test_validate_llm_content_accepts_content_without_code_owned_fields():
+    """Stage 1 must NOT require override/model/prompt_version/schema_version —
+    the prompt no longer asks the LLM for them (Task #95)."""
+    validate_llm_content(_content_only())  # no raise
+
+
+def test_validate_llm_content_rejects_bad_kdb_signal():
+    payload = _content_only()
+    payload["kdb_signal"] = "maybe"
+    with pytest.raises(ValueError, match="kdb_signal"):
+        validate_llm_content(payload)
+
+
+def test_validate_llm_content_rejects_off_enum_domain():
+    payload = _content_only()
+    payload["domain"] = "not-a-domain"
+    with pytest.raises(ValueError, match="domain"):
+        validate_llm_content(payload)
+
+
+def test_validate_llm_content_rejects_more_than_10_entity_search_keys():
+    payload = _content_only()
+    payload["entity_search_keys"] = [f"k{i}" for i in range(11)]
+    with pytest.raises(ValueError, match="entity_search_keys"):
+        validate_llm_content(payload)
+
+
+def test_validate_llm_content_keeps_other_reason_rule():
+    payload = _content_only()
+    payload["source_type"] = "other"
+    payload["other_reason"] = None
+    with pytest.raises(ValueError, match="other_reason"):
+        validate_llm_content(payload)
+
+
+def test_content_schema_excludes_code_owned_required():
+    req = build_content_schema()["required"]
+    for f in ("override", "model", "prompt_version", "schema_version"):
+        assert f not in req
+    assert "kdb_signal" in req and "other_reason" in req
+
+
+def test_full_schema_still_requires_code_owned():
+    req = build_json_schema()["required"]
+    for f in ("override", "model", "prompt_version", "schema_version"):
+        assert f in req
 
 
 def test_envelope_dataclass_has_graphdb_input_section():

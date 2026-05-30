@@ -1,0 +1,42 @@
+# Life-Health-Wellbeing__Andrew Weil Breath Method
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "health-wellbeing",
+  "source_type": "other",
+  "author": null,
+  "summary": "Describes two breathing exercises recommended by Dr. Andrew Weil: Breath Counting (a Zen meditation technique) and the 4-7-8 Breath (Relaxing Breath) for reducing anxiety and improving sleep. The exercises are explained step-by-step with the aim of enhancing concentration and promoting relaxation.",
+  "key_themes": [
+    "breathing-exercises",
+    "meditation",
+    "relaxation",
+    "integrative-medicine",
+    "anxiety-reduction"
+  ],
+  "entity_search_keys": [
+    "andrew-weil",
+    "breath-counting",
+    "4-7-8-breath",
+    "zen-meditation",
+    "relaxation-technique",
+    "integrative-medicine",
+    "mindfulness",
+    "meditation",
+    "anxiety-reduction",
+    "sleep-improvement"
+  ],
+  "confidence": 0.9,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": "User-created note summarizing breathing exercises from multiple sources; does not fit a single predefined publication form."
+}

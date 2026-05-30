@@ -25,7 +25,7 @@ def _clear_prompt_caches():
 
 def _fm() -> SourceFrontmatter:
     return SourceFrontmatter(
-        kdb_signal="signal", domain="value-investing", source_type="essay",
+        kdb_signal="signal", domain="value-investing", source_type="paper",
         author="Test", summary="A summary.", key_themes=["a"],
         entity_search_keys=["value-investing"],
     )
@@ -210,7 +210,7 @@ def test_write_last_orchestrate_json_fields(tmp_path):
 
 def _pass1_signal_envelope(model: str = "m") -> dict:
     return {
-        "kdb_signal": "signal", "domain": "value-investing", "source_type": "essay",
+        "kdb_signal": "signal", "domain": "value-investing", "source_type": "paper",
         "author": "T", "summary": "S.", "key_themes": ["a"],
         "entity_search_keys": ["value-investing"],
         "confidence": 0.9, "uncertainty_reason": None, "reject_reason": None,

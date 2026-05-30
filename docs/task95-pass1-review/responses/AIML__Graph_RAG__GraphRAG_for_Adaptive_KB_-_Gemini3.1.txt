@@ -1,0 +1,44 @@
+# AIML__Graph RAG__GraphRAG for Adaptive KB - Gemini3.1
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "ai-ml",
+  "source_type": "blog",
+  "author": null,
+  "summary": "Describes a headless GraphRAG system for automating qualitative investment research, using LLM extraction, PostgreSQL knowledge graph, and adaptive delta loops to compound investment insights.",
+  "key_themes": [
+    "graphrag",
+    "value-investing",
+    "qualitative-research",
+    "llm-extraction",
+    "knowledge-graph",
+    "scuttlebutt-method",
+    "delta-protocol"
+  ],
+  "entity_search_keys": [
+    "graphrag",
+    "value-investing",
+    "scuttlebutt-method",
+    "delta-protocol",
+    "warren-buffett",
+    "charlie-munger",
+    "philip-fisher",
+    "supabase",
+    "pgvector",
+    "tosh-capital"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

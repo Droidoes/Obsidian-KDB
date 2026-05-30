@@ -1,0 +1,40 @@
+# Daily Notes__2026-05-27
+# outcome: enriched_force_overridden
+{
+  "kdb_signal": "noise",
+  "domain": "software",
+  "source_type": "daily-note",
+  "author": null,
+  "summary": "Daily log of software development tasks, decisions, and progress on Task #90 and #91, including blueprint drafting, panel reviews, code commits, and closure ceremonies.",
+  "key_themes": [
+    "task-tracking",
+    "software-development-workflow",
+    "decision-logging",
+    "code-review",
+    "project-management"
+  ],
+  "entity_search_keys": [
+    "task90",
+    "task91",
+    "context-loader",
+    "kdb-orchestrate",
+    "graph-context-loader",
+    "codex",
+    "deepseek",
+    "joseph"
+  ],
+  "confidence": 0.9,
+  "uncertainty_reason": null,
+  "reject_reason": "Source is a daily note/work log of project tasks and decisions; no substantive standalone knowledge content.",
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "noise",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

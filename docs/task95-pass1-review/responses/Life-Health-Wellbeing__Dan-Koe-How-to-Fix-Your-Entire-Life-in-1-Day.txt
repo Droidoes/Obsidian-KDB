@@ -1,0 +1,42 @@
+# Life-Health-Wellbeing__Dan-Koe-How-to-Fix-Your-Entire-Life-in-1-Day
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "psychology",
+  "source_type": "blog",
+  "author": "Dan Koe",
+  "summary": "The article argues that lasting life change requires transforming your identity and unconscious goals, not just surface-level resolutions. It outlines psychological stages of ego development and provides a one-day self-reflection protocol to uncover hidden motives, break patterns, and create a compelling new direction.",
+  "key_themes": [
+    "behavior-change",
+    "identity-transformation",
+    "goal-setting",
+    "self-reflection",
+    "psychology"
+  ],
+  "entity_search_keys": [
+    "dan-koe",
+    "naval-ravikant",
+    "alfred-adler",
+    "maxwell-maltz",
+    "ego-development",
+    "cybernetics",
+    "anti-vision",
+    "pattern-interrupt",
+    "human-3-0",
+    "spiral-dynamics"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

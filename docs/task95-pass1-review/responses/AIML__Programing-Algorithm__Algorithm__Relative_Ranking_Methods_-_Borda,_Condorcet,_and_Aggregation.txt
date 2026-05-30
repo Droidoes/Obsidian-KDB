@@ -1,0 +1,42 @@
+# AIML__Programing-Algorithm__Algorithm__Relative Ranking Methods - Borda, Condorcet, and Aggregation
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "software",
+  "source_type": "documentation",
+  "author": null,
+  "summary": "This document explains the Borda count and Condorcet methods for relative ranking, comparing their philosophies, mechanics, strengths, weaknesses, and use cases. Borda rewards consistency across full rankings, while Condorcet selects the candidate who wins all pairwise head-to-head comparisons. The choice depends on whether one values consensus or majority dominance.",
+  "key_themes": [
+    "relative-ranking",
+    "borda-count",
+    "condorcet-method",
+    "voting-theory",
+    "preference-aggregation"
+  ],
+  "entity_search_keys": [
+    "relative-ranking",
+    "borda-count",
+    "condorcet-method",
+    "pairwise-comparison",
+    "majority-rule",
+    "clone-proof",
+    "strategic-voting",
+    "preference-aggregation",
+    "condorcet-cycle",
+    "consensus"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

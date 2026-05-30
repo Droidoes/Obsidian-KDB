@@ -1,0 +1,42 @@
+# AIML__Obsidian__Obsidian CLI Skills
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "software",
+  "source_type": "blog",
+  "author": null,
+  "summary": "Guide on mastering Obsidian CLI commands, covering command discovery, daily operations, graph control, vault health, and automation. Includes pro tips for WSL and GPU setups.",
+  "key_themes": [
+    "obsidian-cli",
+    "cli-commands",
+    "vault-automation",
+    "wsl-setup",
+    "knowledge-graph"
+  ],
+  "entity_search_keys": [
+    "obsidian",
+    "obsidian-cli",
+    "cli-commands",
+    "vault-automation",
+    "wsl",
+    "nvidia",
+    "knowledge-graph",
+    "daily-note",
+    "graph-open",
+    "base-query"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

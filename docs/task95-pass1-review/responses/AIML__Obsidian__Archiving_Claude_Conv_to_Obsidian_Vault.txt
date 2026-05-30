@@ -1,0 +1,42 @@
+# AIML__Obsidian__Archiving Claude Conv to Obsidian Vault
+# outcome: enriched
+{
+  "kdb_signal": "signal",
+  "domain": "software",
+  "source_type": "blog",
+  "author": null,
+  "summary": "This guide explains how to archive Claude Code JSONL conversation files into an Obsidian vault as markdown notes, using a Python script to parse and convert the files. It covers the conversion pipeline, automation via cron, and Obsidian-based knowledge management (tagging, Dataview queries, MOCs).",
+  "key_themes": [
+    "Claude conversation archiving",
+    "Obsidian knowledge base",
+    "Python script automation",
+    "JSONL parsing",
+    "cron job scheduling"
+  ],
+  "entity_search_keys": [
+    "claude",
+    "obsidian",
+    "python",
+    "jsonl",
+    "cron",
+    "dataview",
+    "templater",
+    "map-of-content",
+    "obsidian-vault",
+    "knowledge-base"
+  ],
+  "confidence": 0.95,
+  "uncertainty_reason": null,
+  "reject_reason": null,
+  "prompt_version": "1.1.0",
+  "model": "model_to_be_filled",
+  "schema_version": 1,
+  "override": {
+    "applied": null,
+    "rule": null,
+    "match": null,
+    "llm_original": "signal",
+    "reject_reason_cleared": null
+  },
+  "other_reason": null
+}

@@ -1,24 +1,27 @@
 {# kdb_compiler/ingestion/pass1_prompt.j2 #}
-You are the Pass-1 enrichment classifier for a personal knowledge-base
-pipeline. Given a source markdown document, emit a structured JSON envelope
-classifying its substantive content along multiple axes.
+You are given ONE markdown document from a personal knowledge base. Your job:
+decide whether it holds substantive knowledge worth keeping, and if so, tag
+what it is about and what form it takes. Return your judgment as a single JSON
+object.
 
 Judge content substance only. Do not consider file location, file name, or
-any non-content metadata in your judgment. If uncertain whether content is
-signal or noise, bias to signal (preserve for human review).
+any non-content metadata in your judgment.
 
-## Output schema
+## Output
 
-Return ONLY a valid JSON object with these fields. Do not include the source
-body in your output. Do not include any explanatory text outside the JSON.
+Return ONLY a single valid JSON object — no markdown code fences, no
+explanatory text before or after it, and do not echo the source body.
 
-### GraphDB-input section
+### Classification fields
 
 - `kdb_signal`: "signal" or "noise". Pick "signal" if the source contains
   substantive knowledge content (idea, observation, explanation, framework,
   theory, case study, argument, analysis, novel information). Pick "noise"
   if the source is workflow/task tracking, conversational fragments, logs,
   empty content, or meta-commentary without substantive content.
+  When uncertain, prefer "signal" (preserve for human review). When a source
+  mixes task-tracking with substantive design decisions, rationale, or
+  reusable knowledge, choose "signal".
 
 - `domain`: one of the following IDs. Pick the one that best captures the
   source's primary substantive subject. If genuinely uncategorizable, pick
@@ -52,90 +55,90 @@ relationships.)
 - {{ boundary }}
 {%- endfor %}
 
-### Other GraphDB-input fields
+### Content-description fields
 
 - `author`: string or null. Extract the source's primary author from the
   content if attributable; null otherwise.
-- `summary`: 1-3 sentences distilling the substantive content. Plain prose.
-- `key_themes`: list of 2-5 strings. Finer-grained themes than `domain`
-  capturing substantive sub-topics within the source.
-- `entity_search_keys`: list of up to 10 kebab-case slug candidates designed
-  to seed a downstream context-loader that looks up existing entities in a
-  knowledge graph. The graph contains entities for notable people, concepts,
-  frameworks, themes, and named ideas across many sources. These keys are
-  matched against entity slugs by exact string comparison, with an
-  alias-resolution layer that maps known variant slugs (and "ALIAS_OF"
-  edges) to their canonical form — so emit the slug form most likely to
-  match an existing entity record directly, and avoid emitting multiple
-  variants of the same entity. What to include:
-    1. Each item in `key_themes` (themes themselves are often already entity slugs).
-    2. Common slug variants of each theme — but only if the variant is a
-       distinct concept (e.g., for "value-investing" the related concept
-       "intrinsic-value" is a distinct entity, not an orthographic variant
-       of "value-investing").
-    3. Slugs for entity names mentioned substantively in the source —
-       people, organizations, named frameworks. Prefer the full-name form
-       ("warren-buffett") over surname-only ("buffett"). Do NOT emit both
-       forms for the same individual; the alias-resolution layer handles
-       variant matching downstream.
-    4. Closely-related concepts that are substantively referenced or
-       load-bearing to the source's core argument, and that you believe
-       likely have their own entity records in a well-populated graph
-       (e.g., a framework's foundational principle, a theory's key critic).
-       Emit only concepts the source actually engages — do not include
+- `summary`: 1-3 sentences of plain prose distilling the substantive content.
+  Neutral, descriptive register — no marketing or promotional phrasing.
+- `key_themes`: list of 2-5 strings naming finer-grained sub-topics than
+  `domain`. Format: lowercase kebab-case slugs (e.g. "value-investing",
+  "attention-mechanism", "breathing-exercises") — not natural-language
+  phrases with spaces.
+- `entity_search_keys`: list of lowercase kebab-case slugs for the notable
+  people, organizations, concepts, frameworks, and named ideas this source
+  substantively engages. These seed a later entity lookup, so emit the
+  canonical form a reader would search by. Guidance:
+    1. Include each `key_themes` slug.
+    2. Add slugs for entities named substantively in the source — people,
+       organizations, named frameworks. Prefer the full-name form
+       ("warren-buffett") over surname-only ("buffett"); emit only one form
+       per entity.
+    3. Add closely-related concepts the source actually engages as distinct
+       ideas (e.g. a framework's foundational principle). Do NOT include
        speculative or weak co-occurrences.
-  Format: lowercase, hyphens between words, no spaces, no punctuation other
-  than hyphens. Conjunctions and prepositions inside slugs are fine
-  ("graham-and-doddsville", "theory-of-mind"). Prefer specificity over
-  breadth: "value-investing" beats "investing"; "graham-and-doddsville"
-  beats "investors". Cap at 10 keys total; aim for 5–10.
+  Emit only the most relevant keys — those that genuinely identify what this
+  source is about. Prefer a few high-precision slugs over a long list; do not
+  pad. Hard cap: 10. Format: lowercase, hyphens between words, no spaces, no
+  punctuation other than hyphens (conjunctions/prepositions inside slugs are
+  fine: "graham-and-doddsville", "theory-of-mind"). Prefer specificity:
+  "value-investing" beats "investing".
 
   Examples (domain-diverse):
 
-  - Finance: source about Warren Buffett and Charlie Munger's value-investing
-    approach with key_themes ["value-investing", "margin-of-safety",
-    "compounding"]
+  - Finance: a source about Warren Buffett and Charlie Munger's value-investing
+    approach (key_themes ["value-investing", "margin-of-safety", "compounding"])
     → `["value-investing", "margin-of-safety", "compounding",
          "warren-buffett", "charlie-munger", "intrinsic-value",
-         "berkshire-hathaway", "circle-of-competence",
-         "graham-and-doddsville"]`.
+         "circle-of-competence"]`.
 
-  - AI/ML: source about transformer architectures in NLP with key_themes
-    ["attention-mechanism", "self-attention", "transformers"]
+  - AI/ML: a source about transformer architectures in NLP
+    (key_themes ["attention-mechanism", "self-attention", "transformers"])
     → `["attention-mechanism", "self-attention", "transformers",
-         "multi-head-attention", "positional-encoding",
-         "sequence-to-sequence", "bert", "scaling-laws"]`.
+         "multi-head-attention", "positional-encoding", "bert"]`.
 
-  - Philosophy: source about Rawls' veil of ignorance with key_themes
-    ["veil-of-ignorance", "distributive-justice", "original-position"]
+  - Philosophy: a source about Rawls' veil of ignorance
+    (key_themes ["veil-of-ignorance", "distributive-justice", "original-position"])
     → `["veil-of-ignorance", "distributive-justice", "original-position",
-         "john-rawls", "theory-of-justice", "social-contract",
-         "kantian-ethics"]`.
+         "john-rawls", "theory-of-justice", "social-contract"]`.
 
-### Audit section
+### Confidence fields
 
-- `confidence`: 0.0 to 1.0. Your confidence in the kdb_signal call.
-- `uncertainty_reason`: string or null. When `confidence < 0.6` OR when
-  `kdb_signal=signal` but with doubt, populate with the doubt's nature.
-- `reject_reason`: string or null. When `kdb_signal=noise`, populate with
-  the reason.
-- `prompt_version`: "{{ prompt_version }}"
-- `model`: the model name will be filled in by the deterministic layer.
-  Emit "model_to_be_filled" here.
-- `schema_version`: {{ schema_version }}
-- `override`: emit `{"applied": null, "rule": null, "match": null,
-  "llm_original": <your kdb_signal>, "reject_reason_cleared": null}`.
-  The deterministic post-processor will overwrite this block if an override
-  fires.
-- `other_reason`: string or null. Required-non-null when `source_type=other`
-  — name the specific missing publication form. Null otherwise.
+- `confidence`: a number from 0.0 to 1.0 — your confidence in the `kdb_signal`
+  call. Calibrate: 0.9-1.0 clear-cut; 0.7-0.89 reasonable with some ambiguity;
+  0.5-0.69 genuine uncertainty between two options; below 0.5 essentially a guess.
+- `uncertainty_reason`: string or null. Populate with the nature of the doubt
+  whenever `confidence < 0.9` OR you resolved a close boundary call (e.g. a
+  domain or source_type that was nearly a tie). Null otherwise.
+- `reject_reason`: string or null. When `kdb_signal` is "noise", populate with
+  the reason. Null otherwise.
+- `other_reason`: string or null. Required (non-null) when `source_type` is
+  "other" — name the specific missing publication form. Null otherwise.
+
+## Output template
+
+Return exactly this structure (fill in the values; keep these keys, no others):
+
+```
+{
+  "kdb_signal": "signal" | "noise",
+  "domain": "<one domain id from the list>",
+  "source_type": "<one source_type id from the list>",
+  "author": "<name>" | null,
+  "summary": "<1-3 sentence plain-prose summary>",
+  "key_themes": ["<kebab-slug>", ...],
+  "entity_search_keys": ["<kebab-slug>", ...],
+  "confidence": 0.0,
+  "uncertainty_reason": "<reason>" | null,
+  "reject_reason": "<reason>" | null,
+  "other_reason": "<reason>" | null
+}
+```
 
 ## Source content to classify
-
-Path: {{ source_path }}
 
 ```
 {{ source_text }}
 ```
 
-Return the JSON envelope now.
+Return the JSON object now.

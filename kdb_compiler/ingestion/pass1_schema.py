@@ -55,79 +55,123 @@ class Pass1Envelope:
     other_reason: str | None = None  # required-non-null when source_type=other (OQ-NW7-7)
 
 
+# The 11 fields the Pass-1 LLM is contractually responsible for (Task #95).
+# The 4 code-owned fields (prompt_version / model / schema_version / override)
+# are stamped/constructed by the deterministic layer AFTER the call — the LLM
+# is never asked for them. See docs/task95-pass1-review/two-stage-validation-sketch.md.
+_CONTENT_REQUIRED = [
+    "kdb_signal", "domain", "source_type", "author", "summary",
+    "key_themes", "entity_search_keys",
+    "confidence", "uncertainty_reason", "reject_reason", "other_reason",
+]
+_CODE_OWNED_REQUIRED = ["prompt_version", "model", "schema_version", "override"]
+
+
+def _content_properties(domain_ids: list[str], source_type_ids: list[str]) -> dict[str, Any]:
+    """JSON-Schema property defs for the 11 LLM-owned fields."""
+    return {
+        "kdb_signal": {"enum": ["signal", "noise"]},
+        "domain": {"enum": domain_ids},
+        "source_type": {"enum": source_type_ids},
+        "author": {"type": ["string", "null"]},
+        "summary": {"type": "string"},
+        "key_themes": {"type": "array", "items": {"type": "string"}},
+        # Shape validation only (string array, ≤10); content-format
+        # quality is a prompt-discipline concern. Downstream T2-rewrite
+        # (Task #90) does Entity.slug PK lookup — imperfect slugs simply
+        # miss, no harm. A strict regex caused real LLM emissions like
+        # "see's-candies" to reject the whole envelope (2026-05-26 night
+        # live fire); empirically too strict for prompt-only discipline.
+        "entity_search_keys": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 10,
+        },
+        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        "uncertainty_reason": {"type": ["string", "null"]},
+        "reject_reason": {"type": ["string", "null"]},
+        "other_reason": {"type": ["string", "null"]},
+    }
+
+
+_CODE_OWNED_PROPERTIES: dict[str, Any] = {
+    "prompt_version": {"type": "string"},
+    "model": {"type": "string"},
+    "schema_version": {"type": "integer"},
+    "override": {
+        "type": "object",
+        "required": ["applied", "rule", "match", "llm_original", "reject_reason_cleared"],
+        "properties": {
+            "applied": {"enum": ["signal", "noise", None]},
+            "rule": {"enum": ["force_signal", "force_noise", None]},
+            "match": {"type": ["string", "null"]},
+            "llm_original": {"enum": ["signal", "noise"]},
+            "reject_reason_cleared": {"type": ["string", "null"]},
+        },
+    },
+}
+
+
+def build_content_schema() -> dict[str, Any]:
+    """STAGE 1 schema (Task #95): the 11 LLM-owned fields ONLY.
+
+    Used to validate the raw LLM output BEFORE the deterministic layer stamps
+    the code-owned fields. Does NOT require override/model/prompt_version/
+    schema_version — the prompt no longer asks the LLM for them, so their
+    absence is correct. This is the validation whose failure gates the retry."""
+    domain_ids = [d.id for d in load_domains()]
+    source_type_ids = [s.id for s in load_source_types()]
+    return {
+        "type": "object",
+        "required": list(_CONTENT_REQUIRED),
+        "properties": _content_properties(domain_ids, source_type_ids),
+    }
+
+
 def build_json_schema() -> dict[str, Any]:
-    """Build the JSON Schema used by the LLM's structured-output mode.
-    Enums are loaded from domains.json + source_types.json (D-NW4-4 /
+    """STAGE 2 schema (Task #95): the COMPLETE assembled envelope.
+
+    11 content fields + 4 code-owned fields. Run on the final envelope AFTER
+    stamping + override construction — the gap-closer that nothing validated
+    before. Enums are loaded from domains.json + source_types.json (D-NW4-4 /
     D-NW7-3 — config is the source of truth, not Python constants)."""
     domain_ids = [d.id for d in load_domains()]
     source_type_ids = [s.id for s in load_source_types()]
-
     return {
         "type": "object",
-        "required": [
-            "kdb_signal", "domain", "source_type", "author", "summary",
-            "key_themes", "entity_search_keys",
-            "confidence", "uncertainty_reason", "reject_reason",
-            "prompt_version", "model", "schema_version", "override",
-            "other_reason",
-        ],
+        "required": _CONTENT_REQUIRED + _CODE_OWNED_REQUIRED,
         "properties": {
-            "kdb_signal": {"enum": ["signal", "noise"]},
-            "domain": {"enum": domain_ids},
-            "source_type": {"enum": source_type_ids},
-            "author": {"type": ["string", "null"]},
-            "summary": {"type": "string"},
-            "key_themes": {"type": "array", "items": {"type": "string"}},
-            # Shape validation only (string array, ≤10); content-format
-            # quality is a prompt-discipline concern. Downstream T2-rewrite
-            # (Task #90) does Entity.slug PK lookup — imperfect slugs simply
-            # miss, no harm. A strict regex caused real LLM emissions like
-            # "see's-candies" to reject the whole envelope (2026-05-26 night
-            # live fire); empirically too strict for prompt-only discipline.
-            "entity_search_keys": {
-                "type": "array",
-                "items": {"type": "string"},
-                "maxItems": 10,
-            },
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "uncertainty_reason": {"type": ["string", "null"]},
-            "reject_reason": {"type": ["string", "null"]},
-            "prompt_version": {"type": "string"},
-            "model": {"type": "string"},
-            "schema_version": {"type": "integer"},
-            "override": {
-                "type": "object",
-                "required": ["applied", "rule", "match", "llm_original", "reject_reason_cleared"],
-                "properties": {
-                    "applied": {"enum": ["signal", "noise", None]},
-                    "rule": {"enum": ["force_signal", "force_noise", None]},
-                    "match": {"type": ["string", "null"]},
-                    "llm_original": {"enum": ["signal", "noise"]},
-                    "reject_reason_cleared": {"type": ["string", "null"]},
-                },
-            },
-            "other_reason": {"type": ["string", "null"]},
+            **_content_properties(domain_ids, source_type_ids),
+            **_CODE_OWNED_PROPERTIES,
         },
     }
 
 
-def validate_envelope(payload: dict[str, Any]) -> None:
-    """Validate a parsed JSON envelope. Raises ValueError on failure.
-
-    Uses jsonschema (already in pyproject.toml deps). Adds the OQ-NW7-7
-    cross-field rule: other_reason must be non-null when source_type='other'.
-    """
+def _validate_against(payload: dict[str, Any], schema: dict[str, Any], *, label: str) -> None:
     import jsonschema
-    schema = build_json_schema()
     try:
         jsonschema.validate(payload, schema)
     except jsonschema.ValidationError as e:
-        # Bubble up with cleaner message
         path = ".".join(str(p) for p in e.absolute_path) or "<root>"
-        raise ValueError(f"Pass-1 envelope invalid at {path}: {e.message}") from e
-
+        raise ValueError(f"Pass-1 {label} invalid at {path}: {e.message}") from e
+    # OQ-NW7-7 cross-field rule: other_reason non-null when source_type='other'.
     if payload["source_type"] == "other" and not payload.get("other_reason"):
         raise ValueError(
-            "Pass-1 envelope invalid at other_reason: "
+            f"Pass-1 {label} invalid at other_reason: "
             "must be non-null string when source_type='other' (OQ-NW7-7)"
         )
+
+
+def validate_llm_content(payload: dict[str, Any]) -> None:
+    """STAGE 1 (Task #95): validate the 11 LLM-owned fields. Raises ValueError.
+
+    This is the retry-gated validation in pass1_caller — it runs on raw LLM
+    output before any code-owned field is stamped."""
+    _validate_against(payload, build_content_schema(), label="LLM content")
+
+
+def validate_envelope(payload: dict[str, Any]) -> None:
+    """STAGE 2 (Task #95): validate the COMPLETE assembled envelope. Raises
+    ValueError. Belt-and-suspenders — catches a stamping/override-construction
+    bug before the malformed envelope is embedded."""
+    _validate_against(payload, build_json_schema(), label="envelope")

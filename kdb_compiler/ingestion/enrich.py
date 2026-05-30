@@ -10,7 +10,8 @@ from pathlib import Path
 from kdb_compiler.ingestion.config_loader import load_scope_config
 from kdb_compiler.ingestion.pass1_caller import call_pass1, Pass1CallError
 from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
-from kdb_compiler.ingestion.overrides import apply_overrides
+from kdb_compiler.ingestion.overrides import apply_overrides, build_override_block
+from kdb_compiler.ingestion.pass1_schema import validate_envelope, PASS1_SCHEMA_VERSION
 from kdb_compiler.ingestion.frontmatter_embedder import (
     embed_frontmatter, parse_existing_frontmatter,
 )
@@ -89,6 +90,9 @@ def enrich_one(
         call_result.parsed, source_path=source_id,
         force_signal=eff_force_signal, force_noise=eff_force_noise,
     )
+    # STAGE 2 (Task #95): validate the COMPLETE assembled envelope (content +
+    # stamped code-owned fields + constructed override) before it is embedded.
+    validate_envelope(envelope)
 
     embed_frontmatter(source_path, envelope)
     # Whole-file hash + mtime AFTER embed — the orchestrator stamps these into
@@ -136,9 +140,9 @@ def _empty_source_envelope(model: str) -> dict:
         "summary": "", "key_themes": [], "entity_search_keys": [],
         "confidence": 1.0, "uncertainty_reason": None,
         "reject_reason": "empty source",
-        "prompt_version": PASS1_PROMPT_VERSION, "model": model, "schema_version": 1,
-        "override": {"applied": None, "rule": None, "match": None,
-                     "llm_original": "noise", "reject_reason_cleared": None},
+        "prompt_version": PASS1_PROMPT_VERSION, "model": model,
+        "schema_version": PASS1_SCHEMA_VERSION,
+        "override": build_override_block("noise"),
         "other_reason": "empty source — no content to classify",
     }
 
@@ -168,8 +172,7 @@ def _write_sidecar_failed(runs_root, run_id, source_id, source_path,
         request={"prompt": "<see error>", "model": model},
         raw_response={"body": "", "error": error_msg},
         parsed_envelope=None,
-        override={"applied": None, "rule": None, "match": None,
-                  "llm_original": "?", "reject_reason_cleared": None},
+        override=build_override_block("?"),
         user_overrides_detected=[],
         timestamp=_local_iso(),
         outcome="enrich_failed",

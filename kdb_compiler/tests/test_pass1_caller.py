@@ -1,0 +1,73 @@
+# kdb_compiler/tests/test_pass1_caller.py
+"""Task #95: pass1_caller two-stage flow.
+
+The LLM returns CONTENT-ONLY JSON (11 fields). The caller validates it
+(Stage 1), then stamps the 3 code-owned scalar fields. The `override` block is
+NOT built here (apply_overrides owns it downstream)."""
+import json
+import pytest
+
+from kdb_compiler.ingestion import pass1_caller as caller_mod
+from kdb_compiler.ingestion.pass1_caller import call_pass1, Pass1CallError
+from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
+from kdb_compiler.ingestion.pass1_schema import PASS1_SCHEMA_VERSION
+from kdb_compiler.call_model import ModelResponse
+
+
+def _content_json(**overrides) -> str:
+    payload = {
+        "kdb_signal": "signal", "domain": "ai-ml", "source_type": "paper",
+        "author": None, "summary": "A note.", "key_themes": ["a"],
+        "entity_search_keys": ["a"], "confidence": 0.9,
+        "uncertainty_reason": None, "reject_reason": None, "other_reason": None,
+    }
+    payload.update(overrides)
+    return json.dumps(payload)
+
+
+def _fake_response(text: str) -> ModelResponse:
+    return ModelResponse(
+        text=text, input_tokens=10, output_tokens=5, latency_ms=1,
+        model="deepseek-v4-flash", provider="deepseek", raw={},
+    )
+
+
+def test_caller_stamps_code_owned_and_omits_override(monkeypatch):
+    monkeypatch.setattr(caller_mod, "call_model",
+                        lambda req: _fake_response(_content_json()))
+    res = call_pass1(source_text="body", source_path="x.md",
+                     provider="deepseek", model="deepseek-v4-flash")
+    # code-owned scalars stamped
+    assert res.parsed["prompt_version"] == PASS1_PROMPT_VERSION
+    assert res.parsed["model"] == "deepseek-v4-flash"
+    assert res.parsed["schema_version"] == PASS1_SCHEMA_VERSION
+    # override is NOT built by the caller — apply_overrides owns it
+    assert "override" not in res.parsed
+    assert res.attempts == 1
+
+
+def test_caller_retries_on_invalid_content_then_raises(monkeypatch):
+    # Always return content with an off-enum domain → Stage-1 fails every time.
+    monkeypatch.setattr(
+        caller_mod, "call_model",
+        lambda req: _fake_response(_content_json(domain="not-a-domain")),
+    )
+    with pytest.raises(Pass1CallError):
+        call_pass1(source_text="body", source_path="x.md",
+                   provider="deepseek", model="deepseek-v4-flash")
+
+
+def test_caller_recovers_on_second_attempt(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _fake_response(_content_json(domain="not-a-domain"))
+        return _fake_response(_content_json())
+
+    monkeypatch.setattr(caller_mod, "call_model", flaky)
+    res = call_pass1(source_text="body", source_path="x.md",
+                     provider="deepseek", model="deepseek-v4-flash")
+    assert res.attempts == 2
+    assert res.parsed["domain"] == "ai-ml"
