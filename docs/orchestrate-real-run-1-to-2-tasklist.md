@@ -1,5 +1,11 @@
 # Orchestrator: Real-Run-1 → Real-Run-2 Task List
 
+> **✅ ARC CLOSED 2026-05-30.** Run-2 fired; analyzed; Pass-2 `json_mode` fix
+> shipped (`1d668bf`). Gating items A/B/C done, D moot (graph-setup verified
+> clean — code only creates the parent; Kuzu makes the store), F (#98) deferred.
+> Next work tracked under **run-3** (see Re-run gate at the bottom). E (#97
+> viewer) is non-gating and still open. This doc is now historical.
+
 **Objective:** complete every gating item below before firing **real-run-2**.
 
 **Context.** Real-run-1 (2026-05-29, `deepseek-v4-flash`, test sandbox) processed
@@ -141,7 +147,16 @@ commits) — expose that.
       C-3 (`software`-over-`ai-ml`) 5/5; C-4 (`entity_search_keys` over-production) 4/5.
 - [x] CLI-reviewer no-repo-mod guardrail honored; one output file per reviewer.
 
-## F — [propose #98] Pass-1 benchmark (NW-5 revival)  **(GATING — Joseph re-confirmed 2026-05-29 night)**
+## F — [#98 DEFERRED 2026-05-30] Pass-1 benchmark (NW-5 revival)  **(NO LONGER GATING)**
+
+> **DEFERRED 2026-05-30 (Joseph).** Stay on `deepseek-v4-flash:direct` as the
+> standing Pass-1 model; no benchmark gate, no API-cost runs until revived. This
+> **un-gates real-run-2** — the benchmark is no longer a precondition. Knock-on:
+> the #95 handling-policy half (per-field repair vs all-or-nothing), which was
+> DATA-GATED on this benchmark, also stays deferred → current two-stage
+> all-or-nothing validation stands. Trigger to revive: appetite to compare models,
+> or a concrete quality complaint on Pass-1 output. Filed as Task #98 (deferred)
+> in `docs/TASKS.md`. Original scope notes retained below for revival.
 
 **Scope: DECIDE AFTER PANEL (Joseph 2026-05-29 night).** What re-confirmed this
 as the gate was a *classification-quality* lean (`software` vs `ai-ml` on
@@ -162,10 +177,36 @@ worth measuring). Candidate axes to choose among:
 
 ## Re-run gate
 
-- [ ] G — nuke the half-built test graph (`KDB/graph`, `manifest.json`,
-      `wiki/`, `state/runs/`) — do NOT resume onto it.
-- [ ] H — ⚡ **real-run-2** (Joseph fires).
-- [ ] I — hold the 8 unpushed commits until A–D land; then push as one coherent set.
+- [x] G — nuked the test graph before run-2 (do NOT resume onto it).
+- [x] H — ⚡ **real-run-2 fired 2026-05-30** (`deepseek-v4-flash`, sandbox
+      `~/Obsidian/Vault-in-place-test-run`). **Did NOT complete** — see below.
+- [x] I — push gate cleared; all commits pushed (remote `main` = `1d668bf`).
+
+### Run-2 result + analysis (2026-05-30) — ARC CLOSED, → run-3
+
+Run `2026-05-30T11-14-35_EDT`: scanned 36, enriched 11, **compiled 9**, noise 1,
+**failed 1** → `exit_code=1`, fail-fast at **Pass-2 compile** of the largest
+source (`Canonical Ontology for Financial Reports GPT5.2`, 95 KB / 11.3k words).
+
+**Root cause** (`state/llm_resp/.../*.b4f2171a.json`): deepseek emitted
+structurally-invalid JSON — `JSONDecodeError "Expecting ',' delimiter" @ char
+7296`. **Not truncation** (`stop_reason=stop`, `token_overrun=false`),
+`attempts=1`. The compile call free-formed JSON while **Pass-1, on the same
+model, already requests `json_mode=True`** and never hit this class.
+
+**Fix shipped** (`1d668bf`): `json_mode=True` on the Pass-2 `ModelRequest`
+(`compiler.py`) → provider constrains output to valid JSON. TDD test
+`test_compile_source_requests_json_mode`. **Parse-retry deliberately NOT added**
+— across both sandbox runs every source was `attempts=1`, and the one observed
+retry (Pass-1 `How_Not_to_Age`, 2 attempts) did not recover; no evidence a retry
+is warranted ([[data-before-principle]], [[feedback_no_imaginary_risk]]).
+
+**Also note:** #96 (shipped after run-2) now turns this Pass-2 failure from a
+batch-killer into a single-source **quarantine** (`error_compile`) and captures
+the raw corrupt response (B6) — so run-3 completes even if a source still fails.
+
+**This `real-run-1 → real-run-2` arc is CLOSED.** Next: **run-3** as the clean
+diagnostic run (json_mode on + #96 quarantine/observability) — Joseph fires.
 
 ## Dependencies
 
