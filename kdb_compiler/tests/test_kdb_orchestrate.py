@@ -333,3 +333,49 @@ def test_cli_lists_pipelines_when_omitted(tmp_path, capsys):
 
     assert rc == 0
     assert "vt" in capsys.readouterr().out
+
+
+# ---------- Task #99: --limit N ----------
+
+def test_run_limit_stops_after_n_compiled(tmp_path, monkeypatch):
+    """--limit N stops after N compiled (signal) sources; noise is free and
+    does not count. Finalize still runs over the compiled batch (clean stop,
+    not abort). Second source is left unprocessed — picked up on next run."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    # Two signal sources; limit=1 should compile only the first.
+    (vault / "AIML" / "a.md").write_text("# A\n\nFirst.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nSecond.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    # Scan is alphabetical → AIML/a.md compiles first. limit=1 stops before b.md.
+    compile_count = {"n": 0}
+
+    def fake_model_counting(req):
+        compile_count["n"] += 1
+        # a.md is always first; return matching source_name
+        return _fake_model(_compiled_response("a.md", "summary-a"))(req)
+
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        fake_model_counting)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        limit=1)
+
+    # clean stop: exit_code=0, reason=limit-reached
+    assert res.ok, res.exit_reason
+    assert res.exit_reason == "limit-reached"
+    assert res.exit_code == 0
+    # exactly 1 compiled, finalize ran (summary exists, no abort)
+    assert res.counts["sources_compiled"] == 1
+    assert res.counts["sources_failed"] == 0
+    assert res.finalize is not None        # finalize ran over the 1-source batch
+    assert res.summary_path.exists()
+    # Pass-2 fired exactly once (second source never reached)
+    assert compile_count["n"] == 1
+    # manifest: only 1 of 2 sources is committed (second still has no record)
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest.get("sources", {})) == 1

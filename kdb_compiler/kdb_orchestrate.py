@@ -356,12 +356,19 @@ def _empty_counts() -> dict:
 def run(
     *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
+    limit: int | None = None,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Fail-fast (D-91-8): the first enrich/
     compile/commit failure aborts the run; already-committed sources stay
     committed (β makes each commit self-contained). The run summary
-    (last_orchestrate.json) is written ALWAYS — success, abort, or crash."""
+    (last_orchestrate.json) is written ALWAYS — success, abort, or crash.
+
+    `limit`: if set, stop compiling after this many signal sources have been
+    successfully compiled (noise sources are free and do not count). Reconcile
+    and finalize still run over the compiled batch — this is a clean stop, not
+    an abort. Remainder is picked up on the next run (unchanged hashes skip).
+    """
     vault_root = Path(vault_root)
     state_root = Path(state_root)
     graph_path = Path(graph_path)
@@ -381,6 +388,7 @@ def run(
     planned: dict | None = None
     abort: tuple[str, str, str | None] | None = None   # (stage, source_id, error)
     crashed_reason: str | None = None
+    limit_reached: bool = False
 
     # Scan needs no graph — do it first so --dry-run can preview without opening
     # (or mutating) the graph and without firing any API call.
@@ -453,6 +461,9 @@ def run(
                 full_manifest = commit.next_manifest
                 accumulated_crs.append(commit.cr)
                 counts["sources_compiled"] += 1
+                if limit is not None and counts["sources_compiled"] >= limit:
+                    limit_reached = True
+                    break
 
             # --- reconcile queue: MOVED + DELETED (skipped on abort) ---
             if abort is None:
@@ -488,6 +499,9 @@ def run(
             exit_code, exit_reason = 1, f"{stage}:{sid}"
             counts["sources_failed"] = 1
             failed_source, failure_stage = sid, stage
+        elif limit_reached:
+            exit_code, exit_reason = 0, "limit-reached"
+            failed_source, failure_stage = None, None
         else:
             exit_code, exit_reason = 0, "ok"
             failed_source, failure_stage = None, None
@@ -523,6 +537,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-tokens", type=int, default=32768)
     p.add_argument("--dry-run", action="store_true",
                    help="scan + print the plan; no enrich/compile/graph writes, no API")
+    p.add_argument("--limit", type=int, default=None, metavar="N",
+                   help="stop after N signal sources have been compiled; "
+                        "noise is free and does not count. Finalize still runs "
+                        "over the compiled batch. Remainder is picked up next run.")
     return p
 
 
@@ -542,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     res = run(
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
         graph_path=graph_path, provider=args.provider, model=args.model,
-        max_tokens=args.max_tokens, dry_run=args.dry_run)
+        max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")
