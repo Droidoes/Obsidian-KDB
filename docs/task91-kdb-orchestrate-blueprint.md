@@ -41,7 +41,7 @@ None apply to v1. Captured here so future-us knows what triggers a redesign.
 | **D-91-4** | `kdb-clean orphans` runs as final step of every `kdb-orchestrate` E2E run — full reconciliation per run; separation preserved (scan stays simple, cleanup is its own explicit step) | 2026-05-27 | Joseph refinement |
 | **D-91-5** | Orchestrator command name: `kdb-orchestrate` (NOT `kdb-ingest` — the latter is too narrow given the command runs the FULL pipeline end-to-end through Pass-2 + graph sync + cleanup) per `[[feedback_name_must_match_contents]]` | 2026-05-27 | Joseph naming call |
 | **D-91-6** | Task #91 subsumes Component #3 (Trigger) and Component #6 (Orchestrator) per v1 simplification; Component #5 (move-from-compile survey) stays orthogonal | 2026-05-27 | Joseph simplification |
-| **D-91-7** | Real-time / scheduled / watcher-based triggering documented as OUT of v1 scope; v2 roadmap line in §11 below + `task88-ingestion-pipeline-blueprint.md` §6.2 | 2026-05-27 | Joseph deferral |
+| **D-91-7** | Real-time / scheduled / watcher-based triggering documented as OUT of v1 scope; v2 roadmap line in §11 below + `archive/tasks/task88-ingestion-pipeline-blueprint.md` §6.2 | 2026-05-27 | Joseph deferral |
 | **D-91-8** | **Fail-fast at first source failure.** If any source fails Pass-1 enrich OR Pass-2 compile, abort the whole `kdb-orchestrate` run immediately. No skip-and-continue; no partial commit. Manifest stays in known-good pre-failure state (subject to D-91-13 two-phase refinement). | 2026-05-27 | Joseph call (overrode assistant's skip-and-continue lean) |
 | **D-91-9** | MOVED detection scoped per-root (cross-root same-hash files → independent NEW + DELETED, NOT MOVE). Prevents `KDB/raw/foo.md` + `AIML/foo.md` from being misclassified as a move. | 2026-05-27 | 2/2 panel β convergence (Codex OQ-91-3 + Deepseek OQ-91-3) |
 | **D-91-10** | Per-run summary at `state/last_orchestrate.json` — slim payload: `run_id`, `started_at`, `finished_at`, exit code + exit reason string, counts (`feeders_run`, `sources_scanned`, `sources_enriched`, `sources_compiled`, `sources_moved`, `sources_deleted`, `sources_failed`), `manifest_delta` {added, removed, changed}. NO full source lists (those live in `last_scan.json`). ~200 bytes typical. | 2026-05-27 | 2/2 panel β + Deepseek payload spec |
@@ -544,12 +544,12 @@ Documented here per D-91-7 so we don't forget when triggers materialize:
 
 ## 12. Things to consult during continued design
 
-- `docs/task88-ingestion-pipeline-blueprint.md` v0.2 — parent blueprint; §5.2 (Component #3) and §5.6 (Component #6) are the predecessors being subsumed
-- `docs/task89-component1-enrichment-blueprint.md` v0.2.2 — Pass-1 producer contract this orchestrator consumes
-- `docs/task90-context-loader-t2-rewrite-blueprint.md` v0.2 — Pass-2 context-loader behavior orchestrator triggers
-- `docs/task66-compile-trigger-model-blueprint.md` — the `last_compiled_hash` invariant in current `kdb_scan.py`
-- `docs/task68-cleanup-retraction-event-blueprint.md` — replayable cleanup-event pattern (relevant to OQ-91-1)
-- `docs/task73-manifest-ontology-removal-blueprint.md` — manifest v3.0 source-state-only ledger contract
+- `docs/archive/tasks/task88-ingestion-pipeline-blueprint.md` v0.2 — parent blueprint; §5.2 (Component #3) and §5.6 (Component #6) are the predecessors being subsumed
+- `docs/archive/tasks/task89-component1-enrichment-blueprint.md` v0.2.2 — Pass-1 producer contract this orchestrator consumes
+- `docs/archive/tasks/task90-context-loader-t2-rewrite-blueprint.md` v0.2 — Pass-2 context-loader behavior orchestrator triggers
+- `docs/archive/tasks/task66-compile-trigger-model-blueprint.md` — the `last_compiled_hash` invariant in current `kdb_scan.py`
+- `docs/archive/tasks/task68-cleanup-retraction-event-blueprint.md` — replayable cleanup-event pattern (relevant to OQ-91-1)
+- `docs/archive/tasks/task73-manifest-ontology-removal-blueprint.md` — manifest v3.0 source-state-only ledger contract
 - `kdb_compiler/kdb_scan.py` — current single-root implementation being extended
 - `kdb_compiler/source_state_update.py` — manifest writer (renamed from `manifest_update.py` per Task #73 Phase D)
 - `kdb_compiler/kdb_clean.py` — `kdb-clean orphans` implementation (referenced by D-91-4)

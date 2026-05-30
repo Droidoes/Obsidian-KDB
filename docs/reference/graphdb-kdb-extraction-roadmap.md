@@ -295,7 +295,7 @@ These don't need to be answered now — but should be revisited at the stage the
 
 ## 9. References
 
-- **D32** (multi-source storage layer; Obsidian-flavored ingestion API) — `docs/task-graphdb-kdb-blueprint.md` §2
+- **D32** (multi-source storage layer; Obsidian-flavored ingestion API) — `docs/reference/task-graphdb-kdb-blueprint.md` §2
 - **D34** (independence by shared upstream) — same, §2
 - **D35** (physical location: `~/Droidoes/GraphDB-KDB/`) — same, §2
 - **D36** (naming triad: module/dir/CLI) — same, §2
@@ -306,8 +306,8 @@ These don't need to be answered now — but should be revisited at the stage the
   - `project_graphdb_kdb_refoundation` — paradigm + scope
   - `project_graphdb_kdb_vs_kdb_graph_distinction` — naming guardrail
   - `feedback_graph_over_vector_for_kdb` — anti-vector lean
-- **Conversation record** — `docs/New-GraphDB-Paradigm.md`
-- **Codex brainstorm** (2026-05-14) — `docs/codex-brainstorm-prompt-2026-05-14-schema-and-rebuilder.md` + Codex response in 2026-05-14 daily note
+- **Conversation record** — `docs/reference/New-GraphDB-Paradigm.md`
+- **Codex brainstorm** (2026-05-14) — `docs/archive/early/codex-brainstorm-prompt-2026-05-14-schema-and-rebuilder.md` + Codex response in 2026-05-14 daily note
 - **Today's daily note** — `~/Obsidian/Daily Notes/2026-05-14.md` (capture of this session's deliberation)
 
 ---

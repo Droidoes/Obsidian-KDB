@@ -1,10 +1,10 @@
 # `manifest.json` — Role, Structure, and Semantics
 
-**Companion to**: `docs/manifest.schema.md` (field-level reference) · `compile_result.md` · `last_scan.md` · `CODEBASE_OVERVIEW.md` §5
+**Companion to**: `docs/reference/manifest.schema.md` (field-level reference) · `reference/compile_result.md` · `reference/last_scan.md` · `CODEBASE_OVERVIEW.md` §5
 
 Consolidates the Q&A walkthrough from 2026-04-20: what `manifest.json` *is* (not just what's in it), why it's the most load-bearing file in `state/`, and how to read its four top-level blocks.
 
-> **Field-level reference**: see `docs/manifest.schema.md`. This doc covers the role, mental model, and why the structure is what it is. For "what does field X hold," go to the schema doc.
+> **Field-level reference**: see `docs/reference/manifest.schema.md`. This doc covers the role, mental model, and why the structure is what it is. For "what does field X hold," go to the schema doc.
 
 ---
 
@@ -147,7 +147,7 @@ Without this trio the system could not be incremental. Every run would be a full
 
 ## 4. Lifecycle Invariants
 
-From `manifest.schema.md` §"Lifecycle invariants" — worth re-stating because they govern every manifest mutation:
+From `reference/manifest.schema.md` §"Lifecycle invariants" — worth re-stating because they govern every manifest mutation:
 
 - Every `PageRecord` must reference ≥1 `source_id` that exists in `sources{}` OR `tombstones{}`. (No dangling pages.)
 - Removing a source from `sources{}` must either cascade `source_refs` updates to every dependent page OR mark affected pages as orphans. (Explicit choice, never implicit.)
@@ -196,7 +196,7 @@ Every run **reads** the prior manifest near the start and **writes** the next ma
 
 ---
 
-## 6. Quick-Reference — Design Rules (from manifest.schema.md)
+## 6. Quick-Reference — Design Rules (from reference/manifest.schema.md)
 
 - **Python owns this file.** LLM never writes it, never emits it.
 - **JSON, pretty-printed, UTF-8.** `indent=2`, `ensure_ascii=False`, sorted top-level keys for stable diffs.

@@ -42,7 +42,7 @@ Both reviewers have clean track records (Codex from Round 5 onward; Deepseek acr
 ### 2. Project context (brief)
 
 **The system.** Obsidian-KDB compiles Joseph's raw markdown sources into a knowledge graph (Kuzu GraphDB). The pipeline has two ends:
-- **End A = compile pipeline** (mature) — `kdb-compile` reads source markdown + manifest state, fires Pass-2 LLM, writes wiki pages + GraphDB updates via the producer-contract pipeline (`docs/graphdb-kdb-producer-contract.md`).
+- **End A = compile pipeline** (mature) — `kdb-compile` reads source markdown + manifest state, fires Pass-2 LLM, writes wiki pages + GraphDB updates via the producer-contract pipeline (`docs/reference/graphdb-kdb-producer-contract.md`).
 - **End B = ingestion pipeline** (Task #88 family, in design) — multi-source feeder framework that gets sources into the vault + enriches them for compile consumption.
 
 **Where Task #91 fits.** End B's v1 minimum-viable shape per Joseph's 2026-05-27 simplification: a single command (`kdb-orchestrate`) runs the full end-to-end pipeline on demand. No watchers, no scheduled triggers, no elaborate event-emission. Just scan-the-vault → diff-against-manifest → for-each-new-or-changed run enrich + compile + update-manifest → final `kdb-clean orphans` cleanup.
@@ -93,7 +93,7 @@ These are ratified — please do not propose alternatives unless you've found a 
 - (a) Write a replayable journal event (Task #68 cleanup-event pattern) so `graphdb-kdb rebuild` doesn't re-introduce the source from old compile journals
 - (b) Direct manifest+graph removal — simpler but `graphdb-kdb rebuild` would resurrect the source
 
-Task #68's history (Task #67 → #68 arc): non-replayable cleanup ALWAYS resurfaced as a bug. Read `docs/task68-cleanup-retraction-event-blueprint.md` for the precedent. Reviewer take: (a), (b), or a third option you see? What's the implementation cost of (a) vs (b)? Does (a) extend the existing cleanup journal schema or introduce a new event type?
+Task #68's history (Task #67 → #68 arc): non-replayable cleanup ALWAYS resurfaced as a bug. Read `docs/archive/tasks/task68-cleanup-retraction-event-blueprint.md` for the precedent. Reviewer take: (a), (b), or a third option you see? What's the implementation cost of (a) vs (b)? Does (a) extend the existing cleanup journal schema or introduce a new event type?
 
 **E. The other 6 OQs (OQ-91-2..7, blueprint §9).** Each has an assistant lean. Confirm, challenge, or propose alternatives:
 - OQ-91-2: scan-roots config in separate `state/scan_roots.json` vs nested in manifest config block
@@ -111,7 +111,7 @@ Task #68's history (Task #67 → #68 arc): non-replayable cleanup ALWAYS resurfa
 
 ### 5. Output format for your review file
 
-Mirror the structure used in `docs/task90-v0.1-review-codex.md` (or your prior review files). Suggested sections:
+Mirror the structure used in `docs/archive/tasks/task90-v0.1-review-codex.md` (or your prior review files). Suggested sections:
 
 ```markdown
 # Task #91 v0.1 Blueprint — [Reviewer Name] Review

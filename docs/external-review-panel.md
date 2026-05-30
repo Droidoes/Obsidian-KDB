@@ -100,11 +100,11 @@ The project's review pattern has consistently produced higher-quality decisions 
 - **D-83/84-4/5 review:** pre-locked two more decisions + Python dataclass + class hierarchy + declared blueprint "complete through Section 4."
 - **D-83/84-6 review:** pre-locked all four F1–F4 forks + "Consensus Gate / Next Deliberation Gate" framing + self-elevated to "Senior Staff Architect's perspective."
 
-**Hard-cap experiment 2026-05-22** (`docs/gemini-review-hard-cap-prompt.md`): explicit forbidden-words list, 4-section forced structure, mandatory Recommendation/Proposal prefixes, 1500-word cap, one-strike rule.
+**Hard-cap experiment 2026-05-22** (`docs/archive/early/gemini-review-hard-cap-prompt.md`): explicit forbidden-words list, 4-section forced structure, mandatory Recommendation/Proposal prefixes, 1500-word cap, one-strike rule.
 
 **Result:** Partial procedural improvement (Gemini self-recognized overreach, used proper prefixes in preview, asked permission rather than writing decisions) but failed strict compliance (wrote meta-commentary outside the 4 allowed sections; self-elevated to "Senior Staff Architect's perspective"; used forbidden word "Proceed" in heading form; referred to its own output as "our last action" — team-membership self-elevation). Substantive value thin compared to Codex: 1 valid Finding, 1 underspecified, 1 false (claimed F3 attribute ambiguity but D-83/84-6 had specified the EVIDENCES attributes explicitly).
 
-**Decision (one-strike rule):** drop Gemini from #83/#84 blueprint review. Hard-cap prompt template preserved at `docs/gemini-review-hard-cap-prompt.md` for potential future-arc retry on smaller-stakes questions.
+**Decision (one-strike rule):** drop Gemini from #83/#84 blueprint review. Hard-cap prompt template preserved at `docs/archive/early/gemini-review-hard-cap-prompt.md` for potential future-arc retry on smaller-stakes questions.
 
 ---
 
@@ -134,7 +134,7 @@ The current decision-ratification flow (post-2026-05-22):
 
 **Removing an existing reviewer:**
 - Pattern of overreach across 2+ rounds, even after explicit role-cap prompting, triggers deselection.
-- Hard-cap prompt template (`docs/gemini-review-hard-cap-prompt.md`) is the escalation step before drop — try once with explicit constraints; if still non-compliant, drop.
+- Hard-cap prompt template (`docs/archive/early/gemini-review-hard-cap-prompt.md`) is the escalation step before drop — try once with explicit constraints; if still non-compliant, drop.
 
 **Re-testing a deselected reviewer:**
 - Future arcs can re-test using the hard-cap template on a smaller-stakes question.
@@ -144,8 +144,8 @@ The current decision-ratification flow (post-2026-05-22):
 
 ## 6. Related artifacts
 
-- `docs/gemini-review-hard-cap-prompt.md` — experimental hard-cap prompt template (preserved for future arcs)
-- `docs/round5-external-review-prompt.md` — original review-prompt template (Codex/Antigravity round, pre-deselection)
-- `docs/round6-research-prompt.md` — research-prompt template (different purpose — literature survey not code review)
+- `docs/archive/early/gemini-review-hard-cap-prompt.md` — experimental hard-cap prompt template (preserved for future arcs)
+- `docs/archive/rounds/round5-external-review-prompt.md` — original review-prompt template (Codex/Antigravity round, pre-deselection)
+- `docs/archive/rounds/round6-research-prompt.md` — research-prompt template (different purpose — literature survey not code review)
 - Memory: `feedback_gemini_review_only_guardrail` (project memory anchor with deselection record)
 - Memory: `feedback_external_review_panel_composition` (this doc's memory anchor — see MEMORY.md)

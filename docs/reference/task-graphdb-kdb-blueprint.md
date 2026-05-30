@@ -4,9 +4,9 @@
 **Date:** 2026-05-11 (drafted), 2026-05-13 (reviewed; Codex v1 + v2 feedback applied).
 **Reference:** [`docs/TASKS.md`](TASKS.md) → Task #63 (`open`). Supersedes the originally-scoped #26 (EXISTING CONTEXT design review) and #27 (manifest scalability) — both fold into this larger refoundation.
 **Companion docs:**
-- [`docs/New-GraphDB-Paradigm.md`](New-GraphDB-Paradigm.md) — the conversation that produced this design (verbatim Q&A record)
+- [`docs/reference/New-GraphDB-Paradigm.md`](reference/New-GraphDB-Paradigm.md) — the conversation that produced this design (verbatim Q&A record)
 - [`docs/CODEBASE_OVERVIEW.md`](CODEBASE_OVERVIEW.md) §5 (data flow), §3 (D8 boundary)
-- [`docs/compile_result.md`](compile_result.md), [`docs/last_scan.md`](last_scan.md), [`docs/manifest.md`](manifest.md)
+- [`docs/reference/compile_result.md`](reference/compile_result.md), [`docs/reference/last_scan.md`](reference/last_scan.md), [`docs/reference/manifest.md`](reference/manifest.md)
 - [`kdb_compiler/schemas/compile_result.schema.json`](../kdb_compiler/schemas/compile_result.schema.json) — input contract
 **Memory:** `feedback_no_imaginary_risk.md`, `feedback_apples_to_apples_within_session.md`, `feedback_measurability_over_defensive_complexity.md`.
 
@@ -548,7 +548,7 @@ Decisions made during #63 design that imply downstream work beyond the #63.1–#
 | ID | Item | Triggered by | When to address |
 |---|---|---|---|
 | **TR-1** | ~~Blueprint sweep after D-A1 rename pass executes.~~ **COMPLETED 2026-05-14 as part of #63.5b commit.** §4 DDL, §5 ingestion Cypher, §6 API surface, §7 Stage 9 skeleton, §10 test descriptions all updated to Entity/ingest_* naming. Historical "Page" mentions retained in D37 and D-A1 rationale rows (documenting the rename itself). | D-A1 | n/a |
-| **TR-2** | Post-M3 (manifest succession arc, when manifest no longer carries `pages`/`orphans`/`stats`), `graphdb-kdb verify_against_manifest` becomes useless for the ontology dimension. Replacement audit path: **replay-to-temp-DB + structural equality compare**. New CLI subcommand or `--mode replay` flag on `graphdb-kdb verify`. | M3 of manifest succession arc | When M2/M3 work begins; details specified in `docs/manifest-succession-arc.md` §6. |
+| **TR-2** | Post-M3 (manifest succession arc, when manifest no longer carries `pages`/`orphans`/`stats`), `graphdb-kdb verify_against_manifest` becomes useless for the ontology dimension. Replacement audit path: **replay-to-temp-DB + structural equality compare**. New CLI subcommand or `--mode replay` flag on `graphdb-kdb verify`. | M3 of manifest succession arc | When M2/M3 work begins; details specified in `docs/reference/manifest-succession-arc.md` §6. |
 | **TR-3** | Producer-scoped rebuild semantics (per L8) — when producer #2 actually arrives, design the scoped-delete + scoped-replay rules. Likely: `MATCH (s:Source {source_type:$producer}) DETACH DELETE s; MATCH (e:Entity) WHERE NOT EXISTS{(:Source)-[:SUPPORTS]->(e)} DELETE e; then replay only that producer's runs`. | Producer #2 | Producer #2 design phase. |
 
 ---
@@ -572,7 +572,7 @@ Task #63 is complete when:
 - [ ] **#63.9 snapshot/export works:** `graphdb-kdb snapshot` produces `pages.jsonl` + `edges.jsonl` + `sources.jsonl` under `~/Obsidian/KDB/state/graph-snapshots/<ts>/`; round-trip-ingesting the snapshot reproduces the original graph state.
 - [ ] CODEBASE_OVERVIEW.md gains §8 "GraphDB-KDB Layer" with D32–D40 ledger entries.
 - [ ] `docs/TASKS.md` #63 entry moved to Closed; #26 and #27 closed with note "superseded by #63".
-- [ ] `docs/New-GraphDB-Paradigm.md` gets a closing entry noting the blueprint landed and was executed.
+- [ ] `docs/reference/New-GraphDB-Paradigm.md` gets a closing entry noting the blueprint landed and was executed.
 
 ---
 

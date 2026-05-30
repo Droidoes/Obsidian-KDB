@@ -6,7 +6,7 @@
 
 **Date:** 2026-05-14 → frozen v1.0 2026-05-23.
 
-**Scope:** The formal contract between GraphDB-KDB (the multi-source ontology system) and any producer (today: Obsidian-KDB's `kdb-compile`; tomorrow: arxiv-compile, youtube-compile, codebase ingester, etc.). Companion to `docs/graphdb-kdb-extraction-roadmap.md` and `docs/manifest-succession-arc.md`.
+**Scope:** The formal contract between GraphDB-KDB (the multi-source ontology system) and any producer (today: Obsidian-KDB's `kdb-compile`; tomorrow: arxiv-compile, youtube-compile, codebase ingester, etc.). Companion to `docs/reference/graphdb-kdb-extraction-roadmap.md` and `docs/reference/manifest-succession-arc.md`.
 
 **Audience:** Anyone authoring a new producer adapter, or auditing an existing one. The Obsidian-KDB compile pipeline serves as the reference implementation throughout this document.
 
@@ -14,7 +14,7 @@
 
 ## 1. Why this document exists
 
-GraphDB-KDB is positioned as a **multi-source ontology system** (D32-tempered). The storage layer is source-agnostic; the ingestion API contract today is Obsidian-flavored as a pragmatic v1 choice. As the package extraction arc (`docs/graphdb-kdb-extraction-roadmap.md`) progresses and producer #2 arrives, the team needs a clear answer to: **what does GraphDB-KDB require from any producer to support ingestion, replay, and verification?**
+GraphDB-KDB is positioned as a **multi-source ontology system** (D32-tempered). The storage layer is source-agnostic; the ingestion API contract today is Obsidian-flavored as a pragmatic v1 choice. As the package extraction arc (`docs/reference/graphdb-kdb-extraction-roadmap.md`) progresses and producer #2 arrives, the team needs a clear answer to: **what does GraphDB-KDB require from any producer to support ingestion, replay, and verification?**
 
 Without this contract:
 
@@ -392,7 +392,7 @@ Today's Obsidian-KDB compile pipeline complies with the contract as follows:
 | **Apply path** | `graphdb_kdb.ingestor.apply_compile_result(...)` | ✅ Shipped #63.2 |
 | **Stage 9 live-sync** (D-S0) | `kdb_compile.py` Stage 9 calls `graphdb_kdb.adapters.obsidian_runs.sync_current_run(cr, scan, run_id)` — the adapter is the single Obsidian→graph entry point | ⚠️ Pending #63.7 (the wiring uses the adapter, not direct core import) |
 
-**The pre-#63 historical compliance gap** (documented in `docs/task-graphdb-kdb-blueprint.md` §13.1 Q3 outcome (d)): 10 historical run journals exist from 2026-04-19 through 2026-04-21, but their sidecar archives do not exist (sidecars are post-#63.7). Only the latest pre-#63 run is recoverable from the current overwritten `state/compile_result.json` baton; the other 9 runs' payloads are gone.
+**The pre-#63 historical compliance gap** (documented in `docs/reference/task-graphdb-kdb-blueprint.md` §13.1 Q3 outcome (d)): 10 historical run journals exist from 2026-04-19 through 2026-04-21, but their sidecar archives do not exist (sidecars are post-#63.7). Only the latest pre-#63 run is recoverable from the current overwritten `state/compile_result.json` baton; the other 9 runs' payloads are gone.
 
 D39's full-history independence claim is **prospective from #63 forward**, not retroactive. This is a one-time legacy artifact; future producers writing sidecars from day one have no such gap.
 
@@ -465,15 +465,15 @@ For someone (today or future) building, say, an arxiv-papers compile pipeline th
 
 ## 10. Relationship to other roadmap docs
 
-- **`docs/graphdb-kdb-extraction-roadmap.md`**: defines GraphDB-KDB's path from monorepo to standalone package. The producer contract becomes load-bearing at **Stage 3 (producer #2 arrives)** of that roadmap; today (Stage 0/1) it's documenting intent.
-- **`docs/manifest-succession-arc.md`**: defines manifest.json's evolution. The Obsidian producer's contract compliance becomes operationally critical at **stage M1** of that arc (when EXISTING CONTEXT switches to GraphDB).
-- **`docs/task-graphdb-kdb-blueprint.md`**: defines the technical scaffolding of #63 (#63.1–#63.9). The producer contract abstracts what #63.6's adapter is doing for Obsidian-KDB into a generalizable shape.
+- **`docs/reference/graphdb-kdb-extraction-roadmap.md`**: defines GraphDB-KDB's path from monorepo to standalone package. The producer contract becomes load-bearing at **Stage 3 (producer #2 arrives)** of that roadmap; today (Stage 0/1) it's documenting intent.
+- **`docs/reference/manifest-succession-arc.md`**: defines manifest.json's evolution. The Obsidian producer's contract compliance becomes operationally critical at **stage M1** of that arc (when EXISTING CONTEXT switches to GraphDB).
+- **`docs/reference/task-graphdb-kdb-blueprint.md`**: defines the technical scaffolding of #63 (#63.1–#63.9). The producer contract abstracts what #63.6's adapter is doing for Obsidian-KDB into a generalizable shape.
 
 ---
 
 ## 11. References
 
-- **D32 (tempered)**: storage-layer multi-source; ingestion API Obsidian-flavored — `docs/task-graphdb-kdb-blueprint.md` §2.
+- **D32 (tempered)**: storage-layer multi-source; ingestion API Obsidian-flavored — `docs/reference/task-graphdb-kdb-blueprint.md` §2.
 - **D34**: independence by shared upstream — same.
 - **D38**: pipeline integration via Stage 9 (non-fatal) — same.
 - **D39**: rebuild eligibility filter (`success=true AND dry_run=false AND payload_present`) — same + §8.2.

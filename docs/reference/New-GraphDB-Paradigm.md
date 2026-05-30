@@ -244,7 +244,7 @@
 
   Task A blueprint outline (what I'd write next)
 
-  Per the project workflow, the next gate is a detailed technical blueprint before any code lands. If you give the go-ahead, I'll draft docs/task-graphdb-kdb-blueprint.md covering:
+  Per the project workflow, the next gate is a detailed technical blueprint before any code lands. If you give the go-ahead, I'll draft docs/reference/task-graphdb-kdb-blueprint.md covering:
 
   1. Schema — Kuzu DDL for Page + Source nodes, LINKS_TO + SUPPORTS relationships, indexes, constraints
   2. Ingestion algorithm — apply_compile_result(compile_result, last_scan, run_id): node upserts, edge upserts, source lifecycle handling (move/delete cascades), orphan detection
@@ -261,7 +261,7 @@
 
 ❯ proceed pls
 
-● Blueprint drafted at docs/task-graphdb-kdb-blueprint.md (~500 lines, 16 sections, locks D32-D40).
+● Blueprint drafted at docs/reference/task-graphdb-kdb-blueprint.md (~500 lines, 16 sections, locks D32-D40).
 
   Key commits in the blueprint:
   - Storage: Kuzu 0.11.3 at ~/Obsidian/KDB/state/graph/GraphDB-KDB/
@@ -355,7 +355,7 @@ Blueprint reviewed and updated in 12 substantive edits + mechanical CLI rename. 
 
 ## 2026-05-13 (cont.) — Codex external review
 
-A self-contained review prompt was packaged as `docs/codex-review-prompt-2026-05-13.md` and sent to Codex (OpenAI) for independent architectural review. Codex returned a structured response: verdict **YELLOW** — direction is sound but several claims were overclaimed until specific fixes landed. 4 CRITICAL findings, 4 MATERIAL concerns, 3 cosmetic notes, 3 questions for the team.
+A self-contained review prompt was packaged as `docs/archive/early/codex-review-prompt-2026-05-13.md` and sent to Codex (OpenAI) for independent architectural review. Codex returned a structured response: verdict **YELLOW** — direction is sound but several claims were overclaimed until specific fixes landed. 4 CRITICAL findings, 4 MATERIAL concerns, 3 cosmetic notes, 3 questions for the team.
 
 ### Findings accepted in full
 
@@ -407,7 +407,7 @@ Blueprint is now design-complete + externally-reviewed. Awaiting explicit "Proce
 
 ## 2026-05-13 (cont. 2) — Codex v2 review + final fixes
 
-Sent a v2 review request (`docs/codex-review-prompt-2026-05-13-v2.md`) packaging the updated blueprint + change log mapping each v1 finding to the v2 fix + Codex's own v1 review for cross-reference. Codex returned a structured re-verification: **YELLOW, ITERATE-AGAIN** — "small correction pass, not another architecture round."
+Sent a v2 review request (`docs/archive/early/codex-review-prompt-2026-05-13-v2.md`) packaging the updated blueprint + change log mapping each v1 finding to the v2 fix + Codex's own v1 review for cross-reference. Codex returned a structured re-verification: **YELLOW, ITERATE-AGAIN** — "small correction pass, not another architecture round."
 
 ### Verification of prior findings (Codex's v2 verdicts)
 
@@ -463,7 +463,7 @@ Blueprint is **design-complete + externally-reviewed (twice) + iterated**. Await
 
 ## 2026-05-13 (cont. 3) — Codex v3 confirmation: **PROCEED**
 
-Sent the v3 confirmation prompt (`docs/codex-review-prompt-2026-05-13-v3.md`) — tight ≤800-word ask asking Codex to verify the three v2 required fixes landed and to rule on the `manifest_written` push-back. Codex returned: **GREEN — PROCEED.**
+Sent the v3 confirmation prompt (`docs/archive/early/codex-review-prompt-2026-05-13-v3.md`) — tight ≤800-word ask asking Codex to verify the three v2 required fixes landed and to rule on the `manifest_written` push-back. Codex returned: **GREEN — PROCEED.**
 
 ### Verification of all v2 fixes
 

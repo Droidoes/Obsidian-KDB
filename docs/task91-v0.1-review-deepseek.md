@@ -90,7 +90,7 @@ The `.md` filter alone doesn't protect against this — these are valid markdown
 
 **Reasoning:**
 
-Task #68's history is the governing precedent (read `docs/task68-cleanup-retraction-event-blueprint.md` §1–§2):
+Task #68's history is the governing precedent (read `docs/archive/tasks/task68-cleanup-retraction-event-blueprint.md` §1–§2):
 
 > "The historical compile runs that originally emitted the reaped pages are still in that stream — so on replay, `ingestor.apply_compile_result` Phase 3 re-creates the reaped entities as active. The cleanup is invisible to replay."
 

@@ -4,7 +4,7 @@ This doc explains **what the wiki is for**, **why it has exactly three page type
 
 For the mechanical side (schema, frontmatter, apply pipeline), see:
 - `docs/CODEBASE_OVERVIEW.md` — full system architecture
-- `docs/compile_result.md` — the LLM's JSON output contract
+- `docs/reference/compile_result.md` — the LLM's JSON output contract
 - `KDB/KDB-Compiler-System-Prompt.md` — the LLM's runtime semantic contract
 
 ---

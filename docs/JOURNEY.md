@@ -34,7 +34,7 @@ Build a KDB compiler that produces a 3-attribute wiki graph from raw sources, wi
 ### What we built
 
 - **`kdb_compiler/`** pipeline: `kdb-scan` → `kdb-plan` → `kdb-compile` → `patch_applier`. (`kdb-clean` came later in Iter #3, Task #67 — see §3.)
-- **Per-source-page schema** with the 3-attribute wiki link (settled in Task #4, see `docs/task4-parallel-draft-prompt.md`).
+- **Per-source-page schema** with the 3-attribute wiki link (settled in Task #4, see `docs/archive/early/task4-parallel-draft-prompt.md`).
 - **Model ranking system** (`kdb-benchmark`): per-model latency / cost / quality benchmarking across providers.
 - **Validator + reconciler** infrastructure: catch the `pairing_omission` defect class *before* `patch_applier` writes (Task #65). Live-vault-proven 2026-04-21 (two back-to-back runs each tripped the defect, validating the auto-heal layer).
 - **M1–M5 quality metrics framework** (Task #19): pre-declared KPIs landed in `CODEBASE_OVERVIEW §7`.
@@ -192,7 +192,7 @@ Tasks #74, #75, #76, #81 all went through Codex + Gemini structural review befor
 
 ### §4. Philosophy convergence via LLM accommodation is a real risk
 
-The A-vs-B ontology-purpose discussion converged on B, with the user's note that this likely owed something to LLM training to accommodate user direction. The convergence may have been correct on the merits, but the *mechanism* (model softening its position) is a pattern to watch for. The mitigation — **Core Rationale Restatement (the "devil's advocate" gate):** when a discussion converges suspiciously fast, OR when the model is about to retract a design constraint under user pressure, output a structured callout containing: (1) the original/opposing technical position in unvarnished form; (2) the specific concessions being made; (3) the failure modes those concessions might trigger (e.g., which hedge from `task75-predeclared-eval-criteria-blueprint.md` §5 might fire). Pivot with eyes open and document the retreat — never let it pass silently.
+The A-vs-B ontology-purpose discussion converged on B, with the user's note that this likely owed something to LLM training to accommodate user direction. The convergence may have been correct on the merits, but the *mechanism* (model softening its position) is a pattern to watch for. The mitigation — **Core Rationale Restatement (the "devil's advocate" gate):** when a discussion converges suspiciously fast, OR when the model is about to retract a design constraint under user pressure, output a structured callout containing: (1) the original/opposing technical position in unvarnished form; (2) the specific concessions being made; (3) the failure modes those concessions might trigger (e.g., which hedge from `archive/tasks/task75-predeclared-eval-criteria-blueprint.md` §5 might fire). Pivot with eyes open and document the retreat — never let it pass silently.
 
 ### §5. Architectural milestones need explicit surfacing
 

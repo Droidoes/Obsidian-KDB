@@ -5,7 +5,7 @@
 **Participants:** Joseph (human) + Claude Opus 4.7 (staff architect)
 
 **Why this doc exists.** This question surfaced mid-way through the
-ingestion-subsystem brainstorm (see `ingestion-subsystem-brainstorm.md`).
+ingestion-subsystem brainstorm (see `archive/early/ingestion-subsystem-brainstorm.md`).
 Joseph identified it as *"the actual kernel of this project and what I have
 been seeking."* It is documented in its own file, and **verbatim**, because the
 exchange that produced it must be preserved exactly — not paraphrased — so the
@@ -31,7 +31,7 @@ to examine both claims. The two exchanges below are captured verbatim.
 
 ### 2.2 Claude's answer (verbatim)
 
-X6 is one of the cross-cutting agenda items in `docs/ingestion-subsystem-brainstorm.md`:
+X6 is one of the cross-cutting agenda items in `docs/archive/early/ingestion-subsystem-brainstorm.md`:
 
 > **X6 — Feedback-loop / generated-output exclusion policy** (`state/`, `.venv`, `node_modules`, benchmark outputs, prior harvest output)
 
@@ -696,17 +696,17 @@ Joseph at B-strong; Claude at B-viable-hypothesis. Project execution is the
 arbiter.
 
 **Next step (separate from this doc):** propose F2/F3/DD1 unblock in the
-ingestion brainstorm (`docs/ingestion-subsystem-brainstorm.md` §4.1 / §4.2),
+ingestion brainstorm (`docs/archive/early/ingestion-subsystem-brainstorm.md` §4.1 / §4.2),
 and amend the producer contract to add the `domain` field at compile output.
 
 ### 7.4 External takes — Codex + Antigravity (Gemini 3.5 Flash), 2026-05-19
 
 After §7.3 landed, the Round 5 resolution was forwarded to two external
-agents via the reusable prompt at `docs/round5-external-review-prompt.md`.
+agents via the reusable prompt at `docs/archive/rounds/round5-external-review-prompt.md`.
 Full responses:
 
-- `docs/round5-external-review-codex.md`
-- `docs/round5-external-review-antigravity.md`
+- `docs/archive/rounds/round5-external-review-codex.md`
+- `docs/archive/rounds/round5-external-review-antigravity.md`
 
 #### Convergence (light signal — confirmatory)
 
@@ -891,7 +891,7 @@ but the content stays as background for the empirical step.
 
 ### 8.4 Selection-layers reframe — adopted as blueprint vocabulary
 
-Codex Q8 (`docs/round5-external-review-codex.md` §8) reframes "selection"
+Codex Q8 (`docs/archive/rounds/round5-external-review-codex.md` §8) reframes "selection"
 as happening at five distinct layers, and observes that *"B only rejects
 the first kind"*: B rejects **ingestion** selection (the door), but the
 other four layers still exist and B still depends on them. The vocabulary
@@ -1088,12 +1088,12 @@ keep §9.2 honest):
 Per Joseph's call to commission deep research, four frontier models were
 dispatched in parallel (Joseph added GPT as a fourth target alongside the
 originally planned three). The literature-survey prompt is at
-`docs/round6-research-prompt.md`. Responses are filed at:
+`docs/archive/rounds/round6-research-prompt.md`. Responses are filed at:
 
-- `docs/round6-research-gemini.md` (Gemini 3.1 Pro)
-- `docs/round6-research-gpt.md` (GPT — added by Joseph)
-- `docs/round6-research-grok.md` (Grok 4.3)
-- `docs/round6-research-opus.md` (Opus 4.7)
+- `docs/archive/rounds/round6-research-gemini.md` (Gemini 3.1 Pro)
+- `docs/archive/rounds/round6-research-gpt.md` (GPT — added by Joseph)
+- `docs/archive/rounds/round6-research-grok.md` (Grok 4.3)
+- `docs/archive/rounds/round6-research-opus.md` (Opus 4.7)
 
 §9.3 synthesis follows from these returns, mirroring the Task #11 pattern
 (parallel drafts → synthesis → install) and the §7.4 precedent (flag
@@ -1382,8 +1382,8 @@ Antigravity (Gemini-as-reviewer, distinct from the Gemini 3.1 Pro
 research return in §9.2). Mirroring the Round 5 §7.4 pattern.
 
 Full reviews:
-- `docs/task82-learn-architectural-options-codex.md`
-- `docs/task82-learn-architectural-options-gemini.md`
+- `docs/archive/tasks/task82-learn-architectural-options-codex.md`
+- `docs/archive/tasks/task82-learn-architectural-options-gemini.md`
 
 ##### Convergence (heavy signal)
 

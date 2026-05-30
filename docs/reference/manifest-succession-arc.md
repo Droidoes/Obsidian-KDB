@@ -4,7 +4,7 @@
 
 **Date:** 2026-05-14.
 
-**Scope:** Captures the team's shared vision for *how* manifest.json evolves once GraphDB-KDB is operationally trusted. Companion to `docs/graphdb-kdb-extraction-roadmap.md` and `docs/graphdb-kdb-producer-contract.md`.
+**Scope:** Captures the team's shared vision for *how* manifest.json evolves once GraphDB-KDB is operationally trusted. Companion to `docs/reference/graphdb-kdb-extraction-roadmap.md` and `docs/reference/graphdb-kdb-producer-contract.md`.
 
 ---
 
@@ -12,7 +12,7 @@
 
 `manifest.json` exists today as an *accident of expediency* — the prototype needed a place to dump multiple concerns and JSON was the path of least resistance. There is nothing principled about housing source metadata, pseudo-ontology, and system state in one file.
 
-The reframe locked on 2026-05-10 (paradigm shift to "KDB is a knowledge-graph compiler"; see `docs/New-GraphDB-Paradigm.md`) means manifest.json's ontology role is **transitional**, not durable. GraphDB-KDB is the long-run owner of pages, edges, and provenance. Manifest's legitimate residual responsibility is **source-file metadata**.
+The reframe locked on 2026-05-10 (paradigm shift to "KDB is a knowledge-graph compiler"; see `docs/reference/New-GraphDB-Paradigm.md`) means manifest.json's ontology role is **transitional**, not durable. GraphDB-KDB is the long-run owner of pages, edges, and provenance. Manifest's legitimate residual responsibility is **source-file metadata**.
 
 Without this document, future sessions could (a) assume the swiss-knife shape is permanent and pile on more concerns; (b) lose track of which manifest fields are migrating where; (c) leak GraphDB-side responsibilities back into manifest writes during refactors.
 
@@ -216,16 +216,16 @@ For each field migrating *out* of manifest, the target shape in GraphDB-KDB:
 
 ## 9. Relationship to other roadmap docs
 
-- **`docs/graphdb-kdb-extraction-roadmap.md`**: defines GraphDB-KDB's path from monorepo to standalone package. Manifest-succession arc is independent of extraction — it happens at the *Obsidian-KDB side* whether or not the package is extracted. Both arcs can proceed in parallel.
-- **`docs/graphdb-kdb-producer-contract.md`**: defines what GraphDB-KDB expects from any producer's emitted artifacts. Once M2/M3 is complete and EXISTING CONTEXT reads from the graph, the Obsidian adapter's compliance with the producer contract is operationally critical (compile quality depends on graph health).
-- **`docs/task-graphdb-kdb-blueprint.md`**: defines #63's implementation. D32-tempered, D34, D38, D39 all anchor the technical scaffolding that *enables* this arc. The arc itself is post-#63.
+- **`docs/reference/graphdb-kdb-extraction-roadmap.md`**: defines GraphDB-KDB's path from monorepo to standalone package. Manifest-succession arc is independent of extraction — it happens at the *Obsidian-KDB side* whether or not the package is extracted. Both arcs can proceed in parallel.
+- **`docs/reference/graphdb-kdb-producer-contract.md`**: defines what GraphDB-KDB expects from any producer's emitted artifacts. Once M2/M3 is complete and EXISTING CONTEXT reads from the graph, the Obsidian adapter's compliance with the producer contract is operationally critical (compile quality depends on graph health).
+- **`docs/reference/task-graphdb-kdb-blueprint.md`**: defines #63's implementation. D32-tempered, D34, D38, D39 all anchor the technical scaffolding that *enables* this arc. The arc itself is post-#63.
 
 ---
 
 ## 10. References
 
-- **Paradigm doc**: `docs/New-GraphDB-Paradigm.md` (2026-05-10 conversational record of the reframe).
-- **Blueprint**: `docs/task-graphdb-kdb-blueprint.md` D32, D34, D38, D39.
+- **Paradigm doc**: `docs/reference/New-GraphDB-Paradigm.md` (2026-05-10 conversational record of the reframe).
+- **Blueprint**: `docs/reference/task-graphdb-kdb-blueprint.md` D32, D34, D38, D39.
 - **Memory**: `project_graphdb_kdb_refoundation`.
 - **Originally-scoped Task C**: closed/superseded by Task #63; the EXISTING CONTEXT design lives in M1 of this arc.
 - **Verifier**: `graphdb_kdb/verifier.py` and L4 ("overlap only") rationale captured in 2026-05-14 daily note.

@@ -1,6 +1,6 @@
 # `compile_result.json` — Role, Schema, and Semantics
 
-**Companion to**: `kdb_compiler/schemas/compile_result.schema.json` · `manifest.schema.md` · `CODEBASE_OVERVIEW.md` §5
+**Companion to**: `kdb_compiler/schemas/compile_result.schema.json` · `reference/manifest.schema.md` · `CODEBASE_OVERVIEW.md` §5
 
 Consolidates the Q&A walkthrough from 2026-04-20: (1) what the `pages` array and its key fields mean, and (2) what role `compile_result.json` actually plays in the pipeline.
 

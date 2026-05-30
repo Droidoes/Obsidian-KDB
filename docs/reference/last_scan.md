@@ -1,6 +1,6 @@
 # `last_scan.json` — Role, Schema, and Semantics
 
-**Companion to**: `kdb_compiler/schemas/last_scan.schema.json` · `compile_result.md` · `manifest.schema.md` · `CODEBASE_OVERVIEW.md` §5
+**Companion to**: `kdb_compiler/schemas/last_scan.schema.json` · `reference/compile_result.md` · `reference/manifest.schema.md` · `CODEBASE_OVERVIEW.md` §5
 
 Consolidates the Q&A walkthrough from 2026-04-20: what `last_scan.json` contains, what role it plays in the pipeline, and how its three decision fields answer the "does this file need compiling?" question.
 
