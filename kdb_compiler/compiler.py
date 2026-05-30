@@ -325,6 +325,11 @@ def compile_one(
                     max_tokens=max_tokens,
                     use_completion_tokens=use_completion_tokens,
                     extra_body=extra_body,
+                    # Constrain output to valid JSON, mirroring Pass-1
+                    # (pass1_caller.py json_mode=True). Run-2 fail-fasted at
+                    # Pass-2 because free-form JSON went malformed on a 95KB
+                    # source (JSONDecodeError, stop_reason=stop — not truncation).
+                    json_mode=True,
                 )
             )
             state["raw_response_text"] = state["model_response"].text

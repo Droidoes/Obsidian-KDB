@@ -134,6 +134,40 @@ def test_compile_source_produces_cr_and_writes_nothing(tmp_path, monkeypatch):
     assert not list((vault / "KDB").rglob("summary-foo.md")), "compile_source must not write"
 
 
+def test_compile_source_requests_json_mode(tmp_path, monkeypatch):
+    """Pass-2 must request structured-output JSON mode, mirroring Pass-1.
+
+    Run-2 root cause (2026-05-30): on a 95KB source deepseek-v4-flash emitted
+    malformed JSON (JSONDecodeError, not truncation) because the compile call
+    free-formed JSON instead of constraining it. Pass-1 already passes
+    json_mode=True on the same model; Pass-2 did not.
+    """
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    captured: dict = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        )
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", capturing)
+
+    with GraphDB(tmp_path / "graph") as g:
+        compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+
+    assert captured["req"].json_mode is True
+
+
 def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
