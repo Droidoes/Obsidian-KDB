@@ -12,6 +12,8 @@ This is the **single source of truth** for the Obsidian-KDB project. All design 
 
 Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
 
+- **2026-05-31** — **Task #103 — T2/T3 domain-scoped retrieval (same-domain gate).** The Pass-2 context snapshot is now a positive pull from the source's Pass-1 domain only: `build_context_snapshot` scopes the T2/T3 candidate universe to entities `BELONGS_TO` the source's domain (`Domain.name`); T1 (the source's own SUPPORTS) unchanged; no padding (short/empty same-domain > off-domain noise); no-domain sources fall back to the full graph. **Overrides** the ratified D3 (C, coordinate-not-gate) → hard gate, on the rationale that context-scoping (anti-entropy) is distinct from link-creation (free) and Discover (future query-time); override recorded in `ontology-blueprint-V1.md` §7.
+
 - **2026-05-31** — **Task #102 — orchestrator live progress on stdout.** Replaced #101's stderr/info-gated per-source snapshot with a default-on, blow-by-blow stdout narrative: per-source `[n/total]` header, `pass-1`/`pass-2` started→`✓ <elapsed>` lines, running counts, inline `⚠` alarms, reconcile/finalize timestamps. `EventRecorder`'s console renderer is now decoupled from the JSONL severity filter (renders every milestone regardless of `--log-level`); `--log-level` governs only file verbosity; `--quiet` silences the console. Two new `pass1_enrich_started`/`pass2_compile_started` events. Event JSONL + `last_orchestrate.json` unchanged.
 
 - **2026-04-18** — **M0 scaffold.** KDB compiler architecture + schema-gated prompt/response contract (Task #4 family).
