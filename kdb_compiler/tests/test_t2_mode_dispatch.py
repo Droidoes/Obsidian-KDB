@@ -53,6 +53,16 @@ def t2_graph(tmp_path: Path):
             "last_ingested_at: '2026-01-01', ingest_state: 'compiled', "
             "ingest_count: 1, last_run_id: 'r1', moved_to: ''})"
         )
+        # Both entities BELONGS_TO 'ai-ml' (the _fm() domain) so the same-domain
+        # gate (D3) admits them; these tests exercise T2 mode dispatch, not the gate.
+        conn.execute(
+            "CREATE (d:Domain {name: 'ai-ml', created_at: '2026-01-01', "
+            "first_run_id: 'r1'})"
+        )
+        for slug in ["value-investing", "compound-interest"]:
+            conn.execute(
+                "MATCH (e:Entity {slug: $s}), (d:Domain {name: 'ai-ml'}) "
+                "CREATE (e)-[:BELONGS_TO {run_id: 'r1'}]->(d)", {"s": slug})
         yield conn
 
 
