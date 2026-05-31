@@ -79,6 +79,13 @@ def build_context_snapshot(
 
     slug_set = set(active_entities.keys())
 
+    # Same-domain gate (D3 override): T2/T3 pull only from the source's Pass-1
+    # domain (entity anti-entropy). T1 stays on the full set — it is the source's
+    # own SUPPORTS, same-domain by construction. A source with no Pass-1 domain
+    # (pre-Pass-1 / un-enriched) cannot be scoped, so it falls back to the full graph.
+    domain = frontmatter.domain if frontmatter is not None else None
+    pool = (_domain_pool(conn, domain) & slug_set) if domain else slug_set
+
     # --- Tier assignment ---
     t1_slugs = _t1_source_supported(conn, source_id, slug_set)
     cold_start = len(t1_slugs) == 0
@@ -86,7 +93,7 @@ def build_context_snapshot(
     t2_slugs = _build_t2(
         conn,
         source_text=source_text,
-        candidate_slugs=slug_set - t1_slugs,
+        candidate_slugs=pool - t1_slugs,
         active_entities=active_entities,
         cold_start=cold_start,
         frontmatter=frontmatter,
@@ -98,7 +105,7 @@ def build_context_snapshot(
     max_hops = 1
     if cold_start and len(t2_slugs) < _MIN_SEED_THRESHOLD:
         max_hops = 2
-    t3_slugs = _t3_neighbors(conn, seeds, slug_set - seeds, max_hops=max_hops)
+    t3_slugs = _t3_neighbors(conn, seeds, pool - seeds, max_hops=max_hops)
 
     # --- Scoring + ranking ---
     pagerank_scores = _pagerank_scores(conn)
@@ -147,6 +154,24 @@ def _load_active_entities(conn: kuzu.Connection) -> dict[str, dict]:
         row = result.get_next()
         entities[row[0]] = {"title": row[1], "page_type": row[2]}
     return entities
+
+
+def _domain_pool(conn: kuzu.Connection, domain: str) -> set[str]:
+    """Slugs of active entities that BELONGS_TO `domain` (the same-domain gate).
+
+    The Pass-2 context is pulled only from the source's Pass-1 domain (D3
+    override → hard same-domain gate). Domain nodes are keyed by `Domain.name`,
+    which is exactly the string Pass-1 emits as `frontmatter.domain`.
+    """
+    result = conn.execute(
+        "MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain {name: $name}) "
+        "WHERE e.status = 'active' RETURN e.slug",
+        {"name": domain},
+    )
+    slugs: set[str] = set()
+    while result.has_next():
+        slugs.add(result.get_next()[0])
+    return slugs
 
 
 def _t1_source_supported(

@@ -601,3 +601,103 @@ class TestColdStartWideningInvariant:
             f"cold-start widening produced only {len(slugs)} seeds "
             f"({slugs!r}); #71 invariant requires ≥5"
         )
+
+
+# ---------------------------------------------------------------------------
+# Same-domain gate (D3 override): T2/T3 pull only from the source's Pass-1 domain
+# ---------------------------------------------------------------------------
+
+from kdb_compiler.source_io import SourceFrontmatter
+
+
+@pytest.fixture
+def gdb_dom(tmp_path: Path):
+    """Temp GraphDB: 3 value-investing entities + 1 ai-ml, a cross-domain link."""
+    with GraphDB(tmp_path / "dom-graph") as g:
+        conn = g.conn
+        for slug, title, ptype in [
+            ("vi-hub", "VI Hub", "concept"),
+            ("vi-spoke", "VI Spoke", "concept"),
+            ("vi-leaf", "VI Leaf", "article"),
+            ("ai-node", "AI Node", "concept"),
+        ]:
+            conn.execute(
+                "CREATE (e:Entity {slug: $s, title: $t, page_type: $pt, "
+                "status: 'active', confidence: 'medium', "
+                "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                "first_run_id: 'r1', last_run_id: 'r1'})",
+                {"s": slug, "t": title, "pt": ptype},
+            )
+        conn.execute(
+            "CREATE (s:Source {source_id: 'src-vi', source_type: 'raw', "
+            "canonical_path: 'src-vi', status: 'active', file_type: 'markdown', "
+            "hash: 'sha256:aaa', size_bytes: 100, "
+            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
+            "last_ingested_at: '2026-01-01', ingest_state: 'compiled', "
+            "ingest_count: 1, last_run_id: 'r1', moved_to: ''})"
+        )
+        for slug in ["vi-hub", "vi-spoke"]:        # T1: src-vi SUPPORTS vi-hub, vi-spoke
+            conn.execute(
+                "MATCH (s:Source {source_id: 'src-vi'}), (e:Entity {slug: $slug}) "
+                "CREATE (s)-[:SUPPORTS {run_id: 'r1'}]->(e)", {"slug": slug})
+        for a, b in [("vi-hub", "ai-node"), ("vi-hub", "vi-leaf"), ("vi-spoke", "ai-node")]:
+            conn.execute(
+                "MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b}) "
+                "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)", {"a": a, "b": b})
+        for name in ["value-investing", "ai-ml"]:
+            conn.execute("CREATE (d:Domain {name: $n, created_at: '2026-01-01', "
+                         "first_run_id: 'r1'})", {"n": name})
+        for slug, dom in [("vi-hub", "value-investing"), ("vi-spoke", "value-investing"),
+                          ("vi-leaf", "value-investing"), ("ai-node", "ai-ml")]:
+            conn.execute(
+                "MATCH (e:Entity {slug: $s}), (d:Domain {name: $d}) "
+                "CREATE (e)-[:BELONGS_TO {run_id: 'r1'}]->(d)", {"s": slug, "d": dom})
+        yield g
+
+
+def _vi_fm(keys):
+    return SourceFrontmatter.from_dict({
+        "kdb_signal": "signal", "domain": "value-investing",
+        "source_type": "raw", "summary": "s", "entity_search_keys": keys})
+
+
+def test_t2_off_domain_key_is_dropped(gdb_dom):
+    snap = graph_context_loader.build_context_snapshot(
+        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        frontmatter=_vi_fm(["ai-node"]))
+    slugs = [p.slug for p in snap.pages]
+    assert "ai-node" not in slugs            # off-domain key resolution dropped
+
+
+def test_t2_same_domain_key_is_kept(gdb_dom):
+    snap = graph_context_loader.build_context_snapshot(
+        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        frontmatter=_vi_fm(["vi-leaf"]))
+    assert "vi-leaf" in [p.slug for p in snap.pages]
+
+
+def test_t3_excludes_cross_domain_neighbor(gdb_dom):
+    # vi-hub LINKS_TO ai-node (cross-domain) and vi-leaf (same-domain).
+    snap = graph_context_loader.build_context_snapshot(
+        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        frontmatter=_vi_fm([]))
+    slugs = [p.slug for p in snap.pages]
+    assert "ai-node" not in slugs            # cross-domain neighbor excluded
+    assert "vi-leaf" in slugs                # same-domain neighbor admitted
+
+
+def test_no_padding_and_all_same_domain(gdb_dom):
+    snap = graph_context_loader.build_context_snapshot(
+        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        frontmatter=_vi_fm([]))
+    slugs = {p.slug for p in snap.pages}
+    assert slugs <= {"vi-hub", "vi-spoke", "vi-leaf"}   # no off-domain top-up
+    assert "ai-node" not in slugs
+
+
+def test_no_domain_source_falls_back_to_full_graph(gdb_dom):
+    # frontmatter=None → un-scoped; ai-node is reachable via T3 (vi-hub→ai-node).
+    snap = graph_context_loader.build_context_snapshot(
+        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        frontmatter=None)
+    assert "ai-node" in [p.slug for p in snap.pages]
