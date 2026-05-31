@@ -401,49 +401,52 @@ def test_snapshot_alias_of_empty_for_pre_74_graph(graph_dir, tmp_path):
 
 
 def _seed_graph_with_domains(graph_dir: Path) -> None:
-    """Seed a graph that exercises the domain pipeline: one page with a
-    single-string domain + sub_domain, one page with an array domain.
-    Mirrors the production ingest path so post-normalize state is what
-    snapshot reads back."""
-    cr = {
-        "run_id": "domain-seed-run",
-        "compiled_sources": [
-            {
-                "source_id": "KDB/raw/markets.md",
-                "compile_meta": {"run_state": "in_graph_db"},
-                "pages": [
-                    {
-                        "slug": "alpha",
-                        "page_type": "concept",
-                        "title": "Alpha",
-                        "status": "active",
-                        "confidence": "high",
-                        "outgoing_links": [],
-                        "domain": "Investing",
-                        "sub_domain": "Value Investing",
-                    },
-                    {
-                        "slug": "beta",
-                        "page_type": "concept",
-                        "title": "Beta",
-                        "status": "active",
-                        "confidence": "high",
-                        "outgoing_links": [],
-                        "domain": ["Investing", "Macro"],
-                    },
-                ],
-            },
-        ],
-    }
-    scan = {
-        "run_id": "domain-seed-run",
-        "files": [
-            {"path": "KDB/raw/markets.md", "current_hash": "sha256:mk",
-             "size_bytes": 256, "file_type": "markdown"},
-        ],
-    }
+    """Seed a graph that exercises the domain pipeline via the 0.5.0 derived
+    path: Domain nodes are rederived from Source.domain + SUPPORTS, NOT from
+    per-page LLM domain fields (removed in 0.5.0).
+
+    Two sources are seeded, one per domain:
+      - KDB/raw/markets.md  → source_meta.domain="investing"  → page "alpha"
+      - KDB/raw/macro.md    → source_meta.domain="macro"      → page "beta"
+
+    After apply_compile_result, rederive_domains produces Domain nodes
+    {"investing", "macro"} and BELONGS_TO edges for alpha/beta respectively.
+    """
+    from graphdb_kdb.tests.conftest import (
+        make_compiled_source,
+        make_compile_result,
+        make_scan,
+        make_scan_entry,
+        make_page,
+    )
+
+    cs_investing = make_compiled_source(
+        "KDB/raw/markets.md",
+        [make_page("alpha", title="Alpha")],
+        source_meta={
+            "domain": "investing",
+            "source_type": "blog",
+            "author": None,
+            "summary": "x",
+        },
+    )
+    cs_macro = make_compiled_source(
+        "KDB/raw/macro.md",
+        [make_page("beta", title="Beta")],
+        source_meta={
+            "domain": "macro",
+            "source_type": "blog",
+            "author": None,
+            "summary": "x",
+        },
+    )
+    cr = make_compile_result([cs_investing, cs_macro], run_id="domain-seed-run")
+    scan = make_scan([
+        make_scan_entry("KDB/raw/markets.md", hash_="sha256:mk"),
+        make_scan_entry("KDB/raw/macro.md", hash_="sha256:ma"),
+    ])
     with GraphDB(graph_dir) as gdb:
-        apply_compile_result(cr, scan, "domain-seed-run", conn=gdb.conn)
+        gdb.apply_compile_result(cr, scan, "domain-seed-run")
 
 
 def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
@@ -456,7 +459,7 @@ def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
         json.loads(line)["name"]: json.loads(line)
         for line in (out / "domain.jsonl").read_text("utf-8").splitlines()
     }
-    # _normalize_domain: "Investing"→"investing", "Macro"→"macro"
+    # source_meta.domain values are already kebab-case ids (0.5.0 derived path)
     assert set(rows.keys()) == {"investing", "macro"}
     for r in rows.values():
         assert r["first_run_id"] == "domain-seed-run"
