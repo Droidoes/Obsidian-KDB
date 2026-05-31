@@ -288,7 +288,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   });
 
   function initialLayout(){
-    if(HAS_D3){ return {name:'circle'}; }   // even circle seed -> force settles cohesively
+    if(HAS_D3){ return {name:'preset'}; }   // positions are seeded by the D3 sim below
     if(HAS_FCOSE){
       return {name:'fcose', quality:'default', animate:true, animationDuration:600,
               randomize:true, nodeRepulsion:6500, idealEdgeLength:75, nodeSeparation:80, padding:40};
@@ -296,26 +296,35 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     return {name:'cose', animate:false, nodeRepulsion:9000, idealEdgeLength:90, padding:40};
   }
 
-  // ---- D3 force layout: springy physics + central packing; Cytoscape renders ----
+  // ---- D3 force layout (Gemini recipe); Cytoscape renders ----
+  // Cohesion trick: seed EVERY node in a tiny central box so all components are
+  // intermixed from the start (not arranged on a ring), then let gentle forces
+  // settle them into one big cluster — disconnected parts never separate out.
   let sim = null, dN = [], dById = {};
   function sizeById(id){ const n = cy.getElementById(id); return n.nonempty() ? (n.data('size')||10) : 10; }
+  function seedCentral(){
+    const W = cy.width()||800, H = cy.height()||600;
+    for(const d of dN){ d.x = W/2 + (Math.random()-0.5)*150; d.y = H/2 + (Math.random()-0.5)*150; d.fx=null; d.fy=null; }
+    cy.batch(() => { for(const d of dN){ const n = cy.getElementById(d.id); if(n.nonempty()) n.position({x:d.x, y:d.y}); } });
+  }
   function startSimulation(){
     const W = cy.width()||800, H = cy.height()||600;
-    dN = cy.nodes().map(n => { const p = n.position(); return {id:n.id(), x:p.x, y:p.y}; });
+    dN = cy.nodes().map(n => ({id:n.id()}));
     dById = {}; dN.forEach(d => dById[d.id] = d);
-    const dE = cy.edges().map(e => ({source:e.source().id(), target:e.target().id()}));
-    // One cohesive cluster (uniform density): keep charge WEAK — strong charge
-    // repels unlinked nodes and opens visible lanes between sub-clusters. Let
-    // collide set a uniform minimum spacing for every node, match the link
-    // distance to that spacing (so linked nodes aren't farther apart than packed
-    // ones), and use strong central gravity to keep the whole mass compact.
+    seedCentral();
+    const dE = cy.edges().map(e => ({source:e.source().id(), target:e.target().id(), type:e.data('label')}));
     sim = d3.forceSimulation(dN)
-      .force('link', d3.forceLink(dE).id(d=>d.id).distance(26).strength(0.4))
-      .force('charge', d3.forceManyBody().strength(-50).distanceMax(160))
+      .force('link', d3.forceLink(dE).id(d=>d.id).distance(d => {
+        if(d.type==='LINKS_TO')   return 110;
+        if(d.type==='SUPPORTS')   return 70;
+        if(d.type==='BELONGS_TO') return 130;
+        return 80;
+      }).strength(0.6))
+      .force('charge', d3.forceManyBody().strength(-240).distanceMax(280))  // capped, local-only
+      .force('x', d3.forceX(W/2).strength(0.08))                            // gentle centering gravity
+      .force('y', d3.forceY(H/2).strength(0.08))
       .force('center', d3.forceCenter(W/2, H/2))
-      .force('x', d3.forceX(W/2).strength(0.30))
-      .force('y', d3.forceY(H/2).strength(0.30))
-      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 8).strength(1))
+      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 10).iterations(2))
       .alphaDecay(0.018)
       .on('tick', () => {
         for(const d of dN){ const n = cy.getElementById(d.id);
@@ -329,8 +338,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   }
   function reheat(){
     if(!sim){ return; }
-    for(const d of dN){ const p = cy.getElementById(d.id).position(); d.x=p.x; d.y=p.y; }
-    sim.alpha(0.9).restart();
+    seedCentral();        // re-scatter to the central box, then re-settle
+    sim.alpha(1).restart();
   }
   if(HAS_D3){ startSimulation(); }
 
@@ -473,7 +482,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 
   // ---- buttons ----
   document.getElementById('relayout').onclick = ()=>{
-    if(HAS_D3){ cy.layout({name:'circle'}).run(); reheat(); }
+    if(HAS_D3){ reheat(); }
     else { cy.layout(initialLayout()).run(); }
   };
   document.getElementById('reset').onclick = ()=>{
