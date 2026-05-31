@@ -468,28 +468,49 @@ def test_snapshot_domain_jsonl_records_domains(graph_dir, tmp_path):
 
 
 def test_snapshot_belongs_to_jsonl_records_edges(graph_dir, tmp_path):
-    """#80 (format v3): belongs_to.jsonl carries one row per BELONGS_TO
-    edge with entity_slug + domain_name + sub_domain (nullable) + run_id."""
-    _seed_graph_with_domains(graph_dir)
+    """D1-A (format v6): belongs_to.jsonl carries one row per BELONGS_TO
+    edge with entity_slug + domain_name + support_count (INT64) + run_id.
+    BELONGS_TO is a derived projection from Source.domain + SUPPORTS;
+    sub_domain is gone."""
+    from graphdb_kdb.tests.conftest import (
+        make_compiled_source,
+        make_compile_result,
+        make_scan,
+        make_scan_entry,
+        make_page,
+    )
+
+    cs = make_compiled_source(
+        "VI/a.md",
+        [make_page("buffett")],
+        source_meta={
+            "domain": "value-investing",
+            "source_type": "blog",
+            "author": None,
+            "summary": "x",
+        },
+    )
+    cr = make_compile_result([cs])
+    scan = make_scan([make_scan_entry("VI/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "r1")
+
     out = tmp_path / "snap"
     snapshot(graph_dir, out)
+
     rows = [
         json.loads(line)
         for line in (out / "belongs_to.jsonl").read_text("utf-8").splitlines()
+        if line.strip()
     ]
-    by_key = {(r["entity_slug"], r["domain_name"]): r for r in rows}
-    # alpha→investing carries sub_domain "value-investing" (R12 normalized);
-    # beta's domain is plural so sub_domain is omitted (None) on both edges.
-    assert by_key[("alpha", "investing")]["sub_domain"] == "value-investing"
-    assert by_key[("beta", "investing")]["sub_domain"] is None
-    assert by_key[("beta", "macro")]["sub_domain"] is None
-    for r in rows:
-        assert r["run_id"] == "domain-seed-run"
-        assert r["created_at"]
+    assert len(rows) == 1
+    assert set(rows[0].keys()) == {"entity_slug", "domain_name", "support_count", "run_id", "created_at"}
+    assert rows[0]["support_count"] == 1
+    assert "sub_domain" not in rows[0]
 
     manifest = json.loads((out / "manifest.json").read_text("utf-8"))
-    assert manifest["counts"]["belongs_to"] == 3
-    assert manifest["files"]["belongs_to.jsonl"]["rows"] == 3
+    assert manifest["counts"]["belongs_to"] == 1
+    assert manifest["files"]["belongs_to.jsonl"]["rows"] == 1
 
 
 def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
@@ -512,9 +533,9 @@ def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
         assert manifest["counts"][kind] == 0
 
 
-def test_snapshot_format_version_is_v5():
-    """#89 D-89-17: snapshot bumped from v4 (Claim layer) to v5 (Source Pass-1 columns)."""
-    assert SNAPSHOT_FORMAT_VERSION == 5
+def test_snapshot_format_version_is_v6():
+    """D1-A: snapshot bumped from v5 (Source Pass-1 columns) to v6 (belongs_to support_count)."""
+    assert SNAPSHOT_FORMAT_VERSION == 6
 
 
 def _seed_graph_with_claim_layer(graph_dir):

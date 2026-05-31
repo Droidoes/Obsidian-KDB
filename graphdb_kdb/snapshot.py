@@ -42,7 +42,7 @@ from graphdb_kdb.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 5
+SNAPSHOT_FORMAT_VERSION = 6
 # v1: original (entities/sources/links_to/supports + schema.cypher)
 # v2 (#74.7): adds Entity.canonical_id + alias_of.jsonl
 # v3 (#80): adds domain.jsonl + belongs_to.jsonl (Domain nodes + BELONGS_TO
@@ -55,6 +55,8 @@ SNAPSHOT_FORMAT_VERSION = 5
 # v5 (#89 D-89-17): sources.jsonl gains summary, author, domain columns
 #           (Pass-1 frontmatter fields from schema v2.3). Purely additive —
 #           all v4 files still emitted; old rows export NULL for new columns.
+# v6 (D1-A): belongs_to.jsonl replaces sub_domain with support_count
+#           (BELONGS_TO is now a derived projection from Source.domain + SUPPORTS).
 
 
 @dataclass(frozen=True)
@@ -447,16 +449,19 @@ def _write_domains(conn: kuzu.Connection, path: Path) -> int:
 
 
 def _write_belongs_to(conn: kuzu.Connection, path: Path) -> int:
-    """#80 (format v3): BELONGS_TO edges (Entity → Domain) with sub_domain
-    (nullable) + run_id + created_at provenance.
+    """D1-A (format v6): BELONGS_TO edges (Entity → Domain) with support_count
+    (INT64) + run_id + created_at provenance.
 
-    Pre-#76 graphs have no edges ⇒ emit an empty file (rows=0). Total-order
-    by `(entity_slug, domain_name, run_id, created_at)` so two snapshots
-    of an unchanged graph are byte-identical.
+    BELONGS_TO is a derived projection from Source.domain + SUPPORTS: each
+    edge carries the count of Sources with that domain that SUPPORT the entity.
+    sub_domain is no longer part of this edge type. Pre-#76 graphs have no
+    edges ⇒ emit an empty file (rows=0). Total-order by
+    `(entity_slug, domain_name, run_id, created_at)` so two snapshots of an
+    unchanged graph are byte-identical.
     """
     query = """
     MATCH (e:Entity)-[r:BELONGS_TO]->(d:Domain)
-    RETURN e.slug, d.name, r.sub_domain, r.run_id, r.created_at
+    RETURN e.slug, d.name, r.support_count, r.run_id, r.created_at
     ORDER BY e.slug, d.name, r.run_id, r.created_at
     """
     n = 0
@@ -467,7 +472,7 @@ def _write_belongs_to(conn: kuzu.Connection, path: Path) -> int:
             obj = {
                 "entity_slug": row[0],
                 "domain_name": row[1],
-                "sub_domain": row[2],
+                "support_count": row[2],
                 "run_id": row[3],
                 "created_at": row[4],
             }
