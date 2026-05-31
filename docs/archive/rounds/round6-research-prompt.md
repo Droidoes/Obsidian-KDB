@@ -4,7 +4,7 @@
 **Target models:** Gemini 3.1 Pro, GPT (added by Joseph), Grok 4.3, Opus 4.7 (parallel, independent)
 **Response files:** `docs/round6-research-{gemini,gpt,grok,opus}.md`
 **Project:** Obsidian-KDB — a raw text → knowledge graph compiler; Kuzu GraphDB substrate; single-user, ~70 entities today.
-**Doc that spawned this prompt:** `docs/what-is-the-ontology-for.md` §9.1
+**Doc that spawned this prompt:** `docs/what-is-ontology-for-V1.md` §9.1
 **Citation convention:** all references should cite source (paper title + arXiv ID / journal / venue + year). Where a claim depends on a specific system, name it (e.g., HippoRAG, GraphRAG, BioPathNet).
 
 ---
@@ -22,7 +22,7 @@ synthesis. Stay at the level of literature claims + design implications.
 ## Context — what is already settled
 
 The project has resolved across Rounds 4–5
-(see `docs/what-is-the-ontology-for.md` §6–§8):
+(see `docs/what-is-ontology-for-V1.md` §6–§8):
 
 1. The knowledge graph is an **executable substrate** an LLM runs operations
    over — not a static map (A) and not a hopeful soup (B), but Option C

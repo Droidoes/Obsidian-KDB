@@ -5,7 +5,7 @@
 sign-off before Task #75 closure and step-3 implementation kick-off (Task
 #76 / #77 / #78+).
 
-**Lineage:** Round 5 §8.5/§8.6 (`docs/what-is-the-ontology-for.md`) named
+**Lineage:** Round 5 §8.5/§8.6 (`docs/what-is-ontology-for-V1.md`) named
 "predeclared eval criteria for step 3" as a **binding path-forward
 precondition** (Codex Q6). This doc is the deliverable that satisfies that
 gate.
@@ -55,7 +55,7 @@ post-pivot preservation clause).
 
 ## 1. Context — where step 3 sits
 
-Per `docs/what-is-the-ontology-for.md` §7.3 + §8, the project's path forward is:
+Per `docs/what-is-ontology-for-V1.md` §7.3 + §8, the project's path forward is:
 
 | Step | What | Status |
 |---|---|---|
@@ -625,7 +625,7 @@ this.
 
 ## 8. References
 
-- `docs/what-is-the-ontology-for.md` — §7.3 (Round 5 position), §8.1
+- `docs/what-is-ontology-for-V1.md` — §7.3 (Round 5 position), §8.1
   (path forward = B), §8.3 (hedge disposition), §8.4 (5-layer selection
   vocabulary), **§8.5 (final position summary)**, **§8.6 (consultation
   concluded — predeclared eval criteria adopted as path-forward

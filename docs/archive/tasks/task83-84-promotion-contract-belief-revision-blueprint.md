@@ -4,11 +4,11 @@
 **Started:** 2026-05-22 (v1)
 **v2 dated:** 2026-05-22 (same session, post-v1-review synthesis)
 **Lineage:** Round 6 §9.4.2 mandate; (a+) decision via Joseph ratification 2026-05-22
-**Parallel-design rationale:** `docs/what-is-the-ontology-for.md` §9.3.8 + [[feedback_concrete_first_extract_later]]
+**Parallel-design rationale:** `docs/what-is-ontology-for-V1.md` §9.3.8 + [[feedback_concrete_first_extract_later]]
 **Reviewer panel** (active post-2026-05-22, see `docs/external-review-panel.md`): Codex + Deepseek + Qwen. Antigravity (Gemini) deselected per one-strike rule.
 **v1 review files:** `docs/task83-84-blueprint-v1-review-{codex,deepseek,qwen}.md`
 **Anchors:**
-- `docs/what-is-the-ontology-for.md` §9.4 (Round 6 closeout)
+- `docs/what-is-ontology-for-V1.md` §9.4 (Round 6 closeout)
 - `docs/TASKS.md` #83, #84
 - Memory `project_round6_learn_operationalized`
 

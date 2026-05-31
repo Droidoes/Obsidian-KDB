@@ -4,13 +4,13 @@
 **Date:** 2026-05-20 (drafted).
 **Reference:** [`docs/TASKS.md`](TASKS.md) → Task #74 (to-be-opened).
 **Anchor:** Round 5 §8.2 (canonicalization-first mandate) and §8.4 (5-layer
-selection structure) in [`docs/what-is-the-ontology-for.md`](what-is-the-ontology-for.md).
+selection structure) in [`docs/what-is-ontology-for-V1.md`](what-is-ontology-for-V1.md).
 Continuation of the #63 family architecturally; opened as a new top-level
 task because #63 is closed in the ledger.
 **Companion docs:**
 - [`docs/task-graphdb-kdb-blueprint.md`](task-graphdb-kdb-blueprint.md) — the original #63 design (locks D32–D40 + D-A1/A2/B1/S0–S6; Codex 3-round reviewed)
 - [`docs/task73-manifest-ontology-removal-blueprint.md`](task73-manifest-ontology-removal-blueprint.md) — D50/D51 split: GraphDB is live ontology authority; `source_state.json` is source lifecycle only
-- [`docs/what-is-the-ontology-for.md`](what-is-the-ontology-for.md) §8 — Round 5 closeout (path = B; canonicalization-first; 5-layer vocabulary adopted)
+- [`docs/what-is-ontology-for-V1.md`](what-is-ontology-for-V1.md) §8 — Round 5 closeout (path = B; canonicalization-first; 5-layer vocabulary adopted)
 - [`docs/CODEBASE_OVERVIEW.md`](CODEBASE_OVERVIEW.md) §5 (pipeline), §8 (GraphDB-KDB)
 - [`docs/task74-canonicalization-blueprint-gemini-draft.md`](task74-canonicalization-blueprint-gemini-draft.md) — Gemini's premature draft (preserved as scratch; selected diagrams + DDL salvaged into this doc)
 
@@ -20,7 +20,7 @@ task because #63 is closed in the ledger.
 
 ## 1. Why this exists
 
-Round 5 of the kernel deliberation (`docs/what-is-the-ontology-for.md` §8)
+Round 5 of the kernel deliberation (`docs/what-is-ontology-for-V1.md` §8)
 closed at **Path B** — broad ingestion with no value/curation gate at the
 door, on the bet that LLM extraction + graph operations (GraphRAG community
 detection, HippoRAG Personalized PageRank) turn heterogeneous raw text into
@@ -58,7 +58,7 @@ gated for v2) but schema and pipeline integration are full from day one.
 
 | ID | Decision | Rationale |
 |---|---|---|
-| **D-R5-1** | The compile pipeline is structured as a 5-layer selection cascade (ingestion / extraction / canonicalization / query-time / human-interpretation). Layers 2 and 3 are named, contracted compile stages; layer 1 is the harvester/X6 boundary; layer 4 is the query architecture; layer 5 is out of compile scope. | `docs/what-is-the-ontology-for.md` §8.4. B does not abolish selection — it relocates selection from layer 1 to layers 2-4, where the LLM + graph operations carry the load. Naming the layers makes future deliberation precise ("at which layer?") and prevents ad-hoc "selection" arguments from re-litigating B. |
+| **D-R5-1** | The compile pipeline is structured as a 5-layer selection cascade (ingestion / extraction / canonicalization / query-time / human-interpretation). Layers 2 and 3 are named, contracted compile stages; layer 1 is the harvester/X6 boundary; layer 4 is the query architecture; layer 5 is out of compile scope. | `docs/what-is-ontology-for-V1.md` §8.4. B does not abolish selection — it relocates selection from layer 1 to layers 2-4, where the LLM + graph operations carry the load. Naming the layers makes future deliberation precise ("at which layer?") and prevents ad-hoc "selection" arguments from re-litigating B. |
 | **D-R5-2** | Canonicalization is a first-class compile-stage component owning: (a) string normalization, (b) deterministic alias ledger, (c) provenance, with extension points for (d) embedding-similarity dedup and (e) LLM-as-judge for ambiguous cases. v1 ships (a)+(b)+(c); (d) and (e) ship in v2 behind config gates. | §8.2 mandate. Phased v1 honors `feedback_no_imaginary_risk` + `feedback_concrete_first_extract_later`: at current corpus scale (~70 entities) embedding+judge ROI is low; baseline string norm + curated alias ledger handles ~80% of duplication. Full toolkit schema is provisioned from day one (so v2 enable is no-migration). |
 | **D-R5-3** | Canonicalization is a **new top-level compile stage** inserted between current Stage [5] reconcile and current Stage [6] build_source_state. Both downstream consumers — `patch_applier` (writes wiki pages) and `graph_sync` (writes the live GraphDB ontology authority per D50/D51) — consume the **canonicalized** compile_result. | Wiki pages and graph entities must agree on names. If canonicalization runs only inside graph_sync, the vault shows `[[AAPL.md]]` while the graph stores `apple-inc` — a divergence the human sees in Obsidian and that breaks the wiki↔graph correspondence. Single source of canonical truth, consumed identically by both renderings. Requires journal schema bump (canonical_meta in compile_result, see D-R5-7). |
 | **D-R5-4** | The canonicalization contract is **idempotent and pure**: output is a deterministic function of (extraction output, alias-ledger-snapshot). No hidden in-memory state; full canonicalization output is written into the compile_result payload archived per-run at `state/runs/<run_id>/compile_result.json`. | Preserves #63 D34 independence-by-shared-upstream and D39 replay semantics. `graphdb-kdb rebuild` reconstructs the graph including all aliases by replaying the canonicalized compile_results from sidecar archives — no separate alias state needs to survive. |

@@ -8,7 +8,7 @@ an empirical claim, not an architectural axiom.
 
 Mostly correct. The Round 4 claim that power comes from "typed entities" and a
 "controlled relationship vocabulary" does reintroduce pre-decided meaning at
-the schema layer (`docs/what-is-the-ontology-for.md` §6.3, line 419). But the
+the schema layer (`docs/what-is-ontology-for-V1.md` §6.3, line 419). But the
 cleaner distinction is: structured representation is not A; human-defined
 controlled schema as a precondition is A.
 
@@ -20,7 +20,7 @@ if outputs are auditable, revisable, provenance-linked, and not treated as
 canonical truth.
 
 C2 holds if domain is post-ingest metadata and query-time partitioning
-(`docs/what-is-the-ontology-for.md` §7.2, lines 573-583). If domain affects
+(`docs/what-is-ontology-for-V1.md` §7.2, lines 573-583). If domain affects
 ingestion, prompts, extraction policy, storage paths, or acceptance, it becomes
 a gate.
 
@@ -28,7 +28,7 @@ a gate.
 
 Sound but slightly underdeveloped. Claude is right that HippoRAG/PPR and
 GraphRAG-style community detection do not require a typed domain schema
-(`docs/what-is-the-ontology-for.md` §7.2, lines 552-565). The missing nuance:
+(`docs/what-is-ontology-for-V1.md` §7.2, lines 552-565). The missing nuance:
 schemaless graphs can still support richer operations through induced types,
 embeddings, clustering, and runtime projections. Typed schema buys domain
 algorithms, but domain algorithms do not have to be human-authored upfront.
@@ -37,14 +37,14 @@ algorithms, but domain algorithms do not have to be human-authored upfront.
 
 Correct. Treating 10x as a finished answer was too strong; Joseph's correction
 that it is another deliberation-stage attempt is persuasive
-(`docs/what-is-the-ontology-for.md` §7.1, lines 459-469). Reframing it as a
+(`docs/what-is-ontology-for-V1.md` §7.1, lines 459-469). Reframing it as a
 parallel domain-first experiment is the right move
-(`docs/what-is-the-ontology-for.md` §7.2, lines 528-535).
+(`docs/what-is-ontology-for-V1.md` §7.2, lines 528-535).
 
 ## 5. Empirical Hedges
 
 The two named hedges are real: scale and cross-domain density
-(`docs/what-is-the-ontology-for.md` §7.3, lines 684-692). Missing hedges:
+(`docs/what-is-ontology-for-V1.md` §7.3, lines 684-692). Missing hedges:
 extraction consistency, entity resolution/canonicalization, relation drift,
 provenance quality, evaluation metrics, query workload definition,
 contradiction handling, stale-source revision, and cost/latency at repeated
@@ -54,7 +54,7 @@ compile time.
 
 Mostly sound, but only if paired with predeclared evaluation criteria. "Build
 harvesters, run operations, revisit if degenerate" is pragmatic
-(`docs/what-is-the-ontology-for.md` §7.2, lines 622-635). But without
+(`docs/what-is-ontology-for-V1.md` §7.2, lines 622-635). But without
 success/failure tests, it risks becoming implementation momentum disguised as
 empiricism.
 
@@ -62,7 +62,7 @@ empiricism.
 
 Load-bearing, but overstated. If A means "humans must confer all meaning before
 storage," then yes, KDB's novelty collapses
-(`docs/what-is-the-ontology-for.md` §7.2, lines 507-512). But A-flavored
+(`docs/what-is-ontology-for-V1.md` §7.2, lines 507-512). But A-flavored
 systems can still be worth building: automated curation, high-recall personal
 search, contradiction tracking, source-grounded synthesis, and maintenance of a
 human-approved knowledge base. They are less novel than B, not worthless.

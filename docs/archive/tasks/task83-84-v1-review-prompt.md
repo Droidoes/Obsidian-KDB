@@ -19,7 +19,7 @@ This is the **holistic v1 review** — your chance to stress-test the blueprint 
 
 ### Project context (brief)
 
-The blueprint operationalizes the "Learn" arm of the project's [B]/[C]/[A] second-brain goal (per `docs/what-is-the-ontology-for.md` §9.4). Round 6 ratified three Learn mechanisms + Hypothesis Promotion as a first-class boundary contract (the **(a+)** decision):
+The blueprint operationalizes the "Learn" arm of the project's [B]/[C]/[A] second-brain goal (per `docs/what-is-ontology-for-V1.md` §9.4). Round 6 ratified three Learn mechanisms + Hypothesis Promotion as a first-class boundary contract (the **(a+)** decision):
 
 1. Belief Revision (Task #84)
 2. Identity Refinement (Task #85, deferred)
@@ -69,4 +69,4 @@ Standard review-prompt format. Suggested structure:
 
 Attached: `docs/task83-84-promotion-contract-belief-revision-blueprint.md` (full file).
 
-For project context: see also `docs/what-is-the-ontology-for.md` §9.4 (Round 6 closure that mandated this blueprint), `docs/external-review-panel.md` (reviewer panel composition), and `docs/CODEBASE_OVERVIEW.md` (architecture).
+For project context: see also `docs/what-is-ontology-for-V1.md` §9.4 (Round 6 closure that mandated this blueprint), `docs/external-review-panel.md` (reviewer panel composition), and `docs/CODEBASE_OVERVIEW.md` (architecture).

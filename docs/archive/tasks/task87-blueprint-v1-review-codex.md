@@ -112,7 +112,7 @@ The prompt asks reviewers to map HW-1..HW-7 against:
 
 The current HW list mostly monitors drift, confidence distribution, idempotency, supersession depth, and claim-id collisions. Those are useful, but they do not directly cover the three named hedges.
 
-There is also a source mismatch: `docs/what-is-the-ontology-for.md` §9.4.7 currently names the Round 6 hedges as vanity-graph, stranded-summary, and under-counted-Learn-surface. The review prompt's HW-a/HW-b/HW-c wording is not the same source text.
+There is also a source mismatch: `docs/what-is-ontology-for-V1.md` §9.4.7 currently names the Round 6 hedges as vanity-graph, stranded-summary, and under-counted-Learn-surface. The review prompt's HW-a/HW-b/HW-c wording is not the same source text.
 
 **Recommendation:** Reconcile the hedge source before v2. Either update the prompt/blueprint to the actual §9.4.7 hedge names, or record that HW-a/HW-b/HW-c are derived operationalizations. Then add explicit HW rules:
 
@@ -148,5 +148,5 @@ O1 idempotency covers retrying the same candidate against post-state. It does no
 
 1. For human-review drift cells, is the eval expected to stop at a review artifact, or should #87 define a second input shape for "operator approved, now apply mutation"?
 2. Is explicit retraction intended to ship with #83/#84 v1 behavior or only be represented as pre-seeded fixture state for read filtering?
-3. Which Round 6 hedge vocabulary is authoritative for #87: the prompt's HW-a/HW-b/HW-c, or `what-is-the-ontology-for.md` §9.4.7 as currently written?
+3. Which Round 6 hedge vocabulary is authoritative for #87: the prompt's HW-a/HW-b/HW-c, or `what-is-ontology-for-V1.md` §9.4.7 as currently written?
 4. Should #87.1 include invalid pre-state scenarios, or should all verifier-invalid fixtures be excluded from eval by construction?

@@ -1,8 +1,10 @@
-# What Is the Ontology For? — Foundational Discussion
+# What Is Ontology For? — Foundational Discussion
 
 **Status:** RESOLVED across all rounds. Original A/B question → **B + X6** (Exchange 4, §6.4). Domain/schema fork → **B with (C1) LLM-extracted not human-defined + (C2) domain as coordinate not gate** (Exchange 5, §7.3). Post-external-takes closeout → **B committed; canonicalization-first into blueprint; hedges remain empirical watch-fors only** (§8). Round 5 closed.
-**Started:** 2026-05-17
-**Participants:** Joseph (human) + Claude Opus 4.7 (staff architect)
+**Created:** 2026-05-17 23:39 EDT (commit `docs: ingestion-subsystem brainstorm + kernel question resolved`)
+**Created by:** Joseph (human)
+**Synthesised by:** Claude Opus 4.7 (staff architect)
+**Refined:** 2026-05-31 — V1.1 objective-ladder refinement (filename unchanged); see the V1.1 section below.
 
 **Why this doc exists.** This question surfaced mid-way through the
 ingestion-subsystem brainstorm (see `archive/early/ingestion-subsystem-brainstorm.md`).
@@ -10,6 +12,45 @@ Joseph identified it as *"the actual kernel of this project and what I have
 been seeking."* It is documented in its own file, and **verbatim**, because the
 exchange that produced it must be preserved exactly — not paraphrased — so the
 reasoning is not lost or distorted as the discussion continues.
+
+---
+
+## V1.1 — Objective ladder refinement (2026-05-31)
+
+The three-fold goal of §6.1 (Remember / Learn / Create) is refined into a
+**five-rung capability ladder**, ordered by expanding epistemic boundary:
+
+1. **Remember** — recall what KDB already holds. *(Solid — associative
+   retrieval / PPR.)*
+2. **Relate** — traverse the explicit edges connecting what KDB holds. *(Solid
+   — the graph's reason to exist over flat/vector storage; quality bounded by
+   edge-vocabulary richness, ¶419.)*
+3. **Learn** — KDB's own state evolves as new evidence arrives. *(Solid,
+   designed — Round 6: Belief Revision / Identity Refinement / Abstraction,
+   gated by Hypothesis Promotion #83.)*
+4. **Discover** — surface knowledge that *exists* but is *not yet in KDB*:
+   real-but-undrawn connections and missing concepts. *(Aspirational,
+   scale-bounded — ¶407 "a prompt, not a discovery engine" at personal scale;
+   Swanson literature-based discovery is the canonical case.)*
+5. **Create** — invent knowledge that exists *nowhere*, novel by definition not
+   in KDB. *(Aspirational frontier — ¶413's autonomous version is still a dream;
+   the real form is collaboration: the graph provokes, the human/LLM authors,
+   the result re-ingests via Learn.)*
+
+**Ordering rationale.** Rungs 1–3 operate *within* KDB; rung 4 reaches *beyond
+KDB into reality*; rung 5 reaches *beyond all existing knowledge*.
+
+**Honesty stance.** Discover and Create stay on the ladder as aspirational
+North-Star objectives — surfaced, not hidden, honestly labeled bounded/frontier.
+Not claimed as achieved.
+
+**Reconciliation with Round 6.** This names *user-facing objectives*; it does not
+disturb Round 6's *mechanism* taxonomy. Connection-discovery / link-prediction /
+structural-holes / communities remain "Analysis" operations, and the Hypothesis
+Promotion contract (#83) still gates any Discover/Learn output from mutating
+graph state. Objectives = what the brain is *for*; mechanisms = *how state
+changes and how change is gated*. (V1.1 splits ¶413's "surface latent
+structure": *surfacing* real-but-undrawn = Discover; *authoring* novel = Create.)
 
 ---
 

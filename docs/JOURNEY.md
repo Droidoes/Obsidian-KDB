@@ -101,7 +101,7 @@ The cost of doing the right thing the wrong way: a multi-iteration delay where a
 
 ### The philosophy doc (early Iter #3)
 
-Before code, the project paused for a Philosophy A vs B discussion captured in `docs/what-is-the-ontology-for.md`:
+Before code, the project paused for a Philosophy A vs B discussion captured in `docs/what-is-ontology-for-V1.md`:
 - **Philosophy A** (Opus + Codex initial position): human curation and control are necessary for an efficient, lasting GraphDB.
 - **Philosophy B** (user position): trust the LLM to do the magic; minimize human curation overhead.
 

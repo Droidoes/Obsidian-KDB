@@ -3,7 +3,7 @@
 **Status:** Proposed Design — awaiting collective selection and Proceed (see §10)
 **Date:** 2026-05-20
 **Reference:** [`docs/TASKS.md`](TASKS.md) → Task #63 (continuation family)
-**Anchor:** Round 5 §8.2 (canonicalization-first mandate) and §8.4 (5-layer selection structure) in [`docs/what-is-the-ontology-for.md`](what-is-the-ontology-for.md)
+**Anchor:** Round 5 §8.2 (canonicalization-first mandate) and §8.4 (5-layer selection structure) in [`docs/what-is-ontology-for-V1.md`](what-is-ontology-for-V1.md)
 **Memory:** `feedback_no_imaginary_risk.md`, `feedback_apples_to_apples_within_session.md`, `feedback_measurability_over_defensive_complexity.md`
 
 ---

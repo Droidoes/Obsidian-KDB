@@ -81,7 +81,7 @@ after ≥2 concrete harvesters exist (see §3 build order).
 |---|---|---|
 | F0 | Vocabulary: harvester / compiler / graph-ingestor | 🟢 |
 | F1 | Harvester contract (ABC shape) | ⏸ deferred to extraction |
-| F2 | Sink & namespace: write only to `raw/<namespace>/` | ⏸ reopened — blocked on kernel question (flat vs. namespaced vs. raw/→sources/; see `what-is-the-ontology-for.md` §4) |
+| F2 | Sink & namespace: write only to `raw/<namespace>/` | ⏸ reopened — blocked on kernel question (flat vs. namespaced vs. raw/→sources/; see `what-is-ontology-for-V1.md` §4) |
 | F3 | Stable raw-file identity & path convention (slug sanitization, collisions, source URI, upstream ID, rename = new vs. preserved) | ⏸ reopened — blocked on kernel question |
 | F4 | Raw frontmatter / provenance contract — *constraint: volatile fields must not enter the hashed body (D46)* | 🔴 decide in Spec 1 |
 | F5 | Upstream cursor | 🟢 none — stateless harvester (see §6 [3]) |
@@ -95,7 +95,7 @@ after ≥2 concrete harvesters exist (see §3 build order).
 
 | ID | Item | Status |
 |---|---|---|
-| DD1 | Selection scope (which repos, which paths, exclusions) | ⏸ blocked on kernel question — see `what-is-the-ontology-for.md` |
+| DD1 | Selection scope (which repos, which paths, exclusions) | ⏸ blocked on kernel question — see `what-is-ontology-for-V1.md` |
 | DD2 | Upstream cursor for git (SHA vs. mtime) | 🔴 |
 | DD3 | Multi-repo path collision | 🔴 |
 | DD4 | Overlap with manually-curated `raw/` sources (`CODEBASE_OVERVIEW.md` is already one) | 🟢 exclude `Obsidian-KDB` repo (see §6 [2b]) |
@@ -141,8 +141,8 @@ after ≥2 concrete harvesters exist (see §3 build order).
 | 2026-05-17 | Vocabulary fixed: harvester / compiler / graph-ingestor (F0). |
 | 2026-05-17 | Codex review incorporated; Codex's "X6 — ontology record authority" dropped — D51 already settles it; valid kernel folded into F9. |
 | 2026-05-17 | **Build order = concrete-first, extract-later.** No upfront framework design. Build Droidoes-docs harvester concretely → second harvester → then extract the shared framework (F1/F8/F9/F10) as a refactor. Per Rule of Three + KDB's own manifest/GraphDB refactor history. F2–F7 decided concretely per harvester. |
-| 2026-05-17 | **Kernel question raised — "what is the ontology for?"** DD1 (and X6 scope, C3) blocked until resolved. Philosophy A (harvester curates) vs. B (compiler filters) vs. A+B (tagged sub-graphs). Discussion captured verbatim in `docs/what-is-the-ontology-for.md`. |
-| 2026-05-17 | **F2/F3 reopened.** Joseph↔Codex Exchange 3 (raw/ structure: flat vs. namespaced vs. `sources/` vs. vault-as-corpus) recognized as the A/B divide in disguise — captured in `what-is-the-ontology-for.md` §4. F2/F3 blocked on the kernel question. |
+| 2026-05-17 | **Kernel question raised — "what is the ontology for?"** DD1 (and X6 scope, C3) blocked until resolved. Philosophy A (harvester curates) vs. B (compiler filters) vs. A+B (tagged sub-graphs). Discussion captured verbatim in `docs/what-is-ontology-for-V1.md`. |
+| 2026-05-17 | **F2/F3 reopened.** Joseph↔Codex Exchange 3 (raw/ structure: flat vs. namespaced vs. `sources/` vs. vault-as-corpus) recognized as the A/B divide in disguise — captured in `what-is-ontology-for-V1.md` §4. F2/F3 blocked on the kernel question. |
 
 ## 6. Resolutions (filled in as items close)
 
@@ -181,7 +181,7 @@ local file copies. → settles **F5/F6/F7** for this harvester.
 
 Earlier lean: harvested files repo-qualified by construction
 (`raw/droidoes-docs/<repo>/…`), making collisions impossible. **Reopened** —
-the Joseph↔Codex Exchange 3 (`what-is-the-ontology-for.md` §4) showed that
+the Joseph↔Codex Exchange 3 (`what-is-ontology-for-V1.md` §4) showed that
 "flat heap vs. structured tree vs. `raw/` → `sources/` rename vs. vault-as-corpus"
 is not an implementation detail: it is the A/B kernel question in disguise. A
 structured/quarantined `raw/` presupposes Philosophy A. Blocked until the

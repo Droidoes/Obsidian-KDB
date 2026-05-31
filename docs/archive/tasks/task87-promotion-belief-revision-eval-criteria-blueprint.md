@@ -273,7 +273,7 @@ HW rules instrument the system in production. Each rule has a **shape** (the sym
 
 Two distinct hedge inputs feed the HW roster:
 
-1. **Round 6 hedges** (the architectural watch-for-at-implementation hedges from `docs/what-is-the-ontology-for.md` §9.4.7, ratified at Round 6 closure):
+1. **Round 6 hedges** (the architectural watch-for-at-implementation hedges from `docs/what-is-ontology-for-V1.md` §9.4.7, ratified at Round 6 closure):
    - **Vanity-graph failure mode** — Analysis surfaces N candidates; Promotion accepts M ≪ N over a sustained window. **In #87's territory** — mapped to **HW-8** below.
    - **Stranded-summary failure mode** — Task #86 GraphRAG-style summaries indexed but never become graph elements. **Owned by Task #86 eval surface, not #87.**
    - **Under-counted-Learn-surface failure mode** — Task #74 canonicalization hosts genuine epistemic decisions in practice. **Owned by Task #74 canonicalization audit, not #87.**
@@ -569,7 +569,7 @@ D-83/84-2's action table has no row for the case where a candidate's counterpart
 - `docs/task19-kpi-design.md` — earlier precedent (compile-side KPI predeclaration → CODEBASE_OVERVIEW §7)
 - `docs/external-review-panel.md` — active reviewer panel (Codex + Deepseek + Qwen)
 - `docs/CODEBASE_OVERVIEW.md` — architecture context
-- `docs/what-is-the-ontology-for.md` §9.4 — Round 6 closure that mandated #83/#84
+- `docs/what-is-ontology-for-V1.md` §9.4 — Round 6 closure that mandated #83/#84
 
 ---
 

@@ -55,7 +55,7 @@ no fan-out into broader step-3 design.
 
 ### 1.1 Round 5 §7.3 — the C2 calibration
 
-`docs/what-is-the-ontology-for.md` §7.3 closes Round 5 with **B + two
+`docs/what-is-ontology-for-V1.md` §7.3 closes Round 5 with **B + two
 calibrations**: (C1) LLM-extracted, not human-defined, ontology; and
 (C2) **domain as coordinate, not gate**. C2 is the subject of this
 task.
@@ -1163,7 +1163,7 @@ loader that currently doesn't filter — flagged as a follow-up.
 
 ## 9. References
 
-- `docs/what-is-the-ontology-for.md` §7.3 — Round 5 C2 calibration
+- `docs/what-is-ontology-for-V1.md` §7.3 — Round 5 C2 calibration
   (domain-as-coordinate); §8 — closeout.
 - `docs/task75-predeclared-eval-criteria-blueprint.md` §6.1 — narrowing
   of Step-3 dependency on `domain` (this task's scope precondition).

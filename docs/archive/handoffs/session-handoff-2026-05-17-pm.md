@@ -15,7 +15,7 @@ it.
 | Doc | Purpose |
 |-----|---------|
 | `docs/ingestion-subsystem-brainstorm.md` | Working agenda for the ingestion subsystem — framework + 3 harvesters (Droidoes-docs, Obsidian-vault, LLM-chats). Codex-reviewed. |
-| `docs/what-is-the-ontology-for.md` | The kernel-question discussion, captured verbatim — 4 exchanges (X6 clarification, Philosophy A/B, Joseph↔Codex on `raw/` structure, "what is knowledge"). |
+| `docs/what-is-ontology-for-V1.md` | The kernel-question discussion, captured verbatim — 4 exchanges (X6 clarification, Philosophy A/B, Joseph↔Codex on `raw/` structure, "what is knowledge"). |
 
 ## Key resolutions
 
@@ -41,7 +41,7 @@ GraphRAG (`arXiv:2404.16130`), LazyGraphRAG, HippoRAG (`arXiv:2405.14831` /
 `2502.14802`), Pan et al. roadmap (`arXiv:2306.08302`), GraphRAG-vs-vector eval
 (`arXiv:2502.11371`). Verdict: *a graph you look at is worthless; a graph you
 run algorithms on is the whole point.* Full synthesis + citations in
-`what-is-the-ontology-for.md` §6.2.
+`what-is-ontology-for-V1.md` §6.2.
 
 ## The open fork — next session (Round 5)
 

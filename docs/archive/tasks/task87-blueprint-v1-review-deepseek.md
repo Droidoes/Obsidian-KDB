@@ -51,7 +51,7 @@ eval_clock: "2026-06-01T00:00:00Z"  # fixed reference time for decay-weighted co
 
 ### F3 — Round 6 hedges (HW-a, HW-b, HW-c) have incomplete coverage in HW-1..HW-7 (Axis 5)
 
-The prompt explicitly asks: are the three Round 6 hedges from `docs/what-is-the-ontology-for.md` §9.4.7 reflected in HW-1..HW-7? The mapping:
+The prompt explicitly asks: are the three Round 6 hedges from `docs/what-is-ontology-for-V1.md` §9.4.7 reflected in HW-1..HW-7? The mapping:
 
 | Round 6 hedge | Nearest HW rule | Coverage |
 |---|---|---|

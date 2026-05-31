@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-22  
 **Status:** Codex recommendation for Round 6 Fork-A resolution  
-**Context:** `docs/what-is-the-ontology-for.md` section 9.3.6 candidate selection
+**Context:** `docs/what-is-ontology-for-V1.md` section 9.3.6 candidate selection
 
 ## Recommendation
 

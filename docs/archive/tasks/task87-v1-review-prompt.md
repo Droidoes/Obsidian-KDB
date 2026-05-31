@@ -47,7 +47,7 @@ Read the full blueprint end-to-end. Then stress-test along these axes:
 
 4. **Invariants reference (§5).** The blueprint references #83/#84 §6 invariants (Claim-Claim acyclicity, retracted-claim non-revival, EVIDENCES-source existence, etc.) instead of duplicating. Is the pointer sufficient? Should any invariants be *additionally* called out as eval-critical (i.e., "this is a non-negotiable invariant — fail the op if violated")?
 
-5. **Hedge-watch rules (§6, HW-1..HW-7).** These are shaped-threshold criteria that turn into Pass/Fail later when #87.1 lands curated probe sets. Are HW-1..HW-7 covering the right hedges? In particular: are the **hedges from the Round 6 ontology-purpose discussion** (per `docs/what-is-the-ontology-for.md` §9.4.7) reflected? Reminder — the three Round 6 hedges were:
+5. **Hedge-watch rules (§6, HW-1..HW-7).** These are shaped-threshold criteria that turn into Pass/Fail later when #87.1 lands curated probe sets. Are HW-1..HW-7 covering the right hedges? In particular: are the **hedges from the Round 6 ontology-purpose discussion** (per `docs/what-is-ontology-for-V1.md` §9.4.7) reflected? Reminder — the three Round 6 hedges were:
    - **HW-a:** Hypothesis Promotion gate becomes a productivity bottleneck (latency/throughput watch)
    - **HW-b:** Belief Revision audit-trail grows unwieldy (graph-size growth watch)
    - **HW-c:** Predicate-class taxonomy fragments under real corpus stress (canonicalization watch)
@@ -82,7 +82,7 @@ Attached: `docs/task87-promotion-belief-revision-eval-criteria-blueprint.md` (fu
 
 For project context: see also
 - `docs/task83-84-promotion-contract-belief-revision-blueprint.md` (the operations being evaluated; §6 holds the invariants this blueprint references)
-- `docs/what-is-the-ontology-for.md` §9.4.7 (Round 6 hedges that informed HW rules)
+- `docs/what-is-ontology-for-V1.md` §9.4.7 (Round 6 hedges that informed HW rules)
 - `docs/external-review-panel.md` (reviewer panel composition)
 - `docs/CODEBASE_OVERVIEW.md` (architecture)
 - Optional precedent: `docs/task75-predeclared-eval-criteria-blueprint.md` (the retrieval-eval pattern this one adapts — reading it side-by-side may help you see what's intentionally different here).

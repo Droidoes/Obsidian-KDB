@@ -6,7 +6,7 @@ This document records the architectural evaluation of the "Learn" operationaliza
 
 ## 1. The Epistemic Frame
 
-Per the cross-model consensus synthesized in `docs/what-is-the-ontology-for.md` §9.3, the project locks the following definitions:
+Per the cross-model consensus synthesized in `docs/what-is-ontology-for-V1.md` §9.3, the project locks the following definitions:
 
 *   **Remember (Retrieval)**: Reading/traversal over a frozen graph snapshot (PPR, queries, neighborhood lookups).
 *   **Analysis (Computation)**: Running structural algorithms over a frozen snapshot to produce ephemeral reports (link prediction, community detection, structural-hole detection).
@@ -98,5 +98,5 @@ While Option A is theoretically more elegant, it treats the most complex and ris
 ## 5. Next Steps (Collective Selection Gate)
 
 1.  **Team Selection**: Discuss and refine these options. **WAIT** for consensus before proceeding.
-2.  **Ontology Update**: Update `docs/what-is-the-ontology-for.md` §9.4 to capture the chosen option as the locked framework.
+2.  **Ontology Update**: Update `docs/what-is-ontology-for-V1.md` §9.4 to capture the chosen option as the locked framework.
 3.  **Detailed Blueprinting**: Author the detailed technical blueprint (logic flows, data schemas, and interface declarations) for the selected slots.

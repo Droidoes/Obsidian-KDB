@@ -185,7 +185,7 @@ End A is being put down clean. Three tiers to settle before opening Task #88:
 - **Memory `feedback_no_imaginary_risk`** — applies to ingestion: don't over-engineer multi-stream support before validating single-stream end-to-end
 - **Path 0 findings as design input**: #76 Domain field dormant in production (root cause = prompt under-instruction) is now design INPUT for the ingestion-side metadata extraction, not a fix-in-place target
 - **`docs/external-review-panel.md`** — the 3-reviewer panel composition + flow
-- **`docs/what-is-the-ontology-for.md` §9.4** — Round 6 context; Analysis-op question lives here
+- **`docs/what-is-ontology-for-V1.md` §9.4** — Round 6 context; Analysis-op question lives here
 
 ## Mental state for resumption
 

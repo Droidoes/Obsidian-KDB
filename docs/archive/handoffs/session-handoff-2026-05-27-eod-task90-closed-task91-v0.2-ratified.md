@@ -119,7 +119,7 @@ Multi-arc day: morning #90 closure ceremony → afternoon #88 sub-arc 3 architec
 ### Alternative paths (carried-forward open tracks)
 
 - **NW-5 (Pass-1 benchmark)** — would empirically validate Pass-1 prompt v1.0.0 → v1.1.0 hit-rate delta (§10 watch-for #7); follows #75/#87 predeclared-eval-criteria pattern. Filing precedent: separate sibling task, ~3000-line blueprint.
-- **Tutorial promotion review** — open Codex's 3 tutorial files in editor; assess which sections belong in North Star docs vs stay as supplementary primer. Likely outcome: most stays supplementary; specific definitions might promote into `docs/CODEBASE_OVERVIEW.md` or `docs/what-is-the-ontology-for.md` glossary sections.
+- **Tutorial promotion review** — open Codex's 3 tutorial files in editor; assess which sections belong in North Star docs vs stay as supplementary primer. Likely outcome: most stays supplementary; specific definitions might promote into `docs/CODEBASE_OVERVIEW.md` or `docs/what-is-ontology-for-V1.md` glossary sections.
 - **GraphDB-KDB anomaly** — `file ~/Droidoes/GraphDB-KDB` reports "data" (not directory). Joseph last touched 2026-05-10 per `[[project_graphdb_kdb_refoundation]]`. Likely a stale move artifact from the project rename; quick `mv` or `rm` (after `file` content inspection).
 
 ### Skip-current-direction alternatives

@@ -16,7 +16,7 @@ three phases:
 1. **Round 5 closure** — three forks decided (canonicalization first-class,
    critical density no-op, layered-selection vocabulary adopted), Codex's
    selection-layers reframe reversed from "not engaged" to "adopted as
-   blueprint vocabulary," `what-is-the-ontology-for.md` §8 written.
+   blueprint vocabulary," `what-is-ontology-for-V1.md` §8 written.
 2. **Task #74 blueprint** — two external review rounds with Codex and
    Antigravity/Gemini, including Gemini's premature draft (preserved as
    scratch) and a tie-break on the YAML-vs-JSON ledger format (chose JSON
@@ -41,7 +41,7 @@ three phases:
 
 | Doc | Purpose | State |
 |---|---|---|
-| `docs/what-is-the-ontology-for.md` | Kernel-question discussion record | §8 written (Round 5 closeout, §8.1–8.6); all Round 5 OQs resolved; document marked RESOLVED across all rounds |
+| `docs/what-is-ontology-for-V1.md` | Kernel-question discussion record | §8 written (Round 5 closeout, §8.1–8.6); all Round 5 OQs resolved; document marked RESOLVED across all rounds |
 | `docs/task74-canonicalization-blueprint.md` | Task #74 implementation blueprint | New — 13 Locked Decisions (D-R5-1…13), 7 Open Questions all resolved, full algorithm spec, schema delta, pipeline integration, sub-task breakdown, 60-test target |
 | `docs/task74-canonicalization-blueprint-gemini-draft.md` | Gemini's premature first-pass draft, preserved as scratch reference | New — illustrates the post-#73 architecture drift Codex caught; kept for future provenance |
 | `docs/round5-external-review-codex.md` | Codex's Round 5 review verbatim | New |

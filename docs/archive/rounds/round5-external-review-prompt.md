@@ -2,12 +2,12 @@
 
 Reusable prompt for soliciting independent second opinions from external LLM
 agents (Codex CLI, Gemini CLI, etc.) on the Round 5 resolution of the kernel
-question (`docs/what-is-the-ontology-for.md` §7).
+question (`docs/what-is-ontology-for-V1.md` §7).
 
 ## How to use
 
 1. **Run the external agent from the repo root** (`~/Droidoes/Obsidian-KDB`) so
-   the relative path `docs/what-is-the-ontology-for.md` resolves.
+   the relative path `docs/what-is-ontology-for-V1.md` resolves.
 2. **Paste the prompt below** into the agent's session.
 3. **(Optional for Gemini)** append: *"Where relevant, ground your assessment
    in the GraphRAG / HippoRAG / LazyGraphRAG / Pan et al. literature the doc
@@ -24,7 +24,7 @@ architectural deliberation between Joseph (project owner) and Claude on a
 personal knowledge-graph project called "Obsidian-KDB". The full deliberation
 lives at:
 
-    docs/what-is-the-ontology-for.md
+    docs/what-is-ontology-for-V1.md
 
 Please read the entire document. The key sections are:
 - §5 — the kernel question restated
@@ -118,7 +118,7 @@ and vice versa.
 ## Notes for future rounds
 
 - This prompt template works for any future kernel-question round that lands
-  in `docs/what-is-the-ontology-for.md`. Replace the §7 reference and the
+  in `docs/what-is-ontology-for-V1.md`. Replace the §7 reference and the
   "context" block with the current round's specifics; keep the structured-
   questions pattern and the explicit "do not flatter" framing.
 - Past prompts asking external agents for general feedback tended to produce

@@ -1,7 +1,7 @@
 # Round 6 Research Synthesis — Opus 4.7
 
 **Role:** Research synthesist. Literature survey + stress-test of the
-working hypothesis in `docs/what-is-the-ontology-for.md` §9.1.1. No
+working hypothesis in `docs/what-is-ontology-for-V1.md` §9.1.1. No
 implementation, no task plans, no schema diffs.
 **Filed:** 2026-05-22
 

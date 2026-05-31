@@ -495,7 +495,7 @@ Belongs to Component #6 deep-design.
 - `docs/graphdb-kdb-producer-contract.md` v1.0 (frozen 2026-05-23) — the existing producer contract end A still owns
 - `docs/CODEBASE_OVERVIEW.md` — end-A architectural state + Milestone Changelog
 - `docs/JOURNEY.md` — three-iteration retrospective
-- `docs/what-is-the-ontology-for.md` §9.4 — Round 6 context for Component #6 (b) scope
+- `docs/what-is-ontology-for-V1.md` §9.4 — Round 6 context for Component #6 (b) scope
 - `docs/external-review-panel.md` — reviewer panel composition + flow
 - `docs/task83-84-promotion-contract-belief-revision-blueprint.md` — Promotion Contract that consumes Analysis op outputs (Component #6 (b))
 - `docs/task87-promotion-belief-revision-eval-criteria-blueprint.md` — predeclared-eval pattern NW-5 + NW-6 will follow

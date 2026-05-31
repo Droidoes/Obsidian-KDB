@@ -11,7 +11,7 @@ Task #74.4.
 
 References:
 - docs/task74-canonicalization-blueprint.md §6 (contract) and §7 (algorithm)
-- docs/what-is-the-ontology-for.md §8.2 (canonicalization-first mandate)
+- docs/what-is-ontology-for-V1.md §8.2 (canonicalization-first mandate)
 
 Errors raised here are fatal per D-R5-9 — Stage [6] failure prevents the
 compile from progressing to patch_applier so the vault is not written
