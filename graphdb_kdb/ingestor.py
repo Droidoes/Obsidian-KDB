@@ -8,7 +8,6 @@ destination (Codex v2 M3) and writes only Source-schema-defined fields
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Any
 
@@ -79,19 +78,9 @@ def apply_compile_result(
         # cross-entity (and cross-source) references resolve correctly: pass 1
         # upserts every Entity node across all sources first; pass 2 wires LINKS_TO,
         # SUPPORTS, and the ingest-state update.
-        #
-        # Pre-build alias→canonical lookup for Phase 3.6 domain ingest (OQ-10).
-        # Defensive: Stage 6 already resolves alias page slugs to canonical in
-        # compiled_sources[].pages[], so this map is typically a no-op.
-        alias_to_canonical: dict[str, str] = {
-            entry["alias_slug"]: entry["canonical_slug"]
-            for entry in (cr.get("canonical_meta") or {}).get("aliases_emitted") or []
-            if entry.get("alias_slug") and entry.get("canonical_slug")
-        }
         for cs in cr.get("compiled_sources", []):
             for page in cs.get("pages", []):
                 _upsert_entity(conn, page, run_id, now, result)
-                _ingest_page_domains(conn, page, alias_to_canonical, run_id, now, result)
         for cs in cr.get("compiled_sources", []):
             if wire_links:
                 for page in cs.get("pages", []):
@@ -99,6 +88,10 @@ def apply_compile_result(
             _replace_supports_for_source(conn, cs, run_id, now, result)
             _update_source_ingest_state(conn, cs, run_id, now)
             _write_source_meta(conn, cs)
+
+        # Phase 3.6 (D1-A): derive Domain + BELONGS_TO from Source.domain + SUPPORTS.
+        # Runs after SUPPORTS (pass 2) + Source.domain (_write_source_meta) are written.
+        rederive_domains(conn, run_id, now, result)
 
         # Phase 3.5 (#74.5): materialize alias Entity rows + ALIAS_OF edges
         # from canonical_meta.aliases_emitted. Runs after Phase 3 so the
@@ -490,95 +483,62 @@ def _write_source_meta(
         )
 
 
-# ---------- Phase 3.6: Domain nodes + BELONGS_TO edges (#76.3) ----------
+# ---------- Phase 3.6: Domain nodes + BELONGS_TO edges (D1-A, derived) ----------
 
-def _normalize_domain(d: str) -> str:
-    """Two-stage normalization: collapse whitespace/dashes, strip non-alphanumeric.
-
-    Examples: "Value Investing" → "value-investing"
-              "investing."     → "investing"
-              "value--investing" → "value-investing"
-    """
-    d = d.strip().lower()
-    d = re.sub(r"[-\s]+", "-", d)
-    d = re.sub(r"[^a-z0-9-]+", "", d)
-    return d.strip("-")
-
-
-def _ingest_page_domains(
+def rederive_domains(
     conn: kuzu.Connection,
-    page: dict,
-    alias_to_canonical: dict[str, str],
     run_id: str,
     now: str,
     result: SyncResult,
 ) -> None:
-    """Phase 3.6 (#76.3): write Domain nodes + BELONGS_TO edges for one page.
+    """D1-A: derive Domain nodes + BELONGS_TO edges from Source.domain + SUPPORTS.
 
-    Canonical-only: alias pages (canonical_id non-null) are skipped; domain
-    context lives on the canonical entity only (OQ-10).
-
-    Sub-domain (R5 omit-when-plural): valid only when domain is a single string.
-    If domain is an array, sub_domain is set to None on all edges.
-
-    Normalization + deduplication: domains normalized via _normalize_domain;
-    post-normalize duplicates (e.g. ["Investing", "investing"]) collapsed via
-    a seen-set before any graph writes.
+    Replaces the per-page LLM domain (removed in 0.5.0). Domain is a coordinate
+    inherited from provenance: an Entity BELONGS_TO every Domain D such that some
+    Source with `Source.domain == D` SUPPORTS it. `support_count` = number of
+    distinct such sources (a filterable strength signal — high = strong anchor,
+    1 = incidental). Canonical-only: alias entities (canonical_id non-null) are
+    skipped. Fully recomputable: the projection is DELETED and rebuilt from
+    authority on every call, so it can never go stale (and `graphdb-kdb rebuild`
+    gets it for free by replaying compile_result.json).
     """
-    if page.get("canonical_id"):
-        return
+    # 1. Clear the derived projection (recomputed from authority each call).
+    conn.execute("MATCH (:Entity)-[r:BELONGS_TO]->(:Domain) DELETE r")
+    conn.execute("MATCH (d:Domain) DELETE d")
 
-    raw_domain = page.get("domain")
-    if not raw_domain:
-        return
+    # 2. Pull (entity_slug, source_domain, source_id) for canonical entities
+    #    supported by a domain-classified source. Source.domain values are the
+    #    Pass-1 controlled vocabulary (already kebab-case ids) — no normalization.
+    r = conn.execute(
+        """
+        MATCH (s:Source)-[:SUPPORTS]->(e:Entity)
+        WHERE s.domain IS NOT NULL AND s.domain <> '' AND e.canonical_id IS NULL
+        RETURN e.slug, s.domain, s.source_id
+        """
+    )
+    agg: dict[tuple[str, str], set[str]] = {}
+    while r.has_next():
+        slug, dom, sid = r.get_next()
+        agg.setdefault((slug, dom), set()).add(sid)
 
-    page_slug = page.get("slug", "")
-    entity_slug = alias_to_canonical.get(page_slug, page_slug)
-
-    if isinstance(raw_domain, str):
-        domain_list = [raw_domain]
-        sub_raw = page.get("sub_domain")
-        # R12 (blueprint §6.3): same normalizer applied to sub_domain so
-        # "Value Investing" stored as "value-investing", not verbatim.
-        sub_norm = _normalize_domain(sub_raw) if sub_raw else ""
-        sub_domain_raw: str | None = sub_norm or None
-    else:
-        domain_list = list(raw_domain)
-        sub_domain_raw = None  # omit-when-plural per R5
-
-    seen: set[str] = set()
-    normalized: list[str] = []
-    for d in domain_list:
-        d_norm = _normalize_domain(d)
-        if d_norm and d_norm not in seen:
-            seen.add(d_norm)
-            normalized.append(d_norm)
-
-    if not normalized:
-        return
-
-    for i, d_norm in enumerate(normalized):
+    # 3. Materialize Domain nodes + BELONGS_TO edges with support_count.
+    domains_seen: set[str] = set()
+    for (slug, dom), sids in agg.items():
+        if dom not in domains_seen:
+            conn.execute(
+                "MERGE (d:Domain {name: $name}) "
+                "ON CREATE SET d.created_at=$ts, d.first_run_id=$run_id",
+                {"name": dom, "ts": now, "run_id": run_id},
+            )
+            domains_seen.add(dom)
         conn.execute(
-            """
-            MERGE (d:Domain {name: $name})
-            ON CREATE SET d.created_at=$ts, d.first_run_id=$run_id
-            """,
-            {"name": d_norm, "ts": now, "run_id": run_id},
+            "MATCH (e:Entity {slug: $slug}), (d:Domain {name: $name}) "
+            "MERGE (e)-[r:BELONGS_TO]->(d) "
+            "SET r.run_id=$run_id, r.created_at=$ts, r.support_count=$cnt",
+            {"slug": slug, "name": dom, "run_id": run_id, "ts": now, "cnt": len(sids)},
         )
-        result.domains_upserted += 1
-
-        sub = sub_domain_raw if i == 0 else None
-
-        conn.execute(
-            """
-            MATCH (e:Entity {slug: $slug}), (d:Domain {name: $name})
-            MERGE (e)-[r:BELONGS_TO]->(d)
-            ON CREATE SET r.run_id=$run_id, r.created_at=$ts, r.sub_domain=$sub
-            ON MATCH SET r.run_id=$run_id, r.created_at=$ts
-            """,
-            {"slug": entity_slug, "name": d_norm, "run_id": run_id, "ts": now, "sub": sub},
-        )
-        result.belongs_to_upserted += 1
+    result.domains_upserted = len(domains_seen)
+    result.belongs_to_upserted = len(agg)
 
 
 # ---------- Phase 3.5: alias Entity + ALIAS_OF writes (#74.5) ----------

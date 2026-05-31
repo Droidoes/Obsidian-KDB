@@ -299,3 +299,29 @@ def test_domain_merge_idempotency(graph_dir):
     assert bc == 1
     assert edge is not None
     assert edge["run_id"] == "run-2"  # ON MATCH SET updates run_id
+
+
+# ---------- 7. rederive: D1-A from Source.domain + SUPPORTS ----------
+
+
+def test_rederive_belongs_to_from_source_domain(graph_dir):
+    """Entity supported by a value-investing source -> BELONGS_TO value-investing, support_count=1."""
+    page = make_page("buffett")
+    cs = make_compiled_source(
+        "Value Investing/a.md", [page],
+        source_meta={"domain": "value-investing", "source_type": "transcript-video",
+                     "author": None, "summary": "x"},
+    )
+    cr = make_compile_result([cs])
+    scan = make_scan([make_scan_entry("Value Investing/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        res = gdb.apply_compile_result(cr, scan, "run-1")
+        r = gdb.conn.execute(
+            "MATCH (e:Entity {slug:'buffett'})-[r:BELONGS_TO]->(d:Domain) "
+            "RETURN d.name, r.support_count"
+        )
+        row = r.get_next()
+    assert row[0] == "value-investing"
+    assert row[1] == 1
+    assert res.belongs_to_upserted == 1
+    assert res.domains_upserted == 1
