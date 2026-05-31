@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Obsidian KDB GraphDB Explorer</title>
+  <!-- Load modern font stack -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Load D3.js v7 from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #080b11;
+      --bg-panel: rgba(13, 17, 28, 0.7);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --font-primary: 'Outfit', sans-serif;
+      --font-mono: 'Fira Code', monospace;
+      
+      /* Tailored HSL Colors for Nodes */
+      --color-source: hsl(158, 64%, 52%);
+      --color-entity: hsl(199, 89%, 60%);
+      --color-domain: hsl(43, 96%, 56%);
+      --color-claim: hsl(0, 93%, 68%);
+      --color-fallback: hsl(265, 80%, 70%);
+
+      --color-source-trans: rgba(52, 211, 153, 0.15);
+      --color-entity-trans: rgba(56, 189, 248, 0.15);
+      --color-domain-trans: rgba(251, 191, 36, 0.15);
+      --color-claim-trans: rgba(248, 113, 113, 0.15);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: radial-gradient(circle at 50% 50%, #111827 0%, #080b11 100%);
+      color: #e2e8f0;
+      font-family: var(--font-primary);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Glassmorphism panels */
+    .glass-panel {
+      background: var(--bg-panel);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      border-radius: 12px;
+      transition: all 0.3s ease;
+    }
+
+    /* Header styling */
+    header {
+      height: 64px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+      background: rgba(8, 11, 17, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand h1 {
+      font-size: 20px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #fff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.5px;
+    }
+
+    .brand span.tag {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+      border: 1px solid var(--border-color);
+    }
+
+    .stats-summary {
+      display: flex;
+      gap: 20px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .stats-summary b {
+      color: #f1f5f9;
+    }
+
+    /* Main Dashboard Layout */
+    .dashboard {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Canvas (Central Graph) */
+    .canvas-container {
+      flex: 1;
+      height: 100%;
+      position: relative;
+      outline: none;
+    }
+
+    #graph-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Header toggle for the combined right panel */
+    .panel-toggle-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #cbd5e1;
+      cursor: pointer;
+      padding: 6px 8px;
+      display: inline-flex;
+      align-items: center;
+      margin-right: 12px;
+      transition: all 0.2s ease;
+    }
+    .panel-toggle-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+    /* Right Sidebar: Details Inspector */
+    .inspector-panel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      bottom: 16px;
+      width: 360px;
+      z-index: 10;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      pointer-events: auto;
+      max-height: calc(100% - 32px);
+      overflow-y: auto;
+    }
+    .inspector-panel.hidden { display: none; }
+    .panel-controls { display: flex; flex-direction: column; gap: 16px; flex: none; }
+    .panel-divider { height: 1px; background: var(--border-color); margin: 16px 0; flex: none; }
+    .inspector-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+    /* Form and Interactive Element Styles */
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #64748b;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Search Input Autocomplete styling */
+    .search-container {
+      position: relative;
+    }
+
+    .search-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 10px 36px 10px 14px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #fff;
+      font-family: var(--font-primary);
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .search-input:focus {
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(0, 0, 0, 0.45);
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+    }
+
+    .search-clear-btn {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 14px;
+      display: none;
+      transition: color 0.2s ease;
+    }
+
+    .search-clear-btn:hover {
+      color: #fff;
+    }
+
+    .autocomplete-list {
+      position: absolute;
+      top: 105%;
+      left: 0;
+      right: 0;
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      z-index: 20;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      display: none;
+    }
+
+    .autocomplete-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-size: 12px;
+      transition: all 0.15s ease;
+    }
+
+    .autocomplete-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .autocomplete-item .item-name {
+      font-weight: 500;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 70%;
+    }
+
+    .autocomplete-item .item-type {
+      font-size: 10px;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    /* Filter Checkboxes */
+    .filter-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 160px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .filter-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 0;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #cbd5e1;
+    }
+
+    .checkbox-label input {
+      accent-color: #cbd5e1;
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .badge-count {
+      font-size: 10px;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 9999px;
+      color: #94a3b8;
+      border: 1px solid var(--border-color);
+    }
+
+    /* Reset button */
+    .btn-reset {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: #f1f5f9;
+      font-family: var(--font-primary);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-reset:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Legend Indicator Badge */
+    .legend-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* Inspector Card Layout */
+    .inspector-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 100%;
+    }
+
+    .inspector-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 12px;
+      color: #64748b;
+      margin: auto;
+      padding: 40px 10px;
+    }
+
+    .inspector-placeholder svg {
+      color: #475569;
+      margin-bottom: 8px;
+    }
+
+    .inspector-header {
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 14px;
+    }
+
+    .inspector-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      line-height: 1.3;
+      margin-bottom: 6px;
+    }
+
+    .inspector-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+
+    /* Properties details list */
+    .properties-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .property-row {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 12px;
+    }
+
+    .property-key {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+    }
+
+    .property-value {
+      color: #cbd5e1;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+
+    .property-value.mono {
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    /* Traversal Navigation Pathways */
+    .traversal-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .traversal-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.02);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      color: #cbd5e1;
+    }
+
+    .traversal-link:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.1);
+      transform: translateX(2px);
+    }
+
+    .traversal-link .link-name {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 70%;
+    }
+
+    .traversal-link .link-rel {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+
+    /* Enriched Ontology Cards */
+    .ontology-card {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .ontology-card.domain-card {
+      background: var(--color-domain-trans);
+      border-color: rgba(251, 191, 36, 0.2);
+    }
+
+    .ontology-card.sourcetype-card {
+      background: var(--color-source-trans);
+      border-color: rgba(56, 189, 248, 0.2);
+    }
+
+    .ontology-card h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ontology-card p {
+      font-size: 11px;
+      line-height: 1.4;
+      color: #cbd5e1;
+    }
+
+    /* D3 SVG Canvas Styles */
+    .node {
+      cursor: pointer;
+      stroke-width: 1.5px;
+      transition: stroke-width 0.2s ease;
+    }
+
+    .node:hover {
+      stroke-width: 2.5px;
+    }
+
+    .edge {
+      fill: none;
+      stroke-opacity: 0.3;
+      transition: stroke-opacity 0.2s ease, stroke-width 0.2s ease;
+    }
+
+    .edge.active {
+      stroke-opacity: 0.85;
+      stroke-width: 2px !important;
+    }
+
+    .edge-label {
+      font-size: 7px;
+      fill: #64748b;
+      pointer-events: none;
+      text-anchor: middle;
+    }
+
+    .node-text {
+      font-size: 9px;
+      font-weight: 500;
+      fill: #94a3b8;
+      pointer-events: none;
+      text-anchor: middle;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8), 0 -1px 3px rgba(0,0,0,0.8);
+      opacity: 0.75;
+      transition: opacity 0.2s ease, fill 0.2s ease;
+    }
+
+    .node-text.active {
+      opacity: 1;
+      fill: #fff;
+      font-weight: 600;
+    }
+
+    .ego-network-dimmed {
+      opacity: 0.08 !important;
+    }
+
+    .ego-network-dimmed-edge {
+      opacity: 0.04 !important;   /* element opacity dims the line AND its arrowhead marker */
+    }
+
+    /* Custom Webkit scrollbar for side panels */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <button class="panel-toggle-btn" id="panel-toggle" onclick="toggleLeftPanel()" title="Hide / show controls">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+      </button>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+        <polyline points="2 17 12 22 22 17"/>
+        <polyline points="2 12 12 17 22 12"/>
+      </svg>
+      <h1>Obsidian KDB GraphDB Explorer</h1>
+      <span class="tag">Gemini v1.0</span>
+    </div>
+    <div class="stats-summary" id="stats-header">
+      <!-- Generated Dynamically -->
+      Nodes: <b id="stat-nodes">0</b> · Edges: <b id="stat-edges">0</b>
+    </div>
+  </header>
+
+  <div class="dashboard">
+    
+    <!-- CENTRAL MAIN INTERACTIVE SVG CANVAS -->
+    <div class="canvas-container" id="canvas">
+      <svg id="graph-svg">
+        <g id="zoom-container">
+          <g id="edges-group"></g>
+          <g id="nodes-group"></g>
+          <g id="labels-group"></g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- RIGHT PANEL: CONTROLS + DETAILS INSPECTOR (combined) -->
+    <div class="inspector-panel glass-panel" id="right-panel">
+
+      <!-- Controls (search + filters + reset) -->
+      <div class="panel-controls">
+        <div class="control-group">
+          <div class="section-title">Search Vault</div>
+          <div class="search-container">
+            <div class="search-input-wrapper">
+              <input type="text" class="search-input" id="node-search" placeholder="Type slug or node name..." oninput="onSearchInput()" autocomplete="off"/>
+              <button class="search-clear-btn" id="search-clear" onclick="clearSearch()">&times;</button>
+            </div>
+            <div class="autocomplete-list" id="autocomplete-popup"></div>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="section-title">Filter Node Types</div>
+          <div class="filter-list" id="node-filters"><!-- Populated dynamically --></div>
+        </div>
+
+        <div class="control-group">
+          <div class="section-title">Filter Relationship Types</div>
+          <div class="filter-list" id="edge-filters"><!-- Populated dynamically --></div>
+        </div>
+
+        <div class="control-group">
+          <button class="btn-reset" onclick="resetAllFilters()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            Reset Graph & Layout
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- Node detail area (innerHTML replaced by JS on selection) -->
+      <div id="inspector" class="inspector-body">
+        <div class="inspector-content" id="inspector-main">
+          <div class="inspector-placeholder">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <h3>Knowledge Inspector</h3>
+            <p style="font-size: 12px; line-height: 1.5; margin-top: 4px;">Click a node on the canvas, select a search result, or navigate traversal paths to explore properties and ontology context.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Injected by the build script
+    const RAW_GRAPH = /*__GRAPH_DATA__*/;
+
+    // ==========================================
+    // 1. EMBEDDED ONTOLOGY GLOSSARIES (Task #95)
+    // ==========================================
+    const DOMAINS_GLOSSARY = {
+      "ai-ml": {
+        display: "AI & Machine Learning",
+        scope: "LLMs, prompt engineering, RAG, models, MLOps, AI tools, knowledge graphs / GraphDB as AI harness, ontology engineering for AI/LLM systems. Technical and foundational content about how AI/ML systems work."
+      },
+      "software": {
+        display: "Software Engineering",
+        scope: "Programming languages, CS algorithms, operating systems (Linux / WSL), Git, dev tools, cloud infrastructure, software architecture."
+      },
+      "hardware": {
+        display: "Computer Hardware",
+        scope: "Computer architecture, chips, semiconductors as engineering, electronics, devices, silicon design."
+      },
+      "math-statistics-logic": {
+        display: "Math, Statistics & Logic",
+        scope: "Pure and applied mathematics, probability, statistics, formal logic, decision theory, computational theory foundations."
+      },
+      "biology": {
+        display: "Biology & Life Sciences",
+        scope: "Life sciences, genetics, cellular biology, evolution, organisms."
+      },
+      "physics": {
+        display: "Fundamental Physics",
+        scope: "Physical sciences, astronomy, cosmology, chemistry at fundamental level, materials physics."
+      },
+      "neuroscience-cognition": {
+        display: "Neuroscience & Cognition",
+        scope: "Brain mechanisms, cognitive science, consciousness studies, philosophy of mind. Maps cognitive phenomena to neurological substrates."
+      },
+      "science-technology": {
+        display: "Science & Technology",
+        scope: "Scientific or technical content that does not fit cleanly into specific S&T sub-domains. Catch-all."
+      },
+      "value-investing": {
+        display: "Value Investing Philosophy",
+        scope: "Investment philosophy, methods, mental models in the Buffett / Munger / Li Lu / Pabrai tradition."
+      },
+      "personal-finance": {
+        display: "Personal Finance & Research",
+        scope: "Applied personal-investor finance: sector analysis (mining, semis, energy), equity research methodology, retirement financial planning, tax strategies, portfolio construction."
+      },
+      "economy-markets": {
+        display: "Economy & Markets",
+        scope: "Macro, monetary policy, currency, bonds, interest rates, commodities, market structure, economic statistics (GDP, central bank data, indicators)."
+      },
+      "business-management": {
+        display: "Business & Management",
+        scope: "Strategy, operations, organizational design — distinct from investment-decision-making."
+      },
+      "health-wellbeing": {
+        display: "Health & Wellbeing",
+        scope: "Nutrition, fitness, longevity, sleep, applied medicine — life-application angle."
+      },
+      "history": {
+        display: "Historical Biographies & Eras",
+        scope: "Historical events, civilizations, eras, biographies, completed historical periods."
+      },
+      "geopolitics": {
+        display: "Geopolitics & World Affairs",
+        scope: "International relations, geopolitical analysis, demographics, world powers."
+      },
+      "psychology": {
+        display: "Psychology & Self-Improvement",
+        scope: "Cognitive psychology, behavior, personal development, productivity."
+      },
+      "spirituality": {
+        display: "Spirituality & Comparative Religion",
+        scope: "Religions, theology, comparative religion, meditation, spiritual practice."
+      },
+      "literature": {
+        display: "Literature & Literary Criticism",
+        scope: "Fiction, poetry, literary criticism, author studies."
+      },
+      "philosophy": {
+        display: "Western & Eastern Philosophy",
+        scope: "Western and Eastern philosophy, ethics, epistemology, metaphysics."
+      },
+      "arts-design": {
+        display: "Arts & Aesthetic Design",
+        scope: "Visual arts, architecture, design (graphic, industrial, interaction, residential), music — aesthetic and creative disciplines."
+      },
+      "lifestyle": {
+        display: "Lifestyle & Living Well",
+        scope: "Travel, collections, food and drinks, retirement activities and goals, home design choices, personal-experience-of-living."
+      },
+      "quotes": {
+        display: "Quotes & Wisdom Snippets",
+        scope: "Standalone quotes — attributable one-liners, wisdom snippets, aphorisms. Rich essays classify by subject."
+      },
+      "undecided": {
+        display: "Undecided / Uncategorized",
+        scope: "Residual catch-all for genuinely uncategorizable content."
+      }
+    };
+
+    const SOURCE_TYPES_GLOSSARY = {
+      "blog": {
+        display: "Blog Post / Substack",
+        scope: "Personal blog post, technical blog, Substack newsletter, Medium piece. Typically 500-3000 words."
+      },
+      "post": {
+        display: "Online Community Post",
+        scope: "Newsletter post, forum thread comment, community-platform post (Reddit, HN comment), generic online aggregate text."
+      },
+      "article": {
+        display: "Magazine / Long-form Essay",
+        scope: "Editorially-published magazine article, longform journalism piece, or essay published through an editorial intermediary."
+      },
+      "news": {
+        display: "News Report / Release",
+        scope: "Event-reporting journalism: news article reporting facts of a current event, press release, market report."
+      },
+      "paper": {
+        display: "Academic / Research Paper",
+        scope: "Peer-reviewed paper, preprint (arXiv, SSRN), working paper, conference paper, thesis, dissertation. Academic form."
+      },
+      "book-chapter": {
+        display: "Book Chapter / Excerpt",
+        scope: "Verbatim chapter, section, or excerpt extracted from a longer book-length work."
+      },
+      "book-summary": {
+        display: "Book Summary / Reading Notes",
+        scope: "Full-book distillation, chapter-by-chapter notes, or third-party summary of a book-length work. About the book, not from it."
+      },
+      "letter": {
+        display: "Public Addressed Letter",
+        scope: "Shareholder letter, public open letter, addressed correspondence intended for a defined audience (e.g. Buffett's letters)."
+      },
+      "documentation": {
+        display: "Technical Reference / README",
+        scope: "Software API documentation, product documentation, technical reference, tutorial, runbook, README."
+      },
+      "wiki": {
+        display: "Wiki / Encyclopedic Entry",
+        scope: "Wikipedia article, encyclopedia entry, knowledge-base reference article. Neutral tone, citation-heavy, third-person."
+      },
+      "transcript-podcast": {
+        display: "Podcast Transcript",
+        scope: "Verbatim transcript of an audio podcast episode — host monologue, guest conversation, or panel discussion."
+      },
+      "transcript-video": {
+        display: "Video Transcript",
+        scope: "Verbatim transcript of video content — YouTube, recorded talk, Loom, local video file."
+      },
+      "transcript-lecture": {
+        display: "Lecture / Talk Transcript",
+        scope: "Verbatim transcript of one-direction educational or informational delivery — academic lecture, conference talk."
+      },
+      "interview": {
+        display: "Interview / Q&A Exchange",
+        scope: "Q&A-structured exchange where one or more interlocutors question a primary subject. Curated and format-driven."
+      },
+      "chat-log": {
+        display: "Chat Log / LLM Transcript",
+        scope: "Verbatim log of a conversational exchange between two or more parties in a messaging or LLM interface. Informal register."
+      },
+      "speech": {
+        display: "Speech / Prepared Address",
+        scope: "Written-prose form of an address — prepared text of a speech, written speech, written address."
+      },
+      "social-thread": {
+        display: "Social Media Thread / Essay",
+        scope: "Long-form thread, carousel, or substantive standalone post on a social platform (Twitter thread, LinkedIn long-form)."
+      },
+      "email": {
+        display: "Email Correspondence",
+        scope: "Forwarded or saved email correspondence, individual or small-group distribution. Informal register."
+      },
+      "daily-note": {
+        display: "Obsidian Daily Note",
+        scope: "Date-stamped vault page logging activities, reflections, todos. Diary-style omnibus."
+      },
+      "meeting-notes": {
+        display: "Meeting Notes",
+        scope: "User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session."
+      },
+      "other": {
+        display: "Other Publication Form",
+        scope: "Residual catch-all for source forms not covered. Requires other_reason statement."
+      }
+    };
+
+    // ==========================================
+    // 2. STATE CONFIGURATION & DATA PLUMBING
+    // ==========================================
+    let activeNodes = [];
+    let activeEdges = [];
+    let selectedNode = null;
+
+    // Filter toggles
+    const nodeTypeVisibility = {};
+    const edgeTypeVisibility = {};
+
+    // D3 Cache elements
+    let svg, zoomContainer, nodesGroup, edgesGroup, labelsGroup, d3Zoom;
+    let nodeSelection, edgeSelection, labelSelection, edgeLabelsSelection;
+    let simulation = null;
+    let width = 800, height = 600;
+
+    // Load data counts dynamically
+    const nodeCountsByType = {};
+    const edgeCountsByType = {};
+
+    // Compile counts
+    RAW_GRAPH.nodes.forEach(n => {
+      nodeCountsByType[n.type] = (nodeCountsByType[n.type] || 0) + 1;
+    });
+    RAW_GRAPH.edges.forEach(e => {
+      edgeCountsByType[e.type] = (edgeCountsByType[e.type] || 0) + 1;
+    });
+
+    // Node Types
+    const allNodeTypes = Object.keys(nodeCountsByType).sort();
+    allNodeTypes.forEach(t => { nodeTypeVisibility[t] = true; });
+
+    // Edge Types
+    const allEdgeTypes = Object.keys(edgeCountsByType).sort();
+    allEdgeTypes.forEach(t => { edgeTypeVisibility[t] = true; });
+
+    // Node degree caches
+    const nodeDegreeMap = {};
+    RAW_GRAPH.nodes.forEach(n => { nodeDegreeMap[n.id] = 0; });
+    RAW_GRAPH.edges.forEach(e => {
+      if (nodeDegreeMap[e.source] !== undefined) nodeDegreeMap[e.source]++;
+      if (nodeDegreeMap[e.target] !== undefined) nodeDegreeMap[e.target]++;
+    });
+
+    // DOM selectors
+    const nodeFiltersContainer = document.getElementById('node-filters');
+    const edgeFiltersContainer = document.getElementById('edge-filters');
+    const autocompletePopup = document.getElementById('autocomplete-popup');
+    const nodeSearchInput = document.getElementById('node-search');
+    const searchClearBtn = document.getElementById('search-clear');
+    
+    // Populate header stats
+    document.getElementById('stat-nodes').innerText = RAW_GRAPH.nodes.length;
+    document.getElementById('stat-edges').innerText = RAW_GRAPH.edges.length;
+
+    // ==========================================
+    // 3. COLOR HELPER FUNCTIONS
+    // ==========================================
+    function getNodeColor(type) {
+      if (type === 'Source') return 'var(--color-source)';
+      if (type === 'Entity') return 'var(--color-entity)';
+      if (type === 'Domain') return 'var(--color-domain)';
+      if (type === 'Claim') return 'var(--color-claim)';
+      return 'var(--color-fallback)';
+    }
+
+    function getEdgeColor(type) {
+      if (type === 'LINKS_TO') return 'rgba(56, 189, 248, 0.4)';
+      if (type === 'SUPPORTS') return 'rgba(52, 211, 153, 0.4)';
+      if (type === 'BELONGS_TO') return 'rgba(251, 191, 36, 0.4)';
+      if (type === 'ALIAS_OF') return 'rgba(167, 139, 250, 0.4)';
+      return 'rgba(148, 163, 184, 0.3)';
+    }
+
+    function getEdgeStrokeDash(type) {
+      if (type === 'SUPPORTS') return '4, 4';
+      if (type === 'ALIAS_OF') return '5, 2';
+      return 'none';   // BELONGS_TO (and LINKS_TO) render solid
+    }
+
+    function getNodeRadius(d) {
+      const deg = nodeDegreeMap[d.id] || 0;
+      return (Math.max(7, Math.min(22, 5.5 + 1.6 * Math.sqrt(deg)))) * 2/3;  // official scale: 2/3 of bake-off
+    }
+
+    // ==========================================
+    // 4. D3 ENGINE BUILD & LAYOUT CONTROLLERS
+    // ==========================================
+    function initGraph() {
+      const container = document.getElementById('canvas');
+      
+      // Calculate responsive dimensions with robust viewport fallbacks (prevents flattening on load)
+      width = container.clientWidth;
+      height = container.clientHeight;
+      if (!width || width < 150) {
+        width = window.innerWidth - 720; // fallback accounting for sidebar spacing
+      }
+      if (!height || height < 150) {
+        height = window.innerHeight - 96; // fallback accounting for header spacing
+      }
+      if (width < 400) width = 800;
+      if (height < 300) height = 600;
+
+      svg = d3.select("#graph-svg");
+      zoomContainer = d3.select("#zoom-container");
+      edgesGroup = d3.select("#edges-group");
+      nodesGroup = d3.select("#nodes-group");
+      labelsGroup = d3.select("#labels-group");
+
+      // Set SVG viewBox for responsiveness
+      svg.attr("viewBox", [0, 0, width, height]);
+
+      // Define Directed Arrow Markers in SVG Defs
+      const defs = svg.append("defs");
+      
+      const arrowTypes = ['LINKS_TO', 'SUPPORTS', 'BELONGS_TO', 'CLAIM_LAYER'];
+      arrowTypes.forEach(type => {
+        defs.append("marker")
+          .attr("id", `arrow-${type}`)
+          .attr("viewBox", "0 -5 10 10")
+          .attr("refX", 20) // offset along the path so arrow is just outside the target node circle
+          .attr("refY", 0)
+          .attr("markerWidth", 3)
+          .attr("markerHeight", 3)
+          .attr("orient", "auto")
+          .append("path")
+          .attr("d", "M0,-4L9,0L0,4")
+          .attr("fill", type === 'LINKS_TO' ? '#38bdf8' : type === 'SUPPORTS' ? '#34d399' : type === 'BELONGS_TO' ? '#fbbf24' : '#f87171')
+          .attr("opacity", 0.6);
+      });
+
+      // Zoom behavior
+      d3Zoom = d3.zoom()
+        .scaleExtent([0.1, 8])
+        .on("zoom", (event) => {
+          zoomContainer.attr("transform", event.transform);
+        });
+
+      svg.call(d3Zoom);
+
+      svg.on("click", (event) => {
+        // Only deselect if clicking directly on the SVG canvas background (not on a node or link)
+        if (event.target.tagName === "svg" || event.target.id === "graph-svg") {
+          deselectNode();
+        }
+      });
+
+      // Handle window resizing
+      window.addEventListener("resize", () => {
+        width = container.clientWidth;
+        height = container.clientHeight;
+        svg.attr("viewBox", [0, 0, width, height]);
+        simulation.force("center", d3.forceCenter(width / 2, height / 2));
+        simulation.alpha(0.3).restart();
+      });
+
+      // Filter and Load Data
+      buildFilterLists();
+      updateData(true);
+    }
+
+    function buildFilterLists() {
+      // Build Node Filters
+      nodeFiltersContainer.innerHTML = '';
+      allNodeTypes.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'filter-item';
+        item.innerHTML = `
+          <label class="checkbox-label">
+            <input type="checkbox" id="nfilter-${t}" checked onchange="toggleNodeType('${t}')"/>
+            <span class="legend-indicator" style="background:${getNodeColor(t)}"></span>
+            ${t}
+          </label>
+          <span class="badge-count">${nodeCountsByType[t]}</span>
+        `;
+        nodeFiltersContainer.appendChild(item);
+      });
+
+      // Build Edge Filters
+      edgeFiltersContainer.innerHTML = '';
+      allEdgeTypes.forEach(t => {
+        const item = document.createElement('div');
+        item.className = 'filter-item';
+        item.innerHTML = `
+          <label class="checkbox-label">
+            <input type="checkbox" id="efilter-${t}" checked onchange="toggleEdgeType('${t}')"/>
+            <span class="legend-indicator" style="background:${getEdgeColor(t)}; border-radius:0; width:10px; height:2px;"></span>
+            ${t}
+          </label>
+          <span class="badge-count">${edgeCountsByType[t]}</span>
+        `;
+        edgeFiltersContainer.appendChild(item);
+      });
+    }
+
+    function toggleNodeType(type) {
+      const checkbox = document.getElementById(`nfilter-${type}`);
+      nodeTypeVisibility[type] = checkbox.checked;
+      updateData(false);
+    }
+
+    function toggleEdgeType(type) {
+      const checkbox = document.getElementById(`efilter-${type}`);
+      edgeTypeVisibility[type] = checkbox.checked;
+      updateData(false);
+    }
+
+    function updateData(isInitial = false) {
+      // 1. Filter Nodes
+      const visibleNodesMap = {};
+      activeNodes = RAW_GRAPH.nodes.filter(n => {
+        const isVisible = nodeTypeVisibility[n.type];
+        if (isVisible) visibleNodesMap[n.id] = n;
+        return isVisible;
+      });
+
+      // 2. Filter Edges
+      activeEdges = RAW_GRAPH.edges.filter(e => {
+        // Resolve ID string even if D3 has mutated source/target into node objects
+        const sourceId = typeof e.source === 'object' ? e.source.id : e.source;
+        const targetId = typeof e.target === 'object' ? e.target.id : e.target;
+        return edgeTypeVisibility[e.type] && visibleNodesMap[sourceId] && visibleNodesMap[targetId];
+      });
+
+      // Maintain prior node locations between dataset changes
+      const prevNodesMap = {};
+      if (simulation) {
+        simulation.nodes().forEach(n => {
+          prevNodesMap[n.id] = n;
+        });
+      }
+
+      activeNodes.forEach(n => {
+        if (prevNodesMap[n.id]) {
+          n.x = prevNodesMap[n.id].x;
+          n.y = prevNodesMap[n.id].y;
+          n.vx = prevNodesMap[n.id].vx;
+          n.vy = prevNodesMap[n.id].vy;
+        } else if (isInitial) {
+          n.x = width / 2 + (Math.random() - 0.5) * 150;
+          n.y = height / 2 + (Math.random() - 0.5) * 150;
+        }
+      });
+
+      render();
+      updateLayoutForces();
+    }
+
+    // ==========================================
+    // 5. SVG RENDERING PIPELINE
+    // ==========================================
+    function render() {
+      // Create arrow refX dynamically depending on target node radius
+      activeEdges.forEach(e => {
+        // If source/target are strings, D3 might convert them to objects, handle both
+        const targetId = typeof e.target === 'object' ? e.target.id : e.target;
+        const targetNode = activeNodes.find(n => n.id === targetId);
+        e.targetRadius = targetNode ? getNodeRadius(targetNode) : 10;
+      });
+
+      // 1. Bind Edges
+      edgeSelection = edgesGroup.selectAll(".edge")
+        .data(activeEdges, d => d.id);
+
+      edgeSelection.exit().remove();
+
+      const edgeEnter = edgeSelection.enter().append("path")
+        .attr("class", "edge")
+        .attr("stroke", d => getEdgeColor(d.type))
+        .attr("stroke-dasharray", d => getEdgeStrokeDash(d.type))
+        .attr("stroke-width", d => d.type === 'ALIAS_OF' ? 0.8 : 1.3)
+        .attr("marker-end", d => {
+          if (d.type === 'ALIAS_OF') return 'none';
+          const indicator = d.type === 'LINKS_TO' ? 'LINKS_TO' : d.type === 'SUPPORTS' ? 'SUPPORTS' : d.type === 'BELONGS_TO' ? 'BELONGS_TO' : 'CLAIM_LAYER';
+          return `url(#arrow-${indicator})`;
+        })
+        .on("click", (event, d) => {
+          event.stopPropagation();
+          inspectEdge(d);
+        });
+
+      edgeSelection = edgeEnter.merge(edgeSelection);
+
+      // 2. Bind Nodes
+      nodeSelection = nodesGroup.selectAll(".node")
+        .data(activeNodes, d => d.id);
+
+      nodeSelection.exit().remove();
+
+      const nodeEnter = nodeSelection.enter().append("circle")
+        .attr("class", "node")
+        .attr("r", d => getNodeRadius(d))
+        .attr("fill", d => getNodeColor(d.type))
+        .attr("stroke", "rgba(255, 255, 255, 0.15)")
+        .attr("stroke-width", 1.5)
+        .on("click", (event, d) => {
+          event.stopPropagation();
+          selectNode(d);
+        })
+        .on("dblclick", (event, d) => {
+          event.stopPropagation();
+          doubleClickNode(d);
+        })
+        .on("mouseover", (event, d) => {
+          highlightNeighbors(d);
+        })
+        .on("mouseout", () => {
+          clearHighlights();
+        })
+        .call(d3.drag()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended)
+        );
+
+      nodeSelection = nodeEnter.merge(nodeSelection);
+
+      // Add a clean inner glowing dot for highly active nodes
+      nodeSelection.attr("stroke", d => {
+        if (selectedNode && d.id === selectedNode.id) return '#fff';
+        return "rgba(255, 255, 255, 0.15)";
+      }).attr("stroke-width", d => {
+        if (selectedNode && d.id === selectedNode.id) return 2.5;
+        return 1.5;
+      });
+
+      // 3. Bind Labels
+      labelSelection = labelsGroup.selectAll(".node-text")
+        .data(activeNodes, d => d.id);
+
+      labelSelection.exit().remove();
+
+      const labelEnter = labelSelection.enter().append("text")
+        .attr("class", "node-text")
+        .attr("dy", d => getNodeRadius(d) + 12)
+        .text(d => {
+          const name = d.name || "";
+          return name.length > 18 ? name.substring(0, 16) + "..." : name;
+        });
+
+      labelSelection = labelEnter.merge(labelSelection);
+    }
+
+    // ==========================================
+    // 6. D3 TICK AND FORCE MANAGEMENT
+    // ==========================================
+    function updateLayoutForces() {
+      if (simulation) simulation.stop();
+ 
+      // Clear any fixed coordinates (lets nodes float naturally in active layout forces)
+      activeNodes.forEach(n => {
+        n.fx = null;
+        n.fy = null;
+      });
+ 
+      // Elastic force-directed simulation (the only layout mode)
+      simulation = d3.forceSimulation(activeNodes)
+        .force("link", d3.forceLink(activeEdges).id(d => d.id).distance(d => {
+          if (d.type === 'LINKS_TO') return 110;
+          if (d.type === 'SUPPORTS') return 70;
+          if (d.type === 'BELONGS_TO') return 130;
+          return 80;
+        }).strength(0.6))
+        .force("charge", d3.forceManyBody().strength(-240).distanceMax(280)) // capped local-only repulsion
+        .force("x", d3.forceX(width / 2).strength(0.08)) // centering X gravity
+        .force("y", d3.forceY(height / 2).strength(0.08)) // centering Y gravity
+        .force("center", d3.forceCenter(width / 2, height / 2))
+        .force("collide", d3.forceCollide().radius(d => getNodeRadius(d) + 14).iterations(2))
+        .on("tick", ticked);
+
+      simulation.alpha(1).restart();
+    }
+
+    function ticked() {
+      // Direct positioning (no hard bounding-box clamping - lets nodes float naturally in space)
+      nodeSelection
+        .attr("cx", d => d.x)
+        .attr("cy", d => d.y);
+
+      // 2. Draw curved edge paths
+      edgeSelection.attr("d", d => {
+        // Calculate curved path to support multiple links between same node pair
+        const sx = d.source.x, sy = d.source.y;
+        const tx = d.target.x, ty = d.target.y;
+        
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const dr = Math.sqrt(dx * dx + dy * dy);
+
+        // Alias relationships represent flat bonds, others curved
+        if (d.type === 'ALIAS_OF') {
+          return `M${sx},${sy}L${tx},${ty}`;
+        }
+        
+        // Add a gentle curve to allow arrow visibility
+        return `M${sx},${sy}A${dr * 1.25},${dr * 1.25} 0 0,1 ${tx},${ty}`;
+      });
+
+      // 3. Move text labels
+      labelSelection
+        .attr("x", d => d.x)
+        .attr("y", d => d.y);
+    }
+
+    // ==========================================
+    // 7. DRAG HANDLERS
+    // ==========================================
+    function dragstarted(event, d) {
+      if (!event.active && simulation) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+      if (!event.active && simulation) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+
+    // ==========================================
+    // 8. INTERACTIVE SELECTIONS & SEARCH
+    // ==========================================
+    function selectNode(d, skipZoom = false) {
+      selectedNode = d;
+      
+      // Re-trigger styles
+      nodeSelection.attr("stroke", n => {
+        if (n.id === d.id) return '#fff';
+        return "rgba(255, 255, 255, 0.15)";
+      }).attr("stroke-width", n => {
+        if (n.id === d.id) return 2.5;
+        return 1.5;
+      });
+
+      labelSelection.classed("active", n => n.id === d.id);
+
+      // Smooth zoom/pan center-to-node
+      if (!skipZoom) {
+        centerNode(d);
+      }
+
+      // Enriched Inspector Panel
+      inspectNode(d);
+
+      // Apply in-place Ego Spotlight Focus overlay
+      highlightNeighbors(d);
+    }
+
+    function deselectNode() {
+      selectedNode = null;
+      
+      // Reset stroke styles on all nodes
+      nodeSelection.attr("stroke", "rgba(255, 255, 255, 0.15)")
+        .attr("stroke-width", 1.5);
+        
+      labelSelection.classed("active", false);
+
+      // Reset Inspector Panel to original placeholder
+      document.getElementById('inspector').innerHTML = `
+        <div class="inspector-content" id="inspector-main">
+          <div class="inspector-placeholder">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <h3>Knowledge Inspector</h3>
+            <p style="font-size: 12px; line-height: 1.5; margin-top: 4px;">Click a node on the canvas, select a search result, or navigate traversal paths to explore properties and ontology context.</p>
+          </div>
+        </div>
+      `;
+
+      // Clear all dimmed highlights to restore 100% opacity
+      clearHighlights();
+    }
+
+    function doubleClickNode(d) {
+      selectNode(d);
+    }
+
+    function centerNode(d) {
+      const transform = d3.zoomIdentity
+        .translate(width / 2, height / 2)
+        .scale(1.3)
+        .translate(-d.x, -d.y);
+
+      svg.transition()
+        .duration(750)
+        .call(d3Zoom.transform, transform);
+    }
+
+    // ==========================================
+    // 9. HIGH LIGHT ADJACENT NEIGHBORS (Hover Effect)
+    // ==========================================
+    function highlightNeighbors(centerNode) {
+      const neighborNodeIds = new Set([centerNode.id]);
+      const connectedEdgeIds = new Set();
+
+      activeEdges.forEach(e => {
+        const sId = typeof e.source === 'object' ? e.source.id : e.source;
+        const tId = typeof e.target === 'object' ? e.target.id : e.target;
+        if (sId === centerNode.id) {
+          neighborNodeIds.add(tId);
+          connectedEdgeIds.add(e.id);
+        } else if (tId === centerNode.id) {
+          neighborNodeIds.add(sId);
+          connectedEdgeIds.add(e.id);
+        }
+      });
+
+      // Style opacity
+      nodeSelection.classed("ego-network-dimmed", d => !neighborNodeIds.has(d.id));
+      labelSelection.classed("ego-network-dimmed", d => !neighborNodeIds.has(d.id));
+      labelSelection.classed("active", d => d.id === centerNode.id);
+      
+      edgeSelection.classed("ego-network-dimmed-edge", e => !connectedEdgeIds.has(e.id));
+      edgeSelection.classed("active", e => connectedEdgeIds.has(e.id));
+    }
+
+    function clearHighlights() {
+      if (selectedNode) {
+        highlightNeighbors(selectedNode);
+      } else {
+        nodeSelection.classed("ego-network-dimmed", false);
+        labelSelection.classed("ego-network-dimmed", false);
+        labelSelection.classed("active", n => selectedNode && n.id === selectedNode.id);
+        
+        edgeSelection.classed("ego-network-dimmed-edge", false);
+        edgeSelection.classed("active", false);
+      }
+    }
+
+    // ==========================================
+    // 10. ONTOLOGY ENRICHED INSPECTOR (Sidebar)
+    // ==========================================
+    function inspectNode(d) {
+      const panel = document.getElementById('inspector');
+      
+      // Determine display title
+      const titleName = d.name || d.id;
+      const subtitleType = d.type;
+      const typeColor = getNodeColor(d.type);
+
+      // Retrieve connections
+      const connectedNodes = [];
+      activeEdges.forEach(e => {
+        const sId = typeof e.source === 'object' ? e.source.id : e.source;
+        const tId = typeof e.target === 'object' ? e.target.id : e.target;
+        
+        if (sId === d.id) {
+          const targetNode = activeNodes.find(n => n.id === tId);
+          if (targetNode) connectedNodes.push({ node: targetNode, rel: e.type, dir: 'out' });
+        } else if (tId === d.id) {
+          const sourceNode = activeNodes.find(n => n.id === sId);
+          if (sourceNode) connectedNodes.push({ node: sourceNode, rel: e.type, dir: 'in' });
+        }
+      });
+
+      // HTML assembly
+      let html = `
+        <div class="inspector-content">
+          
+          <!-- Title Section -->
+          <div class="inspector-header" style="position:relative; display:flex; flex-direction:column; gap:8px;">
+            <div>
+              <span class="inspector-subtitle" style="background:${typeColor}20; color:${typeColor}; border:1px solid ${typeColor}40">${subtitleType}</span>
+            </div>
+            <h2 class="inspector-title" style="margin-top:2px;">${titleName}</h2>
+            <button class="btn-reset" style="padding:6px 10px; font-size:11px; margin-top:2px; justify-content:center; align-items:center; display:flex;" onclick="focusEgoNode('${d.id}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px; vertical-align:middle;">
+                <circle cx="12" cy="12" r="10"/><path d="M12 2v4M12 18v4M4 12h4M16 12h4"/>
+              </svg>
+              Focus & Spotlight
+            </button>
+          </div>
+      `;
+
+      // 10.1 ENRICHED ONTOLOGY GLOSSARY CARDS (Task #95)
+      if (d.type === 'Domain') {
+        const slug = d.props.slug || d.id.toLowerCase();
+        const glossary = DOMAINS_GLOSSARY[slug] || DOMAINS_GLOSSARY[d.id] || null;
+        if (glossary) {
+          html += `
+            <div class="ontology-card domain-card">
+              <h4>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-domain)" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                Domain Definition: ${glossary.display}
+              </h4>
+              <p>${glossary.scope}</p>
+            </div>
+          `;
+        }
+      } else if (d.type === 'Source' && d.props.source_type) {
+        const typeId = d.props.source_type;
+        const glossary = SOURCE_TYPES_GLOSSARY[typeId] || null;
+        if (glossary) {
+          html += `
+            <div class="ontology-card sourcetype-card">
+              <h4>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-source)" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Source Type: ${glossary.display}
+              </h4>
+              <p>${glossary.scope}</p>
+            </div>
+          `;
+        }
+      }
+
+      // 10.2 Properties Grid
+      html += `
+        <div class="control-group">
+          <div class="section-title">Properties</div>
+          <div class="properties-grid">
+      `;
+
+      // Render props cleanly, fallback gracefully if absent
+      const props = d.props || {};
+      const ignoreProps = new Set(['name', 'title', 'id']); // Ignore redundant title attributes
+      
+      const propEntries = Object.entries(props).filter(([k]) => !ignoreProps.has(k));
+      
+      if (propEntries.length === 0) {
+        html += `<div style="color:#64748b; font-style:italic; font-size:11px;">No additional properties.</div>`;
+      } else {
+        propEntries.forEach(([key, val]) => {
+          let valStr = val === null || val === undefined ? 'null' : String(val);
+          
+          // Formatting clean-ups
+          const isMono = ['slug', 'canonical_id', 'first_run_id', 'last_run_id', 'hash'].includes(key);
+          const valClass = isMono ? 'property-value mono' : 'property-value';
+          
+          html += `
+            <div class="property-row">
+              <span class="property-key">${key.replace(/_/g, ' ')}</span>
+              <span class="${valClass}">${valStr}</span>
+            </div>
+          `;
+        });
+      }
+
+      html += `
+          </div>
+        </div>
+      `;
+
+      // 10.3 Clickable Traversal Pathways (Navigation)
+      html += `
+        <div class="control-group" style="flex:1;">
+          <div class="section-title">Connections (${connectedNodes.length})</div>
+          <div class="traversal-list">
+      `;
+
+      if (connectedNodes.length === 0) {
+        html += `<div style="color:#64748b; font-style:italic; font-size:11px; padding:10px;">No active connections.</div>`;
+      } else {
+        // Sort traversal by connected node type then name
+        connectedNodes.sort((a,b) => {
+          if (a.node.type !== b.node.type) return a.node.type.localeCompare(b.node.type);
+          return a.node.name.localeCompare(b.node.name);
+        });
+
+        connectedNodes.forEach(c => {
+          const n = c.node;
+          const badgeColor = getNodeColor(n.type);
+          const dirIndicator = c.dir === 'in' ? '←' : '→';
+          
+          html += `
+            <div class="traversal-link" onclick="navigateToNode('${n.id}')">
+              <span class="link-name" title="${n.name}">${n.name}</span>
+              <span style="display:flex; align-items:center; gap:6px;">
+                <span class="link-rel">${c.rel} ${dirIndicator}</span>
+                <span class="legend-indicator" style="background:${badgeColor}"></span>
+              </span>
+            </div>
+          `;
+        });
+      }
+
+      html += `
+          </div>
+        </div>
+      `;
+
+      // Close inspector-content
+      html += `</div>`;
+      panel.innerHTML = html;
+    }
+
+    function inspectEdge(d) {
+      const panel = document.getElementById('inspector');
+      const sourceNode = activeNodes.find(n => n.id === d.source.id || n.id === d.source) || {name:d.source, type:'?'};
+      const targetNode = activeNodes.find(n => n.id === d.target.id || n.id === d.target) || {name:d.target, type:'?'};
+      
+      let html = `
+        <div class="inspector-content">
+          <div class="inspector-header">
+            <span class="inspector-subtitle" style="background:rgba(255,255,255,0.06); color:#94a3b8; border:1px solid var(--border-color)">Relationship</span>
+            <h2 class="inspector-title" style="margin-top:8px;">${d.type}</h2>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">Direction Path</div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              
+              <!-- Source -->
+              <div class="traversal-link" onclick="navigateToNode('${sourceNode.id}')">
+                <span class="link-name">${sourceNode.name}</span>
+                <span class="inspector-subtitle" style="font-size:9px; background:${getNodeColor(sourceNode.type)}20; color:${getNodeColor(sourceNode.type)}; border:1px solid ${getNodeColor(sourceNode.type)}40">${sourceNode.type}</span>
+              </div>
+              
+              <!-- Indicator Arrow -->
+              <div style="text-align:center; color:#64748b; font-size:16px; font-weight:600; line-height:1;">
+                ↓ <span style="font-size:10px; font-family:var(--font-mono); text-transform:uppercase; vertical-align:middle; margin-left:4px;">${d.type}</span>
+              </div>
+              
+              <!-- Target -->
+              <div class="traversal-link" onclick="navigateToNode('${targetNode.id}')">
+                <span class="link-name">${targetNode.name}</span>
+                <span class="inspector-subtitle" style="font-size:9px; background:${getNodeColor(targetNode.type)}20; color:${getNodeColor(targetNode.type)}; border:1px solid ${getNodeColor(targetNode.type)}40">${targetNode.type}</span>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="section-title">Metadata</div>
+            <div class="properties-grid">
+              <div class="property-row">
+                <span class="property-key">ID</span>
+                <span class="property-value mono">${d.id}</span>
+              </div>
+              <div class="property-row">
+                <span class="property-key">Type</span>
+                <span class="property-value">${d.type}</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      `;
+      panel.innerHTML = html;
+    }
+
+    function navigateToNode(nodeId) {
+      const node = activeNodes.find(n => n.id === nodeId);
+      if (node) {
+        selectNode(node);
+      }
+    }
+
+    function focusEgoNode(nodeId) {
+      const node = activeNodes.find(n => n.id === nodeId);
+      if (node) {
+        selectNode(node);
+      }
+    }
+
+    // ==========================================
+    // 11. FUZZY SEARCH AUTOCOMPLETE ENGINE
+    // ==========================================
+    function onSearchInput() {
+      const query = nodeSearchInput.value.toLowerCase().trim();
+      
+      if (query.length === 0) {
+        autocompletePopup.style.display = 'none';
+        searchClearBtn.style.display = 'none';
+        return;
+      }
+
+      searchClearBtn.style.display = 'block';
+
+      // Search matches
+      const matches = activeNodes.filter(n => {
+        const nameMatch = (n.name || "").toLowerCase().includes(query);
+        const slugMatch = (n.props && n.props.slug || "").toLowerCase().includes(query);
+        return nameMatch || slugMatch;
+      });
+
+      if (matches.length === 0) {
+        autocompletePopup.innerHTML = `
+          <div style="padding:12px; font-size:12px; color:#64748b; text-align:center; font-style:italic;">
+            No matching nodes in active filters.
+          </div>
+        `;
+      } else {
+        // Truncate matches to top 20 to prevent dropdown overrun
+        const topMatches = matches.slice(0, 20);
+        
+        let html = '';
+        topMatches.forEach(m => {
+          const typeColor = getNodeColor(m.type);
+          html += `
+            <div class="autocomplete-item" onclick="selectSearchMatch('${m.id}')">
+              <span class="item-name">${m.name}</span>
+              <span class="item-type" style="background:${typeColor}15; color:${typeColor}; border:1px solid ${typeColor}30">${m.type}</span>
+            </div>
+          `;
+        });
+        
+        if (matches.length > 20) {
+          html += `
+            <div style="padding:8px; font-size:10px; color:#64748b; text-align:center; border-top:1px solid var(--border-color)">
+              + ${matches.length - 20} more matches. Keep typing...
+            </div>
+          `;
+        }
+        
+        autocompletePopup.innerHTML = html;
+      }
+
+      autocompletePopup.style.display = 'block';
+    }
+
+    function selectSearchMatch(nodeId) {
+      const node = activeNodes.find(n => n.id === nodeId);
+      if (node) {
+        nodeSearchInput.value = node.name;
+        autocompletePopup.style.display = 'none';
+        selectNode(node);
+      }
+    }
+
+    function clearSearch() {
+      nodeSearchInput.value = '';
+      searchClearBtn.style.display = 'none';
+      autocompletePopup.style.display = 'none';
+      clearHighlights();
+    }
+
+    // Dismiss search popup when clicking outside
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest('.search-container')) {
+        autocompletePopup.style.display = 'none';
+      }
+    });
+
+    // ==========================================
+    // 12. RESET GRAPH & FILTERS
+    // ==========================================
+    function toggleLeftPanel() {
+      const panel = document.querySelector('.inspector-panel');
+      const btn = document.getElementById('panel-toggle');
+      const hidden = panel.classList.toggle('hidden');
+      btn.classList.toggle('active', hidden);
+      btn.title = hidden ? 'Show panel' : 'Hide panel';
+    }
+
+    function resetAllFilters() {
+      // 1. Reset Filters
+      allNodeTypes.forEach(t => {
+        nodeTypeVisibility[t] = true;
+        document.getElementById(`nfilter-${t}`).checked = true;
+      });
+
+      allEdgeTypes.forEach(t => {
+        edgeTypeVisibility[t] = true;
+        document.getElementById(`efilter-${t}`).checked = true;
+      });
+
+      // 2. Clear Search
+      clearSearch();
+
+      // 3. Reset Layout
+      selectedNode = null;
+      nodeSelection.classed("ego-network-dimmed", false);
+      labelSelection.classed("ego-network-dimmed", false);
+      edgeSelection.classed("ego-network-dimmed-edge", false);
+      updateLayoutForces();
+
+      // 4. Trigger Zoom Center Animation
+      svg.transition()
+        .duration(750)
+        .call(d3Zoom.transform, d3.zoomIdentity);
+
+      // 5. Reset Inspector Panel
+      document.getElementById('inspector').innerHTML = `
+        <div class="inspector-content" id="inspector-main">
+          <div class="inspector-placeholder">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+            <h3>Knowledge Inspector</h3>
+            <p style="font-size: 12px; line-height: 1.5; margin-top: 4px;">Click a node on the canvas, select a search result, or navigate traversal paths to explore properties and ontology context.</p>
+          </div>
+        </div>
+      `;
+
+      updateData(true);
+    }
+
+    // Initialize on window load
+    window.onload = initGraph;
+  </script>
+</body>
+</html>

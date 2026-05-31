@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KDB Graph Explorer — Qwen</title>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
+<script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
+<script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-0:#0d1117;--bg-1:#161b22;--bg-2:#21262d;--bg-3:#30363d;
+  --fg-0:#e6edf3;--fg-1:#8b949e;--fg-2:#6e7681;
+  --border:#30363d;--accent:#58a6ff;
+  --entity:#56d4a0;--source:#bc8cff;--domain:#f0b840;--claim:#ff7b72;
+  --edge-links:#58a6ff;--edge-supports:#56d4a0;--edge-belongs:#f0b840;
+  --radius:8px;--panel-w:340px;--toolbar-h:50px;--sidebar-w:256px;
+  --font:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+}
+html.light{
+  --bg-0:#ffffff;--bg-1:#f6f8fa;--bg-2:#eaeef2;--bg-3:#d0d7de;
+  --fg-0:#1f2328;--fg-1:#656d76;--fg-2:#8b949e;
+  --border:#d0d7de;--accent:#0969da;
+  --edge-links:#0969da;--edge-supports:#1a7f37;--edge-belongs:#9a6700;
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--bg-0);color:var(--fg-0)}
+button{font-family:inherit;cursor:pointer;border:none;background:var(--bg-2);color:var(--fg-0);
+  padding:5px 12px;border-radius:var(--radius);font-size:12px;transition:background .15s}
+button:hover{background:var(--bg-3)}
+input[type=text]{font-family:inherit;background:var(--bg-2);color:var(--fg-0);border:1px solid var(--border);
+  border-radius:var(--radius);padding:6px 10px;font-size:13px;outline:none;transition:border-color .15s}
+input[type=text]:focus{border-color:var(--accent)}
+input[type=text]::placeholder{color:var(--fg-2)}
+
+/* === LAYOUT === */
+#app{display:grid;grid-template-rows:var(--toolbar-h) 1fr;height:100vh}
+#toolbar{display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--bg-1);
+  border-bottom:1px solid var(--border);z-index:10}
+#toolbar .brand{font-weight:700;font-size:15px;white-space:nowrap}
+#toolbar .brand span{color:var(--accent);margin-right:4px}
+#search-box{position:relative}
+#search-box input{width:240px}
+#search-results{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--bg-1);
+  border:1px solid var(--border);border-radius:var(--radius);max-height:260px;overflow-y:auto;
+  z-index:100;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+#search-results .item{padding:7px 12px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px}
+#search-results .item:hover{background:var(--bg-2)}
+#search-results .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.toolbar-spacer{flex:1}
+.toolbar-btn{display:flex;align-items:center;gap:4px;font-size:12px;
+  background:var(--bg-2);color:var(--fg-1);border:1px solid var(--border);transition:all .15s}
+.toolbar-btn:hover{background:var(--bg-3);color:var(--fg-0)}
+.toolbar-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);
+  box-shadow:0 0 8px rgba(88,166,255,.35)}
+html.light .toolbar-btn.active{box-shadow:0 0 8px rgba(9,105,218,.3)}
+.toolbar-stats{font-size:11px;color:var(--fg-1)}
+
+#main{display:grid;grid-template-columns:var(--sidebar-w) 1fr var(--panel-w);overflow:hidden;
+  transition:grid-template-columns .25s ease}
+#main.sidebar-hidden{grid-template-columns:0px 1fr var(--panel-w)}
+#main.panel-hidden{grid-template-columns:var(--sidebar-w) 1fr 0px}
+#main.sidebar-hidden.panel-hidden{grid-template-columns:0px 1fr 0px}
+#sidebar{min-width:0;overflow-x:hidden;transition:opacity .2s}
+#main.sidebar-hidden #sidebar{opacity:0;pointer-events:none}
+#panel{min-width:0;overflow-x:hidden;transition:opacity .2s}
+#main.panel-hidden #panel{opacity:0;pointer-events:none}
+
+/* === SIDEBAR === */
+#sidebar{background:var(--bg-1);border-right:1px solid var(--border);overflow-y:auto;padding:14px;
+  display:flex;flex-direction:column;gap:16px}
+.side-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--fg-2);margin-bottom:8px}
+.filter-group{display:flex;flex-direction:column;gap:4px}
+.filter-item{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:3px 0}
+.filter-item input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+.filter-item .swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.filter-item .count{margin-left:auto;font-size:11px;color:var(--fg-2)}
+.stat-row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0}
+.stat-row .val{font-weight:600;color:var(--accent)}
+.legend-row{display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.legend-line{width:20px;height:0;border-top:2px solid;flex-shrink:0}
+
+/* === GRAPH === */
+#graph-wrap{position:relative;overflow:hidden;background:var(--bg-0)}
+#cy{width:100%;height:100%}
+#minimap{position:absolute;bottom:12px;left:12px;width:180px;height:130px;background:var(--bg-1);
+  border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;opacity:.85;
+  box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer}
+#minimap canvas{width:100%;height:100%}
+#minimap .vp{position:absolute;border:1.5px solid var(--accent);pointer-events:none;border-radius:2px}
+
+/* === DETAIL PANEL === */
+#panel{background:var(--bg-1);border-left:1px solid var(--border);overflow-y:auto;padding:16px;
+  transition:width .2s}
+#panel-empty{color:var(--fg-2);font-size:13px;text-align:center;margin-top:40%}
+#panel-content{display:none}
+#panel-content h3{font-size:16px;margin-bottom:4px;word-break:break-word}
+#panel-content .type-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;
+  font-weight:600;margin-bottom:12px}
+.prop-table{width:100%;font-size:12px;border-collapse:collapse;margin-bottom:16px}
+.prop-table td{padding:4px 0;vertical-align:top;border-bottom:1px solid var(--bg-2)}
+.prop-table .pk{color:var(--fg-2);width:90px;padding-right:8px;white-space:nowrap}
+.prop-table .pv{word-break:break-word;color:var(--fg-0)}
+.neighbors-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--fg-2);margin:12px 0 6px}
+.neighbor-item{font-size:12px;padding:3px 6px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.neighbor-item:hover{background:var(--bg-2)}
+.neighbor-item .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.neighbor-item .edge-type{margin-left:auto;font-size:10px;color:var(--fg-2)}
+
+/* === KEYBOARD HINT === */
+#kb-hint{position:absolute;bottom:12px;right:12px;font-size:10px;color:var(--fg-2);pointer-events:none}
+kbd{background:var(--bg-2);border:1px solid var(--border);border-radius:3px;padding:1px 4px;font-size:10px}
+
+/* === LOADING === */
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--bg-0);z-index:50;font-size:14px;color:var(--fg-1)}
+.spinner{width:28px;height:28px;border:3px solid var(--bg-3);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .8s linear infinite;margin-right:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg-0)}
+::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:3px}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ===== TOOLBAR ===== -->
+<div id="toolbar">
+  <div class="brand"><span>◆</span>KDB Graph Explorer</div>
+  <div id="search-box">
+    <input type="text" id="search" placeholder="Search nodes…  ( / )" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div class="toolbar-stats" id="toolbar-stats"></div>
+  <div class="toolbar-spacer"></div>
+  <button class="toolbar-btn active" id="btn-sidebar" title="Toggle sidebar (S)">☰</button>
+  <button class="toolbar-btn active" id="btn-panel" title="Toggle detail panel (D)">◧</button>
+  <button class="toolbar-btn" id="btn-theme" title="Toggle theme (T)">☀ Light</button>
+  <button class="toolbar-btn" id="btn-elastic" title="Toggle elastic physics layout (R)">🧲 Elastic</button>
+  <button class="toolbar-btn" id="btn-fit" title="Fit to screen (F)">⊞ Fit</button>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="main">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="side-section">
+      <h4>Node Types</h4>
+      <div class="filter-group" id="node-filters"></div>
+    </div>
+    <div class="side-section">
+      <h4>Edge Types</h4>
+      <div class="filter-group" id="edge-filters"></div>
+    </div>
+    <div class="side-section">
+      <h4>Legend</h4>
+      <div id="legend"></div>
+    </div>
+    <div class="side-section">
+      <h4>Statistics</h4>
+      <div id="stats"></div>
+    </div>
+    <div class="side-section">
+      <button id="btn-reset-filters" style="width:100%">Reset All Filters</button>
+    </div>
+  </div>
+
+  <!-- GRAPH -->
+  <div id="graph-wrap">
+    <div id="cy"></div>
+    <div id="minimap"><canvas id="minimap-canvas"></canvas><div class="vp" id="minimap-vp"></div></div>
+    <div id="loading"><div class="spinner"></div>Computing layout…</div>
+    <div id="kb-hint"><kbd>/</kbd> search · <kbd>S</kbd> sidebar · <kbd>D</kbd> panel · <kbd>R</kbd> elastic · <kbd>F</kbd> fit · <kbd>T</kbd> theme · <kbd>Esc</kbd> deselect</div>
+  </div>
+
+  <!-- DETAIL PANEL -->
+  <div id="panel">
+    <div id="panel-empty">Click a node to inspect</div>
+    <div id="panel-content">
+      <h3 id="p-name"></h3>
+      <div id="p-badge" class="type-badge"></div>
+      <table class="prop-table" id="p-props"></table>
+      <div class="neighbors-section">
+        <h4>Connected Nodes</h4>
+        <div id="p-neighbors"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ===================================================================
+//  DATA (injected by build script)
+// ===================================================================
+const RAW = /*__GRAPH_DATA__*/null/*__END__*/;
+
+// ===================================================================
+//  CONSTANTS
+// ===================================================================
+const NODE_COLORS = {
+  Entity:'#56d4a0', Source:'#bc8cff', Domain:'#f0b840', Claim:'#ff7b72'
+};
+const EDGE_COLORS = {
+  LINKS_TO:'#58a6ff', SUPPORTS:'#56d4a0', BELONGS_TO:'#f0b840', ALIAS_OF:'#f778ba'
+};
+const EDGE_DASH = { LINKS_TO:'solid', SUPPORTS:'6 3', BELONGS_TO:'2 2', ALIAS_OF:'10 4 2 4' };
+
+// ===================================================================
+//  STATE
+// ===================================================================
+let cy, selectedNode = null;
+const nodeTypes = [...new Set(RAW.nodes.map(n => n.type))].sort();
+const edgeTypes = [...new Set(RAW.edges.map(e => e.type))].sort();
+const activeNodeTypes = new Set(nodeTypes);
+const activeEdgeTypes = new Set(edgeTypes);
+
+// ===================================================================
+//  PREPARE CYTOSCAPE ELEMENTS
+// ===================================================================
+function buildElements() {
+  // compute degree for sizing
+  const deg = {};
+  RAW.edges.forEach(e => {
+    deg[e.source] = (deg[e.source]||0) + 1;
+    deg[e.target] = (deg[e.target]||0) + 1;
+  });
+  const maxDeg = Math.max(1, ...Object.values(deg));
+
+  const nodes = RAW.nodes.map(n => ({
+    data: {
+      id: n.id, name: n.name || n.id, type: n.type,
+      props: n.props || {},
+      deg: deg[n.id] || 0,
+      sz: nodeSize(n.type, deg[n.id]||0, maxDeg)
+    }
+  }));
+  const edges = RAW.edges.map((e,i) => ({
+    data: {
+      id: e.id || ('e'+i), source: e.source, target: e.target,
+      etype: e.type, edash: EDGE_DASH[e.type]||'solid'
+    }
+  }));
+  return [...nodes, ...edges];
+}
+
+function nodeSize(type, degree, maxDeg) {
+  const base = type === 'Domain' ? 38 : type === 'Source' ? 16 : 12;
+  const scale = Math.log2(degree + 2) / Math.log2(maxDeg + 2);
+  return base + scale * (type === 'Domain' ? 20 : 18);
+}
+
+// ===================================================================
+//  INIT CYTOSCAPE
+// ===================================================================
+function initCy() {
+  const elements = buildElements();
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: elements,
+    minZoom: 0.1, maxZoom: 8, wheelSensitivity: 0.3,
+    style: [
+      // --- Nodes ---
+      { selector:'node', style:{
+        'background-color': ele => NODE_COLORS[ele.data('type')] || '#888',
+        'label': 'data(name)', 'color':'#e6edf3',
+        'font-size':'9px', 'text-wrap':'ellipsis', 'text-max-width':'90px',
+        'text-valign':'bottom', 'text-margin-y':'4px',
+        'width':'data(sz)', 'height':'data(sz)',
+        'border-width':0, 'text-opacity':0.85,
+        'transition-property':'background-opacity, border-width, border-color, opacity',
+        'transition-duration':'0.2s'
+      }},
+      { selector:'node[type="Domain"]', style:{
+        'shape':'round-diamond', 'font-size':'12px', 'font-weight':'bold',
+        'text-max-width':'120px', 'border-width':2, 'border-color':'#f0b840'
+      }},
+      { selector:'node[type="Source"]', style:{
+        'shape':'round-rectangle', 'font-size':'9px'
+      }},
+      // --- Edges ---
+      { selector:'edge', style:{
+        'width':1.4, 'opacity':0.55,
+        'line-color': ele => EDGE_COLORS[ele.data('etype')] || '#555',
+        'target-arrow-color': ele => EDGE_COLORS[ele.data('etype')] || '#555',
+        'target-arrow-shape':'triangle', 'arrow-scale':0.8,
+        'curve-style':'bezier',
+        'line-style': ele => ele.data('edash') === 'solid' ? 'solid' : 'dashed',
+        'line-dash-pattern': ele => {
+          const d = ele.data('edash');
+          return d === 'solid' ? [1] : d.split(' ').map(Number);
+        },
+        'transition-property':'opacity, width',
+        'transition-duration':'0.2s'
+      }},
+      // --- States ---
+      { selector:'.dimmed', style:{ 'opacity':0.08 } },
+      { selector:'.highlighted', style:{
+        'opacity':1, 'border-width':3, 'border-color':'#fff', 'z-index':999
+      }},
+      { selector:'.search-hit', style:{
+        'opacity':1, 'border-width':4, 'border-color':'#f0883e', 'z-index':1000
+      }},
+      { selector:'.ego-edge', style:{ 'opacity':0.85, 'width':2.2 } },
+      { selector:'.hidden-filter', style:{ 'display':'none' } }
+    ],
+    layout: { name:'random' }
+  });
+
+  // run layout
+  runLayout();
+}
+
+function runLayout() {
+  const hasFcose = typeof cytoscape.prototype.layoutExtensions !== 'undefined'
+    || cytoscape.extensions && cytoscape.extensions.layout && cytoscape.extensions.layout.fcose;
+
+  let layoutOpts;
+  try {
+    // try fcose
+    layoutOpts = {
+      name:'fcose',
+      quality:'proof',
+      animate:false,
+      randomize:true,
+      nodeRepulsion:() => 9000,
+      idealEdgeLength:() => 100,
+      edgeElasticity:() => 0.1,
+      numIter:2500,
+      gravity:0.25,
+      gravityRange:3.8,
+      packComponents:true,
+      initialEnergyOnIncremental:0.5
+    };
+    // test if fcose is available
+    const testLayout = cy.layout(layoutOpts);
+    if (!testLayout) throw new Error('no fcose');
+  } catch(e) {
+    console.log('fcose unavailable, falling back to cose');
+    layoutOpts = {
+      name:'cose',
+      animate:false,
+      nodeRepulsion:() => 9000,
+      idealEdgeLength:() => 100,
+      gravity:0.25,
+      numIter:1500,
+      padding:30
+    };
+  }
+
+  cy.layout(layoutOpts).run();
+
+  // hide loading after layout completes
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      document.getElementById('loading').style.display = 'none';
+      cy.fit(undefined, 40);
+      updateMinimap();
+    }, 100);
+  });
+}
+
+// ===================================================================
+//  FILTERS
+// ===================================================================
+function applyFilters() {
+  // reset
+  cy.elements().removeClass('hidden-filter');
+
+  // hide filtered-out nodes
+  cy.nodes().forEach(n => {
+    if (!activeNodeTypes.has(n.data('type'))) {
+      n.addClass('hidden-filter');
+    }
+  });
+
+  // hide filtered-out edges
+  cy.edges().forEach(e => {
+    if (!activeEdgeTypes.has(e.data('etype'))) {
+      e.addClass('hidden-filter');
+    }
+    // also hide edges connected to hidden nodes
+    if (e.source().hasClass('hidden-filter') || e.target().hasClass('hidden-filter')) {
+      e.addClass('hidden-filter');
+    }
+  });
+
+  updateStats();
+  updateMinimap();
+
+  // restart elastic simulation if active so new nodes get integrated
+  if (elasticActive) startElastic();
+}
+
+function buildFilterUI() {
+  const nfDiv = document.getElementById('node-filters');
+  const nodeCounts = {};
+  RAW.nodes.forEach(n => { nodeCounts[n.type] = (nodeCounts[n.type]||0)+1; });
+  nodeTypes.forEach(t => {
+    const label = document.createElement('label');
+    label.className = 'filter-item';
+    label.innerHTML = `<input type="checkbox" checked data-ntype="${t}">
+      <span class="swatch" style="background:${NODE_COLORS[t]||'#888'}"></span>
+      ${t}<span class="count">${nodeCounts[t]||0}</span>`;
+    label.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) activeNodeTypes.add(t); else activeNodeTypes.delete(t);
+      applyFilters();
+    });
+    nfDiv.appendChild(label);
+  });
+
+  const efDiv = document.getElementById('edge-filters');
+  const edgeCounts = {};
+  RAW.edges.forEach(e => { edgeCounts[e.type] = (edgeCounts[e.type]||0)+1; });
+  edgeTypes.forEach(t => {
+    const label = document.createElement('label');
+    label.className = 'filter-item';
+    const dash = EDGE_DASH[t] || 'solid';
+    const borderStyle = dash === 'solid' ? 'solid' : 'dashed';
+    label.innerHTML = `<input type="checkbox" checked data-etype="${t}">
+      <span class="legend-line" style="border-color:${EDGE_COLORS[t]||'#555'};border-style:${borderStyle}"></span>
+      ${t}<span class="count">${edgeCounts[t]||0}</span>`;
+    label.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) activeEdgeTypes.add(t); else activeEdgeTypes.delete(t);
+      applyFilters();
+    });
+    efDiv.appendChild(label);
+  });
+}
+
+// ===================================================================
+//  LEGEND
+// ===================================================================
+function buildLegend() {
+  const div = document.getElementById('legend');
+  nodeTypes.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = `<span class="legend-dot" style="background:${NODE_COLORS[t]||'#888'}"></span>${t}`;
+    div.appendChild(row);
+  });
+  edgeTypes.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    const dash = EDGE_DASH[t] || 'solid';
+    const borderStyle = dash === 'solid' ? 'solid' : 'dashed';
+    row.innerHTML = `<span class="legend-line" style="border-color:${EDGE_COLORS[t]||'#555'};border-style:${borderStyle}"></span>${t}`;
+    div.appendChild(row);
+  });
+}
+
+// ===================================================================
+//  STATS
+// ===================================================================
+function updateStats() {
+  const visNodes = cy.nodes().filter(n => !n.hasClass('hidden-filter'));
+  const visEdges = cy.edges().filter(e => !e.hasClass('hidden-filter'));
+  document.getElementById('stats').innerHTML =
+    `<div class="stat-row"><span>Visible nodes</span><span class="val">${visNodes.size()}</span></div>
+     <div class="stat-row"><span>Visible edges</span><span class="val">${visEdges.size()}</span></div>
+     <div class="stat-row"><span>Total nodes</span><span class="val">${RAW.nodes.length}</span></div>
+     <div class="stat-row"><span>Total edges</span><span class="val">${RAW.edges.length}</span></div>`;
+  document.getElementById('toolbar-stats').textContent =
+    `${visNodes.size()} nodes · ${visEdges.size()} edges`;
+}
+
+// ===================================================================
+//  SEARCH
+// ===================================================================
+function initSearch() {
+  const input = document.getElementById('search');
+  const results = document.getElementById('search-results');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if (q.length < 1) { results.style.display = 'none'; return; }
+
+    const matches = RAW.nodes
+      .filter(n => (n.name||'').toLowerCase().includes(q))
+      .slice(0, 15);
+
+    if (matches.length === 0) { results.style.display = 'none'; return; }
+
+    results.innerHTML = matches.map(n =>
+      `<div class="item" data-id="${n.id}">
+        <span class="dot" style="background:${NODE_COLORS[n.type]||'#888'}"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.name||n.id)}</span>
+        <span style="font-size:10px;color:var(--fg-2)">${n.type}</span>
+      </div>`
+    ).join('');
+    results.style.display = 'block';
+
+    results.querySelectorAll('.item').forEach(item => {
+      item.addEventListener('click', () => {
+        const id = item.dataset.id;
+        focusNode(id);
+        input.value = '';
+        results.style.display = 'none';
+      });
+    });
+  });
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = results.querySelector('.item');
+      if (first) { focusNode(first.dataset.id); input.value = ''; results.style.display = 'none'; }
+    }
+    if (e.key === 'Escape') { input.blur(); results.style.display = 'none'; }
+  });
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('search-box').contains(e.target)) results.style.display = 'none';
+  });
+}
+
+function focusNode(id) {
+  const node = cy.getElementById(id);
+  if (!node || node.length === 0) return;
+
+  // clear previous
+  cy.elements().removeClass('search-hit dimmed highlighted');
+
+  node.addClass('search-hit');
+  cy.animate({ fit: { eles: node, padding: 120 }, duration: 400 });
+
+  showDetail(node);
+  applyEgo(node);
+}
+
+// ===================================================================
+//  NODE SELECTION & EGO-NETWORK
+// ===================================================================
+function initInteraction() {
+  cy.on('tap', 'node', e => {
+    const node = e.target;
+    selectedNode = node;
+    cy.elements().removeClass('search-hit highlighted dimmed ego-edge');
+
+    showDetail(node);
+    applyEgo(node);
+  });
+
+  cy.on('tap', e => {
+    if (e.target === cy) {
+      cy.elements().removeClass('search-hit highlighted dimmed ego-edge');
+      selectedNode = null;
+      hideDetail();
+    }
+  });
+
+  cy.on('zoom pan', () => updateMinimap());
+}
+
+function applyEgo(node) {
+  const neighborhood = node.closedNeighborhood();
+  cy.elements().addClass('dimmed');
+  neighborhood.removeClass('dimmed');
+  node.addClass('highlighted');
+  // only highlight edges where BOTH endpoints are in the ego-network
+  neighborhood.edgesWith(neighborhood).addClass('ego-edge');
+}
+
+function clearHighlight() {
+  cy.elements().removeClass('dimmed highlighted ego-edge search-hit');
+}
+
+// ===================================================================
+//  ELASTIC SIMULATION (D3 force)
+// ===================================================================
+let elasticSimulation = null;
+let elasticActive = false;
+
+function startElastic() {
+  if (elasticSimulation) stopElastic();
+  elasticActive = true;
+
+  const nodes = cy.nodes().filter(n => !n.hasClass('hidden-filter'));
+  const edges = cy.edges().filter(e => !e.hasClass('hidden-filter'));
+
+  const d3Nodes = nodes.map(n => ({
+    id: n.id(),
+    x: n.position('x'),
+    y: n.position('y'),
+    type: n.data('type')
+  }));
+
+  const d3Edges = edges.map(e => ({
+    source: e.source().id(),
+    target: e.target().id()
+  }));
+
+  elasticSimulation = d3.forceSimulation(d3Nodes)
+    .force('link', d3.forceLink(d3Edges).id(d => d.id).distance(120).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-250).distanceMax(400))
+    .force('center', d3.forceCenter(cy.width() / 2, cy.height() / 2).strength(0.1))
+    .force('collision', d3.forceCollide().radius(d => d.type === 'Domain' ? 35 : 20))
+    .alpha(1)
+    .alphaDecay(0.015)
+    .velocityDecay(0.3)
+    .on('tick', () => {
+      d3Nodes.forEach(dn => {
+        const cyNode = cy.getElementById(dn.id);
+        if (cyNode && cyNode.length > 0 && !cyNode.hasClass('hidden-filter')) {
+          cyNode.position({ x: dn.x, y: dn.y });
+        }
+      });
+      updateMinimap();
+    });
+
+  // allow dragging nodes in elastic mode
+  cy.on('grab', 'node', e => {
+    if (!elasticActive) return;
+    const node = e.target;
+    const d3Node = d3Nodes.find(n => n.id === node.id());
+    if (d3Node) {
+      d3Node.fx = node.position('x');
+      d3Node.fy = node.position('y');
+      elasticSimulation.alpha(0.3).restart();
+    }
+  });
+
+  cy.on('drag', 'node', e => {
+    if (!elasticActive) return;
+    const node = e.target;
+    const d3Node = d3Nodes.find(n => n.id === node.id());
+    if (d3Node) {
+      d3Node.fx = node.position('x');
+      d3Node.fy = node.position('y');
+      elasticSimulation.alpha(0.1).restart();
+    }
+  });
+
+  cy.on('free', 'node', e => {
+    if (!elasticActive) return;
+    const node = e.target;
+    const d3Node = d3Nodes.find(n => n.id === node.id());
+    if (d3Node) {
+      d3Node.fx = null;
+      d3Node.fy = null;
+      elasticSimulation.alpha(0.5).restart();
+    }
+  });
+}
+
+function stopElastic() {
+  if (elasticSimulation) {
+    elasticSimulation.stop();
+    elasticSimulation = null;
+  }
+  elasticActive = false;
+  cy.off('grab', 'node');
+  cy.off('drag', 'node');
+  cy.off('free', 'node');
+  // re-run static layout to restore dense cluster view
+  runLayout();
+}
+
+// ===================================================================
+//  DETAIL PANEL
+// ===================================================================
+function showDetail(node) {
+  const d = node.data();
+  document.getElementById('panel-empty').style.display = 'none';
+  const pc = document.getElementById('panel-content');
+  pc.style.display = 'block';
+
+  document.getElementById('p-name').textContent = d.name;
+  const badge = document.getElementById('p-badge');
+  badge.textContent = d.type;
+  badge.style.background = NODE_COLORS[d.type] || '#888';
+  badge.style.color = d.type === 'Domain' ? '#000' : '#fff';
+
+  // props table
+  const props = d.props || {};
+  const skip = new Set(['created_at','updated_at','first_run_id','last_run_id','first_seen_at','last_seen_at','last_ingested_at']);
+  let html = '';
+  for (const [k,v] of Object.entries(props)) {
+    if (skip.has(k)) continue;
+    const display = v === null ? '—' : (typeof v === 'string' && v.length > 200 ? v.slice(0,200)+'…' : String(v));
+    html += `<tr><td class="pk">${esc(k)}</td><td class="pv">${esc(display)}</td></tr>`;
+  }
+  html += `<tr><td class="pk">degree</td><td class="pv">${d.deg}</td></tr>`;
+  document.getElementById('p-props').innerHTML = html;
+
+  // neighbors
+  const nbrs = [];
+  node.connectedEdges().forEach(e => {
+    const other = e.source().id() === node.id() ? e.target() : e.source();
+    const dir = e.source().id() === node.id() ? '→' : '←';
+    nbrs.push({ node: other, etype: e.data('etype'), dir });
+  });
+  nbrs.sort((a,b) => a.etype.localeCompare(b.etype) || a.node.data('name').localeCompare(b.node.data('name')));
+
+  let nbrHtml = '';
+  nbrs.slice(0, 40).forEach(n => {
+    const nd = n.node.data();
+    nbrHtml += `<div class="neighbor-item" data-id="${nd.id}">
+      <span class="dot" style="background:${NODE_COLORS[nd.type]||'#888'}"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.dir} ${esc(nd.name)}</span>
+      <span class="edge-type">${n.etype}</span>
+    </div>`;
+  });
+  if (nbrs.length > 40) nbrHtml += `<div style="font-size:11px;color:var(--fg-2);padding:4px 6px">… and ${nbrs.length-40} more</div>`;
+  document.getElementById('p-neighbors').innerHTML = nbrHtml;
+
+  // click neighbor to navigate
+  document.querySelectorAll('.neighbor-item').forEach(item => {
+    item.addEventListener('click', () => {
+      focusNode(item.dataset.id);
+    });
+  });
+}
+
+function hideDetail() {
+  document.getElementById('panel-empty').style.display = 'block';
+  document.getElementById('panel-content').style.display = 'none';
+}
+
+// ===================================================================
+//  MINIMAP
+// ===================================================================
+function updateMinimap() {
+  const canvas = document.getElementById('minimap-canvas');
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * devicePixelRatio;
+  canvas.height = rect.height * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const W = rect.width, H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // get graph bounds
+  const nodes = cy.nodes().filter(n => !n.hasClass('hidden-filter'));
+  if (nodes.size() === 0) return;
+
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  nodes.forEach(n => {
+    const p = n.position();
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+  });
+  const pad = 50;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const gW = maxX - minX || 1, gH = maxY - minY || 1;
+  const scale = Math.min(W / gW, H / gH);
+  const offX = (W - gW * scale) / 2, offY = (H - gH * scale) / 2;
+
+  const tx = (x) => (x - minX) * scale + offX;
+  const ty = (y) => (y - minY) * scale + offY;
+
+  // draw edges
+  ctx.strokeStyle = 'rgba(100,120,140,0.15)';
+  ctx.lineWidth = 0.5;
+  cy.edges().filter(e => !e.hasClass('hidden-filter')).forEach(e => {
+    const sp = e.source().position(), tp = e.target().position();
+    ctx.beginPath();
+    ctx.moveTo(tx(sp.x), ty(sp.y));
+    ctx.lineTo(tx(tp.x), ty(tp.y));
+    ctx.stroke();
+  });
+
+  // draw nodes
+  nodes.forEach(n => {
+    const p = n.position();
+    const color = NODE_COLORS[n.data('type')] || '#888';
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(tx(p.x), ty(p.y), Math.max(1.5, n.data('sz') * 0.15), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // viewport rectangle
+  const ext = cy.extent();
+  const vp = document.getElementById('minimap-vp');
+  const vpL = tx(ext.x1), vpT = ty(ext.y1);
+  const vpW = (ext.x2 - ext.x1) * scale, vpH = (ext.y2 - ext.y1) * scale;
+  vp.style.left = Math.max(0, vpL) + 'px';
+  vp.style.top = Math.max(0, vpT) + 'px';
+  vp.style.width = Math.min(W, vpW) + 'px';
+  vp.style.height = Math.min(H, vpH) + 'px';
+}
+
+// ===================================================================
+//  THEME
+// ===================================================================
+function initTheme() {
+  const btn = document.getElementById('btn-theme');
+  const isDark = () => !document.documentElement.classList.contains('light');
+
+  btn.addEventListener('click', toggleTheme);
+
+  function toggleTheme() {
+    document.documentElement.classList.toggle('light');
+    btn.textContent = isDark() ? '☀ Light' : '🌙 Dark';
+    // update cytoscape label color
+    cy.style().selector('node').style('color', isDark() ? '#e6edf3' : '#1f2328').update();
+    updateMinimap();
+  }
+}
+
+// ===================================================================
+//  KEYBOARD SHORTCUTS
+// ===================================================================
+function initKeyboard() {
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') {
+      if (e.key === 'Escape') e.target.blur();
+      return;
+    }
+    switch(e.key) {
+      case '/': e.preventDefault(); document.getElementById('search').focus(); break;
+      case 'f': case 'F': cy.animate({ fit: { padding: 40 }, duration: 300 }); break;
+      case 's': case 'S': document.getElementById('btn-sidebar').click(); break;
+      case 'd': case 'D': document.getElementById('btn-panel').click(); break;
+      case 't': case 'T': document.getElementById('btn-theme').click(); break;
+      case 'r': case 'R': document.getElementById('btn-elastic').click(); break;
+      case 'Escape':
+        clearHighlight(); selectedNode = null; hideDetail();
+        document.getElementById('search').value = '';
+        break;
+    }
+  });
+}
+
+// ===================================================================
+//  UTIL
+// ===================================================================
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// ===================================================================
+//  RESET
+// ===================================================================
+function initReset() {
+  document.getElementById('btn-reset-filters').addEventListener('click', () => {
+    nodeTypes.forEach(t => activeNodeTypes.add(t));
+    edgeTypes.forEach(t => activeEdgeTypes.add(t));
+    document.querySelectorAll('#node-filters input, #edge-filters input').forEach(cb => cb.checked = true);
+    clearHighlight();
+    selectedNode = null;
+    hideDetail();
+    applyFilters();
+    cy.animate({ fit: { padding: 40 }, duration: 300 });
+  });
+}
+
+// ===================================================================
+//  BOOT
+// ===================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  buildFilterUI();
+  buildLegend();
+  initCy();
+  updateStats();
+  initSearch();
+  initInteraction();
+  initTheme();
+  initKeyboard();
+  initReset();
+
+  // sidebar toggle
+  document.getElementById('btn-sidebar').addEventListener('click', () => {
+    const main = document.getElementById('main');
+    main.classList.toggle('sidebar-hidden');
+    document.getElementById('btn-sidebar').classList.toggle('active', !main.classList.contains('sidebar-hidden'));
+    requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); updateMinimap(); });
+  });
+
+  // detail panel toggle
+  document.getElementById('btn-panel').addEventListener('click', () => {
+    const main = document.getElementById('main');
+    main.classList.toggle('panel-hidden');
+    document.getElementById('btn-panel').classList.toggle('active', !main.classList.contains('panel-hidden'));
+    requestAnimationFrame(() => { cy.resize(); cy.fit(undefined, 40); updateMinimap(); });
+  });
+
+  // elastic button click handler
+  document.getElementById('btn-elastic').addEventListener('click', () => {
+    const btn = document.getElementById('btn-elastic');
+    if (btn.classList.contains('active')) {
+      btn.classList.remove('active');
+      stopElastic();
+    } else {
+      btn.classList.add('active');
+      startElastic();
+    }
+  });
+
+  // fit button
+  document.getElementById('btn-fit').addEventListener('click', () => {
+    cy.animate({ fit: { padding: 40 }, duration: 300 });
+  });
+});
+</script>
+</body>
+</html>

@@ -191,6 +191,47 @@ First build was judged on the run-3 export. Findings + changes:
 - **Ego-focus is now hover-triggered** (`mouseover`/`mouseout`), not click. Click
   is reserved for pinning the right-panel detail.
 
+## Iteration 2 — 2026-05-31 (pivot: Gemini D3 base becomes the official viewer)
+
+After several rounds of trying to retrofit the Cytoscape/Opus builder to match
+the bake-off's Gemini constellation (springiness, cohesive packing), we pivoted
+the **base** rather than keep tuning. The bake-off winner (Gemini, pure D3) nails
+the constellation out of the box; we adopt it as the official viewer and re-iterate
+our preferences on top.
+
+**New architecture (replaces everything above):**
+- **`tools/kdb_graph_viewer.py`** — official single-command builder: reads Kuzu
+  directly → neutral `{nodes,edges,summary}` (self-loops skipped) → injects into
+  the template at `/*__GRAPH_DATA__*/`. `--graph-path <kuzu> [--out ...]`.
+- **`tools/kdb_graph_viewer_template.html`** — the Gemini D3 template, node radius
+  baked to **2/3** of the bake-off scale.
+- **Cytoscape `tools/kdb_graph_viewer-opus.py` retired** (the cola/D3-on-Cytoscape
+  commits are a superseded dead end in history).
+- **Fallback preserved** under `tools/viewer-bakeoff/`: original `gemini_template.html`
+  + `build_gemini.py` (2-stage Kuzu→JSON→HTML) + a `kdb-graph-viewer-gemini-2-3.html`
+  reference copy. Per the decision, we can return to the original or the 2-stage path.
+
+**Refinements applied to the Gemini base (the "re-iterate" list):**
+- Node scale 2/3; cohesive central-seed constellation kept from Gemini.
+- **Entity = blue, Source = green** (swapped at the CSS-variable level).
+- **Elastic-only layout** — the "Clusters" mode + its "Layout Engine" panel section,
+  `switchLayout`, and `currentLayoutMode` removed.
+- **Self-loops dropped** in extraction (a node linking to itself).
+- **BELONGS_TO solid**, SUPPORTS dashed, ALIAS_OF dashed.
+- **Arrowheads** halved (`markerWidth/Height` 6→3) and now **dim with ego-focus**
+  (the dim class uses element `opacity`, not `stroke-opacity`, so the shared
+  `<marker>` composites with the path).
+- **Ego-focus on hover** (Gemini default), click pins the right-panel detail.
+- **Combined right panel** — the left controls panel was removed and its
+  search + node/edge filters + reset folded into the top of the right panel, above
+  a divider and the node-detail area (`#inspector`, which the JS still rewrites).
+- **Header toggle** shows/hides the combined right panel.
+
+**Tests** (`tools/tests/test_kdb_graph_viewer.py`, repointed to the new builder):
+template has the data token + 2/3 scale; `render_html` injects data and consumes the
+token; missing-token guard raises. The earlier Cytoscape-specific tests were removed
+with the opus builder.
+
 ## Testing
 
 **Unit (Python builder, `pytest -m "not live"`):**
