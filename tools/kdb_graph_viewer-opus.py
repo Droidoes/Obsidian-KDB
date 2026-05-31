@@ -303,13 +303,16 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     dN = cy.nodes().map(n => { const p = n.position(); return {id:n.id(), x:p.x, y:p.y}; });
     dById = {}; dN.forEach(d => dById[d.id] = d);
     const dE = cy.edges().map(e => ({source:e.source().id(), target:e.target().id()}));
+    // Strong central gravity (forceX/Y) pulls every disconnected component into
+    // one dense mass; short-range charge keeps nodes apart WITHIN a cluster
+    // without shoving separate clusters across the canvas; collide stops overlap.
     sim = d3.forceSimulation(dN)
-      .force('link', d3.forceLink(dE).id(d=>d.id).distance(55).strength(0.5))
-      .force('charge', d3.forceManyBody().strength(-170).distanceMax(320))
+      .force('link', d3.forceLink(dE).id(d=>d.id).distance(42).strength(0.6))
+      .force('charge', d3.forceManyBody().strength(-130).distanceMax(200))
       .force('center', d3.forceCenter(W/2, H/2))
-      .force('x', d3.forceX(W/2).strength(0.07))
-      .force('y', d3.forceY(H/2).strength(0.07))
-      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 3))
+      .force('x', d3.forceX(W/2).strength(0.22))
+      .force('y', d3.forceY(H/2).strength(0.22))
+      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 5))
       .alphaDecay(0.018)
       .on('tick', () => {
         for(const d of dN){ const n = cy.getElementById(d.id);
@@ -381,8 +384,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   function focusNodeById(id){
     const n = cy.getElementById(id);
     if(!n || n.empty()) return;
-    egoSet = n.closedNeighborhood();
-    focusOn(egoSet);
+    clickNode = n;
+    focusOn(n.closedNeighborhood());
     showNode(n);
     refreshLabels();
     cy.animate({fit:{eles:n.closedNeighborhood(), padding:80}}, {duration:400});
@@ -393,27 +396,29 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   // ---- ego-network focus + captions ----
-  const ZOOM_LABEL = 1.8;          // show every caption once zoomed in past this
-  let egoSet = null;               // hover-focused neighborhood (or null)
+  // [5] a node's caption shows ONLY when it is the hover- or click-selected node
+  //     AND the zoom is past ZOOM_LABEL. Never otherwise.
+  const ZOOM_LABEL = 1.8;
+  let hoverNode = null, clickNode = null;
   function focusOn(eles){ cy.elements().addClass('dim'); eles.removeClass('dim'); }
   function clearFocus(){ cy.elements().removeClass('dim'); }
   function refreshLabels(){
+    const ln = hoverNode || clickNode;
     cy.batch(() => {
       cy.nodes().removeClass('lbl');
-      if(cy.zoom() >= ZOOM_LABEL){ cy.nodes(':visible').addClass('lbl'); }
-      else if(egoSet){ egoSet.nodes().addClass('lbl'); }
+      if(ln && ln.nonempty() && cy.zoom() >= ZOOM_LABEL){ ln.addClass('lbl'); }
     });
   }
   cy.on('zoom', refreshLabels);
 
   // [7] auto ego-focus on hover (not click)
-  cy.on('mouseover','node', e => { egoSet = e.target.closedNeighborhood(); focusOn(egoSet); refreshLabels(); });
-  cy.on('mouseout','node',  e => { egoSet = null; clearFocus(); refreshLabels(); });
+  cy.on('mouseover','node', e => { hoverNode = e.target; focusOn(e.target.closedNeighborhood()); refreshLabels(); });
+  cy.on('mouseout','node',  e => { hoverNode = null; clearFocus(); refreshLabels(); });
 
   // click pins details in the right panel
-  cy.on('tap','node', e => showNode(e.target));
+  cy.on('tap','node', e => { clickNode = e.target; showNode(e.target); refreshLabels(); });
   cy.on('tap','edge', e => showEdge(e.target.data()));
-  cy.on('tap', e => { if(e.target === cy){ cy.nodes().removeClass('found'); } });
+  cy.on('tap', e => { if(e.target === cy){ clickNode = null; cy.nodes().removeClass('found'); refreshLabels(); } });
 
   // ---- search ----
   const search = document.getElementById('search');
@@ -421,12 +426,11 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     if(e.key!=='Enter') return;
     const term = search.value.trim().toLowerCase();
     cy.nodes().removeClass('found');
-    if(!term){ egoSet=null; clearFocus(); refreshLabels(); return; }
+    if(!term){ clearFocus(); refreshLabels(); return; }
     const hits = cy.nodes().filter(n => (n.data('name')||'').toLowerCase().includes(term));
     if(hits.length===0){ return; }
     hits.addClass('found');
-    egoSet = hits.closedNeighborhood();
-    focusOn(egoSet);
+    focusOn(hits.closedNeighborhood());
     refreshLabels();
     cy.animate({fit:{eles:hits.closedNeighborhood(), padding:80}}, {duration:400});
   });
@@ -470,7 +474,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     else { cy.layout(initialLayout()).run(); }
   };
   document.getElementById('reset').onclick = ()=>{
-    egoSet=null; clearFocus(); cy.nodes().removeClass('found'); search.value=''; refreshLabels();
+    hoverNode=null; clickNode=null; clearFocus(); cy.nodes().removeClass('found'); search.value=''; refreshLabels();
     cy.animate({fit:{eles:cy.elements(':visible'), padding:40}}, {duration:400});
   };
   const themeBtn = document.getElementById('theme');
