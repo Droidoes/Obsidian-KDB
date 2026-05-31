@@ -525,6 +525,9 @@ def rederive_domains(
     domains_seen: set[str] = set()
     for (slug, dom), sids in agg.items():
         if dom not in domains_seen:
+            # NOTE: because the projection is deleted and rebuilt on every call,
+            # first_run_id/created_at reflect the latest rederive, not true
+            # first-seen. Acceptable: the verifier treats Domain as existence-only.
             conn.execute(
                 "MERGE (d:Domain {name: $name}) "
                 "ON CREATE SET d.created_at=$ts, d.first_run_id=$run_id",

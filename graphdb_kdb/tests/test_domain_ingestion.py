@@ -6,6 +6,7 @@ domain/sub_domain fields, no _normalize_domain(), and no _ingest_page_domains().
 """
 from __future__ import annotations
 
+from graphdb_kdb import ingestor
 from graphdb_kdb.graphdb import GraphDB
 from graphdb_kdb.tests.conftest import (
     make_compile_result,
@@ -14,6 +15,7 @@ from graphdb_kdb.tests.conftest import (
     make_scan,
     make_scan_entry,
 )
+from graphdb_kdb.types import SyncResult
 
 
 # ---------- helpers ----------
@@ -105,3 +107,53 @@ def test_rederive_is_idempotent(graph_dir):
         gdb.apply_compile_result(cr, scan, "r2")
         assert _domain_count(gdb) == 1
         assert _belongs_to_count(gdb) == 1
+
+
+def test_alias_entity_excluded_from_derived_domains(graph_dir):
+    """Alias entities (canonical_id IS NOT NULL) must NOT receive BELONGS_TO edges.
+
+    Because rederive_domains runs before _upsert_alias_entities_and_edges in
+    apply_compile_result, the compile_result path cannot naturally route a
+    SUPPORTS edge to an alias Entity row.  This test uses the direct-edge
+    approach to isolate and prove the `e.canonical_id IS NULL` filter in
+    rederive_domains: we build the graph state manually (canonical + alias
+    entities each with a SUPPORTS edge from a domain-classified source), then
+    call rederive_domains directly and assert the alias is excluded.
+    """
+    # Bootstrap the graph: canonical entity + source via apply_compile_result.
+    cr = make_compile_result([_src("VI/a.md", [make_page("apple-inc")], "value-investing")])
+    scan = make_scan([make_scan_entry("VI/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "r1")
+
+        # Insert an alias Entity row with canonical_id pointing at apple-inc.
+        gdb.conn.execute(
+            """
+            MERGE (a:Entity {slug: $alias})
+            SET a.canonical_id=$canonical, a.status='alias', a.page_type='alias',
+                a.title=$alias, a.confidence='n/a', a.created_at='t', a.updated_at='t',
+                a.first_run_id='r1', a.last_run_id='r1'
+            """,
+            {"alias": "aapl", "canonical": "apple-inc"},
+        )
+
+        # Wire a SUPPORTS edge from the same domain-classified source to the alias.
+        gdb.conn.execute(
+            """
+            MATCH (s:Source {source_id: $sid}), (a:Entity {slug: $alias})
+            CREATE (s)-[:SUPPORTS {role:'primary', hash_at_time:'h', run_id:'r1', created_at:'t'}]->(a)
+            """,
+            {"sid": "VI/a.md", "alias": "aapl"},
+        )
+
+        # Re-run rederive_domains with both SUPPORTS edges in place.
+        result = SyncResult()
+        ingestor.rederive_domains(gdb.conn, "r1", "t", result)
+
+        # Canonical entity MUST have a BELONGS_TO edge.
+        assert _belongs_to(gdb, "apple-inc", "value-investing") == {"support_count": 1}
+        # Alias entity MUST NOT receive a BELONGS_TO edge (canonical_id IS NULL filter).
+        assert _belongs_to(gdb, "aapl", "value-investing") is None
+        # Exactly one BELONGS_TO edge in total.
+        assert _belongs_to_count(gdb) == 1
+        assert result.belongs_to_upserted == 1
