@@ -44,12 +44,17 @@ Schema version history:
         `domain STRING` columns. Pass-1 enrichment populates these via
         frontmatter; compile reads them directly (no LLM re-derivation).
         Existing Source rows get NULL until next compile run.
+- 2.4 — D1-A: BELONGS_TO is now a DERIVED projection (Entity domain = union of
+        its supporting sources' Source.domain). Drops sub_domain, adds
+        support_count (distinct supporting sources in that domain). Destructive
+        REL change — Kuzu cannot ALTER a REL table, so 2.3->2.4 requires
+        `graphdb-kdb rebuild` (no in-place migration).
 """
 from __future__ import annotations
 
 from typing import Callable
 
-SCHEMA_VERSION = "2.3"
+SCHEMA_VERSION = "2.4"
 
 # Node tables — one CREATE per element (Kuzu requires one statement per execute).
 NODE_TABLE_DDL: list[str] = [
@@ -147,9 +152,9 @@ REL_TABLE_DDL: list[str] = [
     """
     CREATE REL TABLE BELONGS_TO (
         FROM Entity TO Domain,
-        run_id      STRING,
-        created_at  STRING,
-        sub_domain  STRING
+        run_id        STRING,
+        created_at    STRING,
+        support_count INT64
     )
     """,
     """

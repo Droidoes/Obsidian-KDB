@@ -13,7 +13,7 @@ from graphdb_kdb.graphdb import GraphDB
 def test_schema_constants_exist():
     """Schema module exposes SCHEMA_VERSION + DDL lists + MIGRATIONS registry."""
     assert isinstance(schema.SCHEMA_VERSION, str)
-    assert schema.SCHEMA_VERSION == "2.3"  # #89 D-89-17 Pass-1 Source columns bump
+    assert schema.SCHEMA_VERSION == "2.4"  # D1-A: BELONGS_TO derived projection (support_count)
     assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 4
     assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 9
     node_text = " ".join(schema.NODE_TABLE_DDL)
@@ -34,9 +34,9 @@ def test_schema_constants_exist():
     # #74.1: ALIAS_OF rel table with `algorithm` provenance (D-R5-6).
     assert "CREATE REL TABLE ALIAS_OF" in rel_text
     assert "algorithm" in rel_text
-    # #76.2: BELONGS_TO rel table with sub_domain property.
+    # D1-A: BELONGS_TO rel table with support_count (derived projection; sub_domain dropped).
     assert "CREATE REL TABLE BELONGS_TO" in rel_text
-    assert "sub_domain" in rel_text
+    assert "support_count" in rel_text
     # #83/#84: 5 new Claim-layer rel tables.
     for name in ("EVIDENCES", "ABOUT", "SUPERSEDES", "CONTRADICTS", "QUALIFIES"):
         assert f"CREATE REL TABLE {name}" in rel_text
@@ -58,7 +58,7 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert v == "2.3"
+    assert v == "2.4"
     # #76.2: domains + belongs_to counters join the stats dict.
     assert stats == {
         "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
@@ -84,8 +84,8 @@ def test_graphdb_init_is_idempotent(graph_dir):
         "claims": 0, "evidences": 0, "about": 0,
         "supersedes": 0, "contradicts": 0, "qualifies": 0,
     }
-    # v2.3: schema version now "2.3" (Source gained summary/author/domain).
-    assert v1 == "2.3"
+    # v2.4: schema version now "2.4" (BELONGS_TO derived projection).
+    assert v1 == "2.4"
 
 
 def test_alias_of_table_exists_on_fresh_db(graph_dir):
@@ -192,44 +192,19 @@ def _create_v1_db(graph_dir):
     del db
 
 
-def test_migration_v1_to_v2_3_applies(graph_dir):
-    """Opening a v1.0 DB with v2.3 code chains migrations 1.0→2.0→2.1→2.2→2.3.
-    Existing entity survives; canonical_id, ALIAS_OF, Domain, BELONGS_TO,
-    Claim, the 5 Claim-layer rels, and Source.summary/author/domain all
-    become available."""
+def test_migration_v1_to_v2_4_requires_rebuild(graph_dir):
+    """Opening a v1.0 DB with v2.4 code chains 1.0→2.0→2.1→2.2→2.3, then
+    hits 2.3→2.4 which has no registered migration (destructive BELONGS_TO
+    change requires `graphdb-kdb rebuild`). GraphDBSchemaError is raised."""
+    from graphdb_kdb.graphdb import GraphDBSchemaError
+
     _create_v1_db(graph_dir)
 
-    with GraphDB(graph_dir) as gdb:
-        # Schema version now reports v2.3 (chained migrations ran).
-        assert gdb.schema_version() == "2.3"
-        # The pre-migration entity survived.
-        stats = gdb.stats()
-        assert stats["entities"] == 1
-        # canonical_id is queryable on existing rows (returns NULL).
-        result = gdb.conn.execute(
-            "MATCH (e:Entity {slug: 'pre-migration-entity'}) RETURN e.canonical_id"
-        )
-        assert result.has_next()
-        row = result.get_next()
-        # Existing entities default to canonical_id = NULL (canonical by construction).
-        assert row[0] is None
-        # ALIAS_OF table is queryable (empty).
-        ar = gdb.conn.execute("MATCH ()-[r:ALIAS_OF]->() RETURN COUNT(*)")
-        assert int(ar.get_next()[0]) == 0
-        # #76.2: Domain node table is queryable (empty).
-        dr = gdb.conn.execute("MATCH (d:Domain) RETURN COUNT(*)")
-        assert int(dr.get_next()[0]) == 0
-        # #76.2: BELONGS_TO rel table is queryable (empty).
-        br = gdb.conn.execute("MATCH ()-[r:BELONGS_TO]->() RETURN COUNT(*)")
-        assert int(br.get_next()[0]) == 0
-        # #89 D-89-17: Source.summary/author/domain columns are queryable
-        # (return NULL for rows seeded before migration).
-        sr = gdb.conn.execute(
-            "MATCH (s:Source) RETURN s.summary, s.author, s.domain LIMIT 1"
-        )
-        # No Source rows in v1 seed, but column existence is proved by the
-        # fact that the MATCH executes without error. Confirm zero rows.
-        assert not sr.has_next()
+    with pytest.raises(GraphDBSchemaError) as excinfo:
+        with GraphDB(graph_dir):
+            pass
+    assert "no migration registered" in str(excinfo.value)
+    assert "rebuild" in str(excinfo.value)
 
 
 def test_migrate_2_2_to_2_3_adds_source_columns(graph_dir):
@@ -305,11 +280,11 @@ def test_migrate_2_2_to_2_3_adds_source_columns(graph_dir):
     del db2
 
 
-def test_fresh_db_at_2_3_has_source_columns(graph_dir):
-    """Fresh DB created with current SCHEMA_VERSION has summary/author/domain
+def test_fresh_db_at_2_4_has_source_columns(graph_dir):
+    """Fresh DB created with current SCHEMA_VERSION (v2.4) has summary/author/domain
     on Source (no migration needed — DDL creates them directly)."""
     with GraphDB(graph_dir) as gdb:
-        assert gdb.schema_version() == "2.3"
+        assert gdb.schema_version() == "2.4"
         # Column existence: INSERT with explicit values, then read back.
         gdb.conn.execute(
             "CREATE (:Source {source_id: 'KDB/raw/test.md', source_type: 'md', "
@@ -366,3 +341,16 @@ def test_default_graph_path_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("KDB_GRAPH_PATH", str(custom))
     p = graphdb_kdb.default_graph_path()
     assert p == custom
+
+
+def test_belongs_to_ddl_has_support_count_not_sub_domain():
+    from graphdb_kdb import schema
+    belongs_to_ddl = next(d for d in schema.REL_TABLE_DDL if "BELONGS_TO" in d)
+    assert "support_count" in belongs_to_ddl
+    assert "INT64" in belongs_to_ddl
+    assert "sub_domain" not in belongs_to_ddl
+
+
+def test_schema_version_is_2_4():
+    from graphdb_kdb import schema
+    assert schema.SCHEMA_VERSION == "2.4"
