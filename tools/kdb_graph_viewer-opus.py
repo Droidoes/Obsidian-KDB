@@ -28,8 +28,8 @@ SKIP_NODE_TABLES = {"_SchemaMeta"}
 DISPLAY_FIELDS = ("title", "name", "slug", "source_id", "id", "text", "label")
 # Per-label node colors (anything unmapped falls back to grey).
 LABEL_COLORS = {
-    "Source": "#4C9AFF",
-    "Entity": "#57D9A3",
+    "Entity": "#4C9AFF",
+    "Source": "#57D9A3",
     "Domain": "#FFC400",
     "Claim": "#FF7452",
 }
@@ -46,15 +46,16 @@ def _node_key(nid: dict) -> str:
     return f"{nid['table']}:{nid['offset']}"
 
 
-# Codex-scale node sizing: small Obsidian-like nodes, type-tiered + damped degree.
-# Returns a *diameter* (Cytoscape width/height); Codex's value is a radius, so 2x.
-_SIZE_BASE = {"Domain": 11, "Source": 8, "Entity": 5, "Claim": 5}
+# Small Obsidian-like nodes: type-tiered base + damped degree, used as the
+# Cytoscape diameter. Source is capped at Entity's base (Source must not be
+# bigger than Entity). Overall scale is half the earlier Codex-radius*2.
+_SIZE_BASE = {"Domain": 11, "Source": 5, "Entity": 5, "Claim": 5}
 
 
 def _node_size(label: str, degree: int) -> float:
     base = _SIZE_BASE.get(label, 5)
     radius = base + min(8.0, math.sqrt(degree) * 1.8)
-    return round(2 * radius, 1)
+    return round(radius, 1)
 
 
 def _display_name(label: str, props: dict) -> str:
@@ -174,8 +175,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <script src="https://unpkg.com/layout-base@2.0.1/layout-base.js"></script>
 <script src="https://unpkg.com/cose-base@2.2.0/cose-base.js"></script>
 <script src="https://unpkg.com/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cola/3.4.0/cola.min.js"></script>
-<script src="https://unpkg.com/cytoscape-cola@2.5.1/cytoscape-cola.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://unpkg.com/cytoscape-navigator@2.0.2/cytoscape-navigator.js"></script>
 <link href="https://unpkg.com/cytoscape-navigator@2.0.2/cytoscape.js-navigator.css" rel="stylesheet"/>
 <style>
@@ -241,7 +241,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 </div>
 <div id="cy"></div>
 <div id="minimap"></div>
-<div id="panel"><p class="hint">Click a node for its ego-network + properties.<br/>Toggle chips to filter. Scroll to zoom, drag to pan.</p></div>
+<div id="panel"><p class="hint">Hover a node to focus its neighbors; click for properties.<br/>Captions appear on hover or when you zoom in. Toggle chips to filter.</p></div>
 <script>
   const ELEMENTS = __ELEMENTS__;
   const NODE_COLORS = __NODE_COLORS__;
@@ -252,11 +252,11 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   const NODE_FALLBACK = "#998DD9";
   const EDGE_FALLBACK = "#6e7681";
 
-  // Layout preference: continuous cola (springy + packed) -> fcose -> built-in cose.
-  // Never blank the page if a CDN fails — this sits above cy creation.
-  const HAS_COLA  = !!(window.cytoscapeCola && window.cola);
+  // Layout: a D3 force simulation drives node positions (springy + packed,
+  // Gemini-style) while Cytoscape renders. If D3's CDN fails, fall back to a
+  // static fcose -> built-in cose layout. Never blank the page.
+  const HAS_D3    = !!window.d3;
   const HAS_FCOSE = !!window.cytoscapeFcose;
-  if(HAS_COLA){  try { cytoscape.use(window.cytoscapeCola);  } catch(e){} }
   if(HAS_FCOSE){ try { cytoscape.use(window.cytoscapeFcose); } catch(e){} }
 
   const cy = cytoscape({
@@ -266,7 +266,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     style: [
       {selector:'node', style:{
         'background-color': ele => NODE_COLORS[ele.data('label')] || NODE_FALLBACK,
-        'label':'data(name)','color':'#e6edf3','font-size':'9px',
+        'label':'data(name)','color':'#e6edf3','font-size':'9px','text-opacity':0,
         'text-wrap':'wrap','text-max-width':'120px','text-valign':'bottom','text-margin-y':'3px',
         'width':'data(size)',
         'height':'data(size)',
@@ -277,20 +277,17 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
         'target-arrow-color': ele => EDGE_COLORS[ele.data('label')] || EDGE_FALLBACK,
         'target-arrow-shape':'triangle','arrow-scale':0.8,'curve-style':'bezier',
         'label':'data(label)','font-size':'7px','color':'#8b949e','text-rotation':'autorotate',
-        'opacity':0.55}},
+        'text-opacity':0,'opacity':0.55}},
+      {selector:'node.lbl', style:{'text-opacity':1}},
       {selector:'.dim', style:{'opacity':0.08,'text-opacity':0}},
       {selector:'node.found', style:{'border-width':4,'border-color':'#f0883e'}},
       {selector:':selected', style:{'border-width':4,'border-color':'#f0883e','line-color':'#f0883e','target-arrow-color':'#f0883e'}}
     ],
-    layout: layoutOpts()
+    layout: initialLayout()
   });
 
-  function layoutOpts(){
-    if(HAS_COLA){
-      return {name:'cola', infinite:true, fit:false, handleDisconnected:true,
-              animate:true, nodeSpacing:6, edgeLength:90,
-              maxSimulationTime:4000, convergenceThreshold:0.01};
-    }
+  function initialLayout(){
+    if(HAS_D3){ return {name:'random'}; }   // D3 sim repositions immediately after
     if(HAS_FCOSE){
       return {name:'fcose', quality:'default', animate:true, animationDuration:600,
               randomize:true, nodeRepulsion:6500, idealEdgeLength:75, nodeSeparation:80, padding:40};
@@ -298,8 +295,38 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     return {name:'cose', animate:false, nodeRepulsion:9000, idealEdgeLength:90, padding:40};
   }
 
-  // cola runs with fit:false (continuous) — fit the viewport once after it spreads out.
-  if(HAS_COLA){ setTimeout(() => cy.fit(cy.elements(':visible'), 40), 800); }
+  // ---- D3 force layout: springy physics + central packing; Cytoscape renders ----
+  let sim = null, dN = [], dById = {};
+  function sizeById(id){ const n = cy.getElementById(id); return n.nonempty() ? (n.data('size')||10) : 10; }
+  function startSimulation(){
+    const W = cy.width()||800, H = cy.height()||600;
+    dN = cy.nodes().map(n => { const p = n.position(); return {id:n.id(), x:p.x, y:p.y}; });
+    dById = {}; dN.forEach(d => dById[d.id] = d);
+    const dE = cy.edges().map(e => ({source:e.source().id(), target:e.target().id()}));
+    sim = d3.forceSimulation(dN)
+      .force('link', d3.forceLink(dE).id(d=>d.id).distance(55).strength(0.5))
+      .force('charge', d3.forceManyBody().strength(-170).distanceMax(320))
+      .force('center', d3.forceCenter(W/2, H/2))
+      .force('x', d3.forceX(W/2).strength(0.07))
+      .force('y', d3.forceY(H/2).strength(0.07))
+      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 3))
+      .alphaDecay(0.018)
+      .on('tick', () => {
+        for(const d of dN){ const n = cy.getElementById(d.id);
+          if(n.nonempty() && !n.grabbed()) n.position({x:d.x, y:d.y}); }
+      });
+    setTimeout(() => cy.fit(cy.elements(':visible'), 40), 600);
+    // springy drag: pin the grabbed node, reheat so neighbors follow, release on drop
+    cy.on('grab','node', e => { const d = dById[e.target.id()]; if(d){ d.fx=d.x; d.fy=d.y; } sim.alphaTarget(0.3).restart(); });
+    cy.on('drag','node', e => { const d = dById[e.target.id()]; if(d){ const p=e.target.position(); d.fx=p.x; d.fy=p.y; } });
+    cy.on('free','node', e => { const d = dById[e.target.id()]; if(d){ d.fx=null; d.fy=null; } sim.alphaTarget(0); });
+  }
+  function reheat(){
+    if(!sim){ return; }
+    for(const d of dN){ const p = cy.getElementById(d.id).position(); d.x=p.x; d.y=p.y; }
+    sim.alpha(0.9).restart();
+  }
+  if(HAS_D3){ startSimulation(); }
 
   // ---- minimap (degrade gracefully if plugin missing) ----
   try { cy.navigator({container: document.getElementById('minimap')}); }
@@ -354,8 +381,10 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   function focusNodeById(id){
     const n = cy.getElementById(id);
     if(!n || n.empty()) return;
-    focusOn(n.closedNeighborhood());
+    egoSet = n.closedNeighborhood();
+    focusOn(egoSet);
     showNode(n);
+    refreshLabels();
     cy.animate({fit:{eles:n.closedNeighborhood(), padding:80}}, {duration:400});
   }
   function showEdge(d){
@@ -363,26 +392,28 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
       `<div><span class="k">source:</span> ${d.source}</div><div><span class="k">target:</span> ${d.target}</div>`;
   }
 
-  // ---- ego-network focus+context ----
-  function focusOn(eles){
-    cy.elements().addClass('dim');
-    eles.removeClass('dim');
-  }
+  // ---- ego-network focus + captions ----
+  const ZOOM_LABEL = 1.8;          // show every caption once zoomed in past this
+  let egoSet = null;               // hover-focused neighborhood (or null)
+  function focusOn(eles){ cy.elements().addClass('dim'); eles.removeClass('dim'); }
   function clearFocus(){ cy.elements().removeClass('dim'); }
+  function refreshLabels(){
+    cy.batch(() => {
+      cy.nodes().removeClass('lbl');
+      if(cy.zoom() >= ZOOM_LABEL){ cy.nodes(':visible').addClass('lbl'); }
+      else if(egoSet){ egoSet.nodes().addClass('lbl'); }
+    });
+  }
+  cy.on('zoom', refreshLabels);
 
-  cy.on('tap','node',e=>{
-    const n = e.target;
-    focusOn(n.closedNeighborhood());
-    showNode(n);
-  });
-  cy.on('tap','edge',e=>{
-    const ed = e.target;
-    focusOn(ed.union(ed.connectedNodes()));
-    showEdge(ed.data());
-  });
-  cy.on('tap',e=>{
-    if(e.target === cy){ clearFocus(); cy.nodes().removeClass('found'); }
-  });
+  // [7] auto ego-focus on hover (not click)
+  cy.on('mouseover','node', e => { egoSet = e.target.closedNeighborhood(); focusOn(egoSet); refreshLabels(); });
+  cy.on('mouseout','node',  e => { egoSet = null; clearFocus(); refreshLabels(); });
+
+  // click pins details in the right panel
+  cy.on('tap','node', e => showNode(e.target));
+  cy.on('tap','edge', e => showEdge(e.target.data()));
+  cy.on('tap', e => { if(e.target === cy){ cy.nodes().removeClass('found'); } });
 
   // ---- search ----
   const search = document.getElementById('search');
@@ -390,11 +421,13 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     if(e.key!=='Enter') return;
     const term = search.value.trim().toLowerCase();
     cy.nodes().removeClass('found');
-    if(!term){ clearFocus(); return; }
+    if(!term){ egoSet=null; clearFocus(); refreshLabels(); return; }
     const hits = cy.nodes().filter(n => (n.data('name')||'').toLowerCase().includes(term));
     if(hits.length===0){ return; }
     hits.addClass('found');
-    focusOn(hits.closedNeighborhood());
+    egoSet = hits.closedNeighborhood();
+    focusOn(egoSet);
+    refreshLabels();
     cy.animate({fit:{eles:hits.closedNeighborhood(), padding:80}}, {duration:400});
   });
 
@@ -432,9 +465,12 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   updateHud();
 
   // ---- buttons ----
-  document.getElementById('relayout').onclick = ()=>{ cy.layout(layoutOpts()).run(); };
+  document.getElementById('relayout').onclick = ()=>{
+    if(HAS_D3){ cy.layout({name:'random'}).run(); reheat(); }
+    else { cy.layout(initialLayout()).run(); }
+  };
   document.getElementById('reset').onclick = ()=>{
-    clearFocus(); cy.nodes().removeClass('found'); search.value='';
+    egoSet=null; clearFocus(); cy.nodes().removeClass('found'); search.value=''; refreshLabels();
     cy.animate({fit:{eles:cy.elements(':visible'), padding:40}}, {duration:400});
   };
   const themeBtn = document.getElementById('theme');

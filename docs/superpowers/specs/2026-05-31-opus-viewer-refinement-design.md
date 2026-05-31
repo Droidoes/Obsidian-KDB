@@ -171,6 +171,26 @@ behavior is unchanged.
 - Color/theme reskin (Qwen).
 - The D3-solver dual-engine (Qwen) — only the fallback if cola packing disappoints; not built now.
 
+## Iteration 1 — 2026-05-31 (post-visual-gate)
+
+First build was judged on the run-3 export. Findings + changes:
+
+- **Layout pivot A → B.** Option A (`cola`) silently fell back to static `fcose`
+  because the webcola CDN URL 404'd — so it was neither springy nor packed
+  (clusters disjointed). Invoked the spec's named fallback: **the Qwen/Gemini
+  pattern — a D3 `forceSimulation` (link + capped charge + `forceCenter` +
+  `forceX/forceY` packing + collide) drives Cytoscape node positions on every
+  tick.** Continuous = springy; centering = one packed cluster. Drag pins the
+  grabbed node (`fx/fy`) and reheats (`alphaTarget(0.3)`) so neighbors follow,
+  releasing on drop. Fallback if D3's CDN fails: static `fcose → cose`.
+- **Colors:** Entity → blue (`#4C9AFF`), Source → green (`#57D9A3`) (swapped).
+- **Node scale −50%:** `_node_size` drops the `2×` (returns the radius directly);
+  Source base lowered to Entity's (`5`) so **Source is never bigger than Entity**.
+- **Captions hidden by default** (`text-opacity:0`); shown only (a) on the
+  hover-focused neighborhood, or (b) when zoomed in past `ZOOM_LABEL` (1.8).
+- **Ego-focus is now hover-triggered** (`mouseover`/`mouseout`), not click. Click
+  is reserved for pinning the right-panel detail.
+
 ## Testing
 
 **Unit (Python builder, `pytest -m "not live"`):**
