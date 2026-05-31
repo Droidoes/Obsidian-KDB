@@ -8,13 +8,28 @@ unit-tested without graph/vault fixtures.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal, TextIO
 
 from kdb_compiler.run_context import now_iso
 
 ORCHESTRATOR_EVENT_SCHEMA_VERSION = "1.0"
+
+# Task #101 — console progress display: which event_types feed which counter,
+# which mark a source as "done" (trigger a snapshot), and which are alarms.
+_TALLY_BY_EVENT = {
+    "pass1_enrich_completed": "enriched",
+    "pass2_compile_completed": "compiled",
+    "source_commit_completed": "committed",
+    "pass1_gate_noise": "noise",
+    "source_quarantined": "quarantined",
+}
+_SOURCE_TERMINAL_EVENTS = {
+    "source_commit_completed", "pass1_gate_noise", "source_quarantined",
+}
+_ALARM_SEVERITIES = {"source_quarantine", "run_fatal", "invariant_violation"}
 
 OrchestratorSeverity = Literal[
     "debug",
@@ -80,6 +95,8 @@ class EventRecorder:
         run_id: str,
         events_path: Path | str,
         log_level: OrchestratorLogLevel = "warning",
+        console: TextIO | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if log_level not in LOG_LEVELS:
             raise ValueError(f"unknown orchestrator log level: {log_level}")
@@ -88,6 +105,16 @@ class EventRecorder:
         self.log_level = log_level
         self.event_log_failed = False
         self.recorded_events: list[OrchestratorEvent] = []
+        # Task #101 — live progress tee (None = file-only, no console output).
+        self._console = console
+        self._clock = clock
+        self._start = clock()
+        self._source_n = 0
+        self._current_source: str | None = None
+        self._tallies = {
+            "enriched": 0, "compiled": 0, "committed": 0,
+            "noise": 0, "quarantined": 0,
+        }
 
     @classmethod
     def for_state_root(
@@ -96,9 +123,11 @@ class EventRecorder:
         state_root: Path | str,
         run_id: str,
         log_level: OrchestratorLogLevel = "warning",
+        console: TextIO | None = None,
     ) -> "EventRecorder":
         events_path = Path(state_root) / "runs" / run_id / "orchestrator_events.jsonl"
-        return cls(run_id=run_id, events_path=events_path, log_level=log_level)
+        return cls(run_id=run_id, events_path=events_path, log_level=log_level,
+                   console=console)
 
     def should_record(self, severity: OrchestratorSeverity) -> bool:
         if severity in HIGH_VISIBILITY_SEVERITIES:
@@ -147,10 +176,53 @@ class EventRecorder:
                 f.write("\n")
         except OSError:
             self.event_log_failed = True
+        self._render_console(event)
         return event
 
     def count(self, severity: OrchestratorSeverity) -> int:
         return sum(1 for event in self.recorded_events if event.severity == severity)
+
+    # -- Task #101: live per-source progress tee (best-effort, never raises) --
+
+    def _snapshot_line(self) -> str:
+        elapsed = int(max(0.0, self._clock() - self._start))
+        mm, ss = divmod(elapsed, 60)
+        t = self._tallies
+        src = (self._current_source or "")[-44:]
+        return (
+            f"⏱ {mm:02d}:{ss:02d} [{self._source_n}] "
+            f"enriched {t['enriched']} · compiled {t['compiled']} · "
+            f"committed {t['committed']} · noise {t['noise']} · "
+            f"quarantined {t['quarantined']}  ▸ {src}"
+        )
+
+    def _render_console(self, event: OrchestratorEvent) -> None:
+        """Tally counters and, when a console stream is attached, print a
+        per-source count snapshot after each source finishes plus a distinct
+        line for alarms. Counters update regardless; output is best-effort."""
+        et = event.event_type
+        if et == "source_started":
+            self._source_n += 1
+            self._current_source = event.source_id
+        tally = _TALLY_BY_EVENT.get(et)
+        if tally:
+            self._tallies[tally] += 1
+
+        if self._console is None:
+            return
+        try:
+            if event.severity in _ALARM_SEVERITIES:
+                self._console.write(
+                    f"  ⚠ {event.severity}: "
+                    f"{event.source_id or event.stage} — {event.message}\n"
+                )
+            elif et in ("finalize_completed", "finalize_skipped"):
+                self._console.write(f"  ▸ {et} {event.context or ''}\n")
+            if et in _SOURCE_TERMINAL_EVENTS:
+                self._console.write(self._snapshot_line() + "\n")
+            self._console.flush()
+        except (OSError, ValueError):
+            pass  # console is best-effort; never a second failure path
 
 
 class OrchestratorInvariantError(RuntimeError):

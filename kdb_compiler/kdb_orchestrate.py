@@ -496,8 +496,12 @@ def run(
     prior_full = _stamp_legacy_pipeline_id(_load_full_manifest(manifest_path), pipeline_id)
     prior_flat = _flat_prior(prior_full)
     ctx = RunContext.new(dry_run=dry_run, vault_root=vault_root)
+    # Task #101: stream a live per-source progress snapshot to stderr at
+    # info/debug (the default 'warning' level stays quiet for scripted runs).
+    progress_console = sys.stderr if log_level in ("info", "debug") else None
     recorder = EventRecorder.for_state_root(
-        state_root=state_root, run_id=ctx.run_id, log_level=log_level)
+        state_root=state_root, run_id=ctx.run_id, log_level=log_level,
+        console=progress_console)
     recorder.record(
         stage="run", event_type="run_started", severity="info",
         message="orchestrator run started",

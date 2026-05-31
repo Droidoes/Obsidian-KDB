@@ -297,6 +297,45 @@ def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
     assert res.summary_path.exists()
 
 
+def test_run_info_streams_progress_snapshot_to_stderr(tmp_path, monkeypatch, capsys):
+    # Task #101: at --log-level info the orchestrator streams a live per-source
+    # count snapshot to stderr (so an attended run is not silent).
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        log_level="info")
+
+    err = capsys.readouterr().err
+    assert "⏱" in err                 # a snapshot line was streamed
+    assert "committed 1" in err
+
+
+def test_run_default_warning_level_is_quiet_on_stderr(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert "⏱" not in capsys.readouterr().err   # default level stays silent
+
+
 def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -398,8 +437,9 @@ def test_event_log_failure_is_surfaced_in_summary(tmp_path, monkeypatch):
         raise RuntimeError("model down")
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
 
-    def broken_recorder(cls, *, state_root, run_id, log_level="warning"):
-        return cls(run_id=run_id, events_path=Path(state_root), log_level=log_level)
+    def broken_recorder(cls, *, state_root, run_id, log_level="warning", console=None):
+        return cls(run_id=run_id, events_path=Path(state_root), log_level=log_level,
+                   console=console)
 
     monkeypatch.setattr(
         kdb_orchestrate.EventRecorder,
