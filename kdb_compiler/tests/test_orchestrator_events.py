@@ -1,6 +1,7 @@
 """Tests for Task #96 orchestrator structured events + invariants."""
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -198,116 +199,91 @@ def test_invariant_failure_ignores_log_level_filter(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task #101 — console progress display (per-source count snapshot to stderr)
+# Live progress console (per-stage narrative on stdout, default-on)
 # ---------------------------------------------------------------------------
 
-class _FakeClock:
+class _Clock:
+    """Controllable monotonic stand-in: tests set .now before each event."""
     def __init__(self) -> None:
-        self.t = 0.0
+        self.now = 0.0
 
     def __call__(self) -> float:
-        return self.t
+        return self.now
 
 
-def _emit_source(rec: EventRecorder, sid: str, *, outcome: str = "committed") -> None:
-    rec.record(stage="source", event_type="source_started", severity="info",
-               message="started", source_id=sid)
-    rec.record(stage="pass1_enrich", event_type="pass1_enrich_completed",
-               severity="info", message="enriched", source_id=sid)
-    if outcome == "noise":
-        rec.record(stage="pass1_gate", event_type="pass1_gate_noise",
-                   severity="info", message="noise", source_id=sid)
-        return
-    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
-               severity="info", message="compiled", source_id=sid)
-    if outcome == "quarantined":
-        rec.record(stage="pass2_compile", event_type="source_quarantined",
-                   severity="source_quarantine", message="compile failed",
-                   source_id=sid)
-        return
-    rec.record(stage="commit", event_type="source_commit_completed",
-               severity="info", message="committed", source_id=sid)
-
-
-def _recorder(tmp_path: Path, console, clock=None, log_level="info") -> EventRecorder:
+def _rec(tmp_path: Path, *, log_level="warning", console=None, clock=None) -> EventRecorder:
     return EventRecorder(
-        run_id="r1", events_path=tmp_path / "runs" / "r1" / "events.jsonl",
-        log_level=log_level, console=console, clock=clock or _FakeClock(),
+        run_id="RUN1",
+        events_path=tmp_path / "runs" / "RUN1" / "orchestrator_events.jsonl",
+        log_level=log_level,
+        console=console,
+        clock=clock or _Clock(),
     )
 
 
-def test_console_snapshot_after_commit(tmp_path: Path) -> None:
-    import io
+def test_progress_renders_at_warning_but_not_written_to_jsonl(tmp_path: Path) -> None:
+    # Decoupling: an info progress event prints to console even at the default
+    # 'warning' level, yet is NOT recorded to the JSONL (file verbosity unchanged).
     out = io.StringIO()
-    rec = _recorder(tmp_path, out)
-    _emit_source(rec, "AIML/Obsidian/Callouts.md")
+    rec = _rec(tmp_path, log_level="warning", console=out)
+    rec.set_progress_plan(total=2, skipped=5)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    assert "[  1/2] ▸ a.md" in out.getvalue()
+    assert "2 to process, 5 unchanged (skipped)" in out.getvalue()
+    assert rec.recorded_events == []
 
+
+def test_per_stage_elapsed_and_counts(tmp_path: Path) -> None:
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    clk.now = 10.0
+    rec.record(stage="pass1_enrich", event_type="pass1_enrich_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 14.2
+    rec.record(stage="pass1_enrich", event_type="pass1_enrich_completed",
+               severity="info", message="", source_id="a.md")
+    clk.now = 20.0
+    rec.record(stage="pass2_compile", event_type="pass2_compile_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 31.8
+    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
+               severity="info", message="", source_id="a.md")
+    rec.record(stage="commit", event_type="source_commit_completed",
+               severity="info", message="", source_id="a.md")
     text = out.getvalue()
-    snap = [ln for ln in text.splitlines() if ln.startswith("⏱")]
-    assert len(snap) == 1
-    line = snap[0]
-    assert "[1]" in line
-    assert "enriched 1" in line
-    assert "compiled 1" in line
-    assert "committed 1" in line
-    assert "quarantined 0" in line
-    assert "Callouts.md" in line
+    assert "pass-1 enrich…" in text
+    assert "pass-1 ✓ 4.2s" in text
+    assert "pass-2 compile…" in text
+    assert "pass-2 ✓ 11.8s" in text
+    assert "committed ✓" in text
+    assert "done 1 · skipped 0 · noise 0 · quarantined 0" in text
 
 
-def test_console_counts_accumulate_across_sources(tmp_path: Path) -> None:
-    import io
+def test_noise_path_and_quarantine_alarm(tmp_path: Path) -> None:
     out = io.StringIO()
-    rec = _recorder(tmp_path, out)
-    _emit_source(rec, "a.md")
-    _emit_source(rec, "b.md")
-
-    snaps = [ln for ln in out.getvalue().splitlines() if ln.startswith("⏱")]
-    assert len(snaps) == 2
-    assert "[2]" in snaps[-1]
-    assert "committed 2" in snaps[-1]
-
-
-def test_console_noise_increments_noise(tmp_path: Path) -> None:
-    import io
-    out = io.StringIO()
-    rec = _recorder(tmp_path, out)
-    _emit_source(rec, "Daily Notes/2026-05-28.md", outcome="noise")
-
-    snap = [ln for ln in out.getvalue().splitlines() if ln.startswith("⏱")][-1]
-    assert "noise 1" in snap
-    assert "committed 0" in snap
-
-
-def test_console_quarantine_prints_alarm_and_snapshot(tmp_path: Path) -> None:
-    import io
-    out = io.StringIO()
-    rec = _recorder(tmp_path, out)
-    _emit_source(rec, "Big Source.md", outcome="quarantined")
-
+    rec = _rec(tmp_path, console=out)
+    rec.set_progress_plan(total=2, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="n.md")
+    rec.record(stage="pass1_gate", event_type="pass1_gate_noise", severity="info",
+               message="", source_id="n.md")
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="bad.md")
+    rec.record(stage="pass2_compile", event_type="source_quarantined",
+               severity="source_quarantine", message="Pass-2 compile failed",
+               source_id="bad.md", error="error_compile")
     text = out.getvalue()
-    assert "⚠" in text
-    assert "Big Source.md" in text
-    snap = [ln for ln in text.splitlines() if ln.startswith("⏱")][-1]
-    assert "quarantined 1" in snap
+    assert "noise — skipping pass-2" in text
+    assert "⚠ source_quarantine: bad.md" in text
 
 
-def test_console_elapsed_from_clock(tmp_path: Path) -> None:
-    import io
-    out = io.StringIO()
-    clk = _FakeClock()
-    rec = _recorder(tmp_path, out, clock=clk)
-    clk.t = 75.0
-    _emit_source(rec, "x.md")
-
-    snap = [ln for ln in out.getvalue().splitlines() if ln.startswith("⏱")][-1]
-    assert "01:15" in snap
-
-
-def test_console_none_is_silent_and_file_unchanged(tmp_path: Path) -> None:
-    rec = EventRecorder(
-        run_id="r1", events_path=tmp_path / "runs" / "r1" / "events.jsonl",
-        log_level="info",
-    )
-    _emit_source(rec, "a.md")
-    assert rec.events_path.exists()
-    assert not rec.event_log_failed
+def test_no_console_still_tallies(tmp_path: Path) -> None:
+    rec = _rec(tmp_path, console=None)
+    rec.record(stage="commit", event_type="source_commit_completed",
+               severity="info", message="", source_id="a.md")
+    assert rec._tallies["committed"] == 1  # counters update without a console

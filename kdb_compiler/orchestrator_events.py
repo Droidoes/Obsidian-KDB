@@ -17,17 +17,14 @@ from kdb_compiler.run_context import now_iso
 
 ORCHESTRATOR_EVENT_SCHEMA_VERSION = "1.0"
 
-# Task #101 — console progress display: which event_types feed which counter,
-# which mark a source as "done" (trigger a snapshot), and which are alarms.
+# Live progress: which event_types feed which running counter, and which
+# severities are alarms (printed as a distinct ⚠ line).
 _TALLY_BY_EVENT = {
     "pass1_enrich_completed": "enriched",
     "pass2_compile_completed": "compiled",
     "source_commit_completed": "committed",
     "pass1_gate_noise": "noise",
     "source_quarantined": "quarantined",
-}
-_SOURCE_TERMINAL_EVENTS = {
-    "source_commit_completed", "pass1_gate_noise", "source_quarantined",
 }
 _ALARM_SEVERITIES = {"source_quarantine", "run_fatal", "invariant_violation"}
 
@@ -105,11 +102,15 @@ class EventRecorder:
         self.log_level = log_level
         self.event_log_failed = False
         self.recorded_events: list[OrchestratorEvent] = []
-        # Task #101 — live progress tee (None = file-only, no console output).
+        # Live progress tee (None = file-only). The console renderer is
+        # independent of the JSONL severity filter (see record_event).
         self._console = console
         self._clock = clock
         self._start = clock()
+        self._stage_t0 = self._start
         self._source_n = 0
+        self._total = 0
+        self._skipped = 0
         self._current_source: str | None = None
         self._tallies = {
             "enriched": 0, "compiled": 0, "committed": 0,
@@ -166,6 +167,9 @@ class EventRecorder:
         return self.record_event(event)
 
     def record_event(self, event: OrchestratorEvent) -> OrchestratorEvent | None:
+        # Console progress + counters are independent of file verbosity: the
+        # live narrative shows every milestone regardless of --log-level.
+        self._render_console(event)
         if not self.should_record(event.severity):
             return None
         self.recorded_events.append(event)
@@ -176,34 +180,50 @@ class EventRecorder:
                 f.write("\n")
         except OSError:
             self.event_log_failed = True
-        self._render_console(event)
         return event
 
     def count(self, severity: OrchestratorSeverity) -> int:
         return sum(1 for event in self.recorded_events if event.severity == severity)
 
-    # -- Task #101: live per-source progress tee (best-effort, never raises) --
+    # -- live progress tee (best-effort, never raises) --
 
-    def _snapshot_line(self) -> str:
+    def set_progress_plan(self, *, total: int, skipped: int) -> None:
+        """Record the run's denominator/skip counts and print the run header."""
+        self._total = total
+        self._skipped = skipped
+        if self._console is None:
+            return
+        try:
+            self._console.write(
+                f"kdb-orchestrate · run {self.run_id} · "
+                f"{total} to process, {skipped} unchanged (skipped)\n\n")
+            self._console.flush()
+        except (OSError, ValueError):
+            pass
+
+    def _elapsed(self, since: float) -> str:
+        return f"{max(0.0, self._clock() - since):.1f}s"
+
+    def _mmss(self) -> str:
         elapsed = int(max(0.0, self._clock() - self._start))
         mm, ss = divmod(elapsed, 60)
+        return f"{mm:02d}:{ss:02d}"
+
+    def _counts_tail(self) -> str:
         t = self._tallies
-        src = (self._current_source or "")[-44:]
-        return (
-            f"⏱ {mm:02d}:{ss:02d} [{self._source_n}] "
-            f"enriched {t['enriched']} · compiled {t['compiled']} · "
-            f"committed {t['committed']} · noise {t['noise']} · "
-            f"quarantined {t['quarantined']}  ▸ {src}"
-        )
+        return (f"done {t['committed']} · skipped {self._skipped} · "
+                f"noise {t['noise']} · quarantined {t['quarantined']}")
 
     def _render_console(self, event: OrchestratorEvent) -> None:
-        """Tally counters and, when a console stream is attached, print a
-        per-source count snapshot after each source finishes plus a distinct
-        line for alarms. Counters update regardless; output is best-effort."""
+        """Tally counters (always) and, when a console is attached, print the
+        live per-stage progress narrative. Best-effort: never a second failure
+        path."""
         et = event.event_type
         if et == "source_started":
             self._source_n += 1
             self._current_source = event.source_id
+        elif et in ("pass1_enrich_started", "pass2_compile_started"):
+            self._stage_t0 = self._clock()
         tally = _TALLY_BY_EVENT.get(et)
         if tally:
             self._tallies[tally] += 1
@@ -211,18 +231,34 @@ class EventRecorder:
         if self._console is None:
             return
         try:
-            if event.severity in _ALARM_SEVERITIES:
-                self._console.write(
-                    f"  ⚠ {event.severity}: "
-                    f"{event.source_id or event.stage} — {event.message}\n"
-                )
-            elif et in ("finalize_completed", "finalize_skipped"):
-                self._console.write(f"  ▸ {et} {event.context or ''}\n")
-            if et in _SOURCE_TERMINAL_EVENTS:
-                self._console.write(self._snapshot_line() + "\n")
+            self._write_progress(event, et)
             self._console.flush()
         except (OSError, ValueError):
-            pass  # console is best-effort; never a second failure path
+            pass  # console is best-effort
+
+    def _write_progress(self, event: OrchestratorEvent, et: str) -> None:
+        w = self._console.write
+        src = (self._current_source or "")[-48:]
+        den = self._total if self._total else "?"
+        if et == "source_started":
+            w(f"[{self._source_n:>3}/{den}] ▸ {src}\n")
+        elif et == "pass1_enrich_started":
+            w("         pass-1 enrich…\n")
+        elif et == "pass1_enrich_completed":
+            w(f"         pass-1 ✓ {self._elapsed(self._stage_t0)}\n")
+        elif et == "pass1_gate_noise":
+            w(f"         noise — skipping pass-2  · {self._counts_tail()}\n")
+        elif et == "pass2_compile_started":
+            w("         pass-2 compile…\n")
+        elif et == "pass2_compile_completed":
+            w(f"         pass-2 ✓ {self._elapsed(self._stage_t0)}\n")
+        elif et == "source_commit_completed":
+            w(f"         committed ✓  · {self._counts_tail()}\n")
+        elif event.severity in _ALARM_SEVERITIES:
+            w(f"         ⚠ {event.severity}: "
+              f"{event.source_id or event.stage} — {event.message}\n")
+        elif et in ("reconcile_completed", "finalize_completed", "finalize_skipped"):
+            w(f"⏱ {self._mmss()}  {et.replace('_', ' ')}\n")
 
 
 class OrchestratorInvariantError(RuntimeError):
