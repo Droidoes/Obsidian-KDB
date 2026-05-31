@@ -12,6 +12,8 @@ This is the **single source of truth** for the Obsidian-KDB project. All design 
 
 Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
 
+- **2026-05-31** — **Task #102 — orchestrator live progress on stdout.** Replaced #101's stderr/info-gated per-source snapshot with a default-on, blow-by-blow stdout narrative: per-source `[n/total]` header, `pass-1`/`pass-2` started→`✓ <elapsed>` lines, running counts, inline `⚠` alarms, reconcile/finalize timestamps. `EventRecorder`'s console renderer is now decoupled from the JSONL severity filter (renders every milestone regardless of `--log-level`); `--log-level` governs only file verbosity; `--quiet` silences the console. Two new `pass1_enrich_started`/`pass2_compile_started` events. Event JSONL + `last_orchestrate.json` unchanged.
+
 - **2026-04-18** — **M0 scaffold.** KDB compiler architecture + schema-gated prompt/response contract (Task #4 family).
 - **2026-04-21** — **Validator + reconciler live on real vault.** `pairing_omission` auto-heal proven on two back-to-back live runs (Task #65 / M1.7).
 - **2026-05-10** — **Iteration #2 begins.** Kuzu reframed as architectural primitive; KDB becomes raw-text → knowledge-graph compiler (Task #63 family).
