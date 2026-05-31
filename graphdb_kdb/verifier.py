@@ -152,9 +152,8 @@ def _graph_supports(conn: kuzu.Connection) -> set[tuple[str, str]]:
 # #79: schema v2.1 — Domain nodes + BELONGS_TO edges (#76 follow-up).
 # Domain is existence-only (created_at/first_run_id are provenance, skipped
 # per the same pattern that skips Entity.created_at/Source.first_seen_at).
-# BELONGS_TO tracks sub_domain as a real data field; run_id is provenance
-# (set ON MATCH on every re-write) and follows the SUPPORTS pattern of not
-# being tracked in attribute diffs.
+# BELONGS_TO is a derived existence-only projection; no attributes are diffed
+# (support_count is deterministic from SUPPORTS).
 
 def _graph_domains(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
     r = conn.execute("MATCH (d:Domain) RETURN d.name")
@@ -169,17 +168,12 @@ def _graph_belongs_to(
     conn: kuzu.Connection,
 ) -> dict[tuple[str, str], dict[str, Any]]:
     r = conn.execute(
-        "MATCH (e:Entity)-[r:BELONGS_TO]->(d:Domain) "
-        "RETURN e.slug, d.name, r.sub_domain"
+        "MATCH (e:Entity)-[r:BELONGS_TO]->(d:Domain) RETURN e.slug, d.name"
     )
     out: dict[tuple[str, str], dict[str, Any]] = {}
     while r.has_next():
         row = r.get_next()
-        out[(row[0], row[1])] = {
-            "entity_slug": row[0],
-            "domain_name": row[1],
-            "sub_domain": row[2],
-        }
+        out[(row[0], row[1])] = {"entity_slug": row[0], "domain_name": row[1]}
     return out
 
 
@@ -421,16 +415,7 @@ def _diff_belongs_to(
             kind="missing_in_replay", category="belongs_to",
             key=f"{slug}→{name}", source=src,
         ))
-    for k in sorted(expected.keys() & actual.keys()):
-        slug, name = k
-        divs.extend(_diff_attrs(
-            category="belongs_to",
-            key=f"{slug}→{name}",
-            source=src,
-            expected_row=expected[k],
-            actual_row=actual[k],
-            fields=(("sub_domain", "sub_domain"),),
-        ))
+    # Existence-only: no attributes diffed (support_count is deterministic from SUPPORTS).
     return divs
 
 

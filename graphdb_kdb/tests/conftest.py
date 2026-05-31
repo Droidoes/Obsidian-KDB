@@ -24,16 +24,9 @@ def make_page(
     confidence: str = "medium",
     outgoing_links: list[str] | None = None,
     body: str = "",
-    domain: str | list[str] | None = None,
-    sub_domain: str | None = None,
 ) -> dict:
-    """Construct a minimal compile_result page dict.
-
-    `domain` accepts either a single string or a list of strings (#76 R5).
-    `sub_domain` is set verbatim only when provided; the ingestor's
-    omit-when-plural rule still applies at write time.
-    """
-    page = {
+    """Construct a minimal compile_result page dict."""
+    return {
         "slug": slug,
         "page_type": page_type,
         "title": title if title is not None else f"Title for {slug}",
@@ -42,11 +35,6 @@ def make_page(
         "outgoing_links": outgoing_links or [],
         "body": body,
     }
-    if domain is not None:
-        page["domain"] = domain
-    if sub_domain is not None:
-        page["sub_domain"] = sub_domain
-    return page
 
 
 def make_compiled_source(
