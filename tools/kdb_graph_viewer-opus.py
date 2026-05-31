@@ -303,16 +303,18 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     dN = cy.nodes().map(n => { const p = n.position(); return {id:n.id(), x:p.x, y:p.y}; });
     dById = {}; dN.forEach(d => dById[d.id] = d);
     const dE = cy.edges().map(e => ({source:e.source().id(), target:e.target().id()}));
-    // Strong central gravity (forceX/Y) pulls every disconnected component into
-    // one dense mass; short-range charge keeps nodes apart WITHIN a cluster
-    // without shoving separate clusters across the canvas; collide stops overlap.
+    // One cohesive cluster (uniform density): keep charge WEAK — strong charge
+    // repels unlinked nodes and opens visible lanes between sub-clusters. Let
+    // collide set a uniform minimum spacing for every node, match the link
+    // distance to that spacing (so linked nodes aren't farther apart than packed
+    // ones), and use strong central gravity to keep the whole mass compact.
     sim = d3.forceSimulation(dN)
-      .force('link', d3.forceLink(dE).id(d=>d.id).distance(42).strength(0.6))
-      .force('charge', d3.forceManyBody().strength(-130).distanceMax(200))
+      .force('link', d3.forceLink(dE).id(d=>d.id).distance(26).strength(0.4))
+      .force('charge', d3.forceManyBody().strength(-50).distanceMax(160))
       .force('center', d3.forceCenter(W/2, H/2))
-      .force('x', d3.forceX(W/2).strength(0.22))
-      .force('y', d3.forceY(H/2).strength(0.22))
-      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 5))
+      .force('x', d3.forceX(W/2).strength(0.30))
+      .force('y', d3.forceY(H/2).strength(0.30))
+      .force('collide', d3.forceCollide().radius(d => sizeById(d.id)/2 + 8).strength(1))
       .alphaDecay(0.018)
       .on('tick', () => {
         for(const d of dN){ const n = cy.getElementById(d.id);
