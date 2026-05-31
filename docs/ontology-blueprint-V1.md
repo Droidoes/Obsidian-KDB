@@ -1,6 +1,8 @@
 # Ontology Blueprint V1 — GraphDB-KDB Meaning Layer
 
-**Status:** DRAFT for external panel review (chat-app reviewers, no repo access).
+**Status:** **v0.2 — RATIFIED** (5-model panel reviewed + Joseph ratified 2026-05-31).
+The three decisions are resolved; see § Ratification. §5–7 retain the original
+briefs as the rationale/audit trail.
 **Date:** 2026-05-31
 **Role in the doc stack:** the **MEANING layer** — what the graph's nodes and
 edges *mean*, why each exists, and which objective each serves. Companion to:
@@ -14,7 +16,54 @@ edges *mean*, why each exists, and which objective each serves. Companion to:
 `what-is-ontology-for-V1.md` and this blueprint are the two **foundational
 documents** of the project. This doc does **not** re-open the settled philosophy
 (Philosophy B; domain-as-coordinate-not-gate; the capability verdict) — it
-applies it to a concrete node/edge inventory and surfaces three open decisions.
+applies it to a concrete node/edge inventory and surfaces three decisions
+(ratified in v0.2 below).
+
+---
+
+## Ratification (v0.2 — 2026-05-31)
+
+Reviewed by a 5-model chat-app panel (Codex, DeepSeek, Gemini, Grok, Qwen;
+responses in `docs/ontology-blueprint-V1-review-<model>.md`), synthesized, and
+ratified by Joseph. Convergence tally and outcomes:
+
+**D1 — Domain model → A (5/5 unanimous, high confidence). RATIFIED.**
+Derive `Entity BELONGS_TO Domain` from `Source.domain` + `SUPPORTS`; drop the
+Pass-2 per-page LLM `domain`. Folded refinements:
+- **`support_count`** stored on each derived edge (recomputable aggregate, *not* a
+  denormalized source-id ledger — recover the "which sources" list via the
+  `SUPPORTS` join). Powers D3 weighting + hub filtering. (`via_source` sub-Q → count only.)
+- **`sub_domain` retired** (5/5 — no producer under D1-A).
+- **`BELONGS_TO` documented as *attested* membership** ("evidenced by ≥1 source whose
+  domain is D"), not intrinsic taxonomy. Inheritance is a feature.
+- **Hub-pollution** (3/5 — hubs inherit many domains → coordinate dilution) is
+  mitigated by `support_count` as a filterable strength signal; **no hard threshold**.
+- Pass-2 **stops emitting** `domain` (removed from the prompt, not merely ignored).
+- **Release: 0.5.0.**
+
+**D2 — Claim layer → DEFERRED to Release 2.0. RATIFIED.**
+The major-version boundary is the ¶419 / Learn line. The whole Claim apparatus —
+`Claim` + `EVIDENCES` + `ABOUT`, the offline extraction pilot, *and* the panel's
+load-bearing requirement of a controlled small (~5–10) **domain-general
+`PredicateClass` registry**, plus the schema trims (drop `predicate_scope_slugs`,
+`confidence_spread`; add `ABOUT` role) — all move to **2.0**. `Claim` + its 5 edges
+stay in the schema as designed-but-unwired. The live pipeline (0.5–1.0) stays
+Remember+Relate. *(Panel leaned 4×C / 1×B; deferring to a named major release is
+the cleaner expression of "earn the ¶419 bet with evidence first.")*
+
+**D3 — T2/T3 domain-scoping → C stance + refined variant D. RATIFIED.**
+Domain is a retrieval **coordinate, not a gate** (5/5 reject hard gate). Implementation:
+- **T3 neighbor-expansion stays OPEN** (4/5 — where cross-domain Discover lives).
+- **T2:** same-domain weighted, **but exact `entity_search_key` matches search
+  globally** (legit cross-domain bridges); only *fuzzy* matches are same-domain-heavy.
+- **~70/30** same/cross-domain budget; **instrument** same/cross-domain context share.
+- **Hub-suppression** (degree-based) noted as an orthogonal companion axis (deferred).
+- Stance ratified here; exact weighting **algorithm → the consumer (T2/T3) sub-project**.
+- **Release: 0.5.0** (stance) → tuned in 0.5–1.x.
+
+**Downstream sequence (→ 0.5.0):** producer (Pass-2) rebuild implementing D1 →
+consumer (T2/T3) implementing D3 → stdout messaging → **run-4** (the 0.5.0 gate).
+Releases per `docs/ROADMAP.md`.
 
 ---
 
@@ -343,12 +392,13 @@ coordinate-not-gate; Source/Entity nodes and SUPPORTS/LINKS_TO/ALIAS_OF edges
 kept as-is; the broken Pass-2 page-`domain` is dropped regardless of D1's
 outcome.
 
-**Open (panel decides):** D1 (domain model — lean A) · D2 (Claim layer — lean C)
-· D3 (T2/T3 scoping — lean C).
+**Ratified (v0.2 — see § Ratification):** D1 → **A** (0.5.0) · D2 → **deferred to
+Release 2.0** · D3 → **C + refined variant D** (0.5.0, algorithm to consumer
+sub-project).
 
-**Downstream sequence after ratification:** Pass-2 prompt + schema rebuild
-(implements D1/D2) → T2/T3 rebuild (implements D3) → stdout messaging → **run-4**
-(the integration gate).
+**Downstream sequence (→ 0.5.0):** Pass-2 producer rebuild (implements **D1** only —
+no claims) → T2/T3 rebuild (implements **D3**) → stdout messaging → **run-4** (the
+0.5.0 gate). Releases per `docs/ROADMAP.md`; Claim/Learn layer is 2.0.
 
 ---
 
