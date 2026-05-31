@@ -1270,3 +1270,21 @@ def test_source_text_for_handles_pristine_source(tmp_path: Path) -> None:
     fm, body = source_text_for(job)
     assert fm is None
     assert "# Essay" in body
+
+
+def test_page_intent_has_no_domain_fields():
+    """0.5.0: page-level domain/sub_domain removed (domain is Source-level only)."""
+    from kdb_compiler.types import PageIntent
+    fields = PageIntent.__dataclass_fields__
+    assert "domain" not in fields
+    assert "sub_domain" not in fields
+
+
+def test_response_schema_omits_page_domain():
+    import json, pathlib
+    schema = json.loads(pathlib.Path(
+        "kdb_compiler/schemas/compiled_source_response.schema.json").read_text())
+    # pages.items uses $ref -> #/$defs/pageIntent; resolve through $defs
+    page_props = schema["$defs"]["pageIntent"]["properties"]
+    assert "domain" not in page_props
+    assert "sub_domain" not in page_props

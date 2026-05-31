@@ -104,14 +104,14 @@
             { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 5 },
             { "type": "null" }
           ],
-          "description": "Knowledge domain(s) for this page. Omit or null when unknown. Max 5 items if array. Python normalises to kebab-case at ingest."
+          "description": "Deprecated since 0.5.0 — page domain is no longer emitted; retained optional for rebuild back-compat with historical compile_results."
         },
         "sub_domain": {
           "oneOf": [
             { "type": "string", "minLength": 1 },
             { "type": "null" }
           ],
-          "description": "Narrower label within the primary domain. Valid only when domain is a single string; omitted (null) when domain is an array or absent."
+          "description": "Deprecated since 0.5.0 — page domain is no longer emitted; retained optional for rebuild back-compat with historical compile_results."
         }
       }
     },

@@ -10,7 +10,7 @@ dataclass field names already match the JSON shape.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 if TYPE_CHECKING:
     from kdb_compiler.source_io import SourceFrontmatter
@@ -185,8 +185,6 @@ class PageIntent:
     supports_page_existence: list[str] = field(default_factory=list)
     outgoing_links: list[str] = field(default_factory=list)
     confidence: Confidence = "medium"
-    domain: Optional[Union[str, list[str]]] = None
-    sub_domain: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)

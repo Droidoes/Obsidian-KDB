@@ -93,22 +93,7 @@
           "description": "Slugs this page's body links to. Bidirectional with body: every entry MUST appear as `[[slug]]` somewhere in this page's body, and every `[[slug]]` in the body MUST appear here. Build this list by collecting the distinct slugs you wrote in `[[…]]` tokens in the body — not as a separate list of related concepts. Python reconciles incoming_links_known from these.",
           "items": { "$ref": "#/$defs/slug" }
         },
-        "confidence": { "$ref": "#/$defs/confidence" },
-        "domain": {
-          "oneOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "maxItems": 5 },
-            { "type": "null" }
-          ],
-          "description": "Knowledge domain(s) for this page. Omit or null when unknown. Max 5 items if array. Python normalises to kebab-case at ingest."
-        },
-        "sub_domain": {
-          "oneOf": [
-            { "type": "string", "minLength": 1 },
-            { "type": "null" }
-          ],
-          "description": "Narrower label within the primary domain. Valid only when domain is a single string; omitted (null) when domain is an array or absent."
-        }
+        "confidence": { "$ref": "#/$defs/confidence" }
       }
     },
     "logEntry": {
