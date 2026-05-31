@@ -61,6 +61,17 @@ Domain is a retrieval **coordinate, not a gate** (5/5 reject hard gate). Impleme
 - Stance ratified here; exact weighting **algorithm → the consumer (T2/T3) sub-project**.
 - **Release: 0.5.0** (stance) → tuned in 0.5–1.x.
 
+> **OVERRIDE 2026-05-31 (Joseph) — C → hard same-domain gate.** During the consumer
+> sub-project, Joseph overrode C to a **hard same-domain gate**: T2 + T3 pull existing
+> entities **only** from the source's Pass-1 domain; no cross-domain in the compile
+> context; no ~70/30 budget, no cross-domain weighting, no exact-T2-global. Rationale:
+> the panel conflated **context-scoping** (anti-entropy — should be same-domain) with
+> **link-creation** (unconstrained, still the LLM's call) and **Discover** (future,
+> query-time, whole-graph). The gate touches only context-scoping, so the panel's
+> Discover objection does not bite. Priority: full same-domain context > short/empty
+> same-domain context > off-domain-padded context. Spec:
+> `docs/superpowers/specs/2026-05-31-t2-t3-domain-scoping-design.md`.
+
 **Downstream sequence (→ 0.5.0):** producer (Pass-2) rebuild implementing D1 →
 consumer (T2/T3) implementing D3 → stdout messaging → **run-4** (the 0.5.0 gate).
 Releases per `docs/ROADMAP.md`.
