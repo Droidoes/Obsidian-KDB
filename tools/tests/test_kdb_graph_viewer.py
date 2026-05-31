@@ -61,6 +61,14 @@ def test_d3_force_layout_and_fallback():
     assert "name:'cola'" not in html
 
 
+def test_circle_seed_and_edge_styling():
+    html = _render_min()
+    assert "name:'circle'" in html                 # [1] even circle seed
+    assert 'edge[label="SUPPORTS"]' in html         # [2] SUPPORTS dotted
+    assert "'line-style':'dotted'" in html
+    assert "'arrow-scale':0.45" in html             # smaller arrowheads
+
+
 def test_hover_focus_and_caption_gating():
     html = _render_min()
     assert "mouseover" in html        # [7] hover-triggered ego-focus

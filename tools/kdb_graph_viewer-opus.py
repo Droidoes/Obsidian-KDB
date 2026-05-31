@@ -272,12 +272,13 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
         'height':'data(size)',
         'border-width':0}},
       {selector:'edge', style:{
-        'width':1.3,
+        'width':0.7,
         'line-color': ele => EDGE_COLORS[ele.data('label')] || EDGE_FALLBACK,
         'target-arrow-color': ele => EDGE_COLORS[ele.data('label')] || EDGE_FALLBACK,
-        'target-arrow-shape':'triangle','arrow-scale':0.8,'curve-style':'bezier',
+        'target-arrow-shape':'triangle','arrow-scale':0.45,'curve-style':'bezier',
         'label':'data(label)','font-size':'7px','color':'#8b949e','text-rotation':'autorotate',
         'text-opacity':0,'opacity':0.55}},
+      {selector:'edge[label="SUPPORTS"]', style:{'line-style':'dotted'}},
       {selector:'node.lbl', style:{'text-opacity':1}},
       {selector:'.dim', style:{'opacity':0.08,'text-opacity':0}},
       {selector:'node.found', style:{'border-width':4,'border-color':'#f0883e'}},
@@ -287,7 +288,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   });
 
   function initialLayout(){
-    if(HAS_D3){ return {name:'random'}; }   // D3 sim repositions immediately after
+    if(HAS_D3){ return {name:'circle'}; }   // even circle seed -> force settles cohesively
     if(HAS_FCOSE){
       return {name:'fcose', quality:'default', animate:true, animationDuration:600,
               randomize:true, nodeRepulsion:6500, idealEdgeLength:75, nodeSeparation:80, padding:40};
@@ -472,7 +473,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 
   // ---- buttons ----
   document.getElementById('relayout').onclick = ()=>{
-    if(HAS_D3){ cy.layout({name:'random'}).run(); reheat(); }
+    if(HAS_D3){ cy.layout({name:'circle'}).run(); reheat(); }
     else { cy.layout(initialLayout()).run(); }
   };
   document.getElementById('reset').onclick = ()=>{
