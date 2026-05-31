@@ -474,6 +474,7 @@ def run(
     *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
     limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
+    quiet: bool = False,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Source-local failures are quarantined
@@ -496,9 +497,9 @@ def run(
     prior_full = _stamp_legacy_pipeline_id(_load_full_manifest(manifest_path), pipeline_id)
     prior_flat = _flat_prior(prior_full)
     ctx = RunContext.new(dry_run=dry_run, vault_root=vault_root)
-    # Task #101: stream a live per-source progress snapshot to stderr at
-    # info/debug (the default 'warning' level stays quiet for scripted runs).
-    progress_console = sys.stderr if log_level in ("info", "debug") else None
+    # Live progress streams to stdout by default; --quiet silences it. The
+    # JSONL verbosity is governed independently by log_level.
+    progress_console = None if quiet else sys.stdout
     recorder = EventRecorder.for_state_root(
         state_root=state_root, run_id=ctx.run_id, log_level=log_level,
         console=progress_console)
@@ -534,6 +535,10 @@ def run(
             "to_compile": len(scan.to_compile),
             "to_reconcile": len(scan.to_reconcile),
         })
+    recorder.set_progress_plan(
+        total=len(scan.to_compile),
+        skipped=max(0, len(scan.files) - len(scan.to_compile)),
+    )
 
     if dry_run:
         planned = {
@@ -582,6 +587,10 @@ def run(
                     stage="source", event_type="source_started", severity="info",
                     message="source processing started", source_id=source_id,
                     context={"action": scan_entry.action})
+                recorder.record(
+                    stage="pass1_enrich", event_type="pass1_enrich_started",
+                    severity="info", message="Pass-1 enrich started",
+                    source_id=source_id)
                 enrich = enrich_one(
                     source_path=vault_root / source_id, source_id=source_id,
                     runs_root=runs_root, run_id=ctx.run_id,
@@ -662,6 +671,10 @@ def run(
                     message="source gated as signal",
                     source_id=source_id)
 
+                recorder.record(
+                    stage="pass2_compile", event_type="pass2_compile_started",
+                    severity="info", message="Pass-2 compile started",
+                    source_id=source_id)
                 result = compile_source(
                     source_id=source_id, body=enrich.body,
                     frontmatter=SourceFrontmatter.from_dict(enrich.parsed_envelope),
@@ -944,6 +957,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="alias for --log-level info when --log-level is omitted")
     p.add_argument("--debug", action="store_true",
                    help="alias for --log-level debug when --log-level is omitted")
+    p.add_argument("--quiet", action="store_true",
+                   help="suppress the live stdout progress narrative "
+                        "(the final report and event log are unaffected)")
     return p
 
 
@@ -974,7 +990,7 @@ def main(argv: list[str] | None = None) -> int:
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
         graph_path=graph_path, provider=args.provider, model=args.model,
         max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit,
-        log_level=_resolve_log_level(args))
+        log_level=_resolve_log_level(args), quiet=args.quiet)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")

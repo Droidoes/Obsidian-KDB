@@ -297,29 +297,8 @@ def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
     assert res.summary_path.exists()
 
 
-def test_run_info_streams_progress_snapshot_to_stderr(tmp_path, monkeypatch, capsys):
-    # Task #101: at --log-level info the orchestrator streams a live per-source
-    # count snapshot to stderr (so an attended run is not silent).
-    vault = _vault(tmp_path)
-    state_root = vault / "KDB" / "state"
-    (vault / "AIML").mkdir()
-    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
-    _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
-                        _fake_model(_compiled_response("a.md", "summary-a")))
-
-    kdb_orchestrate.run(
-        pipeline_id="vt", vault_root=vault, state_root=state_root,
-        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
-        log_level="info")
-
-    err = capsys.readouterr().err
-    assert "⏱" in err                 # a snapshot line was streamed
-    assert "committed 1" in err
-
-
-def test_run_default_warning_level_is_quiet_on_stderr(tmp_path, monkeypatch, capsys):
+def test_default_run_streams_progress_to_stdout(tmp_path, monkeypatch, capsys):
+    # Default run streams the live per-stage narrative to stdout (no flag needed).
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     (vault / "AIML").mkdir()
@@ -333,7 +312,33 @@ def test_run_default_warning_level_is_quiet_on_stderr(tmp_path, monkeypatch, cap
         pipeline_id="vt", vault_root=vault, state_root=state_root,
         graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
 
-    assert "⏱" not in capsys.readouterr().err   # default level stays silent
+    out = capsys.readouterr().out
+    assert "kdb-orchestrate · run " in out      # header
+    assert "to process" in out
+    assert "▸ " in out                          # a per-source line
+    assert "pass-1 enrich…" in out              # stage-start marker
+    assert "pass-2 compile…" in out
+
+
+def test_quiet_suppresses_progress_but_keeps_jsonl(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        log_level="info", quiet=True)
+
+    out = capsys.readouterr().out
+    assert "pass-1 enrich…" not in out
+    assert "▸ " not in out
+    assert res.event_log_path.exists()          # JSONL still written
 
 
 def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
@@ -357,8 +362,10 @@ def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
     assert "run_started" in event_types
     assert "scan_completed" in event_types
     assert "source_started" in event_types
+    assert "pass1_enrich_started" in event_types
     assert "pass1_enrich_completed" in event_types
     assert "pass1_gate_signal" in event_types
+    assert "pass2_compile_started" in event_types
     assert "pass2_compile_completed" in event_types
     assert "source_commit_completed" in event_types
     assert "finalize_completed" in event_types
