@@ -37,7 +37,7 @@ invariant / 0 warnings**; finalize wired 449 links, 0 orphans. Graph (schema **v
   emission (parse/schema), mirroring Pass-1 — which recovered run-4's lone quarantine
   (a LaTeX `\(…\)` JSON-escape slip) in run-5.
 - **#97 — GraphDB viewer**: multi-model bake-off → official single-command D3 viewer
-  (`tools/kdb_graph_viewer.py`).
+  (`tools/viewer/kdb_graph_viewer.py`).
 
 **Run history:** run-4 surfaced the findings (1 quarantine from a stochastic LLM
 JSON-escape defect, handled gracefully); the fixes landed; **run-5 came back clean** → gate

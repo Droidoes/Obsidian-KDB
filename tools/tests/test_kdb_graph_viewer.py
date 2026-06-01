@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-_VIEWER = Path(__file__).resolve().parent.parent / "kdb_graph_viewer.py"
+_VIEWER = Path(__file__).resolve().parent.parent / "viewer" / "kdb_graph_viewer.py"
 _spec = importlib.util.spec_from_file_location("kdb_graph_viewer", _VIEWER)
 viewer = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(viewer)

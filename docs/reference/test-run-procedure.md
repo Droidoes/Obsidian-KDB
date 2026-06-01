@@ -74,7 +74,7 @@ kdb-orchestrate \
 - **Event log:** `KDB/state/runs/<run_id>/orchestrator_events.jsonl` for the full
   per-event record.
 - **Graph (optional):** build the viewer —
-  `python3 tools/kdb_graph_viewer.py --graph-path ~/Obsidian/Vault-in-place-test-run/KDB/graph`
+  `python3 tools/viewer/kdb_graph_viewer.py --graph-path ~/Obsidian/Vault-in-place-test-run/KDB/graph`
   — and open the HTML.
 
 ## 4. Resume OneDrive sync
