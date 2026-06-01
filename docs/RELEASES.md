@@ -10,6 +10,41 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.0 — Reliable orchestration (tagged `v0.5.0`, 2026-05-31)
+
+**Theme:** the end-to-end `kdb-orchestrate` pipeline runs reliably, observably, and
+gracefully — the 0.5.0 gate.
+
+**Gate — run-5 clean E2E** (`2026-05-31T21-05-23`): `exit_code=0`, `exit_reason="ok"` —
+36 scanned / 36 enriched / **29 compiled / 7 noise / 0 failed / 0 quarantined / 0
+invariant / 0 warnings**; finalize wired 449 links, 0 orphans. Graph (schema **v2.4**):
+181 Entity · 29 Source · **10 Domain** · 444 LINKS_TO · 183 SUPPORTS · 181 BELONGS_TO.
+
+**What landed since 0.4.1:**
+- **#96 — quarantine-and-continue** error-handling: severity taxonomy + structured
+  `orchestrator_events.jsonl`, production invariant checks, source-local quarantine
+  (run continues; `run_fatal`/`invariant` still abort), finalize-always-over-committed-set.
+- **#102 — live stdout progress**: default-on, blow-by-blow per-stage narrative
+  (`[n/total] ▸ source`, `pass-1`/`pass-2` with elapsed, running counts, inline `⚠`),
+  `--quiet` opt-out, console decoupled from JSONL verbosity (supersedes #101's stderr tee).
+- **#103 — domain-scoped Pass-2 context** (D3 → hard same-domain gate): the context
+  snapshot is pulled only from the source's Pass-1 domain (anti-entropy).
+- **D1-A derived domains** (from 0.4.1): `BELONGS_TO` derived from `Source.domain`+`SUPPORTS`;
+  10 domains live in run-5 (vs 4 pre-backfill).
+- **Pass-1 coercion + Pass-2 retry** (run-4 findings, `docs/run-4-findings.md`): Pass-1
+  coerces >10 `entity_search_keys` to 10 and lets `source_type='other'` pass without
+  `other_reason` (don't reject benign deviations); Pass-2 retries on a recoverable bad-JSON
+  emission (parse/schema), mirroring Pass-1 — which recovered run-4's lone quarantine
+  (a LaTeX `\(…\)` JSON-escape slip) in run-5.
+- **#97 — GraphDB viewer**: multi-model bake-off → official single-command D3 viewer
+  (`tools/kdb_graph_viewer.py`).
+
+**Run history:** run-4 surfaced the findings (1 quarantine from a stochastic LLM
+JSON-escape defect, handled gracefully); the fixes landed; **run-5 came back clean** → gate
+met. 1219 non-live tests green. Next: **0.6 → 1.0** (ingestion pipelines). See `docs/ROADMAP.md`.
+
+---
+
 ## 0.4.1 — Domain derivation, D1-A producer slice (tagged `v0.4.1`, 2026-05-31)
 
 **Theme:** first slice toward 0.5.0 — fixes the domain meaning layer.

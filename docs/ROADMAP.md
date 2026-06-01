@@ -30,8 +30,8 @@ five-rung objective ladder these map onto.
 
 | Release | Gate / theme | Scope |
 |---|---|---|
-| **0.4.0** *(current)* | E2E runs; orchestration not yet reliable | run-3 clean E2E once, but the meaning layer is broken (domain coverage bug), Pass-2 carries a leftover per-page domain, no domain-aware retrieval, minimal stdout. Ontology Blueprint V1 ratified (D1-A · D2→2.0 · D3-C). |
-| **0.5.0** | **Orchestration pipeline working reliably** | D1 domain fix (derive `BELONGS_TO` from `Source.domain`+`SUPPORTS`, `support_count`, drop page-domain, retire `sub_domain`) · Pass-2 producer rebuild (prompt + schema cleanup implementing D1) · D3 domain-aware retrieval (refined variant D) · stdout / progress messaging · **run-4 clean & repeatable**. |
+| **0.4.0** | E2E runs; orchestration not yet reliable | run-3 clean E2E once, but the meaning layer is broken (domain coverage bug), Pass-2 carries a leftover per-page domain, no domain-aware retrieval, minimal stdout. Ontology Blueprint V1 ratified (D1-A · D2→2.0 · D3-C). |
+| **0.5.0** ✅ *(shipped — tagged `v0.5.0`, 2026-05-31)* | **Orchestration pipeline working reliably** | D1-A domain derivation · #96 quarantine-and-continue · #102 live stdout progress · #103 domain-scoped Pass-2 context · Pass-1 coercion + Pass-2 retry (run-4 findings) · #97 GraphDB viewer. **Gate: run-5 clean E2E** (29 compiled / 0 quarantined / 0 invariant). |
 | **0.6 → 0.9** | **Ingestion pipelines** | Vault-in-place ingestion of the **entire** Obsidian vault (real corpus, at scale) · **1–2 KDB/raw feeder pipelines** (Task #88 family — the multi-source ingestion platform / tunnel-from-both-ends arc). |
 | **1.0.0** | **All infrastructure working & ready to go** | Orchestration (0.5) + the full multi-source ingestion stack, reliable end-to-end → a trustworthy **Remember + Relate** knowledge graph over the real corpus. |
 | **1.x** | Enhancements on the stable core | Viewer / `kdb-graph-view` CLI (task97) · benchmark redesign · Discover-*lite* (structural holes — already partially ships) · more domains / domain refinements. |
@@ -47,10 +47,13 @@ five-rung objective ladder these map onto.
 
 ## Current focus
 
-**Target: 0.5.0 (reliable orchestration).** The active arc is the ontology
-meaning-layer fix and producer rebuild, sequenced:
+**0.5.0 shipped 2026-05-31** (tagged `v0.5.0`) — reliable orchestration, gated on a clean
+run-5. The full arc landed: ontology (ratified) → D1-A producer rebuild → consumer (T2/T3
+domain-scoping) → #102 stdout progress → run-4 (surfaced findings) → Pass-1 coercion +
+Pass-2 retry → **run-5 clean** (the gate).
 
-> ontology (ratified — `docs/ontology-blueprint-V1.md`) → **producer (Pass-2) rebuild** → consumer (T2/T3) → stdout messaging → **run-4** (the 0.5.0 gate).
+**Next target: 0.6 → 1.0 — ingestion pipelines.** Vault-in-place ingestion of the entire
+Obsidian vault at scale + 1–2 KDB/raw feeder pipelines (Task #88 family / tunnel-from-both-ends).
 
 The Claim/Learn layer is explicitly **out of scope until 2.0** — kept in the
 schema as designed-but-unwired.
