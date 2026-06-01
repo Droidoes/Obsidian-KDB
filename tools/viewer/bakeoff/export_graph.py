@@ -20,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # tools/viewer/bakeoff/ -> repo root
 from graphdb_kdb.graphdb import GraphDB  # noqa: E402
 
 SKIP_NODE_TABLES = {"_SchemaMeta"}
