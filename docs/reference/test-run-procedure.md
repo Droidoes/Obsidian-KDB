@@ -49,14 +49,16 @@ fresh graph at the current schema** — no rebuild, no schema-version mismatch.
 ```bash
 python3 -m kdb_compiler.kdb_orchestrate \
   --pipeline vault-test \
-  --vault-root ~/Obsidian/Vault-in-place-test-run \
-  --provider <PROVIDER> --model <MODEL>
+  --vault-root ~/Obsidian/Vault-in-place-test-run
 ```
+(Defaults `--provider deepseek --model deepseek-v4-flash` = what run-3 used.)
 
-- **Pick a working `--provider/--model`.** The CLI default `deepseek` /
-  `deepseek-v4-flash` is **stale — `deepseek-v4-flash` was dropped** (no
-  structured-output support, see [[project_deepseek_v4_flash_dropped]]). Use the
-  model the prior clean run used.
+- **Model: the defaults work — no override needed.** The CLI defaults `deepseek` /
+  `deepseek-v4-flash` are exactly what run-3 used (29 sources compiled, ~$0.14).
+  The model's "dropped" note ([[project_deepseek_v4_flash_dropped]]) was a
+  *benchmark*-candidate concern (no `response_format`); the orchestrator drives it
+  via `json_mode` (the `1d668bf` Pass-2 fix), so it works here. Pass `--provider`/
+  `--model` only if you deliberately want a different model.
 - **Live progress streams to stdout by default** (Task #102): a `[n/total] ▸ source`
   header, `pass-1 enrich…` / `pass-2 compile…` with elapsed, running counts, inline
   `⚠` alarms. `--quiet` silences it; `--log-level {info,debug}` adds JSONL detail.
