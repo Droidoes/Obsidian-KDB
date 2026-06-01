@@ -188,6 +188,74 @@ def test_compile_one_happy_path_returns_compiled_source(
     assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
 
 
+def test_compile_one_retries_on_bad_json_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    calls = {"n": 0}
+
+    def bad_then_good(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # invalid JSON: unescaped backslash (the run-4 LaTeX `\(` defect)
+            return ModelResponse(
+                text=r'{"summary_slug": "s", "body": "gets \(n-1\) points"}',
+                input_tokens=10, output_tokens=5, latency_ms=1,
+                model="claude-opus-4-7", provider="anthropic", attempts=1,
+            )
+        return _good_model_response(SOURCE_A)
+
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: bad_then_good}),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+
+    assert calls["n"] == 2          # re-called once after the bad emission
+    assert err is None              # retry recovered
+    assert cs is not None
+    assert cs.source_id == SOURCE_A
+
+
+def test_compile_one_quarantines_after_all_attempts_fail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    def always_bad(req):
+        return ModelResponse(
+            text=r'{"body": "gets \(n-1\) points"}',
+            input_tokens=10, output_tokens=5, latency_ms=1,
+            model="claude-opus-4-7", provider="anthropic", attempts=1,
+        )
+
+    monkeypatch.setattr(
+        "kdb_compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: always_bad}),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+
+    assert cs is None
+    assert err is not None  # still fails after exhausting attempts
+
+
 def test_compile_one_threads_compile_meta_from_model_response(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

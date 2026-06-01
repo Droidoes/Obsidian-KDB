@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -71,6 +72,12 @@ FailureStage = Literal[
 ]
 
 _FAILURE_MSG_CAP = 2000
+
+log = logging.getLogger(__name__)
+
+# Pass-2 re-calls the model on a recoverable bad-JSON emission (extract/parse/
+# schema), mirroring Pass-1's call_pass1 retry. initial + 1 retry.
+_MAX_COMPILE_ATTEMPTS = 2
 
 
 class FailureTelemetry(NamedTuple):
@@ -313,83 +320,110 @@ def compile_one(
             )
             return (None, [], [], state["error"])
 
-        # --- model call ---
-        try:
-            state["model_response"] = call_model_with_retry(
-                ModelRequest(
-                    provider=provider,
-                    model=model,
-                    system=state["prompt"].system,
-                    prompt=state["prompt"].user,
-                    temperature=0.0,
-                    max_tokens=max_tokens,
-                    use_completion_tokens=use_completion_tokens,
-                    extra_body=extra_body,
-                    # Constrain output to valid JSON, mirroring Pass-1
-                    # (pass1_caller.py json_mode=True). Run-2 fail-fasted at
-                    # Pass-2 because free-form JSON went malformed on a 95KB
-                    # source (JSONDecodeError, stop_reason=stop — not truncation).
-                    json_mode=True,
+        # --- model call + extract + parse + schema, with a retry on a
+        # recoverable bad-JSON emission. Mirrors Pass-1's call_pass1 retry: the
+        # model sometimes emits invalid JSON (e.g. unescaped LaTeX backslashes on
+        # math-heavy sources, run-4 Finding 3); a re-call usually returns valid
+        # JSON. Truncation and hard model-call errors are terminal (a re-call
+        # won't help). SDK-transient retries already live in call_model_with_retry.
+        for attempt in range(1, _MAX_COMPILE_ATTEMPTS + 1):
+            last_attempt = attempt == _MAX_COMPILE_ATTEMPTS
+
+            # --- model call ---
+            try:
+                state["model_response"] = call_model_with_retry(
+                    ModelRequest(
+                        provider=provider,
+                        model=model,
+                        system=state["prompt"].system,
+                        prompt=state["prompt"].user,
+                        temperature=0.0,
+                        max_tokens=max_tokens,
+                        use_completion_tokens=use_completion_tokens,
+                        extra_body=extra_body,
+                        # Constrain output to valid JSON, mirroring Pass-1
+                        # (pass1_caller.py json_mode=True).
+                        json_mode=True,
+                    )
                 )
-            )
-            state["raw_response_text"] = state["model_response"].text
-        except Exception as e:
-            _set_failure(state, "model_call", type(e).__name__, str(e))
-            state["error"] = (
-                f"{source_id}: model call failed: {type(e).__name__}: {e}"
-            )
-            return (None, [], [], state["error"])
+                state["raw_response_text"] = state["model_response"].text
+            except Exception as e:
+                _set_failure(state, "model_call", type(e).__name__, str(e))
+                state["error"] = (
+                    f"{source_id}: model call failed: {type(e).__name__}: {e}"
+                )
+                return (None, [], [], state["error"])
 
-        # --- truncation guard ---
-        # Anthropic: stop_reason == "max_tokens"; OpenAI-compat: "length".
-        # If the model hit the output ceiling, extract will fail on an
-        # unclosed JSON fence — surface the real cause instead.
-        sr = state["model_response"].stop_reason
-        if sr in ("max_tokens", "length"):
-            _set_failure(
-                state,
-                "truncation",
-                "TokenOverrun",
-                f"stop_reason={sr!r}; max_tokens={max_tokens}",
-            )
-            state["error"] = (
-                f"{source_id}: truncated at max_tokens={max_tokens} "
-                f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
-            )
-            return (None, [], [], state["error"])
+            # --- truncation guard (terminal — a re-call won't fit a bigger output) ---
+            # Anthropic: stop_reason == "max_tokens"; OpenAI-compat: "length".
+            sr = state["model_response"].stop_reason
+            if sr in ("max_tokens", "length"):
+                _set_failure(
+                    state,
+                    "truncation",
+                    "TokenOverrun",
+                    f"stop_reason={sr!r}; max_tokens={max_tokens}",
+                )
+                state["error"] = (
+                    f"{source_id}: truncated at max_tokens={max_tokens} "
+                    f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
+                )
+                return (None, [], [], state["error"])
 
-        # --- extract ---
-        try:
-            json_text = response_normalizer.extract_json_text(
-                state["raw_response_text"]
-            )
-            state["extract_ok"] = True
-        except ValueError as e:
-            _set_failure(state, "extract", type(e).__name__, str(e))
-            state["error"] = f"{source_id}: extract failed: {e}"
-            return (None, [], [], state["error"])
+            # --- extract ---
+            try:
+                json_text = response_normalizer.extract_json_text(
+                    state["raw_response_text"]
+                )
+                state["extract_ok"] = True
+            except ValueError as e:
+                if not last_attempt:
+                    log.warning(
+                        f"{source_id}: Pass-2 attempt {attempt}/"
+                        f"{_MAX_COMPILE_ATTEMPTS} extract failed, retrying: {e}"
+                    )
+                    continue
+                _set_failure(state, "extract", type(e).__name__, str(e))
+                state["error"] = f"{source_id}: extract failed: {e}"
+                return (None, [], [], state["error"])
 
-        # --- parse ---
-        try:
-            state["parsed_json"] = json.loads(json_text)
-            state["parse_ok"] = True
-        except json.JSONDecodeError as e:
-            _set_failure(state, "parse", type(e).__name__, str(e))
-            state["error"] = (
-                f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
-            )
-            return (None, [], [], state["error"])
+            # --- parse ---
+            try:
+                state["parsed_json"] = json.loads(json_text)
+                state["parse_ok"] = True
+            except json.JSONDecodeError as e:
+                if not last_attempt:
+                    log.warning(
+                        f"{source_id}: Pass-2 attempt {attempt}/"
+                        f"{_MAX_COMPILE_ATTEMPTS} invalid JSON, retrying: "
+                        f"{e.msg} at line {e.lineno}"
+                    )
+                    continue
+                _set_failure(state, "parse", type(e).__name__, str(e))
+                state["error"] = (
+                    f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
+                )
+                return (None, [], [], state["error"])
 
-        # --- schema ---
-        state["schema_errors"] = validate_compiled_source_response.validate(
-            state["parsed_json"]
-        )
-        state["schema_ok"] = state["schema_errors"] == []
-        if not state["schema_ok"]:
-            state["error"] = (
-                f"{source_id}: schema validation failed: {state['schema_errors'][0]}"
+            # --- schema ---
+            state["schema_errors"] = validate_compiled_source_response.validate(
+                state["parsed_json"]
             )
-            return (None, [], [], state["error"])
+            state["schema_ok"] = state["schema_errors"] == []
+            if not state["schema_ok"]:
+                if not last_attempt:
+                    log.warning(
+                        f"{source_id}: Pass-2 attempt {attempt}/"
+                        f"{_MAX_COMPILE_ATTEMPTS} schema invalid, retrying: "
+                        f"{state['schema_errors'][0]}"
+                    )
+                    continue
+                state["error"] = (
+                    f"{source_id}: schema validation failed: {state['schema_errors'][0]}"
+                )
+                return (None, [], [], state["error"])
+
+            break  # extract_ok + parse_ok + schema_ok → proceed to semantic
 
         # --- semantic ---
         state["semantic_errors"] = (
