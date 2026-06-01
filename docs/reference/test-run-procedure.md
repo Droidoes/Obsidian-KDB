@@ -47,7 +47,7 @@ fresh graph at the current schema** — no rebuild, no schema-version mismatch.
 ## 2. Run
 
 ```bash
-python3 -m kdb_compiler.kdb_orchestrate \
+kdb-orchestrate \
   --pipeline vault-test \
   --vault-root ~/Obsidian/Vault-in-place-test-run
 ```
