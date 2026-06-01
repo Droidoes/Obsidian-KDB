@@ -47,12 +47,30 @@ def test_validate_llm_content_rejects_more_than_10_entity_search_keys():
         validate_llm_content(payload)
 
 
-def test_validate_llm_content_keeps_other_reason_rule():
+def test_normalize_truncates_entity_search_keys_to_10():
+    from kdb_compiler.ingestion.pass1_schema import normalize_llm_content
+    p = _content_only()
+    p["entity_search_keys"] = [f"k{i}" for i in range(13)]
+    normalize_llm_content(p)
+    assert p["entity_search_keys"] == [f"k{i}" for i in range(10)]
+    validate_llm_content(p)  # passes after normalize (no raise)
+
+
+def test_normalize_leaves_short_keys_untouched():
+    from kdb_compiler.ingestion.pass1_schema import normalize_llm_content
+    p = _content_only()
+    p["entity_search_keys"] = ["a", "b"]
+    normalize_llm_content(p)
+    assert p["entity_search_keys"] == ["a", "b"]
+
+
+def test_validate_llm_content_allows_null_other_reason():
+    # Finding 1 (run-4): other_reason is an audit field (Pass-2 ignores it);
+    # a missing "why other" note is not worth a reject + retry. Let it pass.
     payload = _content_only()
     payload["source_type"] = "other"
     payload["other_reason"] = None
-    with pytest.raises(ValueError, match="other_reason"):
-        validate_llm_content(payload)
+    validate_llm_content(payload)  # no raise
 
 
 def test_content_schema_excludes_code_owned_required():
@@ -123,12 +141,13 @@ def test_validate_envelope_rejects_kdb_signal_outside_enum():
         validate_envelope(payload)
 
 
-def test_validate_envelope_requires_other_reason_when_other():
+def test_validate_envelope_allows_null_other_reason_when_other():
+    # Finding 1 (run-4): the OQ-NW7-7 other_reason-required rule was dropped at
+    # both stages — other_reason is an audit field, null is coerced-through.
     payload = _valid_payload()
     payload["source_type"] = "other"
-    payload["other_reason"] = None  # but other_reason is required when other
-    with pytest.raises(ValueError, match="other_reason"):
-        validate_envelope(payload)
+    payload["other_reason"] = None
+    validate_envelope(payload)  # no raise
 
 
 def test_json_schema_is_valid_jsonschema():

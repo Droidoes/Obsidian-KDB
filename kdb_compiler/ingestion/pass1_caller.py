@@ -13,7 +13,9 @@ from dataclasses import dataclass
 
 from kdb_compiler.call_model import ModelRequest, call_model, ModelResponse
 from kdb_compiler.ingestion.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
-from kdb_compiler.ingestion.pass1_schema import validate_llm_content, PASS1_SCHEMA_VERSION
+from kdb_compiler.ingestion.pass1_schema import (
+    normalize_llm_content, validate_llm_content, PASS1_SCHEMA_VERSION,
+)
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +85,9 @@ def call_pass1(
             last_resp = resp
             raw_text = resp.text
             parsed = json.loads(raw_text)
+            # Coerce benign shape deviations (e.g. >10 entity_search_keys) BEFORE
+            # validation — don't burn a retry over a lossless, mechanical fix.
+            normalize_llm_content(parsed)
             # STAGE 1 (Task #95): validate the LLM-owned content fields ONLY,
             # BEFORE stamping. This is the retry gate — bad content (off-enum
             # domain, >10 keys, missing other_reason) triggers another attempt.

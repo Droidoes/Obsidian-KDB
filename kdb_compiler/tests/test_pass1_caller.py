@@ -46,6 +46,18 @@ def test_caller_stamps_code_owned_and_omits_override(monkeypatch):
     assert res.attempts == 1
 
 
+def test_caller_coerces_over_cap_keys_without_retry(monkeypatch):
+    monkeypatch.setattr(
+        caller_mod, "call_model",
+        lambda req: _fake_response(_content_json(
+            entity_search_keys=[f"k{i}" for i in range(13)])),
+    )
+    res = call_pass1(source_text="b", source_path="x.md",
+                     provider="deepseek", model="deepseek-v4-flash")
+    assert res.attempts == 1  # coerced, not rejected+retried
+    assert res.parsed["entity_search_keys"] == [f"k{i}" for i in range(10)]
+
+
 def test_caller_retries_on_invalid_content_then_raises(monkeypatch):
     # Always return content with an off-enum domain → Stage-1 fails every time.
     monkeypatch.setattr(

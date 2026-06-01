@@ -154,12 +154,10 @@ def _validate_against(payload: dict[str, Any], schema: dict[str, Any], *, label:
     except jsonschema.ValidationError as e:
         path = ".".join(str(p) for p in e.absolute_path) or "<root>"
         raise ValueError(f"Pass-1 {label} invalid at {path}: {e.message}") from e
-    # OQ-NW7-7 cross-field rule: other_reason non-null when source_type='other'.
-    if payload["source_type"] == "other" and not payload.get("other_reason"):
-        raise ValueError(
-            f"Pass-1 {label} invalid at other_reason: "
-            "must be non-null string when source_type='other' (OQ-NW7-7)"
-        )
+    # OQ-NW7-7's other_reason-required cross-field rule was dropped 2026-05-31
+    # (run-4 Finding 1): other_reason is an audit field (Pass-2 ignores it), so a
+    # missing "why other" note is coerced-through, not a reject. Trade-off: loses
+    # the vocab-evolution signal when the LLM omits it (still recorded when given).
 
 
 def validate_llm_content(payload: dict[str, Any]) -> None:
@@ -175,3 +173,16 @@ def validate_envelope(payload: dict[str, Any]) -> None:
     ValueError. Belt-and-suspenders — catches a stamping/override-construction
     bug before the malformed envelope is embedded."""
     _validate_against(payload, build_json_schema(), label="envelope")
+
+
+def normalize_llm_content(payload: dict[str, Any]) -> None:
+    """Coerce benign shape deviations IN PLACE, before validation — don't reject
+    + retry over a lossless, mechanical fix (feedback_coerce_dont_reject).
+
+    Currently: truncate entity_search_keys to the first 10. The ≤10 cap is a
+    retrieval budget, not a correctness bound — extra/imperfect slugs just miss
+    the Entity.slug PK lookup harmlessly. The strict schema (maxItems:10) stays
+    the gate; this runs ahead of it so an over-supply never trips validation."""
+    keys = payload.get("entity_search_keys")
+    if isinstance(keys, list) and len(keys) > 10:
+        payload["entity_search_keys"] = keys[:10]
