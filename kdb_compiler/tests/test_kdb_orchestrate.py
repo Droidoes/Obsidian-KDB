@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from compiler import compiler, prompt_builder
-from kdb_compiler import kdb_orchestrate
+from orchestrator import kdb_orchestrate
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult

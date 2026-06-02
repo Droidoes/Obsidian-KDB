@@ -10,7 +10,7 @@ import pytest
 from pathlib import Path
 
 from common.run_context import RunContext, SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION
-from kdb_compiler.manifest_writer import (
+from orchestrator.manifest_writer import (
     build_source_state_update,
     apply_scan_reconciliation,
     apply_compile_sources,

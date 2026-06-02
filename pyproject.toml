@@ -30,7 +30,7 @@ kdb-validate-response = "compiler.validate_source_response:main"
 kdb-clean             = "kdb_compiler.kdb_clean:main"
 kdb-replay            = "kdb_compiler.response_replay:main"
 kdb-benchmark         = "kdb_benchmark.cli:main"
-kdb-orchestrate       = "kdb_compiler.kdb_orchestrate:main"
+kdb-orchestrate       = "orchestrator.kdb_orchestrate:main"
 graphdb-kdb           = "kdb_graph.cli:main"
 
 [build-system]

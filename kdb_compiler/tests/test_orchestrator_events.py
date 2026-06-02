@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.orchestrator_events import (
+from orchestrator.orchestrator_events import (
     EventRecorder,
     OrchestratorEvent,
     OrchestratorInvariantError,
