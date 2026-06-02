@@ -1,5 +1,5 @@
 from pathlib import Path
-from kdb_compiler.enrich.enrich_journal import IngestRunJournal, write_journal
+from ingestion.enrich.enrich_journal import IngestRunJournal, write_journal
 
 
 def test_write_journal_creates_journal_json_at_expected_path(tmp_path):

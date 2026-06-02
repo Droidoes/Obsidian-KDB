@@ -14,10 +14,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from kdb_compiler.enrich.enrich import enrich_one
-from kdb_compiler.enrich.pass1_prompt import PASS1_PROMPT_VERSION
-from kdb_compiler.enrich.enrich_journal import IngestRunJournal, write_journal
-from kdb_compiler.enrich.config_loader import load_scope_config
+from ingestion.enrich.enrich import enrich_one
+from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
+from ingestion.enrich.enrich_journal import IngestRunJournal, write_journal
+from ingestion.enrich.config_loader import load_scope_config
 
 
 DEFAULT_PROVIDER = "deepseek"

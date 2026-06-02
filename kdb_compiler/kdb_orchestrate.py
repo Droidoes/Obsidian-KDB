@@ -27,13 +27,14 @@ from kdb_graph.graphdb import GraphDB
 from kdb_graph.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
-from kdb_compiler import manifest_writer, page_writer, pipeline_registry
+from kdb_compiler import manifest_writer, page_writer
+from ingestion.config import pipeline_registry
 from common.atomic_io import atomic_write_json
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.compiler import compile_source
-from kdb_compiler.enrich.enrich import enrich_one
+from ingestion.enrich.enrich import enrich_one
 from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
-from kdb_compiler.kdb_scan import scan_scope
+from ingestion.kdb_scan import scan_scope
 from kdb_compiler.orchestrator_events import (
     EventRecorder,
     OrchestratorInvariantError,

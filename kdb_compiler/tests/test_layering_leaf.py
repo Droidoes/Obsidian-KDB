@@ -23,4 +23,7 @@ def test_types_does_not_import_source_io():
 
 
 def test_source_io_does_not_import_ingestion():
-    assert not any(m.startswith("kdb_compiler.enrich") for m in _imports("source_io.py"))
+    assert not any(
+        m.startswith("kdb_compiler.enrich") or m.startswith("ingestion.enrich")
+        for m in _imports("source_io.py")
+    )

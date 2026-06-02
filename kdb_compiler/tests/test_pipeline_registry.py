@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import pipeline_registry as pr
+from ingestion.config import pipeline_registry as pr
 
 
 def _write(state_root: Path, pipelines: list[dict]) -> None:

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.enrich.frontmatter_embedder import (
+from ingestion.enrich.frontmatter_embedder import (
     embed_frontmatter, parse_existing_frontmatter, build_yaml_block,
 )
 

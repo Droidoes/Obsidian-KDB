@@ -1,5 +1,5 @@
 # kdb_compiler/tests/test_pass1_prompt.py
-from kdb_compiler.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
+from ingestion.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
 
 
 def test_build_pass1_prompt_includes_all_domain_ids():

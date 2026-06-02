@@ -23,8 +23,8 @@ dependencies = [
 dev = ["pytest>=7", "pytest-cov>=4"]
 
 [project.scripts]
-kdb-enrich            = "kdb_compiler.enrich.kdb_enrich:main"
-kdb-scan              = "kdb_compiler.kdb_scan:main"
+kdb-enrich            = "ingestion.enrich.kdb_enrich:main"
+kdb-scan              = "ingestion.kdb_scan:main"
 kdb-validate          = "kdb_compiler.validate_compile_result:main"
 kdb-validate-response = "kdb_compiler.validate_source_response:main"
 kdb-clean             = "kdb_compiler.kdb_clean:main"
@@ -44,9 +44,10 @@ exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
 [tool.setuptools.package-data]
 kdb_compiler  = ["schemas/*.json"]
 kdb_benchmark = ["models.json"]
+ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "kdb_graph/tests", "tools/tests"]
+testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "kdb_graph/tests", "tools/tests", "ingestion/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [

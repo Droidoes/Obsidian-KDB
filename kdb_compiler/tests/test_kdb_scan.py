@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import kdb_scan
-from kdb_compiler.kdb_scan import classify, load_manifest_sources, main, scan, walk_raw
+from ingestion import kdb_scan
+from ingestion.kdb_scan import classify, load_manifest_sources, main, scan, walk_raw
 
 
 # ---------- helpers ----------

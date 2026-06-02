@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from kdb_compiler.enrich.config_loader import load_domains, load_source_types
+from ingestion.enrich.config_loader import load_domains, load_source_types
 
 PASS1_SCHEMA_VERSION = 1
 
