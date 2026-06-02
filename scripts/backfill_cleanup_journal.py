@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from common import atomic_io
-from kdb_compiler.kdb_clean import build_cleanup_artifacts
+from tools.cleanup import build_cleanup_artifacts
 
 
 def compute_retracted_slugs(reaped: list[dict], manifest: dict) -> list[str]:

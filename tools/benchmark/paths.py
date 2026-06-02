@@ -1,6 +1,6 @@
 """paths — layout constants for the top-level `benchmark/` data directory.
 
-The engine package (`kdb_benchmark/`) holds code; `benchmark/` holds data.
+The engine package (`tools.benchmark/`) holds code; `benchmark/` holds data.
 These constants are the single place that knows the physical layout so
 runner/scorer/scorecard don't hard-code paths.
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BENCHMARK_DIR = REPO_ROOT / "benchmark"
 
 SOURCES_DIR = BENCHMARK_DIR / "sources"

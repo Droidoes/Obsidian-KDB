@@ -1,4 +1,4 @@
-"""kdb_benchmark.scorer — Phase 3 spec implementation.
+"""tools.benchmark.scorer — Phase 3 spec implementation.
 
 Implements docs/task19-kpi-design.md § Phase 3 — Detailed Spec § 5–§ 9:
   * MeasureScore + RunScore dataclasses
@@ -23,8 +23,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
 
-from kdb_benchmark.paths import MODELS_JSON
-from kdb_benchmark.registry import ModelEntry, load_registry
+from tools.benchmark.paths import MODELS_JSON
+from tools.benchmark.registry import ModelEntry, load_registry
 from common.call_model_retry import MAX_RETRIES
 from compiler.validate_compile_result import (
     check_compiled_source,

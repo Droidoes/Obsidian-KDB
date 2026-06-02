@@ -118,7 +118,7 @@ def body_wikilink_slugs(body: str) -> set[str]:
     match — out-of-pattern brackets (e.g. [[Foo Bar]]) are silently
     ignored.
 
-    Public utility — also used by `kdb_benchmark.scorer` for M5
+    Public utility — also used by `tools.benchmark.scorer` for M5
     (`body_emit_set_coverage`) computation across the one-way boundary.
     """
     return set(_WIKILINK_RE.findall(_strip_code(body)))

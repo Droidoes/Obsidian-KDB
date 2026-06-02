@@ -1,4 +1,4 @@
-"""kdb_benchmark.scorecard — Task #22 + Task #42 cross-model scorecard.
+"""tools.benchmark.scorecard — Task #22 + Task #42 cross-model scorecard.
 
 Renders a list of post-Borda RunScores as:
   * JSON (sorted models, full nested measure/diagnostic detail) for
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from common.run_context import now_iso
-from kdb_benchmark.scorer import RunScore
+from tools.benchmark.scorer import RunScore
 
 
 _DISCLAIMER = (

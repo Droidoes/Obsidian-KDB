@@ -39,10 +39,10 @@ import sys
 import time
 from pathlib import Path
 
-from kdb_benchmark.paths import BENCHMARK_DIR, MODELS_JSON, RUNS_DIR, SCORES_DIR, SOURCES_DIR
-from kdb_benchmark.registry import ModelEntry, load_registry
-from kdb_benchmark.runner import run_benchmark
-from kdb_benchmark.scorecard import (
+from tools.benchmark.paths import BENCHMARK_DIR, MODELS_JSON, RUNS_DIR, SCORES_DIR, SOURCES_DIR
+from tools.benchmark.registry import ModelEntry, load_registry
+from tools.benchmark.runner import run_benchmark
+from tools.benchmark.scorecard import (
     build_final_scorecard,
     build_per_run_scorecard,
     fmt_duration,
@@ -53,7 +53,7 @@ from kdb_benchmark.scorecard import (
 )
 from dataclasses import replace
 
-from kdb_benchmark.scorer import RunScore, score_run, score_runs
+from tools.benchmark.scorer import RunScore, score_run, score_runs
 
 
 _DEFAULT_SYSTEM_PROMPT = Path.home() / "Obsidian" / "KDB" / "KDB-Compiler-System-Prompt.md"
@@ -64,7 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--models",
         required=True,
-        help="Single model_id from kdb_benchmark/models.json. Multi-model "
+        help="Single model_id from tools.benchmark/models.json. Multi-model "
              "comparison happens via cross-run merge — fire each model "
              "separately. (Task #46: legacy comma-separated form is no "
              "longer accepted; use `--models X` for one model per fire.)",

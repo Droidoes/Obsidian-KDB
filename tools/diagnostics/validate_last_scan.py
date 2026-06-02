@@ -35,7 +35,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-_SCHEMA_PATH = Path(__file__).parent / "schemas" / "last_scan.schema.json"
+_SCHEMA_PATH = Path(__file__).parent / "last_scan.schema.json"
 
 
 @cache

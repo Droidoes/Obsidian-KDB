@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from kdb_compiler.kdb_clean import build_cleanup_artifacts, main, reap_orphans
+from tools.cleanup import build_cleanup_artifacts, main, reap_orphans
 
 
 def _page(status, slug, *, page_type="concept", outgoing_links=None):
@@ -59,7 +59,7 @@ def _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone"):
             to_reconcile=[{"type": "DELETED", "path": "KDB/raw/a.md"}],
         )
         gdb.apply_compile_result(cr2, scan2, "run-2")
-    monkeypatch.setattr("kdb_compiler.kdb_clean.default_graph_path", lambda: graph_dir)
+    monkeypatch.setattr("tools.cleanup.default_graph_path", lambda: graph_dir)
 
 
 def test_reap_removes_orphan_from_pages_and_orphans():
@@ -262,7 +262,7 @@ def test_main_orphans_apply_writes_retraction_before_journal(tmp_path, monkeypat
         calls.append(Path(path).name)
         return real(path, obj, **kw)
 
-    monkeypatch.setattr("kdb_compiler.kdb_clean.atomic_io.atomic_write_json", spy)
+    monkeypatch.setattr("tools.cleanup.atomic_io.atomic_write_json", spy)
     main(["orphans", "--vault-root", str(tmp_path), "--apply"])
 
     journal_idx = next(i for i, n in enumerate(calls)

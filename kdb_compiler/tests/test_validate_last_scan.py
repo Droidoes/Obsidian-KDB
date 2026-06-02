@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import validate_last_scan as vls
+from tools.diagnostics import validate_last_scan as vls
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -366,7 +366,7 @@ def test_summary_deleted_count_mismatch() -> None:
 
 def _run_cli(args: list[str], *, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "kdb_compiler.validate_last_scan", *args],
+        [sys.executable, "-m", "tools.diagnostics.validate_last_scan", *args],
         cwd=REPO_ROOT,
         input=stdin,
         capture_output=True,
@@ -401,7 +401,7 @@ def test_cli_reads_stdin_when_no_argv() -> None:
 # ---------- hash-based eligibility (Task #66 D46) ----------
 
 def test_unchanged_file_in_to_compile_is_valid_when_hashes_differ():
-    from kdb_compiler.validate_last_scan import validate
+    from tools.diagnostics.validate_last_scan import validate
     payload = _minimal_valid_scan()
     f = payload["files"][0]
     f["action"] = "UNCHANGED"
@@ -416,7 +416,7 @@ def test_unchanged_file_in_to_compile_is_valid_when_hashes_differ():
 
 
 def test_file_misclassified_into_to_skip_is_rejected():
-    from kdb_compiler.validate_last_scan import validate
+    from tools.diagnostics.validate_last_scan import validate
     payload = _minimal_valid_scan()
     f = payload["files"][0]
     f["compiled_hash"] = None                     # never compiled
@@ -427,7 +427,7 @@ def test_file_misclassified_into_to_skip_is_rejected():
 
 
 def test_file_misclassified_into_to_compile_is_rejected():
-    from kdb_compiler.validate_last_scan import validate
+    from tools.diagnostics.validate_last_scan import validate
     payload = _minimal_valid_scan()
     f = payload["files"][0]
     f["action"] = "UNCHANGED"

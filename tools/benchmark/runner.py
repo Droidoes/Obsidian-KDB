@@ -1,4 +1,4 @@
-"""kdb_benchmark.runner — Task #30 isolation-contract orchestrator.
+"""tools.benchmark.runner — Task #30 isolation-contract orchestrator.
 
 Per docs/task19-kpi-design.md § Phase 3 § 1 + Task #30 ledger entry:
 
@@ -18,7 +18,7 @@ Per docs/task19-kpi-design.md § Phase 3 § 1 + Task #30 ledger entry:
     stub so prompt_builder can read it without depending on the live
     vault — and re-runnable years later if the live vault changes.
 
-The output of `run_benchmark` is consumed by `kdb_benchmark.scorer.score_run`.
+The output of `run_benchmark` is consumed by `tools.benchmark.scorer.score_run`.
 """
 from __future__ import annotations
 
@@ -30,9 +30,9 @@ import threading
 import time
 from pathlib import Path
 
-from kdb_benchmark.paths import MODELS_JSON
-from kdb_benchmark.registry import ModelEntry, load_registry
-from kdb_benchmark.scorecard import fmt_duration
+from tools.benchmark.paths import MODELS_JSON
+from tools.benchmark.registry import ModelEntry, load_registry
+from tools.benchmark.scorecard import fmt_duration
 from common import __version__ as _COMPILER_VERSION
 from compiler.compiler import compile_one
 from common.llm_telemetry import safe_source_id
@@ -207,6 +207,9 @@ def run_benchmark(
     )
 
     # Capture-full mode is mandatory for benchmark scoring (§ 3).
+    # Save and restore so the env change does not bleed into callers
+    # (tests run in-process alongside non-benchmark tests).
+    _prev_capture = os.environ.get("KDB_RESP_STATS_CAPTURE_FULL")
     os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = "1"
 
     # Construct source_ids for the persisted compile_result artifact using
@@ -308,4 +311,11 @@ def run_benchmark(
         "n_sources": n_sources,
         "n_source_words": n_source_words,
     }
+
+    # Restore the capture-full env var to its previous state.
+    if _prev_capture is None:
+        os.environ.pop("KDB_RESP_STATS_CAPTURE_FULL", None)
+    else:
+        os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = _prev_capture
+
     return run_id, state_root, compile_metrics

@@ -1,4 +1,4 @@
-"""Tests for kdb_benchmark.runner — Task #30 isolation-contract orchestrator.
+"""Tests for tools.benchmark.runner — Task #30 isolation-contract orchestrator.
 
 The runner invokes `compile_one` directly (NOT the production kdb-compile
 pipeline) once per (source, model). These tests monkeypatch compile_one so
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_benchmark import runner
+from tools.benchmark import runner
 from common.types import ContextSnapshot
 
 
@@ -59,7 +59,7 @@ def patched_compile_one(monkeypatch):
         })
         return (None, [], [], None)
 
-    monkeypatch.setattr("kdb_benchmark.runner.compile_one", fake_compile_one)
+    monkeypatch.setattr("tools.benchmark.runner.compile_one", fake_compile_one)
     return captured
 
 
@@ -286,7 +286,7 @@ def patched_compile_one_writing_records(monkeypatch):
     def set_record(**kwargs):
         record_template.update(kwargs)
 
-    monkeypatch.setattr("kdb_benchmark.runner.compile_one", fake_compile_one)
+    monkeypatch.setattr("tools.benchmark.runner.compile_one", fake_compile_one)
     return set_record
 
 
@@ -454,7 +454,7 @@ class TestRunBenchmarkTtyTicker:
         emits \\r in the per-source progress (vs newline-only in the
         non-TTY path)."""
         # Force the TTY path
-        monkeypatch.setattr("kdb_benchmark.runner.sys.stdout.isatty", lambda: True)
+        monkeypatch.setattr("tools.benchmark.runner.sys.stdout.isatty", lambda: True)
         runner.run_benchmark(
             sources_dir=fake_corpus, model_id="haiku-4.5",
             runs_root=runs_root, system_prompt_path=fake_system_prompt,

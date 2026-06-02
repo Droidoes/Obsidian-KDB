@@ -1,7 +1,7 @@
-"""Tests for kdb_benchmark.cli — end-to-end glue.
+"""Tests for tools.benchmark.cli — end-to-end glue.
 
 CLI is mostly orchestration glue (runner → scorer → scorecard). Tests use
-monkeypatch on `kdb_benchmark.cli.run_benchmark` to avoid LLM calls; the
+monkeypatch on `tools.benchmark.cli.run_benchmark` to avoid LLM calls; the
 underlying runner is already covered by test_runner.py.
 """
 from __future__ import annotations
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_benchmark import cli, scorer
-from kdb_benchmark.scorer import MeasureScore, RunScore
+from tools.benchmark import cli, scorer
+from tools.benchmark.scorer import MeasureScore, RunScore
 
 
 def _fake_runscore(model_id: str, m6_rate: float, m7_rate: float) -> RunScore:
@@ -95,8 +95,8 @@ def patched_runner_and_scorer(monkeypatch, tmp_path):
         m6, m7 = rates.get(model_id, (0.005, 2500.0))
         return _fake_runscore(model_id, m6, m7)
 
-    monkeypatch.setattr("kdb_benchmark.cli.run_benchmark", fake_run_benchmark)
-    monkeypatch.setattr("kdb_benchmark.cli.score_run", fake_score_run)
+    monkeypatch.setattr("tools.benchmark.cli.run_benchmark", fake_run_benchmark)
+    monkeypatch.setattr("tools.benchmark.cli.score_run", fake_score_run)
     return fake_run_states
 
 
@@ -225,7 +225,7 @@ def monotonic_now_iso(monkeypatch):
         # Use distinct seconds so lexical sort (filename) preserves order.
         return f"2026-05-08T12:00:{counter['n']:02d}-04:00"
 
-    monkeypatch.setattr("kdb_benchmark.scorecard.now_iso", _fake_now)
+    monkeypatch.setattr("tools.benchmark.scorecard.now_iso", _fake_now)
 
 
 class TestCLICrossRunMerge:
@@ -380,7 +380,7 @@ class TestCLIDroppedModelsMergePartition:
         for two models — one active in registry, one dropped. Merge must
         route them to active vs dropped subsets and recompute Borda over
         active only (forced None for dropped)."""
-        from kdb_benchmark.registry import ModelEntry
+        from tools.benchmark.registry import ModelEntry
         scores_dir = tmp_path / "scores"
         scores_dir.mkdir()
 

@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from kdb_benchmark.paths import MODELS_JSON
+from tools.benchmark.paths import MODELS_JSON
 
 
 @dataclass(frozen=True)

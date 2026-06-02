@@ -1,4 +1,4 @@
-"""Tests for kdb_benchmark.registry — loads and shape-checks models.json."""
+"""Tests for tools.benchmark.registry — loads and shape-checks models.json."""
 from __future__ import annotations
 
 import json
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_benchmark import registry
-from kdb_benchmark.registry import ModelEntry, load_registry
+from tools.benchmark import registry
+from tools.benchmark.registry import ModelEntry, load_registry
 
 
 def test_default_registry_loads_and_has_unique_ids() -> None:

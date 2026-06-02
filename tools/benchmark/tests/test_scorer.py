@@ -1,4 +1,4 @@
-"""Tests for kdb_benchmark.scorer — Phase 3 spec §5–§9 implementation.
+"""Tests for tools.benchmark.scorer — Phase 3 spec §5–§9 implementation.
 
 Tests are organized by section of docs/task19-kpi-design.md:
   - dataclass shapes (§5)
@@ -15,8 +15,8 @@ from typing import Optional
 
 import pytest
 
-from kdb_benchmark import scorer
-from kdb_benchmark.scorer import MeasureScore
+from tools.benchmark import scorer
+from tools.benchmark.scorer import MeasureScore
 
 
 # ---------------------------------------------------------------------------

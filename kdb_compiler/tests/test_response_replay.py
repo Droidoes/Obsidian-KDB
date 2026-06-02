@@ -15,8 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import response_replay
-from kdb_compiler.response_replay import (
+from tools.replay import (
     ReplayFixture,
     load_fixtures,
     main,

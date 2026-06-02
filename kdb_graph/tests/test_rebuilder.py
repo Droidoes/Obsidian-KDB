@@ -684,7 +684,7 @@ def test_rebuild_slug_safe_when_slug_survives_under_another_page(tmp_path, graph
     # the concept's page_id — but 'foo' still has a surviving article page, so
     # reap_orphans excludes 'foo' from retracted_slugs and the graph entity
     # 'foo' (one slug-keyed node) must survive.
-    from kdb_compiler.kdb_clean import reap_orphans
+    from tools.cleanup import reap_orphans
 
     journals = tmp_path / "runs"
     _write_run(journals, "2026-01-01T00-00-00",

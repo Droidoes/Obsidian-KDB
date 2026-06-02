@@ -1,4 +1,4 @@
-"""Tests for kdb_benchmark.scorecard — Task #22 cross-model scorecard.
+"""Tests for tools.benchmark.scorecard — Task #22 cross-model scorecard.
 
 Renders list[RunScore] post-Borda as JSON + terminal table. Round 4 DC4:
 the scorecard MUST emit a 'comparable only within candidate set' disclaimer
@@ -9,8 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kdb_benchmark import scorecard
-from kdb_benchmark.scorer import MeasureScore, RunScore
+from tools.benchmark import scorecard
+from tools.benchmark.scorer import MeasureScore, RunScore
 
 
 def _runscore(

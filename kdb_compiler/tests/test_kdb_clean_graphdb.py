@@ -20,7 +20,7 @@ from kdb_graph.tests.conftest import (
     make_scan_entry,
 )
 
-from kdb_compiler.kdb_clean import reap_orphans_from_graph
+from tools.cleanup import reap_orphans_from_graph
 
 
 # ---------- helpers ----------
@@ -172,7 +172,7 @@ def test_no_orphans_returns_empty_report(graph_dir):
 
 def test_cli_dry_run_reads_from_graph(tmp_path, monkeypatch, graph_dir):
     """Dry-run enumerates from GraphDB, no disk writes."""
-    from kdb_compiler.kdb_clean import main
+    from tools.cleanup import main
 
     # Set up vault with graph (no manifest needed post-Phase F)
     state = tmp_path / "KDB" / "state"
@@ -196,7 +196,7 @@ def test_cli_dry_run_reads_from_graph(tmp_path, monkeypatch, graph_dir):
 
     # Patch default_graph_path to point at our test DB
     monkeypatch.setattr(
-        "kdb_compiler.kdb_clean.default_graph_path", lambda: graph_dir)
+        "tools.cleanup.default_graph_path", lambda: graph_dir)
 
     rc = main(["orphans", "--vault-root", str(tmp_path)])
     assert rc == 0

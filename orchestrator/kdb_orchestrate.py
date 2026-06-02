@@ -34,7 +34,7 @@ from common.atomic_io import atomic_write_json
 from compiler.canonicalize import load_or_empty
 from compiler.compiler import compile_source
 from ingestion.enrich.enrich import enrich_one
-from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
+from tools.cleanup import build_cleanup_artifacts, reap_orphans_from_graph
 from ingestion.kdb_scan import scan_scope
 from orchestrator.orchestrator_events import (
     EventRecorder,

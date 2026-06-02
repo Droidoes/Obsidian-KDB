@@ -1,7 +1,7 @@
-"""Tests for kdb_benchmark.paths — layout constants stay stable."""
+"""Tests for tools.benchmark.paths — layout constants stay stable."""
 from __future__ import annotations
 
-from kdb_benchmark import paths
+from tools.benchmark import paths
 
 
 def test_benchmark_dir_is_repo_sibling_of_package() -> None:
@@ -17,4 +17,4 @@ def test_data_subdirs_are_under_benchmark_dir() -> None:
 
 def test_models_json_is_inside_package() -> None:
     assert paths.MODELS_JSON.name == "models.json"
-    assert paths.MODELS_JSON.parent.name == "kdb_benchmark"
+    assert paths.MODELS_JSON.parent.name == "benchmark"
