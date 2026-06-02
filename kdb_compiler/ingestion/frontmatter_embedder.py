@@ -10,14 +10,12 @@ second, both within the same YAML block. Comments in the YAML separate them.
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
 
 from kdb_compiler.atomic_io import atomic_write_text
-
-_FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
+from kdb_compiler.source_io import parse_existing_frontmatter
 
 # Pass-1 schema fields (the keys this module owns).
 _GRAPHDB_INPUT_FIELDS = (
@@ -29,20 +27,6 @@ _AUDIT_FIELDS = (
     "prompt_version", "model", "schema_version", "override", "other_reason",
 )
 _PASS1_FIELDS = frozenset(_GRAPHDB_INPUT_FIELDS + _AUDIT_FIELDS)
-
-
-def parse_existing_frontmatter(text: str) -> tuple[dict, str]:
-    """Split (frontmatter_dict, body_text). Returns ({}, text) if no
-    frontmatter block."""
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        return {}, text
-    fm_text, body = m.group(1), m.group(2)
-    try:
-        fm = yaml.safe_load(fm_text) or {}
-    except yaml.YAMLError:
-        return {}, text
-    return fm, body
 
 
 def build_yaml_block(envelope: dict) -> str:

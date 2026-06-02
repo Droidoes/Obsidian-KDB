@@ -1,8 +1,9 @@
 """Shared source-file I/O for kdb_compiler.
 
-Owns the `SourceFrontmatter` dataclass and `parse_source_file()`. Used by
-both `planner.py` (plan-time frontmatter read for context-loader T2
-construction) and `compiler.py` (compile-time `source_text_for` wrapper).
+Owns `parse_existing_frontmatter`, `SourceFrontmatter` (re-exported from
+types), and `parse_source_file()`. Used by both `planner.py` (plan-time
+frontmatter read for context-loader T2 construction) and `compiler.py`
+(compile-time `source_text_for` wrapper).
 
 Fixes Bug B-1 (planner→compiler.py circular import) per Task #90 D-90-10:
 `compiler.py` already imports `planner` at module load, so `planner.py`
@@ -10,47 +11,38 @@ cannot import `SourceFrontmatter` from `compiler.py`. Hoisting both the
 dataclass and the parse helper into this neutral module breaks the cycle.
 Also retires `planner._read_source_text`'s double-disk-read (Gemini F-4)
 by routing both callers through a single parse.
+
+Layering note (phase-a refactor): `parse_existing_frontmatter` lived in
+`kdb_compiler/ingestion/frontmatter_embedder.py` (a stage subpackage) but is
+a primitive needed by this common leaf; moved here so the ingestion stage
+imports UP from the leaf, not the other way around.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
 from pathlib import Path
 
-from kdb_compiler.ingestion.frontmatter_embedder import parse_existing_frontmatter
+import yaml
+
+from kdb_compiler.types import SourceFrontmatter
+
+__all__ = ["SourceFrontmatter", "parse_existing_frontmatter", "parse_source_file"]
+
+_FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)\Z", re.DOTALL)
 
 
-@dataclass
-class SourceFrontmatter:
-    """Parsed GraphDB-input section of Pass-1 frontmatter. Audit section +
-    user-added keys are ignored by compile per D-89-16."""
-    kdb_signal: str
-    domain: str
-    source_type: str
-    author: str | None
-    summary: str
-    key_themes: list[str]
-    entity_search_keys: list[str]  # ≤10 slugs; T2-rewrite input (D-89-20); not seen by Pass-2
-
-    @classmethod
-    def from_dict(cls, fm: dict) -> "SourceFrontmatter | None":
-        """Return None if frontmatter does not contain Pass-1 GraphDB-input keys.
-
-        v0.2.2 (D-89-20): key_entities dropped; entity_search_keys added (the
-        sole consumer is Task #90 context-loader T2-rewrite). Pre-v0.2.2
-        frontmatter without `entity_search_keys` still parses (defaults to []).
-        """
-        required = {"kdb_signal", "domain", "source_type", "summary"}
-        if not required.issubset(fm.keys()):
-            return None
-        return cls(
-            kdb_signal=fm["kdb_signal"],
-            domain=fm["domain"],
-            source_type=fm["source_type"],
-            author=fm.get("author"),
-            summary=fm["summary"],
-            key_themes=fm.get("key_themes", []) or [],
-            entity_search_keys=fm.get("entity_search_keys", []) or [],
-        )
+def parse_existing_frontmatter(text: str) -> tuple[dict, str]:
+    """Split (frontmatter_dict, body_text). Returns ({}, text) if no
+    frontmatter block."""
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}, text
+    fm_text, body = m.group(1), m.group(2)
+    try:
+        fm = yaml.safe_load(fm_text) or {}
+    except yaml.YAMLError:
+        return {}, text
+    return fm, body
 
 
 def parse_source_file(path: Path) -> tuple[SourceFrontmatter | None, str]:

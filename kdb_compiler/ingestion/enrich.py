@@ -12,9 +12,8 @@ from kdb_compiler.ingestion.pass1_caller import call_pass1, Pass1CallError
 from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
 from kdb_compiler.ingestion.overrides import apply_overrides, build_override_block
 from kdb_compiler.ingestion.pass1_schema import validate_envelope, PASS1_SCHEMA_VERSION
-from kdb_compiler.ingestion.frontmatter_embedder import (
-    embed_frontmatter, parse_existing_frontmatter,
-)
+from kdb_compiler.ingestion.frontmatter_embedder import embed_frontmatter
+from kdb_compiler.source_io import parse_existing_frontmatter
 from kdb_compiler.ingestion.replay_archive import write_sidecar, SidecarPayload
 
 

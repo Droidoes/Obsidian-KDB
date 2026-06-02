@@ -10,10 +10,7 @@ dataclass field names already match the JSON shape.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Optional
-
-if TYPE_CHECKING:
-    from kdb_compiler.source_io import SourceFrontmatter
+from typing import Any, Literal, Optional
 
 FileType = Literal["markdown", "binary", "unknown"]
 ScanAction = Literal["NEW", "CHANGED", "UNCHANGED", "MOVED"]  # DELETED lives in ReconcileOp only
@@ -23,6 +20,42 @@ PageType = Literal["summary", "concept", "article"]
 PageStatus = Literal["active", "stale", "orphan_candidate", "archived"]
 Confidence = Literal["low", "medium", "high"]
 SourceRefRole = Literal["primary", "supporting", "historical"]
+
+
+# ---------- source-file frontmatter ----------
+
+@dataclass
+class SourceFrontmatter:
+    """Parsed GraphDB-input section of Pass-1 frontmatter. Audit section +
+    user-added keys are ignored by compile per D-89-16."""
+    kdb_signal: str
+    domain: str
+    source_type: str
+    author: str | None
+    summary: str
+    key_themes: list[str]
+    entity_search_keys: list[str]  # ≤10 slugs; T2-rewrite input (D-89-20); not seen by Pass-2
+
+    @classmethod
+    def from_dict(cls, fm: dict) -> "SourceFrontmatter | None":
+        """Return None if frontmatter does not contain Pass-1 GraphDB-input keys.
+
+        v0.2.2 (D-89-20): key_entities dropped; entity_search_keys added (the
+        sole consumer is Task #90 context-loader T2-rewrite). Pre-v0.2.2
+        frontmatter without `entity_search_keys` still parses (defaults to []).
+        """
+        required = {"kdb_signal", "domain", "source_type", "summary"}
+        if not required.issubset(fm.keys()):
+            return None
+        return cls(
+            kdb_signal=fm["kdb_signal"],
+            domain=fm["domain"],
+            source_type=fm["source_type"],
+            author=fm.get("author"),
+            summary=fm["summary"],
+            key_themes=fm.get("key_themes", []) or [],
+            entity_search_keys=fm.get("entity_search_keys", []) or [],
+        )
 
 
 # ---------- scan artifact shapes ----------
