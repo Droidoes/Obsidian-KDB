@@ -1,4 +1,4 @@
-"""Tests for patch_applier — emitter + pure core + I/O shell + CLI."""
+"""Tests for page_writer — emitter + pure core + I/O shell + CLI."""
 from __future__ import annotations
 
 import json
@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import patch_applier
-from kdb_compiler.patch_applier import (
+from kdb_compiler import page_writer as patch_applier
+from kdb_compiler.page_writer import (
     ApplyResult,
     PagePatch,
     PagePatchError,
@@ -125,7 +125,7 @@ def test_emit_frontmatter_newline_in_string_raises() -> None:
 
 def test_emit_frontmatter_null_and_bool_scalars() -> None:
     # None & bool scalars are valid outputs from the helpers; use a synthetic fm.
-    from kdb_compiler.patch_applier import _yaml_scalar
+    from kdb_compiler.page_writer import _yaml_scalar
     assert _yaml_scalar(None) == "null"
     assert _yaml_scalar(True) == "true"
     assert _yaml_scalar(False) == "false"
@@ -480,7 +480,7 @@ def _unquote(v: str) -> object:
 
 
 def test_render_page_roundtrip_frontmatter() -> None:
-    from kdb_compiler.patch_applier import _scan_source_meta
+    from kdb_compiler.page_writer import _scan_source_meta
     intent = {"slug": "paper", "page_type": "summary", "title": "A: Paper",
               "status": "active"}
     source_refs = [{"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"}]

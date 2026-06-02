@@ -1,4 +1,4 @@
-"""patch_applier — writes wiki pages from compile_result + last_scan.
+"""page_writer — writes wiki pages from compile_result + last_scan.
 
 Architecture (Selection A + iii + a, M1.6 blueprint; D50 Phase C):
     * Pure core renders PagePatch objects from compile_result + scan metadata.

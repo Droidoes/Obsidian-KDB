@@ -27,7 +27,7 @@ from graphdb_kdb.graphdb import GraphDB
 from graphdb_kdb.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
-from kdb_compiler import patch_applier, pipeline_registry, source_state_update
+from kdb_compiler import page_writer, pipeline_registry, source_state_update
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.compiler import compile_source
@@ -109,7 +109,7 @@ def _commit_source(
 
     # 1. apply wiki pages (stage 8). Throws ⇒ case-(a), graph untouched.
     try:
-        apply_res = patch_applier.apply(
+        apply_res = page_writer.apply(
             vault_root, compile_result=cr, last_scan=single_scan,
             run_ctx=ctx, write=True)
     except Exception as e:
