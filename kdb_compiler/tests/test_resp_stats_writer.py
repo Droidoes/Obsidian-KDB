@@ -319,8 +319,12 @@ def test_none_prompt_sentinels_prompt_hash(tmp_path: Path) -> None:
     assert record.prompt_hash == "sha256:none"
 
 
-def test_parsed_summary_only_when_parse_ok(tmp_path: Path) -> None:
-    """parsed_summary is None when parse_ok=False, regardless of parsed_json."""
+def test_build_resp_stats_stores_none_when_parsed_summary_omitted(tmp_path: Path) -> None:
+    """build_resp_stats stores parsed_summary=None when the caller omits it
+    (default arg).  Since Phase B, build_resp_stats no longer computes or gates
+    parsed_summary internally — the gate lives in compiler.compile_one's finally
+    block.  This test documents the default-arg contract only; the gate itself
+    is covered in compiler/tests/test_parsed_summary_gate.py."""
     ctx = _ctx(tmp_path)
     record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
@@ -330,6 +334,7 @@ def test_parsed_summary_only_when_parse_ok(tmp_path: Path) -> None:
         extract_ok=False, parse_ok=False, parsed_json=None,
         schema_ok=False, schema_errors=[],
         semantic_ok=False, semantic_errors=[],
+        # parsed_summary intentionally omitted → default None
     )
     assert record.parsed_summary is None
 
