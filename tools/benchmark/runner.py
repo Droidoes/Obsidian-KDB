@@ -207,9 +207,6 @@ def run_benchmark(
     )
 
     # Capture-full mode is mandatory for benchmark scoring (§ 3).
-    # Save and restore so the env change does not bleed into callers
-    # (tests run in-process alongside non-benchmark tests).
-    _prev_capture = os.environ.get("KDB_RESP_STATS_CAPTURE_FULL")
     os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = "1"
 
     # Construct source_ids for the persisted compile_result artifact using
@@ -311,11 +308,4 @@ def run_benchmark(
         "n_sources": n_sources,
         "n_source_words": n_source_words,
     }
-
-    # Restore the capture-full env var to its previous state.
-    if _prev_capture is None:
-        os.environ.pop("KDB_RESP_STATS_CAPTURE_FULL", None)
-    else:
-        os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = _prev_capture
-
     return run_id, state_root, compile_metrics

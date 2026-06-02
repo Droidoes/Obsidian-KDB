@@ -64,7 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--models",
         required=True,
-        help="Single model_id from tools.benchmark/models.json. Multi-model "
+        help="Single model_id from tools/benchmark/models.json. Multi-model "
              "comparison happens via cross-run merge — fire each model "
              "separately. (Task #46: legacy comma-separated form is no "
              "longer accepted; use `--models X` for one model per fire.)",

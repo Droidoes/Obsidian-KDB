@@ -1,6 +1,6 @@
 """paths — layout constants for the top-level `benchmark/` data directory.
 
-The engine package (`tools.benchmark/`) holds code; `benchmark/` holds data.
+The engine package (`tools/benchmark/`) holds code; `benchmark/` holds data.
 These constants are the single place that knows the physical layout so
 runner/scorer/scorecard don't hard-code paths.
 

@@ -16,6 +16,23 @@ from tools.benchmark import runner
 from common.types import ContextSnapshot
 
 
+@pytest.fixture(autouse=True)
+def _isolate_capture_full_env():
+    """Restore KDB_RESP_STATS_CAPTURE_FULL after each test.
+
+    run_benchmark() sets this env var unconditionally (§ 3 contract). In the
+    merged suite it would otherwise bleed into non-benchmark tests that assert
+    the var is NOT set (e.g. test_resp_stats_writer). This fixture is
+    autouse so it applies to every test in this module.
+    """
+    prev = os.environ.get("KDB_RESP_STATS_CAPTURE_FULL")
+    yield
+    if prev is None:
+        os.environ.pop("KDB_RESP_STATS_CAPTURE_FULL", None)
+    else:
+        os.environ["KDB_RESP_STATS_CAPTURE_FULL"] = prev
+
+
 @pytest.fixture
 def fake_corpus(tmp_path: Path) -> Path:
     """Build a tiny benchmark/sources/-shaped directory."""
