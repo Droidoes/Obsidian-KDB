@@ -1,96 +1,88 @@
-# Task #91 Plan 1 Review — Qwen CLI (qwen3.7-max)
+# Task #91 Plan 1 Review (Revised) — Qwen CLI (qwen3.7-max)
 
 **Reviewer:** Qwen CLI / qwen3.7-max
-**Plan reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md`
+**Plan reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md` (revised — produce-don't-write, commit `23ba054`)
 **Date:** 2026-05-27
 **Guardrail compliance:** Single review file produced; no other repo files modified.
+**Previous review:** superseded — all four original findings resolved by the produce-don't-write revision (see §3 table).
 
 ---
 
 ## 1. Verdict
 
-**proceed-with-changes** — Plan 1 is architecturally faithful to the spec and blueprint, with sound TDD sequencing. Two medium-severity design risks need resolution before execution: the wiki-write/manifest-commit ordering gap (F-2) and the collapsed error model that loses D-91-13 case-(a)/(b) distinguishability (F-3). Neither blocks the plan's structure — both are addressable with targeted annotations and a minor type extension.
+**proceed-with-changes** — The produce-don't-write revision cleanly resolved all four findings from the first review. Two remaining issues need attention: an uncaught `ReconcileError` that breaks the uniform error-model contract (F-1, medium), and a hardcoded `T2Mode.STRUCTURED` default that diverges from the legacy env-var path (F-2, low). Neither blocks the plan's structure — both are one-line fixes.
 
 ---
 
 ## 2. Findings
 
-### F-1: `canonicalize.run` on one-element `cr` — alias-singleton rename is a silent behavioral change
+### F-1: `reconcile.reconcile` can raise `ReconcileError` uncaught — breaks produce-don't-write error contract
 
 **Dimension:** B (architectural risk)
 **Severity:** medium
 
-**Issue:** `canonicalize._merge_page_intents` iterates all page intents across all `compiled_sources` and renames slugs that resolve through the alias ledger. On a batch `cr`, this deduplicates across sources. On a one-element `cr`, there's only one source — so cross-source merging is vacuous. But the **alias-singleton rename** (lines ~310-325 of `canonicalize.py`) still fires: if the LLM emits `page.slug = "aapl"` and the ledger maps `aapl → apple-inc`, the page is renamed in-place to `apple-inc`.
+**Issue:** Task 3 Step 3's `compile_source` calls `reconcile.reconcile(cr, vres.measure_findings)` without a try/except. `reconcile.reconcile` (`reconcile.py:~185-195`) raises `ReconcileError` in two cases: (a) an unknown finding type not registered in `_RULES`, and (b) a finding referencing an unknown `source_id`. If either fires, the exception propagates uncaught out of `compile_source` — the orchestrator sees a raw Python traceback, not a `CompileSourceResult(cr=None, failure_stage=..., error=...)`.
 
-This is *correct* behavior (it's what canonicalize is supposed to do). But it's a **new code path being exercised** for the first time on a one-element `cr` — the monolith's `run_compile` always produces a multi-source `cr`. The plan's happy-path test (`test_compile_source_happy_path`) asserts `"canonical_meta" in result.cr` but does **not** assert that alias-singleton rename actually fires or that the renamed page lands correctly.
+This violates the plan's own error-model contract stated in the architecture section: "All pre-commit failures return `CompileSourceResult(cr=None, failure_stage, exception_type, error)` so the orchestrator routes case-(a) uniformly." The compile, validate, canonicalize, and context-snapshot stages all correctly catch and wrap their exceptions; reconcile is the sole gap.
 
-**Evidence:** `canonicalize.py:310-325` — the `if _normalize_slug(page["slug"]) != canonical` branch fires for any page whose slug has an alias mapping, regardless of `compiled_sources` length. The test at Plan Task 3 Step 1 uses `concept_slugs: []` and a single summary page — no alias-mapped concept/article pages to exercise this path.
+**Evidence:** `reconcile.py:185-195` — both `raise ReconcileError(...)` sites. Task 3 Step 3 `compile_source` implementation — the reconcile call has no try/except, while compile (err check), validate (`vres.gate_errors` check), canonicalize (try/except `CircularAliasError`), and context (try/except `Exception`) all do wrap their calls.
 
-**Recommendation:** Add a dedicated test in Task 5 (error paths) or a new Task 3b that exercises alias-singleton rename on a one-element `cr`. Build a ledger with at least one alias entry, have the model emit a page whose slug matches the alias surface, and assert (a) the page's slug was renamed to the canonical, and (b) `canonical_meta.aliases_emitted` contains the mapping. This locks the most novel behavioral change in the plan.
+**Practical likelihood:** Low in normal operation — `compile_source` always produces exactly one compiled source with a matching `source_id`, and all finding types emitted by `validate_compile_result` have registered rules. But the contract says *all* pre-commit failures are wrapped; a defensive gap here could surface as a hard-to-debug crash during development.
 
----
-
-### F-2: Wiki writes happen inside `compile_source` but D-91-13 case-(a) says "manifest untouched"
-
-**Dimension:** B (architectural risk)
-**Severity:** medium
-
-**Issue:** `patch_applier.apply` (wired in Task 4) writes wiki pages to disk **inside** `compile_source`. If wiki writes succeed but the orchestrator's subsequent manifest commit fails (exit 5, D-91-13 case-(a)), the result is: wiki pages exist on disk for a source whose manifest entry was never updated. The source will be re-detected as CHANGED on the next scan (manifest hash ≠ on-disk hash), causing a re-compile that overwrites the wiki pages — so the system **self-heals** on re-run.
-
-However, this creates a subtle inconsistency within a single run: the "manifest untouched" invariant from D-91-13 case-(a) doesn't fully hold because wiki writes are a **committed side effect** that happens before the manifest commit. This is the same trade-off the monolith already makes (wiki writes in Stage 8, manifest commit in Stage 9), so it's not a *new* risk — but the plan should surface it explicitly rather than letting the reader discover it.
-
-**Evidence:** D-91-13 phase-(a) definition: "pre-commit failures... failing source NOT committed, manifest untouched." Plan Task 4 wires `patch_applier.apply` before the function returns, so wiki pages land before the orchestrator's manifest commit. The monolith has the same ordering (`kdb_compile.py` Stage 8 → Stage 9), so this is inherited behavior, not a regression.
-
-**Recommendation:** Add a brief annotation in the plan's architecture section (or in `compile_source`'s docstring) acknowledging: "Wiki writes happen inside compile_source but the manifest commit happens in the orchestrator. A manifest-commit failure after successful wiki writes leaves orphan wiki pages that self-heal on next run (same trade-off as the monolith's Stage 8→9 ordering)." This prevents the orchestrator-plan author from being surprised when composing Plan 6 on top.
+**Recommendation:** Add a try/except around the reconcile call:
+```python
+try:
+    reconcile.reconcile(cr, vres.measure_findings)
+except reconcile.ReconcileError as e:
+    return CompileSourceResult(
+        cr=None, failure_stage="reconcile",
+        exception_type=type(e).__name__, error=str(e))
+```
+Three lines; closes the only gap in the uniform error model.
 
 ---
 
-### F-3: Collapsed error model loses orchestrator-actionable signal
-
-**Dimension:** B (architectural risk)
-**Severity:** medium
-
-**Issue:** All pre-commit failures collapse into `CompileSourceResult(cr=None, error=<string>)`. The orchestrator can only distinguish success (`ok=True`) from failure (`ok=False`). But D-91-8 fail-fast exit codes distinguish enrich failure (exit 3) from compile failure (exit 4), and the orchestrator's run summary needs to report **what stage** failed (model error vs. validation gate vs. canonicalize vs. apply) for operator debuggability.
-
-With the current `error: str | None` field, the orchestrator must parse the error string to determine the failure stage — fragile and lossy. A `failure_stage` enum field (e.g., `"compile" | "validate" | "canonicalize" | "apply"`) would give the orchestrator structured signal without string parsing.
-
-**Evidence:** D-91-10 run summary includes `sources_failed` count and the pseudocode in the blueprint (§4.2) distinguishes `CompilerError` from `GraphSyncError`. The plan's `CompileSourceResult` only has `error: str | None` — no structured stage field. Plan Task 3 Step 3b wraps `CircularAliasError` as `"canonicalize failed: {e}"` and Task 4 wraps `PagePatchError` as `"apply-pages failed: {e}"` — the stage is encoded in the string prefix, not in a structured field.
-
-**Recommendation:** Add a `failure_stage: str | None` field to `CompileSourceResult` alongside `error`. Set it to `"compile"`, `"validate"`, `"canonicalize"`, or `"apply"` in each error-return path. This costs one field and four string literals but gives the orchestrator structured routing without regex parsing. Low-effort, high-signal refinement.
-
----
-
-### F-4: `source_hash` / `source_mtime` passthrough is a minor contract leak
+### F-2: `mode: T2Mode = T2Mode.STRUCTURED` default bypasses the `KDB_T2_MODE` env var from Task #90
 
 **Dimension:** B (architectural risk)
 **Severity:** low
 
-**Issue:** `compile_source` accepts `source_hash: str` and `source_mtime: float` solely to construct the `single_scan` dict for `patch_applier.apply`. The function never uses these values for any logic of its own — it's pure passthrough. This makes `compile_source`'s parameter list 2 fields longer than its own logic requires, coupling its signature to a downstream consumer's needs.
+**Issue:** Task 3's `compile_source` signature hardcodes `mode: T2Mode = T2Mode.STRUCTURED` as the default. The legacy path (`run_compile` → `planner.build_jobs` → `build_context_snapshot`) reads `T2Mode` from `os.environ.get("KDB_T2_MODE", "structured")` (`graph_context_loader.py:193`). With the plan's default, `compile_source` always runs STRUCTURED mode regardless of the env var — unless the orchestrator explicitly passes `mode=...`.
 
-**Evidence:** Plan Task 4 Step 3: `single_scan = {"files": [{"path": source_id, ..., "current_hash": source_hash, "current_mtime": source_mtime}]}`. The only consumer of these values is `patch_applier._source_mtime_from_scan` and `_fm_for_page` (which stamps `raw_hash` / `raw_mtime` into page frontmatter).
+This is *architecturally defensible* (the orchestrator should own the mode decision), but it creates a silent behavioral divergence: `kdb-old-compile` (frozen monolith) respects `KDB_T2_MODE`; `compile_source` does not. A developer switching between the two paths during NW-9 benchmark runs could see different T2 behavior without realizing why.
 
-**Recommendation:** Acceptable for v1 — the provenance must reach `patch_applier` somehow, and threading it through `compile_source` is the simplest path. For v1.1, consider a `SourceProvenance` dataclass (`source_id`, `source_hash`, `source_mtime`) that bundles the three orchestrator-owned fields into one parameter, reducing `compile_source`'s arity by 2. Not blocking.
+**Evidence:** `graph_context_loader.py:193` — `mode = T2Mode(os.environ.get("KDB_T2_MODE", "structured").upper())`. Task 3 Step 3 — `mode: T2Mode = T2Mode.STRUCTURED` in `compile_source` signature.
+
+**Recommendation:** Option (b) preferred — add a one-line docstring note: "Default: STRUCTURED. The orchestrator should pass the resolved mode explicitly; this default exists for unit-test convenience and intentionally does not read `KDB_T2_MODE`." Option (a) — change the default to read the env var (matching legacy) — is also fine but adds an implicit dependency that the produce-don't-write design deliberately avoids.
 
 ---
 
 ## 3. What was checked and found sound
 
-- **Stage redistribution (§3→6+8 in core, 1-2/7/9/10 reserved):** Matches the spec's table exactly. No stages leaked into the compiler core that belong to the orchestrator.
+### Previous findings — all resolved by produce-don't-write
 
-- **In-memory `CompileJob` extension:** `source_text: str | None` and `frontmatter: SourceFrontmatter | None` with `None` defaults preserve full backward compatibility with the legacy planner path. `source_text_for`'s preference logic is clean — short-circuits on `source_text is not None`.
+| Original finding | Resolution in revised plan |
+|---|---|
+| F-1: Alias-singleton rename untested on one-element `cr` | **Task 4** — dedicated test `test_compile_source_alias_singleton_rename` with a real `aliases.json` ledger; asserts both slug rename and `aliases_emitted` metadata |
+| F-2: Wiki writes inside `compile_source` vs. "manifest untouched" | **Stage 8 removed** — `compile_source` writes nothing; apply-pages deferred to orchestrator (Plan 6) at the commit boundary |
+| F-3: Collapsed error model loses stage signal | **`failure_stage` added** to `CompileSourceResult` with values `"context"`, `"compile"`, `"validate"`, `"canonicalize"` |
+| F-4: `source_hash`/`source_mtime` provenance passthrough | **Both params removed** — orchestrator owns provenance at the commit boundary; `compile_source` signature is clean |
 
-- **`source_name` derivation fix (Task 3 Step 3a):** Changing from `Path(job.abs_path).name` to `Path(job.source_id).name` is correct. Verified that for normal sources, `Path(abs_path).name == Path(source_id).name` (both yield the filename). The in-memory path (`abs_path=""`) would have yielded `""` — a hard error in `semantic_check`. Good catch in the plan.
+### Spec fidelity (Dimension A)
 
-- **Monolith freeze as `kdb-old-compile`:** Minimal and correct. Both `kdb-old-compile` and `kdb-compile` point to the same module temporarily. No module logic changes.
+- **Stage redistribution:** stages 3→6 in `compile_source`; stages 1-2 / 7 / 8 / 9 / 10 reserved for orchestrator. Matches the spec's revised table exactly. Stage 8 (apply-pages) correctly deferred to the orchestrator's commit boundary.
+- **In-memory contract:** `compile_source` takes `(source_id, body, frontmatter, conn)` — zero disk reads when `source_text` is populated. `source_text_for` short-circuits on `job.source_text is not None`. `source_name` derives from `source_id` (fixes the `abs_path=""` edge case that would have yielded an empty `source_name` and triggered `semantic_check` failure). All correct.
+- **Optional pre-built snapshot:** `context_snapshot` kwarg allows the orchestrator to own all graph reads; `conn=None` works when snapshot is pre-built. Enables graph-free unit testing. Correct seam per the spec.
+- **Make-before-break:** `kdb-old-compile` frozen alongside `kdb-compile` (both point to same module initially). No monolith code changes. Clean.
+- **No scope creep:** Plan 1 stays within the `kdb-compile` rebuild. No pipeline registry, scanner, orchestrator loop, or `detect_orphans` work pulled in.
+- **Cross-source page-merge trade-off:** Correctly identified and accepted per the spec (4/5 panel convergence). Graph stays authoritative via `SUPPORTS` edges; wiki body is last-writer-wins. `kdb-audit` (#93) handles out-of-band reconciliation.
 
-- **One-element `cr` pattern for validate/reconcile:** Verified that `validate_compile_result.validate` (schema + semantic), `reconcile.reconcile` (finding dispatch), and `canonicalize.run` (5-pass algorithm) all operate correctly on a `compiled_sources` list of length 1. No cross-source aggregate invariants or ordering assumptions are violated.
+### Architectural soundness (Dimension B)
 
-- **`single_scan` construction for `patch_applier`:** The synthetic scan dict correctly provides `current_hash` and `current_mtime` from the orchestrator-supplied provenance, satisfying `patch_applier._source_mtime_from_scan`'s requirement (raises `PagePatchError` on non-numeric mtime).
-
-- **Context-snapshot seam (internal build):** `compile_source` builds the snapshot from `conn` before compiling, matching the spec's ingress contract. Under the single-connection model (Kuzu read-after-write is immediate), each source gets a fresh snapshot. No stale-read risk.
-
-- **Make-before-break discipline:** `kdb-old-compile` is preserved. The monolith's module is untouched. Console scripts are additive only. Clean.
-
-- **TDD sequencing:** Each task follows fail-then-pass correctly. Tests are well-targeted — Task 1 (in-memory preference), Task 2 (result shape), Task 3 (happy path), Task 4 (wiki write), Task 5 (error paths). The gate-error test uses monkeypatch correctly.
-
-- **No scope creep:** Plan 1 does not touch the pipeline registry, scanner generalization, orchestrator loop, or `detect_orphans`. Stays within "the `kdb-compile` rebuild."
+- **One-element `cr` for validate/reconcile/canonicalize:** All three operate correctly on `compiled_sources` of length 1. No cross-source aggregate invariants are violated.
+- **`CompileSourceResult` shape:** `failure_stage` + `exception_type` + `error` give the orchestrator structured routing without string parsing. `ok` property correctly returns `True` only when `error is None`.
+- **TDD sequencing:** Each task follows fail-then-pass correctly. Test helpers (`_fm`, `_vault`, `_good_response`, `_fake_model`) are well-factored and reused. The `autouse` prompt-cache-clearing fixture matches the established `test_compiler.py` pattern.
+- **Import cycle safety:** `types.py` uses `TYPE_CHECKING` guard for `SourceFrontmatter` annotation; `compiler.py` already imports from `source_io` at module level (line 46: `from kdb_compiler.source_io import SourceFrontmatter, parse_source_file`). Cycle-free by construction.
+- **`source_io.py` integration:** `parse_source_file` and `SourceFrontmatter` live in the neutral module (Task #90 D-90-10), breaking the planner↔compiler circular import. The proposed `source_text_for` rewrite is a clean two-branch function that correctly prefers in-memory over disk.
+- **Error-path tests (Task 5):** Compile-error (RuntimeError from model) and gate-error (monkeypatched `ValidationFinding` with `severity="gate"`) tests correctly exercise the `failure_stage` routing. `ValidationFinding` construction includes the required `severity` positional arg.
+- **GraphDB test pattern:** `with GraphDB(tmp_path / "graph") as g:` correctly uses the context manager; `g.conn` returns the live `kuzu.Connection` via the `@property`. `build_context_snapshot` receives it correctly.
