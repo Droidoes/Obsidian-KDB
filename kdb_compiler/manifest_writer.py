@@ -23,7 +23,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from .run_context import SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION, RunContext
+from common.run_context import SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION, RunContext
 
 
 PREV_VERSIONS_CAP = 20

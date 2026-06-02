@@ -34,15 +34,15 @@ from kdb_compiler import (
     validate_compile_result,
     validate_source_response,
 )
-from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
-from kdb_compiler.call_model import ModelRequest
-from kdb_compiler.call_model_retry import call_model_with_retry
+from common.source_io import SourceFrontmatter, parse_source_file
+from common.call_model import ModelRequest
+from common.call_model_retry import call_model_with_retry
 from kdb_compiler.canonicalize import AliasLedger
 from kdb_compiler.context_loader import T2Mode, build_context_snapshot
 from kdb_compiler.repair import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import (
+from common.run_context import RunContext
+from common.types import (
     CompiledSource,
     CompileJob,
     CompileMeta,
@@ -126,7 +126,7 @@ def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
     + entity extractor use `frontmatter` (Task D.2). Propagates OSError /
     UnicodeDecodeError so compile_one's scaffold-and-fill can classify failure.
 
-    Migrated to kdb_compiler.source_io 2026-05-27 (Task #90 D-90-10) to break
+    Migrated to common.source_io 2026-05-27 (Task #90 D-90-10) to break
     a circular-import cycle (Bug B-1, formerly in the deleted planner.py).
 
     Task #91: prefers the orchestrator's in-memory (source_text, frontmatter)

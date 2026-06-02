@@ -28,7 +28,7 @@ from graphdb_kdb.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
 from kdb_compiler import manifest_writer, page_writer, pipeline_registry
-from kdb_compiler.atomic_io import atomic_write_json
+from common.atomic_io import atomic_write_json
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.compiler import compile_source
 from kdb_compiler.enrich.enrich import enrich_one
@@ -40,8 +40,8 @@ from kdb_compiler.orchestrator_events import (
     OrchestratorLogLevel,
     check_orchestrator_invariant,
 )
-from kdb_compiler.run_context import RunContext, now_iso
-from kdb_compiler.source_io import SourceFrontmatter
+from common.run_context import RunContext, now_iso
+from common.source_io import SourceFrontmatter
 
 MANIFEST_NAME = "manifest.json"
 

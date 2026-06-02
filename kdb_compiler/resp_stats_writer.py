@@ -29,10 +29,10 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from kdb_compiler.atomic_io import atomic_write_json
-from kdb_compiler.call_model import ModelResponse
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import ParsedSummary, RespStatsRecord
+from common.atomic_io import atomic_write_json
+from common.call_model import ModelResponse
+from common.run_context import RunContext
+from common.types import ParsedSummary, RespStatsRecord
 
 if TYPE_CHECKING:
     # BuiltPrompt is defined in prompt_builder (Step F). Runtime uses duck

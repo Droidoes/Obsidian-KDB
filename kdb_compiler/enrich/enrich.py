@@ -13,7 +13,7 @@ from kdb_compiler.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from kdb_compiler.enrich.overrides import apply_overrides, build_override_block
 from kdb_compiler.enrich.pass1_schema import validate_envelope, PASS1_SCHEMA_VERSION
 from kdb_compiler.enrich.frontmatter_embedder import embed_frontmatter
-from kdb_compiler.source_io import parse_existing_frontmatter
+from common.source_io import parse_existing_frontmatter
 from kdb_compiler.enrich.replay_archive import write_sidecar, SidecarPayload
 
 

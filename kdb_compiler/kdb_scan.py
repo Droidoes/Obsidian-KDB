@@ -31,9 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from kdb_compiler import atomic_io
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import (
+from common import atomic_io
+from common.run_context import RunContext
+from common.types import (
     ErrorEntry,
     FileType,
     ReconcileOp,

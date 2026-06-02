@@ -25,7 +25,7 @@ from typing import Optional
 
 from kdb_benchmark.paths import MODELS_JSON
 from kdb_benchmark.registry import ModelEntry, load_registry
-from kdb_compiler.call_model_retry import MAX_RETRIES
+from common.call_model_retry import MAX_RETRIES
 from kdb_compiler.validate_compile_result import (
     check_compiled_source,
     check_compiled_source_findings,

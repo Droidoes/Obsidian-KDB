@@ -253,7 +253,7 @@ def update_latest_pointer(
 def default_snapshot_dirname() -> str:
     """Filename-safe snapshot id: `YYYY-MM-DDTHH-MM-SS_<TZ>`.
 
-    Mirrors `kdb_compiler.run_context.run_id_from_timestamp` format
+    Mirrors `common.run_context.run_id_from_timestamp` format
     without importing it (D34: no kdb_compiler imports inside
     graphdb_kdb/).
     """

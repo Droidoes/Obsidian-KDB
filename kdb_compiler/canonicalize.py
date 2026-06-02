@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from kdb_compiler import atomic_io
+from common import atomic_io
 
 # Sentinel sha for the "missing file → empty ledger" path (D-R5-8). Stored
 # into canonical_meta.ledger_snapshot_sha256 so replay (D39 / D-R5-7) can

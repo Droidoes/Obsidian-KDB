@@ -30,10 +30,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from graphdb_kdb import queries
-from kdb_compiler.types import ContextPage, ContextSnapshot
+from common.types import ContextPage, ContextSnapshot
 
 if TYPE_CHECKING:
-    from kdb_compiler.source_io import SourceFrontmatter
+    from common.source_io import SourceFrontmatter
 
 _VALID_PAGE_TYPES = frozenset({"summary", "concept", "article"})
 

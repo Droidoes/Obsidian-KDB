@@ -27,7 +27,7 @@ from typing import Any, Literal
 import anthropic
 from openai import OpenAI
 
-from kdb_compiler.config import settings
+from common.config import settings
 
 Provider = Literal[
     "anthropic", "openai", "gemini", "xai", "alibaba", "deepseek", "ollama-local", "ollama-cloud"

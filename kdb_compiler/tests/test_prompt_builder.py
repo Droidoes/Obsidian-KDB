@@ -29,7 +29,7 @@ from kdb_compiler.prompt_builder import (
     load_response_schema_text,
     load_system_prompt,
 )
-from kdb_compiler.types import ContextPage, ContextSnapshot
+from common.types import ContextPage, ContextSnapshot
 from kdb_compiler.validate_source_response import semantic_check, validate
 
 SOURCE_NAME = "foo.md"

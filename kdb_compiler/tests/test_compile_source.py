@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler import compiler, prompt_builder
-from kdb_compiler.call_model import ModelResponse
+from common.call_model import ModelResponse
 from kdb_compiler.canonicalize import load_or_empty
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.source_io import SourceFrontmatter
-from kdb_compiler.types import CompileJob, CompileSourceResult, ContextSnapshot
+from common.run_context import RunContext
+from common.source_io import SourceFrontmatter
+from common.types import CompileJob, CompileSourceResult, ContextSnapshot
 from graphdb_kdb.graphdb import GraphDB
 
 

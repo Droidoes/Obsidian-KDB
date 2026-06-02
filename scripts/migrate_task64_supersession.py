@@ -23,7 +23,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from kdb_compiler import atomic_io, paths
+from common import atomic_io, paths
 from kdb_compiler.manifest_update import (
     _supersede_omitted_pages,
     assert_manifest_invariants,

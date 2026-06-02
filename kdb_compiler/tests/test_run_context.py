@@ -4,8 +4,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from kdb_compiler import run_context
-from kdb_compiler.run_context import RunContext, SCHEMA_VERSION
+from common import run_context
+from common.run_context import RunContext, SCHEMA_VERSION
 
 
 # Local ISO: '2026-04-19T22:34:09-04:00' (offset) or '...+00:00' (UTC-tz machine).

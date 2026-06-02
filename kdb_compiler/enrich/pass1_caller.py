@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from kdb_compiler.call_model import ModelRequest, call_model, ModelResponse
+from common.call_model import ModelRequest, call_model, ModelResponse
 from kdb_compiler.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
 from kdb_compiler.enrich.pass1_schema import (
     normalize_llm_content, validate_llm_content, PASS1_SCHEMA_VERSION,

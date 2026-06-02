@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import atomic_io
+from common import atomic_io
 
 
 def test_atomic_write_bytes_creates_file(tmp_path: Path) -> None:

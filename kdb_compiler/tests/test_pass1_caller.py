@@ -11,7 +11,7 @@ from kdb_compiler.enrich import pass1_caller as caller_mod
 from kdb_compiler.enrich.pass1_caller import call_pass1, Pass1CallError
 from kdb_compiler.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from kdb_compiler.enrich.pass1_schema import PASS1_SCHEMA_VERSION
-from kdb_compiler.call_model import ModelResponse
+from common.call_model import ModelResponse
 
 
 def _content_json(**overrides) -> str:

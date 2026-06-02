@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from kdb_compiler.run_context import now_iso
+from common.run_context import now_iso
 from kdb_benchmark.scorer import RunScore
 
 

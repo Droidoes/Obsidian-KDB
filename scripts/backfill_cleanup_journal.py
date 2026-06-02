@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from kdb_compiler import atomic_io
+from common import atomic_io
 from kdb_compiler.kdb_clean import build_cleanup_artifacts
 
 

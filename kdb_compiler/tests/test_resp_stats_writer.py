@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler import resp_stats_writer
-from kdb_compiler.call_model import ModelResponse
-from kdb_compiler.run_context import RunContext
+from common.call_model import ModelResponse
+from common.run_context import RunContext
 
 
 @dataclass

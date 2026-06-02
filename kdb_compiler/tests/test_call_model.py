@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kdb_compiler import call_model as cm
-from kdb_compiler.call_model import ModelConfigError, ModelRequest, call_model
-from kdb_compiler.config import Settings
+from common import call_model as cm
+from common.call_model import ModelConfigError, ModelRequest, call_model
+from common.config import Settings
 
 
 # ---------- helpers ----------
@@ -65,7 +65,7 @@ def test_openai_dispatch(monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
     _use_settings(monkeypatch, openai_api_key="sk-oai-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         resp = call_model(ModelRequest(
             provider="openai", model="gpt-4.1-mini",
             prompt="hi", system="be nice",
@@ -90,7 +90,7 @@ def test_gemini_dispatch_uses_compat_endpoint(
     _use_settings(monkeypatch, gemini_api_key="AIza-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         call_model(ModelRequest(provider="gemini", model="gemini-2.5-flash", prompt="hi"))
     assert "generativelanguage.googleapis.com" in ctor.call_args.kwargs["base_url"]
     # Gemini endpoint needs the 'models/' prefix
@@ -103,7 +103,7 @@ def test_gemini_does_not_double_prefix_models(
     _use_settings(monkeypatch, gemini_api_key="AIza-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(provider="gemini", model="models/gemini-2.5-flash", prompt="hi"))
     assert client.chat.completions.create.call_args.kwargs["model"] == "models/gemini-2.5-flash"
 
@@ -114,7 +114,7 @@ def test_ollama_local_dispatch_uses_local_url(
     _use_settings(monkeypatch, ollama_base_url="http://localhost:11434/v1")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         call_model(ModelRequest(provider="ollama-local", model="qwen3.5-max", prompt="hi"))
     assert ctor.call_args.kwargs["base_url"] == "http://localhost:11434/v1"
     assert ctor.call_args.kwargs["api_key"] == "ollama"
@@ -126,7 +126,7 @@ def test_ollama_cloud_dispatch_uses_ollama_com_endpoint(
     _use_settings(monkeypatch, ollama_api_key="ollama-cloud-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         call_model(ModelRequest(provider="ollama-cloud", model="deepseek-v4-flash:cloud", prompt="hi"))
     assert ctor.call_args.kwargs["base_url"] == "https://ollama.com/v1"
     assert ctor.call_args.kwargs["api_key"] == "ollama-cloud-test"
@@ -140,7 +140,7 @@ def test_xai_dispatch_uses_xai_endpoint(
     _use_settings(monkeypatch, xai_api_key="xai-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         call_model(ModelRequest(provider="xai", model="grok-4-1-fast-reasoning", prompt="hi"))
     assert ctor.call_args.kwargs["base_url"] == "https://api.x.ai/v1"
     assert ctor.call_args.kwargs["api_key"] == "xai-test"
@@ -154,7 +154,7 @@ def test_alibaba_dispatch_uses_dashscope_endpoint(
     _use_settings(monkeypatch, qwen_us_api_key="dash-test")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client) as ctor:
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
         call_model(ModelRequest(provider="alibaba", model="qwen3.5-flash", prompt="hi"))
     assert ctor.call_args.kwargs["base_url"] == "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
     assert ctor.call_args.kwargs["api_key"] == "dash-test"
@@ -170,7 +170,7 @@ def test_json_mode_threads_through(
     _use_settings(monkeypatch, openai_api_key="sk")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(
             provider="openai", model="gpt-4.1-mini", prompt="hi", json_mode=True,
         ))
@@ -185,7 +185,7 @@ def test_use_completion_tokens_switches_to_max_completion_tokens_param(
     _use_settings(monkeypatch, openai_api_key="sk")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(
             provider="openai", model="gpt-5.4-mini", prompt="hi",
             max_tokens=128000, use_completion_tokens=True,
@@ -202,7 +202,7 @@ def test_default_uses_max_tokens_param(
     _use_settings(monkeypatch, openai_api_key="sk")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(
             provider="openai", model="gpt-4.1-mini", prompt="hi", max_tokens=4096,
         ))
@@ -218,7 +218,7 @@ def test_extra_body_forwarded_to_openai_compat(
     _use_settings(monkeypatch, openai_api_key="sk")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(
             provider="openai", model="gpt-4.1-mini", prompt="hi",
             extra_body={"reasoning_effort": "low"},
@@ -235,7 +235,7 @@ def test_extra_body_omitted_when_none(
     _use_settings(monkeypatch, openai_api_key="sk")
     client = MagicMock()
     client.chat.completions.create.return_value = openai_resp
-    with patch("kdb_compiler.call_model.OpenAI", return_value=client):
+    with patch("common.call_model.OpenAI", return_value=client):
         call_model(ModelRequest(
             provider="openai", model="gpt-4.1-mini", prompt="hi",
         ))

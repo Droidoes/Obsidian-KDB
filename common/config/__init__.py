@@ -5,11 +5,11 @@ singleton `settings`. No pydantic, no validation layer — plain os.getenv
 reads with sensible defaults. Tests override by rebinding the singleton.
 
 Usage:
-    from kdb_compiler.config import settings
+    from common.config import settings
     settings.anthropic_api_key
 
     # in tests:
-    monkeypatch.setattr("kdb_compiler.call_model.settings", Settings(...))
+    monkeypatch.setattr("common.call_model.settings", Settings(...))
 """
 from __future__ import annotations
 

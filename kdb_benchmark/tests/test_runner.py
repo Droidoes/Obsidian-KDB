@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from kdb_benchmark import runner
-from kdb_compiler.types import ContextSnapshot
+from common.types import ContextSnapshot
 
 
 @pytest.fixture

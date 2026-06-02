@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler import compiler, kdb_orchestrate, prompt_builder
-from kdb_compiler.call_model import ModelResponse
+from common.call_model import ModelResponse
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.enrich.pass1_caller import Pass1CallError, Pass1CallResult
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.source_io import SourceFrontmatter
-from kdb_compiler.types import CompileSourceResult
+from common.run_context import RunContext
+from common.source_io import SourceFrontmatter
+from common.types import CompileSourceResult
 from graphdb_kdb.graphdb import GraphDB
 
 

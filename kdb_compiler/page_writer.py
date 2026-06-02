@@ -24,9 +24,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import paths
-from .atomic_io import atomic_write_text
-from .run_context import RunContext
+from common import paths
+from common.atomic_io import atomic_write_text
+from common.run_context import RunContext
 
 
 class PagePatchError(Exception):

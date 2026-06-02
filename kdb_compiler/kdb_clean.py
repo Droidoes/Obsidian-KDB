@@ -52,8 +52,8 @@ from pathlib import Path
 
 import kuzu
 
-from kdb_compiler import atomic_io
-from kdb_compiler.paths import slug_to_relpath
+from common import atomic_io
+from common.paths import slug_to_relpath
 from graphdb_kdb import default_graph_path
 from graphdb_kdb.queries import orphan_entities, outgoing_links
 

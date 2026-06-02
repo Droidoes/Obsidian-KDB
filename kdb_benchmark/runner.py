@@ -33,16 +33,16 @@ from pathlib import Path
 from kdb_benchmark.paths import MODELS_JSON
 from kdb_benchmark.registry import ModelEntry, load_registry
 from kdb_benchmark.scorecard import fmt_duration
-from kdb_compiler import __version__ as _COMPILER_VERSION
+from common import __version__ as _COMPILER_VERSION
 from kdb_compiler.compiler import compile_one
 from kdb_compiler.resp_stats_writer import safe_source_id
-from kdb_compiler.run_context import (
+from common.run_context import (
     MANIFEST_SCHEMA_VERSION,
     RunContext,
     now_iso,
     run_id_from_timestamp,
 )
-from kdb_compiler.types import CompileJob, ContextSnapshot
+from common.types import CompileJob, ContextSnapshot
 
 # Task #49 / #52: progress-ticker tuning.
 #   _TTY_INTERVAL — TTY mode: how fast the in-place \r ticker updates.

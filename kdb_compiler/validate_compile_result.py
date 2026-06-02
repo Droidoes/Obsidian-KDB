@@ -39,8 +39,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from kdb_compiler import paths
-from kdb_compiler.paths import PathError
+from common import paths
+from common.paths import PathError
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compile_result.schema.json"
 

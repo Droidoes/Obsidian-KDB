@@ -246,7 +246,7 @@ def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monk
 def test_main_orphans_apply_writes_retraction_before_journal(tmp_path, monkeypatch):
     _stub_sync(monkeypatch)
     _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
-    from kdb_compiler import atomic_io
+    from common import atomic_io
     state = tmp_path / "KDB" / "state"
     state.mkdir(parents=True)
     pid = "KDB/wiki/concepts/gone.md"

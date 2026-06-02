@@ -18,7 +18,7 @@ from kdb_compiler.context_loader import (
     T2Mode,
     build_context_snapshot,
 )
-from kdb_compiler.source_io import SourceFrontmatter
+from common.source_io import SourceFrontmatter
 
 
 # ---------- Fixture: minimal graph with two entities ----------

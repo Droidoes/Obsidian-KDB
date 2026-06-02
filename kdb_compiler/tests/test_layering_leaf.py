@@ -8,7 +8,8 @@ import pathlib
 
 
 def _imports(rel: str) -> set[str]:
-    src = pathlib.Path(__file__).parents[1] / rel
+    # types.py and source_io.py now live in common/ (Phase-B leaf extract).
+    src = pathlib.Path(__file__).parents[2] / "common" / rel
     tree = ast.parse(src.read_text())
     out: set[str] = set()
     for n in ast.walk(tree):
@@ -18,7 +19,7 @@ def _imports(rel: str) -> set[str]:
 
 
 def test_types_does_not_import_source_io():
-    assert "kdb_compiler.source_io" not in _imports("types.py")
+    assert "common.source_io" not in _imports("types.py")
 
 
 def test_source_io_does_not_import_ingestion():

@@ -15,7 +15,7 @@ import time
 import anthropic
 import openai
 
-from kdb_compiler.call_model import ModelRequest, ModelResponse, call_model
+from common.call_model import ModelRequest, ModelResponse, call_model
 
 MAX_RETRIES = 2
 """Number of *retries* (additional attempts) per call. Default

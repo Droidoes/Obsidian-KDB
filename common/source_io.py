@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from kdb_compiler.types import SourceFrontmatter
+from common.types import SourceFrontmatter
 
 __all__ = ["SourceFrontmatter", "parse_existing_frontmatter", "parse_source_file"]
 

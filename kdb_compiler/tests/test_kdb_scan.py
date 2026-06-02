@@ -306,7 +306,7 @@ def test_scan_end_to_end_mix(tmp_path: Path) -> None:
 
 
 def test_scan_entry_to_dict_always_includes_compiled_hash():
-    from kdb_compiler.types import ScanEntry
+    from common.types import ScanEntry
     # never-compiled source: compiled_hash is null, still present
     e = ScanEntry(
         path="KDB/raw/a.md", action="NEW",
@@ -448,7 +448,7 @@ def test_walk_scope_arbitrary_root_vault_relative(tmp_path):
 
 
 def test_scan_entry_pipeline_id_field():
-    from kdb_compiler.types import ScanEntry
+    from common.types import ScanEntry
     e = ScanEntry(path="P/a.md", action="NEW", current_hash="sha256:x",
                   current_mtime=1.0, size_bytes=3, file_type="markdown",
                   is_binary=False, compiled_hash=None, pipeline_id="test-pipe")
@@ -458,7 +458,7 @@ def test_scan_entry_pipeline_id_field():
 
 def test_seed_source_record_carries_pipeline_id():
     from kdb_compiler.manifest_writer import _seed_source_record
-    from kdb_compiler.run_context import RunContext
+    from common.run_context import RunContext
     ctx = RunContext.new(dry_run=True, vault_root=Path("/tmp/x"))
     rec = _seed_source_record(
         {"path": "P/a.md", "file_type": "markdown", "current_hash": "sha256:x",
@@ -468,7 +468,7 @@ def test_seed_source_record_carries_pipeline_id():
 
 
 def test_scan_scope_stamps_pipeline_id(tmp_path):
-    from kdb_compiler.run_context import RunContext
+    from common.run_context import RunContext
     vault = tmp_path
     root = vault / "P"; root.mkdir()
     (root / "a.md").write_text("x", encoding="utf-8")
@@ -482,7 +482,7 @@ def test_scan_scope_stamps_pipeline_id(tmp_path):
 
 def test_scan_scope_deleted_scoped_to_pipeline(tmp_path):
     """DELETED pass only flags THIS pipeline's absent sources (D-91 scanner)."""
-    from kdb_compiler.run_context import RunContext
+    from common.run_context import RunContext
     vault = tmp_path
     root_a = vault / "A"; root_a.mkdir()   # empty on disk → A/gone.md deleted
     prior = {
@@ -498,7 +498,7 @@ def test_scan_scope_deleted_scoped_to_pipeline(tmp_path):
 
 def test_scan_scope_no_cross_pipeline_move(tmp_path):
     """A same-hash file in another pipeline is NOT matched as MOVED (D-91-9)."""
-    from kdb_compiler.run_context import RunContext
+    from common.run_context import RunContext
     vault = tmp_path
     root_a = vault / "A"; root_a.mkdir()
     (root_a / "x.md").write_text("same", encoding="utf-8")

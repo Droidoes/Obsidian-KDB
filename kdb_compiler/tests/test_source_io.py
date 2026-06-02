@@ -1,4 +1,4 @@
-"""Unit tests for kdb_compiler.source_io.
+"""Unit tests for common.source_io.
 
 Covers the shared parse_source_file() helper consumed by the orchestrator
 and compiler (Task #90 D-90-10). Provides direct coverage previously implicit
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
+from common.source_io import SourceFrontmatter, parse_source_file
 
 
 def _write(path: Path, content: str) -> Path:

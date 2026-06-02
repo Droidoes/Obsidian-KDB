@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import paths
-from kdb_compiler.paths import PathError
+from common import paths
+from common.paths import PathError
 
 
 # ---------- slugify ----------

@@ -28,9 +28,9 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler import compiler, prompt_builder
-from kdb_compiler.call_model import ModelResponse
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import (
+from common.call_model import ModelResponse
+from common.run_context import RunContext
+from common.types import (
     CompileJob,
     ContextPage,
     ContextSnapshot,
@@ -1035,7 +1035,7 @@ def test_truncate_msg_above_cap_truncated() -> None:
 def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
     """Per D-89-17 + §10.5: source_text_for splits frontmatter from body."""
     from kdb_compiler.compiler import source_text_for
-    from kdb_compiler.source_io import SourceFrontmatter
+    from common.source_io import SourceFrontmatter
 
     src = tmp_path / "essay.md"
     src.write_text(
@@ -1099,7 +1099,7 @@ def test_source_text_for_handles_pristine_source(tmp_path: Path) -> None:
 
 def test_page_intent_has_no_domain_fields():
     """0.5.0: page-level domain/sub_domain removed (domain is Source-level only)."""
-    from kdb_compiler.types import PageIntent
+    from common.types import PageIntent
     fields = PageIntent.__dataclass_fields__
     assert "domain" not in fields
     assert "sub_domain" not in fields

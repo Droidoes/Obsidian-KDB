@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from kdb_compiler.run_context import RunContext, SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION
+from common.run_context import RunContext, SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION
 from kdb_compiler.manifest_writer import (
     build_source_state_update,
     apply_scan_reconciliation,

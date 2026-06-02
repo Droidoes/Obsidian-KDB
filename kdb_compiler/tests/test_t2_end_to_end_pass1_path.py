@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler.prompt_builder import build_prompt
-from kdb_compiler.types import ContextSnapshot
+from common.types import ContextSnapshot
 
 
 # ─── E.2 — Non-live: empty-context prompt plumbing (Deepseek F-5) ──────────

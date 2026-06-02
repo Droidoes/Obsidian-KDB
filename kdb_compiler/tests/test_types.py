@@ -1,7 +1,7 @@
 """Tests for typed dataclasses — shape fidelity + JSON-ready to_dict()."""
 from __future__ import annotations
 
-from kdb_compiler.types import (
+from common.types import (
     CompiledSource,
     CompileResult,
     ErrorEntry,

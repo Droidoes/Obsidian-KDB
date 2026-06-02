@@ -33,7 +33,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from kdb_compiler import atomic_io
+from common import atomic_io
 from kdb_compiler.manifest_update import assert_manifest_invariants
 
 _COMPILED_STATES = {"compiled", "recompiled", "metadata_only"}

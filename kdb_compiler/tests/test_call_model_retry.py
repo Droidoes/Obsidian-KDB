@@ -7,8 +7,8 @@ import anthropic
 import httpx
 import pytest
 
-from kdb_compiler.call_model import ModelRequest, ModelResponse
-from kdb_compiler.call_model_retry import (
+from common.call_model import ModelRequest, ModelResponse
+from common.call_model_retry import (
     MAX_RETRIES,
     _parse_retry_after,
     call_model_with_retry,
@@ -48,7 +48,7 @@ def _make_sdk_error(
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch: pytest.MonkeyPatch):
     """Make every test instant by default. Tests that care about sleep durations override."""
-    monkeypatch.setattr("kdb_compiler.call_model_retry.time.sleep", lambda _s: None)
+    monkeypatch.setattr("common.call_model_retry.time.sleep", lambda _s: None)
 
 
 def _req() -> ModelRequest:
@@ -59,7 +59,7 @@ def _req() -> ModelRequest:
 
 def test_first_call_succeeds_no_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     cm = MagicMock(return_value=_ok())
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", cm)
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
     resp = call_model_with_retry(_req())
     assert cm.call_count == 1
     assert resp.text == "ok"
@@ -82,14 +82,14 @@ def test_attempts_field_reflects_retry_count(monkeypatch: pytest.MonkeyPatch) ->
             raise v
         return v
 
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
+    monkeypatch.setattr("common.call_model_retry.call_model", fake_call)
     resp = call_model_with_retry(_req(), max_attempts=3)
     assert resp.attempts == 3, f"expected attempts=3 after 2 retries, got {resp.attempts}"
 
 
 def test_attempts_field_is_1_on_first_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """First-try success → attempts == 1."""
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", MagicMock(return_value=_ok()))
+    monkeypatch.setattr("common.call_model_retry.call_model", MagicMock(return_value=_ok()))
     resp = call_model_with_retry(_req())
     assert resp.attempts == 1
 
@@ -109,7 +109,7 @@ def test_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
             raise v
         return v
 
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
+    monkeypatch.setattr("common.call_model_retry.call_model", fake_call)
     resp = call_model_with_retry(_req(), max_attempts=3)
     assert resp.text == "ok"
     assert sequence == []
@@ -118,7 +118,7 @@ def test_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_exhaustion_reraises_last_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     exc = _make_sdk_error(anthropic.RateLimitError)
     monkeypatch.setattr(
-        "kdb_compiler.call_model_retry.call_model",
+        "common.call_model_retry.call_model",
         MagicMock(side_effect=exc),
     )
     with pytest.raises(anthropic.RateLimitError):
@@ -127,7 +127,7 @@ def test_exhaustion_reraises_last_exception(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_max_attempts_respected(monkeypatch: pytest.MonkeyPatch) -> None:
     cm = MagicMock(side_effect=_make_sdk_error(anthropic.RateLimitError))
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", cm)
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
     with pytest.raises(anthropic.RateLimitError):
         call_model_with_retry(_req(), max_attempts=4)
     assert cm.call_count == 4
@@ -138,7 +138,7 @@ def test_max_attempts_respected(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_auth_error_bubbles_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
     exc = _make_sdk_error(anthropic.AuthenticationError, status_code=401)
     cm = MagicMock(side_effect=exc)
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", cm)
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
     with pytest.raises(anthropic.AuthenticationError):
         call_model_with_retry(_req(), max_attempts=3)
     assert cm.call_count == 1
@@ -147,7 +147,7 @@ def test_auth_error_bubbles_immediately(monkeypatch: pytest.MonkeyPatch) -> None
 def test_bad_request_bubbles_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
     exc = _make_sdk_error(anthropic.BadRequestError, status_code=400)
     cm = MagicMock(side_effect=exc)
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", cm)
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
     with pytest.raises(anthropic.BadRequestError):
         call_model_with_retry(_req(), max_attempts=3)
     assert cm.call_count == 1
@@ -155,7 +155,7 @@ def test_bad_request_bubbles_immediately(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_valueerror_bubbles_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
     cm = MagicMock(side_effect=ValueError("bad input"))
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", cm)
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
     with pytest.raises(ValueError):
         call_model_with_retry(_req(), max_attempts=3)
     assert cm.call_count == 1
@@ -209,8 +209,8 @@ def test_retry_after_header_honored(monkeypatch: pytest.MonkeyPatch) -> None:
         return v
 
     sleeps: list[float] = []
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
-    monkeypatch.setattr("kdb_compiler.call_model_retry.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("common.call_model_retry.call_model", fake_call)
+    monkeypatch.setattr("common.call_model_retry.time.sleep", lambda s: sleeps.append(s))
 
     call_model_with_retry(_req(), max_attempts=3)
     assert len(sleeps) == 1
@@ -229,8 +229,8 @@ def test_retry_after_capped_by_max_backoff(monkeypatch: pytest.MonkeyPatch) -> N
         return v
 
     sleeps: list[float] = []
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
-    monkeypatch.setattr("kdb_compiler.call_model_retry.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("common.call_model_retry.call_model", fake_call)
+    monkeypatch.setattr("common.call_model_retry.time.sleep", lambda s: sleeps.append(s))
 
     call_model_with_retry(_req(), max_attempts=3, max_backoff=30.0)
     # Cap is 30s; jitter adds up to +20%
@@ -248,8 +248,8 @@ def test_exponential_backoff_without_retry_after(monkeypatch: pytest.MonkeyPatch
         return v
 
     sleeps: list[float] = []
-    monkeypatch.setattr("kdb_compiler.call_model_retry.call_model", fake_call)
-    monkeypatch.setattr("kdb_compiler.call_model_retry.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("common.call_model_retry.call_model", fake_call)
+    monkeypatch.setattr("common.call_model_retry.time.sleep", lambda s: sleeps.append(s))
 
     call_model_with_retry(_req(), max_attempts=3, initial_backoff=1.0)
     assert len(sleeps) == 2

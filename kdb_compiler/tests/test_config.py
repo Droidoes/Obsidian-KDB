@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from kdb_compiler.config import Settings
+from common.config import Settings
 
 
 def test_from_env_reads_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:

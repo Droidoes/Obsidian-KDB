@@ -16,7 +16,7 @@ from kdb_compiler.page_writer import (
     emit_frontmatter,
     render_page,
 )
-from kdb_compiler.run_context import SCHEMA_VERSION, RunContext
+from common.run_context import SCHEMA_VERSION, RunContext
 
 H1 = "sha256:" + "1" * 64
 H2 = "sha256:" + "2" * 64

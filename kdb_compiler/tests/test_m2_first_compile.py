@@ -24,8 +24,8 @@ from pathlib import Path
 import pytest
 
 from kdb_compiler import compiler, validate_source_response
-from kdb_compiler.run_context import RunContext
-from kdb_compiler.types import CompileJob, ContextSnapshot
+from common.run_context import RunContext
+from common.types import CompileJob, ContextSnapshot
 
 _LIVE_ENV = "KDB_RUN_LIVE_API"
 _CASE_DIR = Path(__file__).parent / "fixtures" / "response_replay" / "case01_minimal_summary"

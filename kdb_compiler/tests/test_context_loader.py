@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from graphdb_kdb.graphdb import GraphDB
-from kdb_compiler.types import ContextSnapshot
+from common.types import ContextSnapshot
 
 
 @pytest.fixture
@@ -606,7 +606,7 @@ class TestColdStartWideningInvariant:
 # Same-domain gate (D3 override): T2/T3 pull only from the source's Pass-1 domain
 # ---------------------------------------------------------------------------
 
-from kdb_compiler.source_io import SourceFrontmatter
+from common.source_io import SourceFrontmatter
 
 
 @pytest.fixture

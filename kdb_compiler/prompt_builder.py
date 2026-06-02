@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from kdb_compiler.types import ContextSnapshot
+from common.types import ContextSnapshot
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
 

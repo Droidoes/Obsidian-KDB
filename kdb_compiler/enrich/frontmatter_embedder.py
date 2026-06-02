@@ -14,8 +14,8 @@ from pathlib import Path
 
 import yaml
 
-from kdb_compiler.atomic_io import atomic_write_text
-from kdb_compiler.source_io import parse_existing_frontmatter
+from common.atomic_io import atomic_write_text
+from common.source_io import parse_existing_frontmatter
 
 # Pass-1 schema fields (the keys this module owns).
 _GRAPHDB_INPUT_FIELDS = (
