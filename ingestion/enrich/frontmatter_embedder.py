@@ -1,4 +1,4 @@
-# kdb_compiler/enrich/frontmatter_embedder.py
+# ingestion/enrich/frontmatter_embedder.py
 """Deterministic YAML frontmatter embedder (Task #89 §3 + D-89-13).
 
 The LLM returns structured JSON; this module serializes the JSON envelope

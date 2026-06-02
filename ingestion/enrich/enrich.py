@@ -1,4 +1,4 @@
-# kdb_compiler/enrich/enrich.py
+# ingestion/enrich/enrich.py
 """Pass-1 enrichment orchestrator. One source → enriched + audit + journal entry."""
 from __future__ import annotations
 

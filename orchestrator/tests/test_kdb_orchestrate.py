@@ -1,7 +1,7 @@
 """Task #91 Plan 5+6 — kdb_orchestrate conductor tests.
 
 All non-live: the Pass-2 model is faked via monkeypatch (test_compile_source
-pattern). Run: python -m pytest kdb_compiler/tests/test_kdb_orchestrate.py -m "not live"
+pattern). Run: python -m pytest orchestrator/tests/test_kdb_orchestrate.py -m "not live"
 """
 import json
 from pathlib import Path

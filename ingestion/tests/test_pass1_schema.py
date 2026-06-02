@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_schema.py
+# ingestion/tests/test_pass1_schema.py
 import json
 import pytest
 from ingestion.enrich.pass1_schema import (

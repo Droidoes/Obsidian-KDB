@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_prompt.py
+# ingestion/tests/test_pass1_prompt.py
 from ingestion.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
 
 

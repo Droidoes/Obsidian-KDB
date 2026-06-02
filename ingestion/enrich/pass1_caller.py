@@ -1,4 +1,4 @@
-# kdb_compiler/enrich/pass1_caller.py
+# ingestion/enrich/pass1_caller.py
 """Pass-1 LLM call: fire the prompt at the configured provider/model;
 parse the JSON envelope; raise on parse / schema failure.
 

@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_overrides.py
+# ingestion/tests/test_pass1_overrides.py
 from ingestion.enrich.overrides import apply_overrides, build_override_block
 
 

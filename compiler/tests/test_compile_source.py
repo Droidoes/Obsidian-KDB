@@ -1,7 +1,7 @@
 """Task #91 Plan 1 — compile_source (produce-don't-write Pass-2 core) tests.
 
 All non-live: the model is faked via monkeypatch (the test_compiler.py pattern).
-Run: python -m pytest kdb_compiler/tests/test_compile_source.py -v -m "not live"
+Run: python -m pytest compiler/tests/test_compile_source.py -v -m "not live"
 """
 import json
 from pathlib import Path
@@ -339,5 +339,5 @@ def test_compile_source_reconcile_error(tmp_path, monkeypatch):
             provider="p", model="m", max_tokens=4096,
         )
     assert not result.ok and result.cr is None
-    assert result.failure_stage == "reconcile"
+    assert result.failure_stage == "repair"
     assert result.exception_type == "RepairError"

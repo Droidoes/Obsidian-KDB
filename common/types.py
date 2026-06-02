@@ -1,7 +1,7 @@
 """types — typed dataclasses for pipeline payloads.
 
 Single source of truth for cross-module shapes. Mirrors the JSON schemas
-in kdb_compiler/schemas/ and docs/manifest.schema.md.
+in compiler/schemas/ and docs/manifest.schema.md.
 
 Serialization convention: every dataclass with a to_dict() produces a dict
 shaped for direct JSON serialization. Plain asdict() is used where the

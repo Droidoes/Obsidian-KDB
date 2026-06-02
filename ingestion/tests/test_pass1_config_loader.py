@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_config_loader.py
+# ingestion/tests/test_pass1_config_loader.py
 import pytest
 from ingestion.enrich.config_loader import (
     load_domains, load_source_types, load_scope_config,

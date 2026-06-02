@@ -541,7 +541,7 @@ def compile_source(
         repair.repair(cr, vres.measure_findings)
     except repair.RepairError as e:
         return CompileSourceResult(
-            cr=None, failure_stage="reconcile",
+            cr=None, failure_stage="repair",
             exception_type=type(e).__name__, error=str(e))
 
     # 5. canonicalize (stage 6) — mutates cr in place, emits canonical_meta

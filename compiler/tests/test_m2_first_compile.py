@@ -7,7 +7,7 @@ on disk. Costs a single API call per run — not suitable for CI.
 
 To run:
     ANTHROPIC_API_KEY=... KDB_RUN_LIVE_API=1 \\
-        .venv/bin/python3 -m pytest kdb_compiler/tests/test_m2_first_compile.py -s
+        .venv/bin/python3 -m pytest compiler/tests/test_m2_first_compile.py -s
 
 This is the "green-light" milestone per blueprint §14.6: the first
 evidence that the entire M2 stack (compiler → prompt_builder → call_model

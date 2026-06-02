@@ -5,7 +5,7 @@ flags against each fixture's expected flags.
 Complements the live resp-stats records written by `compile_one` (blueprint
 §7). Replay fixtures pin down regressions in the extractor, schema, and
 semantic layers without burning API budget: you edit a validator, run
-`kdb-replay --replay kdb_compiler/tests/fixtures/response_replay/`, and see every
+`kdb-replay --replay tests/fixtures/response_replay/`, and see every
 known-good and known-bad case re-scored.
 
 Each fixture directory contains:

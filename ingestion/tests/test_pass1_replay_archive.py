@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_replay_archive.py
+# ingestion/tests/test_pass1_replay_archive.py
 import json
 from pathlib import Path
 

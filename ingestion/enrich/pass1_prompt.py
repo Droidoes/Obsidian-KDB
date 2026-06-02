@@ -1,4 +1,4 @@
-# kdb_compiler/enrich/pass1_prompt.py
+# ingestion/enrich/pass1_prompt.py
 """Pass-1 prompt construction (Jinja2 template rendering)."""
 from __future__ import annotations
 

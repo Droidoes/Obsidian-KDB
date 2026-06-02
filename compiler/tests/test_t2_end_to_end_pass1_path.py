@@ -6,7 +6,7 @@ E.2 — Non-live: Pass-2 (compile prompt-builder) gracefully handles
     API credits.
 
 Run E.2 (in normal suite):
-    python3 -m pytest kdb_compiler/tests/test_t2_end_to_end_pass1_path.py::test_pass2_plumbing_on_empty_context_state_c
+    python3 -m pytest compiler/tests/test_t2_end_to_end_pass1_path.py::test_pass2_plumbing_on_empty_context_state_c
 """
 from __future__ import annotations
 

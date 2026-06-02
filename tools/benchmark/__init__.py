@@ -1,6 +1,6 @@
 """tools.benchmark — cross-model benchmarking engine for the KDB compiler.
 
-Separate from `kdb_compiler` by design: imports from common (types,
+Separate from the production packages by design: imports from common (types,
 call_model, llm_telemetry) and compiler (validators) but is never imported
 by them, so the production compile path stays benchmark-free.
 

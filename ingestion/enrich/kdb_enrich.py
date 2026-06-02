@@ -1,4 +1,4 @@
-# kdb_compiler/enrich/kdb_enrich.py
+# ingestion/enrich/kdb_enrich.py
 """kdb-enrich — fire Pass-1 enrichment on one or more sources.
 
 Usage:

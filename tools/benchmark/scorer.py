@@ -7,8 +7,8 @@ Implements docs/task19-kpi-design.md § Phase 3 — Detailed Spec § 5–§ 9:
   * Final-score formula with pro-rata redistribution
   * score_run() + score_runs() + borda_normalize()
 
-Boundary contract (Task #18 / 5825d0f): imports from kdb_compiler are read-only;
-this module is never imported by kdb_compiler.
+Boundary contract (Task #18 / 5825d0f): imports from the compiler package are read-only;
+this module is never imported by the production packages.
 
 Input contract (§2): consumes dict-shaped RespStatsRecord JSON files written
 by compile_one's `finally` block under <state_root>/llm_resp/<run_id>/. Capture-

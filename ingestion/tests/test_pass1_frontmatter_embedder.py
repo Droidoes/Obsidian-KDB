@@ -1,4 +1,4 @@
-# kdb_compiler/tests/test_pass1_frontmatter_embedder.py
+# ingestion/tests/test_pass1_frontmatter_embedder.py
 from pathlib import Path
 
 import pytest

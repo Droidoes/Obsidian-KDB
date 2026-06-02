@@ -1,4 +1,4 @@
-"""Shared source-file I/O for kdb_compiler.
+"""Shared source-file I/O for the KDB pipeline.
 
 Owns `parse_existing_frontmatter`, `SourceFrontmatter` (re-exported from
 types), and `parse_source_file()`. Used by the orchestrator and `compiler.py`
@@ -10,7 +10,7 @@ circular-import cycle (Task #90 D-90-10, Bug B-1). The neutral placement here
 lets the enrich and compile stages import UP from this common leaf.
 
 Layering note (phase-a refactor): `parse_existing_frontmatter` lived in
-`kdb_compiler/enrich/frontmatter_embedder.py` (a stage subpackage) but is
+`ingestion/enrich/frontmatter_embedder.py` (a stage subpackage) but is
 a primitive needed by this common leaf; moved here so the enrich stage
 imports UP from the leaf, not the other way around.
 """
