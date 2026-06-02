@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import compiler, validate_compiled_source_response
+from kdb_compiler import compiler, validate_source_response
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import CompileJob, ContextSnapshot
 
@@ -95,9 +95,9 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     payload["log_entries"] = logs
     payload["warnings"] = warnings
 
-    schema_errors = validate_compiled_source_response.validate(payload)
+    schema_errors = validate_source_response.validate(payload)
     assert schema_errors == [], schema_errors
-    semantic_errors = validate_compiled_source_response.semantic_check(
+    semantic_errors = validate_source_response.semantic_check(
         payload, source_id=source_id
     )
     assert semantic_errors == [], semantic_errors

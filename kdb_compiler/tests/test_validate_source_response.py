@@ -1,4 +1,4 @@
-"""Tests for validate_compiled_source_response — schema + semantic gate."""
+"""Tests for validate_source_response — schema + semantic gate."""
 from __future__ import annotations
 
 import copy
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import validate_compiled_source_response as V
+from kdb_compiler import validate_source_response as V
 
 
 SOURCE_NAME = "foo.md"

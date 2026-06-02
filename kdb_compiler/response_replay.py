@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from kdb_compiler import response_normalizer, validate_compiled_source_response
+from kdb_compiler import response_normalizer, validate_source_response
 
 
 @dataclass
@@ -116,7 +116,7 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
         error_detail = f"parse: {e.msg} at line {e.lineno}"
         return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
 
-    schema_errors = validate_compiled_source_response.validate(parsed)
+    schema_errors = validate_source_response.validate(parsed)
     schema_ok = schema_errors == []
     if not schema_ok:
         error_detail = f"schema: {schema_errors[0]}"
@@ -127,7 +127,7 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
         error_detail = "semantic: payload is not an object"
         return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
 
-    semantic_errors = validate_compiled_source_response.semantic_check(
+    semantic_errors = validate_source_response.semantic_check(
         parsed, source_name=fixture.source_name
     )
     semantic_ok = semantic_errors == []

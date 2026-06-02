@@ -30,7 +30,7 @@ from kdb_compiler.prompt_builder import (
     load_system_prompt,
 )
 from kdb_compiler.types import ContextPage, ContextSnapshot
-from kdb_compiler.validate_compiled_source_response import semantic_check, validate
+from kdb_compiler.validate_source_response import semantic_check, validate
 
 SOURCE_NAME = "foo.md"
 SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction

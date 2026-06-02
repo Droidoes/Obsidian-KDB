@@ -1,4 +1,4 @@
-"""validate_compiled_source_response — per-source model output gate (M2).
+"""validate_source_response — per-source model output gate (M2).
 
 Applied to ONE parsed response object from a single compile call, BEFORE
 it is enriched with runner-injected source-id-space fields and folded

@@ -32,7 +32,7 @@ from kdb_compiler import (
     repair,
     response_normalizer,
     validate_compile_result,
-    validate_compiled_source_response,
+    validate_source_response,
 )
 from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
 from kdb_compiler.call_model import ModelRequest
@@ -318,7 +318,7 @@ def compile_one(
                 return (None, [], [], state["error"])
 
             # --- schema ---
-            state["schema_errors"] = validate_compiled_source_response.validate(
+            state["schema_errors"] = validate_source_response.validate(
                 state["parsed_json"]
             )
             state["schema_ok"] = state["schema_errors"] == []
@@ -339,7 +339,7 @@ def compile_one(
 
         # --- semantic ---
         state["semantic_errors"] = (
-            validate_compiled_source_response.semantic_check(
+            validate_source_response.semantic_check(
                 state["parsed_json"], source_name=source_name
             )
         )

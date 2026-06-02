@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .validate_compile_result import ValidationFinding
-from .validate_compiled_source_response import body_wikilink_slugs
+from .validate_source_response import body_wikilink_slugs
 
 
 class RepairError(Exception):

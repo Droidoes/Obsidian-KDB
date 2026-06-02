@@ -30,7 +30,7 @@ from kdb_compiler.validate_compile_result import (
     check_compiled_source,
     check_compiled_source_findings,
 )
-from kdb_compiler.validate_compiled_source_response import body_wikilink_slugs
+from kdb_compiler.validate_source_response import body_wikilink_slugs
 
 
 # ---------------------------------------------------------------------------
