@@ -12,6 +12,12 @@ Coverage per blueprint §10:
     - prompt=None -> prompt_hash='sha256:none'.
     - missing state dir is created by atomic_write_json (mkdir parents=True).
     - build_parsed_summary reduces a full parsed_json faithfully.
+
+NOTE (Phase B split): Functions now live in:
+  - common.llm_telemetry: safe_source_id, build_resp_stats, write_resp_stats
+  - compiler.resp_summary: build_parsed_summary
+The kdb_compiler.resp_stats_writer module is removed; this test file has
+been updated to import from the new homes.
 """
 from __future__ import annotations
 
@@ -22,7 +28,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import resp_stats_writer
+import common.llm_telemetry as resp_stats_writer
+from compiler.resp_summary import build_parsed_summary
 from common.call_model import ModelResponse
 from common.run_context import RunContext
 
@@ -114,7 +121,7 @@ def test_safe_source_id_suffix_disambiguates_collision() -> None:
 # ---------- build_parsed_summary ----------
 
 def test_build_parsed_summary_reduces_full_parsed_json() -> None:
-    summary = resp_stats_writer.build_parsed_summary(_parsed_json())
+    summary = build_parsed_summary(_parsed_json())
     assert summary.summary_slug == "foo"
     assert summary.page_count == 2
     assert summary.page_types == {"summary": 1, "concept": 1}
@@ -126,7 +133,7 @@ def test_build_parsed_summary_reduces_full_parsed_json() -> None:
 
 
 def test_build_parsed_summary_tolerates_missing_fields() -> None:
-    summary = resp_stats_writer.build_parsed_summary({})
+    summary = build_parsed_summary({})
     assert summary.summary_slug is None
     assert summary.page_count == 0
     assert summary.page_types == {}
@@ -146,7 +153,7 @@ def test_build_parsed_summary_ignores_malformed_pages() -> None:
             {"slug": "b"},                   # page_type missing
         ]
     }
-    summary = resp_stats_writer.build_parsed_summary(payload)
+    summary = build_parsed_summary(payload)
     assert summary.slugs == ["a", "b"]
     assert summary.page_types == {"summary": 1, "concept": 1}
 
@@ -174,6 +181,7 @@ def test_metadata_only_record_when_capture_full_unset(
         schema_errors=[],
         semantic_ok=True,
         semantic_errors=[],
+        parsed_summary=build_parsed_summary(parsed),
     )
 
     # always-on
@@ -391,14 +399,16 @@ def test_write_resp_stats_creates_parent_dirs(tmp_path: Path) -> None:
 
 def test_write_resp_stats_content_is_json(tmp_path: Path) -> None:
     ctx = _ctx(tmp_path)
+    parsed = {"x": 1}
     record = resp_stats_writer.build_resp_stats(
         ctx=ctx, source_id="KDB/raw/foo.md",
         prompt=_FakePrompt(system="S", user="U"),
         raw_response_text='{"x": 1}',
         model_response=_model_response(),
-        extract_ok=True, parse_ok=True, parsed_json={"x": 1},
+        extract_ok=True, parse_ok=True, parsed_json=parsed,
         schema_ok=True, schema_errors=[],
         semantic_ok=True, semantic_errors=[],
+        parsed_summary=build_parsed_summary(parsed),
     )
     out = resp_stats_writer.write_resp_stats(record, tmp_path / "state")
     data = json.loads(out.read_text(encoding="utf-8"))

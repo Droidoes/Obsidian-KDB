@@ -1,10 +1,13 @@
-"""resp_stats_writer — build + atomically write one RespStatsRecord per compile call.
+"""llm_telemetry — build + atomically write one RespStatsRecord per LLM call.
+
+Stage-agnostic (common leaf). Contains only the generic telemetry machinery:
+hashing, safe filename derivation, record assembly, and atomic write.
 
 By default, writes to `<state_root>/llm_resp/<run_id>/<safe_source_id>.json`.
 Callers that own a run-specific artifact directory may pass `artifact_dir`
-to place the record there instead.
-Directory creation is handled by atomic_io.atomic_write_bytes (mkdir
-parents=True, exist_ok=True on the target's parent).
+to place the record there instead. Directory creation is handled by
+atomic_io.atomic_write_json (mkdir parents=True, exist_ok=True on the
+target's parent).
 
 These are call-telemetry records, NOT quality evaluations. They capture
 mechanical run stats (tokens, latency, attempts) and well-formedness
@@ -13,36 +16,27 @@ gates and still be a poor answer — judging response quality is a
 separate feature (see M2 E3 deferred).
 
 Always-on fields: metadata, hashes, four classification flags,
-schema_errors, semantic_errors, parsed_summary (when parse_ok=True).
-Env-gated by KDB_RESP_STATS_CAPTURE_FULL=='1': parsed_json,
-system_prompt, user_prompt, raw_response_text.
+schema_errors, semantic_errors, parsed_summary (caller-supplied, when
+parse_ok=True). Env-gated by KDB_RESP_STATS_CAPTURE_FULL=='1':
+parsed_json, system_prompt, user_prompt, raw_response_text.
 
 Hash sentinels distinguish missing data from empty data:
   prompt_hash   = 'sha256:none'  -> prompt could not be built
   response_hash = 'sha256:none'  -> no response captured (pre-response fail)
+
+Compiler-specific logic (build_parsed_summary) lives in compiler.resp_summary;
+callers must compute the ParsedSummary and pass it via `parsed_summary`.
 """
 from __future__ import annotations
 
 import hashlib
 import os
-from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from common.atomic_io import atomic_write_json
 from common.call_model import ModelResponse
 from common.run_context import RunContext
 from common.types import ParsedSummary, RespStatsRecord
-
-if TYPE_CHECKING:
-    # BuiltPrompt is defined in prompt_builder (Step F). Runtime uses duck
-    # typing — any object with .system and .user str attrs works.
-    from compiler.prompt_builder import BuiltPrompt
-    # FailureTelemetry is defined in compiler.py. Same duck-typed contract
-    # — any object with .stage, .exception_type, .message str attrs works.
-    # Imported under TYPE_CHECKING to avoid the compiler -> resp_stats ->
-    # compiler import cycle.
-    from compiler.compiler import FailureTelemetry
 
 _NONE_HASH = "sha256:none"
 _CAPTURE_FULL_ENV = "KDB_RESP_STATS_CAPTURE_FULL"
@@ -73,55 +67,13 @@ def safe_source_id(source_id: str) -> str:
     return f"{slashed}.{digest}"
 
 
-def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
-    """Reduce a parsed per-source response to a body-free shape digest.
-
-    Never raises — missing / wrong-typed fields produce None / 0 / [].
-    Intended to be lightweight aggregate-analytics bait: counts + slug
-    list + page_type histogram, no bodies.
-    """
-    pages = parsed_json.get("pages") or []
-    if not isinstance(pages, list):
-        pages = []
-
-    page_slugs: list[str] = []
-    page_types: Counter[str] = Counter()
-    outgoing_link_count = 0
-    for p in pages:
-        if not isinstance(p, dict):
-            continue
-        slug = p.get("slug")
-        if isinstance(slug, str):
-            page_slugs.append(slug)
-        pt = p.get("page_type")
-        if isinstance(pt, str):
-            page_types[pt] += 1
-        links = p.get("outgoing_links") or []
-        if isinstance(links, list):
-            outgoing_link_count += len(links)
-
-    log_entries = parsed_json.get("log_entries") or []
-    warnings = parsed_json.get("warnings") or []
-
-    return ParsedSummary(
-        summary_slug=parsed_json.get("summary_slug") if isinstance(parsed_json.get("summary_slug"), str) else None,
-        page_count=len(page_slugs),
-        page_types=dict(page_types),
-        slugs=page_slugs,
-        outgoing_link_count=outgoing_link_count,
-        log_entry_count=len(log_entries) if isinstance(log_entries, list) else 0,
-        warning_count=len(warnings) if isinstance(warnings, list) else 0,
-        source_id_echoed=parsed_json.get("source_id") if isinstance(parsed_json.get("source_id"), str) else None,
-    )
-
-
 def build_resp_stats(
     *,
     ctx: RunContext,
     source_id: str,
     provider: str = "",
     model: str = "",
-    prompt: BuiltPrompt | None,
+    prompt,
     raw_response_text: str,
     model_response: ModelResponse | None,
     extract_ok: bool,
@@ -131,8 +83,9 @@ def build_resp_stats(
     schema_errors: list[str],
     semantic_ok: bool,
     semantic_errors: list[str],
+    parsed_summary: ParsedSummary | None = None,
     source_words: int = 0,
-    failure: "FailureTelemetry | None" = None,
+    failure=None,
 ) -> RespStatsRecord:
     """Assemble one RespStatsRecord. Hashes always computed. See module
     docstring for the always-on vs env-gated field split.
@@ -150,6 +103,12 @@ def build_resp_stats(
     caller read (or 0 on source-read failure). Persisted on the record so
     the benchmark scorer can derive cost/latency-per-1k-source-words
     without re-reading the corpus.
+
+    `parsed_summary` is caller-supplied (computed via
+    compiler.resp_summary.build_parsed_summary when parse_ok=True).
+    `prompt` is duck-typed — any object with .system and .user str attrs.
+    `failure` is duck-typed — any object with .stage, .exception_type,
+    .message str attrs (or None).
     """
     capture_full = _capture_full()
 
@@ -180,11 +139,6 @@ def build_resp_stats(
     else:
         prompt_hash = _NONE_HASH
 
-    if parse_ok and isinstance(parsed_json, dict):
-        summary = build_parsed_summary(parsed_json)
-    else:
-        summary = None
-
     failed_after_response = bool(raw_response_text) and not (
         extract_ok and parse_ok and schema_ok and semantic_ok
     )
@@ -206,7 +160,7 @@ def build_resp_stats(
         semantic_ok=semantic_ok,
         schema_errors=list(schema_errors),
         semantic_errors=list(semantic_errors),
-        parsed_summary=summary,
+        parsed_summary=parsed_summary,
         parsed_json=(parsed_json if capture_full else None),
         system_prompt=(prompt.system if capture_full and prompt is not None else None),
         user_prompt=(prompt.user if capture_full and prompt is not None else None),

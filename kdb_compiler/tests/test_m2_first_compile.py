@@ -11,7 +11,7 @@ To run:
 
 This is the "green-light" milestone per blueprint §14.6: the first
 evidence that the entire M2 stack (compiler → prompt_builder → call_model
-→ response_normalizer → validator → resp_stats_writer) works end-to-end
+→ response_normalizer → validator → common.llm_telemetry) works end-to-end
 against a real provider.
 """
 from __future__ import annotations

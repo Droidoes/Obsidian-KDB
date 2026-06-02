@@ -48,7 +48,7 @@ kdb_benchmark = ["models.json"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "kdb_graph/tests", "tools/tests"]
+testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "kdb_graph/tests", "tools/tests", "compiler/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [

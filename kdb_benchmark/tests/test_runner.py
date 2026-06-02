@@ -264,7 +264,7 @@ def patched_compile_one_writing_records(monkeypatch):
     Returns a callable `set_record(stop_reason, in_tok, out_tok, latency_ms,
     source_words)` so individual tests can vary the record content per call.
     """
-    from kdb_compiler.resp_stats_writer import safe_source_id
+    from common.llm_telemetry import safe_source_id
 
     record_template = {
         "stop_reason": "stop",

@@ -40,7 +40,8 @@ from common.call_model_retry import call_model_with_retry
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
 from compiler.repair import reconcile_body_links, reconcile_slug_lists
-from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
+from common.llm_telemetry import build_resp_stats, write_resp_stats
+from compiler.resp_summary import build_parsed_summary
 from common.run_context import RunContext
 from common.types import (
     CompiledSource,
@@ -417,6 +418,11 @@ def compile_one(
         )
 
     finally:
+        parsed_summary = (
+            build_parsed_summary(state["parsed_json"])
+            if (state["parse_ok"] and isinstance(state["parsed_json"], dict))
+            else None
+        )
         record = build_resp_stats(
             ctx=ctx,
             source_id=source_id,
@@ -432,6 +438,7 @@ def compile_one(
             schema_errors=state["schema_errors"],
             semantic_ok=state["semantic_ok"],
             semantic_errors=state["semantic_errors"],
+            parsed_summary=parsed_summary,
             source_words=state["source_words"],
             failure=state["failure"],
         )

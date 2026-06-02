@@ -35,7 +35,7 @@ from kdb_benchmark.registry import ModelEntry, load_registry
 from kdb_benchmark.scorecard import fmt_duration
 from common import __version__ as _COMPILER_VERSION
 from compiler.compiler import compile_one
-from kdb_compiler.resp_stats_writer import safe_source_id
+from common.llm_telemetry import safe_source_id
 from common.run_context import (
     MANIFEST_SCHEMA_VERSION,
     RunContext,
