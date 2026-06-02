@@ -325,11 +325,11 @@ def test_compile_source_reconcile_error(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
-    from kdb_compiler import reconcile as _rec
+    from kdb_compiler import repair as _rec
 
     def boom(cr, findings):
-        raise _rec.ReconcileError("forced reconcile failure")
-    monkeypatch.setattr("kdb_compiler.compiler.reconcile.reconcile", boom)
+        raise _rec.RepairError("forced reconcile failure")
+    monkeypatch.setattr("kdb_compiler.compiler.repair.repair", boom)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -340,4 +340,4 @@ def test_compile_source_reconcile_error(tmp_path, monkeypatch):
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "reconcile"
-    assert result.exception_type == "ReconcileError"
+    assert result.exception_type == "RepairError"

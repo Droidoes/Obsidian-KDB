@@ -1,10 +1,10 @@
-"""Tests for reconcile — post-validate repair of reconcilable defects."""
+"""Tests for repair — post-validate repair of reconcilable defects."""
 from __future__ import annotations
 
 import pytest
 
-from kdb_compiler import reconcile, validate_compile_result as vcr
-from kdb_compiler.reconcile import ReconcileError
+from kdb_compiler import repair as reconcile, validate_compile_result as vcr
+from kdb_compiler.repair import RepairError as ReconcileError
 from kdb_compiler.validate_compile_result import ValidationFinding
 
 
@@ -45,7 +45,7 @@ def test_registry_contains_pairing_rules() -> None:
 
 def test_empty_findings_is_noop() -> None:
     cr = _cr(_src())
-    actions = reconcile.reconcile(cr, [])
+    actions = reconcile.repair(cr, [])
     assert actions == []
 
 
@@ -58,7 +58,7 @@ def test_unknown_finding_type_raises() -> None:
         source_id=SRC_ID,
     )
     with pytest.raises(ReconcileError, match="No reconcile rule"):
-        reconcile.reconcile(cr, [bogus])
+        reconcile.repair(cr, [bogus])
 
 
 def test_unknown_source_id_raises() -> None:
@@ -72,7 +72,7 @@ def test_unknown_source_id_raises() -> None:
         slug="mencius",
     )
     with pytest.raises(ReconcileError, match="unknown source_id"):
-        reconcile.reconcile(cr, [f])
+        reconcile.repair(cr, [f])
 
 
 # ---------- pairing_commission (remove slug) ----------
@@ -87,7 +87,7 @@ def test_fix_pairing_commission_concept() -> None:
         page_type="concept",
         slug="ghost",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == ["keep-me"]
     assert len(actions) == 1
     assert actions[0].finding_type == "pairing_commission"
@@ -104,7 +104,7 @@ def test_fix_pairing_commission_article() -> None:
         page_type="article",
         slug="ghost-article",
     )
-    reconcile.reconcile(cr, [f])
+    reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["article_slugs"] == []
 
 
@@ -125,7 +125,7 @@ def test_fix_pairing_omission_concept() -> None:
         page_type="concept",
         slug="mencius",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == ["mencius"]
     assert "added 'mencius'" in actions[0].detail
 
@@ -145,7 +145,7 @@ def test_fix_pairing_omission_article() -> None:
         page_type="article",
         slug="some-essay",
     )
-    reconcile.reconcile(cr, [f])
+    reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["article_slugs"] == ["some-essay"]
 
 
@@ -165,7 +165,7 @@ def test_fix_both_directions_in_one_pass() -> None:
         ValidationFinding(type="pairing_omission", severity="measure", detail="",
                           source_id=SRC_ID, page_type="concept", slug="real-concept"),
     ]
-    actions = reconcile.reconcile(cr, findings)
+    actions = reconcile.repair(cr, findings)
     assert cr["compiled_sources"][0]["concept_slugs"] == ["real-concept"]
     assert len(actions) == 2
 
@@ -183,7 +183,7 @@ def test_reconcile_is_idempotent_on_commission() -> None:
         page_type="concept",
         slug="ghost",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == []
     assert "already absent" in actions[0].detail
 
@@ -198,7 +198,7 @@ def test_reconcile_is_idempotent_on_omission() -> None:
         page_type="concept",
         slug="already-here",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == ["already-here"]
     assert "already present" in actions[0].detail
 
@@ -222,7 +222,7 @@ def test_validate_then_reconcile_then_validate_produces_no_pairing_findings() ->
     assert before.is_valid  # pairing mismatches are measure, don't gate
     assert len(before.measure_findings) == 3   # 1 commission + 2 omissions
 
-    reconcile.reconcile(cr, before.measure_findings)
+    reconcile.repair(cr, before.measure_findings)
 
     after = vcr.validate(cr)
     assert after.is_valid
@@ -242,7 +242,7 @@ def test_reconcile_does_not_touch_other_sources() -> None:
         page_type="concept",
         slug="ghost",
     )
-    reconcile.reconcile(cr, [f])
+    reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == []
     assert cr["compiled_sources"][1]["concept_slugs"] == ["untouched"]
 
@@ -266,7 +266,7 @@ def test_fix_pairing_type_mismatch_article_page() -> None:
         page_type="article",
         slug="ethnic-integration-in-china",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == ["real-concept"]
     assert len(actions) == 1
     assert actions[0].finding_type == "pairing_type_mismatch"
@@ -290,7 +290,7 @@ def test_fix_pairing_type_mismatch_concept_page() -> None:
         page_type="concept",
         slug="mencius",
     )
-    reconcile.reconcile(cr, [f])
+    reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["article_slugs"] == []
 
 
@@ -304,7 +304,7 @@ def test_fix_pairing_type_mismatch_idempotent() -> None:
         page_type="article",
         slug="already-gone",
     )
-    actions = reconcile.reconcile(cr, [f])
+    actions = reconcile.repair(cr, [f])
     assert cr["compiled_sources"][0]["concept_slugs"] == ["real-concept"]
     assert "already absent" in actions[0].detail
 

@@ -29,7 +29,7 @@ from typing import Any, Callable, Literal, NamedTuple
 from kdb_compiler import (
     canonicalize,
     prompt_builder,
-    reconcile,
+    repair,
     response_normalizer,
     validate_compile_result,
     validate_compiled_source_response,
@@ -39,7 +39,7 @@ from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
 from kdb_compiler.canonicalize import AliasLedger
 from kdb_compiler.graph_context_loader import T2Mode, build_context_snapshot
-from kdb_compiler.reconcile import reconcile_body_links, reconcile_slug_lists
+from kdb_compiler.repair import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import (
@@ -527,12 +527,12 @@ def compile_source(
             artifacts=({"resp_stats": str(captured["path"])}
                        if captured["path"] is not None else {}))
 
-    # 4. reconcile (stage 5) — mutates cr in place. Task #91 (m3): wrap so a
-    # ReconcileError returns case-(a) failure instead of escaping the
+    # 4. repair (stage 5) — mutates cr in place. Task #91 (m3): wrap so a
+    # RepairError returns case-(a) failure instead of escaping the
     # CompileSourceResult contract (orchestrator routes it uniformly).
     try:
-        reconcile.reconcile(cr, vres.measure_findings)
-    except reconcile.ReconcileError as e:
+        repair.repair(cr, vres.measure_findings)
+    except repair.RepairError as e:
         return CompileSourceResult(
             cr=None, failure_stage="reconcile",
             exception_type=type(e).__name__, error=str(e))
