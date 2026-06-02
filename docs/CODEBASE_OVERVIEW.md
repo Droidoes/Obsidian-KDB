@@ -212,7 +212,7 @@ The full spec lives in [`docs/archive/tasks/task19-kpi-design.md`](archive/tasks
 ### 7.1 Package layout & boundary
 
 ```
-kdb_benchmark/
+tools/benchmark/
 ├── runner.py     # invokes compile_one per source, isolated state_root
 ├── scorer.py     # per-measure functions, Borda, final_score
 ├── scorecard.py  # JSON + render_terminal artifact
