@@ -27,7 +27,7 @@ from graphdb_kdb.graphdb import GraphDB
 from graphdb_kdb.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
-from kdb_compiler import page_writer, pipeline_registry, source_state_update
+from kdb_compiler import manifest_writer, page_writer, pipeline_registry
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.compiler import compile_source
@@ -104,7 +104,7 @@ def _commit_source(
     single_scan = {"files": [entry], "to_compile": [source_id], "to_reconcile": []}
 
     # Pure (no I/O): compute the advanced manifest now; write it last (β boundary).
-    next_manifest, _ = source_state_update.build_source_state_update(
+    next_manifest, _ = manifest_writer.build_source_state_update(
         prior_manifest, single_scan, cr, ctx)
 
     # 1. apply wiki pages (stage 8). Throws ⇒ case-(a), graph untouched.
@@ -261,7 +261,7 @@ def _load_full_manifest(manifest_path: Path) -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
     if data:
-        data = source_state_update.migrate_manifest_to_source_state(data)
+        data = manifest_writer.migrate_manifest_to_source_state(data)
     return data
 
 
@@ -315,10 +315,10 @@ def _commit_noise_source(
     entry["current_hash"] = post_embed_hash
     entry["current_mtime"] = post_embed_mtime
     single_scan = {"files": [entry], "to_compile": [], "to_reconcile": []}
-    next_manifest, _ = source_state_update.build_source_state_update(
+    next_manifest, _ = manifest_writer.build_source_state_update(
         prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
     rec = next_manifest["sources"][source_id]
-    rec["run_state"] = source_state_update.RUN_STATE_NO_GRAPH_DB
+    rec["run_state"] = manifest_writer.RUN_STATE_NO_GRAPH_DB
     rec["last_compiled_hash"] = post_embed_hash
     rec["last_failure"] = None
     atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
@@ -368,7 +368,7 @@ def _commit_source_failure(
     if current_mtime is not None:
         entry["current_mtime"] = current_mtime
     single_scan = {"files": [entry], "to_compile": [], "to_reconcile": []}
-    next_manifest, _ = source_state_update.build_source_failure_update(
+    next_manifest, _ = manifest_writer.build_source_failure_update(
         prior_manifest,
         single_scan,
         ctx,
@@ -391,7 +391,7 @@ def _commit_reconcile_op(
     apply_compile_result(
         {"compiled_sources": []}, single_scan, ctx.run_id,
         conn=conn, detect_orphans=False, wire_links=False)
-    next_manifest, _ = source_state_update.build_source_state_update(
+    next_manifest, _ = manifest_writer.build_source_state_update(
         prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
     atomic_write_json(state_root / MANIFEST_NAME, next_manifest)
     return next_manifest
@@ -623,7 +623,7 @@ def run(
                                       "body was captured"})
                     full_manifest = _commit_source_failure(
                         source_id=source_id,
-                        run_state=source_state_update.RUN_STATE_ERROR_INGEST,
+                        run_state=manifest_writer.RUN_STATE_ERROR_INGEST,
                         failure=failure,
                         scan_entry=scan_entry.to_dict(),
                         prior_manifest=full_manifest,
@@ -719,7 +719,7 @@ def run(
                             artifacts=result.artifacts)
                     full_manifest = _commit_source_failure(
                         source_id=source_id,
-                        run_state=source_state_update.RUN_STATE_ERROR_COMPILE,
+                        run_state=manifest_writer.RUN_STATE_ERROR_COMPILE,
                         failure=_last_failure(
                             ctx=ctx,
                             stage=result.failure_stage or "pass2_compile",
@@ -783,7 +783,7 @@ def run(
                         break
                     full_manifest = _commit_source_failure(
                         source_id=source_id,
-                        run_state=source_state_update.RUN_STATE_ERROR_COMMIT,
+                        run_state=manifest_writer.RUN_STATE_ERROR_COMMIT,
                         failure=_last_failure(
                             ctx=ctx,
                             stage=commit.failure_stage or "commit",

@@ -1,4 +1,4 @@
-"""source_state_update — source-meta-only manifest writer (D50 Phase F).
+"""manifest_writer — source-meta-only manifest writer (D50 Phase F).
 
 The sole writer of manifest.json (schema v3.1). Owns the source lifecycle
 (sources{}, tombstones{}, runs{}, stats{}) with NO dependency on pages,

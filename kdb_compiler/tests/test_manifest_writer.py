@@ -1,4 +1,4 @@
-"""Tests for source_state_update — source-meta-only ledger (D50 Phase D).
+"""Tests for manifest_writer — source-meta-only ledger (D50 Phase D).
 
 Covers: scan reconciliation (NEW/CHANGED/UNCHANGED/MOVED/DELETED),
 run-state advancement, previous_versions cap, tombstone semantics,
@@ -10,7 +10,7 @@ import pytest
 from pathlib import Path
 
 from kdb_compiler.run_context import RunContext, SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION
-from kdb_compiler.source_state_update import (
+from kdb_compiler.manifest_writer import (
     build_source_state_update,
     apply_scan_reconciliation,
     apply_compile_sources,

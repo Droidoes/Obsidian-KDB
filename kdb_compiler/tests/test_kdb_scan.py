@@ -457,7 +457,7 @@ def test_scan_entry_pipeline_id_field():
 
 
 def test_seed_source_record_carries_pipeline_id():
-    from kdb_compiler.source_state_update import _seed_source_record
+    from kdb_compiler.manifest_writer import _seed_source_record
     from kdb_compiler.run_context import RunContext
     ctx = RunContext.new(dry_run=True, vault_root=Path("/tmp/x"))
     rec = _seed_source_record(
