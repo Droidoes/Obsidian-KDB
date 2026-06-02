@@ -6,13 +6,10 @@ Covers:
 - T2Mode.LAYERED: structured ∪ legacy; honors State C with legacy fallback
 - T2Mode.LEGACY: ignores frontmatter entirely
 - Default mode = STRUCTURED (D-90-1)
-- Planner env-var helpers (B.1)
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
@@ -20,10 +17,6 @@ from graphdb_kdb.graphdb import GraphDB
 from kdb_compiler.graph_context_loader import (
     T2Mode,
     build_context_snapshot,
-)
-from kdb_compiler.planner import (
-    _resolve_t2_mode_from_env,
-    _resolve_t2_resolver_from_env,
 )
 from kdb_compiler.source_io import SourceFrontmatter
 
@@ -194,46 +187,3 @@ def test_default_mode_is_structured(t2_graph):
     assert _t2_slugs(snap) == set()
 
 
-# ---------- Planner env-var helpers ----------
-
-
-def test_resolve_t2_mode_default():
-    with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("KDB_T2_MODE", None)
-        assert _resolve_t2_mode_from_env() == T2Mode.STRUCTURED
-
-
-def test_resolve_t2_mode_explicit_values():
-    for raw, expected in [
-        ("structured", T2Mode.STRUCTURED),
-        ("layered", T2Mode.LAYERED),
-        ("legacy", T2Mode.LEGACY),
-        ("STRUCTURED", T2Mode.STRUCTURED),  # case-insensitive
-        ("  layered  ", T2Mode.LAYERED),  # trim whitespace
-    ]:
-        with mock.patch.dict(os.environ, {"KDB_T2_MODE": raw}):
-            assert _resolve_t2_mode_from_env() == expected, f"failed for {raw!r}"
-
-
-def test_resolve_t2_mode_invalid_raises():
-    with mock.patch.dict(os.environ, {"KDB_T2_MODE": "garbage"}):
-        with pytest.raises(RuntimeError, match="KDB_T2_MODE.*invalid"):
-            _resolve_t2_mode_from_env()
-
-
-def test_resolve_t2_resolver_default():
-    with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("KDB_T2_RESOLVER", None)
-        assert _resolve_t2_resolver_from_env() == "simple"
-
-
-def test_resolve_t2_resolver_explicit_values():
-    for raw, expected in [("simple", "simple"), ("batch", "batch"), ("BATCH", "batch")]:
-        with mock.patch.dict(os.environ, {"KDB_T2_RESOLVER": raw}):
-            assert _resolve_t2_resolver_from_env() == expected
-
-
-def test_resolve_t2_resolver_invalid_raises():
-    with mock.patch.dict(os.environ, {"KDB_T2_RESOLVER": "fuzzy"}):
-        with pytest.raises(RuntimeError, match="KDB_T2_RESOLVER.*invalid"):
-            _resolve_t2_resolver_from_env()

@@ -1,7 +1,7 @@
 """compiler — per-source LLM compile orchestration.
 
 Pipeline position:
-    kdb_scan -> planner -> [compiler] -> validate -> patch_applier -> source_state_update
+    kdb_scan -> [compiler] -> validate -> patch_applier -> source_state_update
 
 Contract (per blueprint §5.7 / §9):
 
@@ -12,14 +12,8 @@ Contract (per blueprint §5.7 / §9):
     including the source-read and prompt-build failure paths. Every
     early return flows through the same finally.
 
-  * `run_compile` plans, runs `compile_one` per job, aggregates, and
-    optionally writes `compile_result.json`. An empty job list is a
-    successful no-op (single info log entry, `success=True`). Run-level
-    success is `len(errors) == 0` — not `len(compiled_sources) > 0`.
-
-  * Resp-stats records are written in every case, including `dry_run`
-    (no `compile_result.json` on disk), because the records are the
-    debug artifacts you run the pipeline *to* collect.
+  * Resp-stats records are written in every case because the records are
+    the debug artifacts you run the pipeline *to* collect.
 
 `call_model_with_retry` is imported at module level so tests can
 monkeypatch `kdb_compiler.compiler.call_model_with_retry` as a clean
@@ -27,17 +21,13 @@ seam without touching `call_model_retry` itself.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import logging
-import sys
-import time
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
 
 from kdb_compiler import (
     canonicalize,
-    planner,
     prompt_builder,
     reconcile,
     response_normalizer,
@@ -45,22 +35,19 @@ from kdb_compiler import (
     validate_compiled_source_response,
 )
 from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
-from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
 from kdb_compiler.canonicalize import AliasLedger
 from kdb_compiler.graph_context_loader import T2Mode, build_context_snapshot
 from kdb_compiler.reconcile import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
-from kdb_compiler.run_context import RunContext, now_iso
+from kdb_compiler.run_context import RunContext
 from kdb_compiler.types import (
     CompiledSource,
     CompileJob,
     CompileMeta,
-    CompileResult,
     CompileSourceResult,
     ContextSnapshot,
-    LogEntry,
     PageIntent,
     RespStatsRecord,
 )
@@ -148,81 +135,6 @@ def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
     if job.source_text is not None:
         return job.frontmatter, job.source_text
     return parse_source_file(Path(job.abs_path))
-
-
-def _build_source_stats_entry(
-    *,
-    i: int,
-    n: int,
-    job: CompileJob,
-    started_at: str,
-    finished_at: str,
-    duration_ms: int,
-    ok: bool,
-    error: str | None,
-    record: "RespStatsRecord | None",
-    record_path: "Path | None",
-    state_root: Path,
-) -> dict:
-    """Normalize one compile job into a source-level journal entry.
-
-    Pulls live-call fields from the resp_stats record when present.
-    Missing / sentinel fields (None, empty strings, 'sha256:none') are
-    preserved so the journal reader can distinguish 'no call made' from
-    'call made with these values'."""
-    entry: dict[str, Any] = {
-        "i": i,
-        "n": n,
-        "source_id": job.source_id,
-        "started_at": started_at,
-        "finished_at": finished_at,
-        "duration_ms": duration_ms,
-        "ok": ok,
-        "error": error,
-    }
-    if record is None:
-        entry.update({
-            "provider": None, "model": None, "attempts": None,
-            "input_tokens": None, "output_tokens": None, "latency_ms": None,
-            "prompt_hash": None, "response_hash": None,
-            "resp_stats_ref": None,
-            "gates": {
-                "extract_ok": None, "parse_ok": None,
-                "schema_ok": None, "semantic_ok": None,
-            },
-            "parsed_summary": None,
-        })
-        return entry
-
-    ref: str | None = None
-    if record_path is not None:
-        try:
-            ref = record_path.relative_to(Path(state_root).parent).as_posix()
-        except ValueError:
-            ref = record_path.as_posix()
-
-    entry.update({
-        "provider": record.provider or None,
-        "model": record.model or None,
-        "attempts": record.attempts or None,
-        "input_tokens": record.input_tokens,
-        "output_tokens": record.output_tokens,
-        "latency_ms": record.latency_ms,
-        "prompt_hash": record.prompt_hash,
-        "response_hash": record.response_hash,
-        "resp_stats_ref": ref,
-        "gates": {
-            "extract_ok": record.extract_ok,
-            "parse_ok": record.parse_ok,
-            "schema_ok": record.schema_ok,
-            "semantic_ok": record.semantic_ok,
-        },
-        "parsed_summary": (
-            record.parsed_summary.to_dict()
-            if record.parsed_summary is not None else None
-        ),
-    })
-    return entry
 
 
 def compile_one(
@@ -533,133 +445,6 @@ def compile_one(
                 pass
 
 
-def run_compile(
-    vault_root: Path,
-    *,
-    state_root: Path,
-    scan: dict,
-    ctx: RunContext,
-    provider: str = "anthropic",
-    model: str = "claude-haiku-4-5-20251001",
-    max_tokens: int = 32768,
-    use_completion_tokens: bool = False,
-    extra_body: dict | None = None,
-    write: bool = True,
-    progress: Callable[..., None] | None = None,
-    source_stats_sink: Callable[[dict], None] | None = None,
-) -> CompileResult:
-    """Plan -> per-source compile -> aggregate -> optionally write
-    compile_result.json. Resp-stats records are written regardless of
-    `write` — they're debug artifacts and suppressing them would hide
-    the very behaviour a dry run exists to inspect.
-
-    `source_stats_sink`, if provided, is called once per attempted job
-    with a normalized dict suitable for RunJournalBuilder.record_source().
-    The dict duplicates fields from the resp_stats artifact but with job
-    index/duration/error info fused in. Observational — exceptions are
-    swallowed."""
-    vault_root = Path(vault_root)
-    state_root = Path(state_root)
-
-    jobs = planner.plan(
-        vault_root, scan=scan, state_root=state_root
-    )
-
-    compiled_sources: list[CompiledSource] = []
-    log_dicts: list[dict] = []
-    all_warnings: list[str] = []
-    errors: list[str] = []
-
-    if not jobs:
-        log_dicts.append(
-            {
-                "level": "info",
-                "message": (
-                    "no eligible sources to compile "
-                    "(empty to_compile or all filtered)"
-                ),
-                "related_slugs": [],
-                "related_source_ids": [],
-            }
-        )
-
-    def _emit(event: str, **fields: Any) -> None:
-        if progress is None:
-            return
-        try:
-            progress(event, **fields)
-        except Exception:
-            # Progress callback is observational; a broken reporter must
-            # not take down the compile.
-            pass
-
-    n_jobs = len(jobs)
-    for i, job in enumerate(jobs, start=1):
-        _emit("job_start", i=i, n=n_jobs, source_id=job.source_id)
-        t0_wall = now_iso()
-        t0 = time.monotonic()
-
-        # Capture the resp_stats record from compile_one's finally block.
-        captured: dict[str, Any] = {"record": None, "path": None}
-        def _capture(record: RespStatsRecord, path: Path) -> None:
-            captured["record"] = record
-            captured["path"] = path
-
-        cs, logs, warns, err = compile_one(
-            job,
-            vault_root=vault_root,
-            state_root=state_root,
-            ctx=ctx,
-            provider=provider,
-            model=model,
-            max_tokens=max_tokens,
-            use_completion_tokens=use_completion_tokens,
-            extra_body=extra_body,
-            stats_record_sink=_capture,
-        )
-        latency_ms = int((time.monotonic() - t0) * 1000)
-        t1_wall = now_iso()
-        if cs is not None:
-            compiled_sources.append(cs)
-            log_dicts.extend(logs)
-            all_warnings.extend(warns)
-        if err is not None:
-            errors.append(err)
-        _emit(
-            "job_done",
-            i=i, n=n_jobs, source_id=job.source_id,
-            ok=(err is None), latency_ms=latency_ms, error=err,
-        )
-
-        if source_stats_sink is not None:
-            rec = captured["record"]
-            rec_path = captured["path"]
-            sink_payload = _build_source_stats_entry(
-                i=i, n=n_jobs, job=job,
-                started_at=t0_wall, finished_at=t1_wall,
-                duration_ms=latency_ms, ok=(err is None), error=err,
-                record=rec, record_path=rec_path, state_root=state_root,
-            )
-            try:
-                source_stats_sink(sink_payload)
-            except Exception:
-                pass
-
-    result = CompileResult(
-        run_id=ctx.run_id,
-        success=(len(errors) == 0),
-        compiled_sources=compiled_sources,
-        log_entries=[LogEntry(**le) for le in log_dicts],
-        errors=errors,
-        warnings=all_warnings,
-    )
-
-    if write:
-        write_compile_result(result, state_root)
-
-    return result
-
-
 def compile_source(
     source_id: str,
     body: str,
@@ -763,78 +548,3 @@ def compile_source(
     return CompileSourceResult(cr=cr)
 
 
-def write_compile_result(result: CompileResult, state_root: Path) -> None:
-    """Atomic write to <state_root>/compile_result.json."""
-    atomic_write_json(Path(state_root) / "compile_result.json", result.to_dict())
-
-
-# ---------- CLI ----------
-
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="kdb-compile-sources",
-        description=(
-            "Run the per-source LLM compile over last_scan.json's to_compile "
-            "list. Writes compile_result.json and one resp-stats record per job."
-        ),
-    )
-    p.add_argument("--vault-root", required=True, help="Absolute path to Obsidian vault root")
-    p.add_argument("--provider", default="anthropic")
-    p.add_argument("--model", default="claude-haiku-4-5-20251001")
-    p.add_argument("--max-tokens", type=int, default=32768)
-    p.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Skip writing compile_result.json (resp-stats records still written)",
-    )
-    return p
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
-    vault_root = Path(args.vault_root)
-    state_root = vault_root / "KDB" / "state"
-    scan_path = state_root / "last_scan.json"
-
-    if not scan_path.exists():
-        print(
-            f"kdb-compile-sources: missing last_scan.json at {scan_path}",
-            file=sys.stderr,
-        )
-        return 1
-
-    try:
-        scan = json.loads(scan_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        print(
-            f"kdb-compile-sources: last_scan.json unreadable: {exc}",
-            file=sys.stderr,
-        )
-        return 1
-
-    ctx = RunContext.new(dry_run=args.dry_run, vault_root=vault_root)
-    result = run_compile(
-        vault_root,
-        state_root=state_root,
-        scan=scan,
-        ctx=ctx,
-        provider=args.provider,
-        model=args.model,
-        max_tokens=args.max_tokens,
-        write=not args.dry_run,
-    )
-
-    print(
-        f"kdb-compile-sources: run_id={result.run_id} "
-        f"success={result.success} "
-        f"compiled={len(result.compiled_sources)} "
-        f"errors={len(result.errors)} "
-        f"warnings={len(result.warnings)}"
-    )
-    for err in result.errors:
-        print(f"  ERROR: {err}", file=sys.stderr)
-    return 0 if result.success else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

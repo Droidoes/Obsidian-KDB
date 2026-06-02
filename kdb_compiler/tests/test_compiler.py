@@ -11,12 +11,7 @@ Coverage per blueprint §10:
     - schema failure writes a resp-stats record with schema_ok=False and
       parsed_summary populated
     - semantic failure writes a resp-stats record with semantic_ok=False
-    - mixed run (1 pass + 2 fail) -> success=False, errors=2, compiled=1
-    - empty-jobs run -> success=True, compiled=[], log has 1 info entry
-    - all-fail run -> success=False
-    - dry_run=True skips compile_result.json write
     - resp-stats record written EXACTLY ONCE per compile_one call, in every branch
-    - run_compile returns a CompileResult that passes validate_compile_result
 
 All tests use `monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fake)`
 to stub the LLM. The resp-stats invariant check counts files on disk under
@@ -40,12 +35,8 @@ from kdb_compiler.types import (
     ContextPage,
     ContextSnapshot,
 )
-from kdb_compiler.validate_compile_result import validate as validate_compile_result
-
 
 SOURCE_A = "KDB/raw/alpha.md"
-SOURCE_B = "KDB/raw/beta.md"
-SOURCE_C = "KDB/raw/gamma.md"
 
 
 @pytest.fixture(autouse=True)
@@ -758,205 +749,6 @@ def test_compile_one_persists_stop_reason_and_token_overrun_on_truncation(
     assert record["source_words"] == 2  # captured before the truncation guard fired
 
 
-# ---------- run_compile: aggregation ----------
-
-def _scan(*ids: str) -> dict:
-    return {
-        "schema_version": "1.0",
-        "run_id": "r1",
-        "to_compile": list(ids),
-        "files": [
-            {
-                "path": sid,
-                "action": "NEW",
-                "current_hash": "sha256:" + "a" * 64,
-                "current_mtime": 0.0,
-                "size_bytes": 1,
-                "file_type": "markdown",
-                "is_binary": False,
-            }
-            for sid in ids
-        ],
-    }
-
-
-def test_run_compile_mixed_run_fail_does_not_block_success_partial(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    for sid in (SOURCE_A, SOURCE_B, SOURCE_C):
-        _write_raw(vault, sid)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def boom(_req):
-        raise RuntimeError("transport broke")
-
-    bad_schema = _good_response(SOURCE_C)
-    bad_schema["summary_slug"] = "INVALID SLUG"
-    bad_schema["pages"][0]["slug"] = "INVALID SLUG"
-
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({
-            SOURCE_A: _good_model_response(SOURCE_A),
-            SOURCE_B: boom,
-            SOURCE_C: ModelResponse(
-                text=json.dumps(bad_schema),
-                input_tokens=1, output_tokens=1, latency_ms=1,
-                model="m", provider="anthropic", attempts=1,
-            ),
-        }),
-    )
-
-    result = compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(SOURCE_A, SOURCE_B, SOURCE_C),
-        ctx=ctx,
-        write=False,
-    )
-    assert result.success is False
-    assert len(result.compiled_sources) == 1
-    assert result.compiled_sources[0].source_id == SOURCE_A
-    assert len(result.errors) == 2
-
-    # One resp-stats record per compile_one call — three calls.
-    assert len(_resp_stats_files(state_root, ctx.run_id)) == 3
-
-
-def test_run_compile_all_fail_success_false(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    _write_raw(vault, SOURCE_B)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def boom(_req):
-        raise RuntimeError("nope")
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: boom, SOURCE_B: boom}),
-    )
-
-    result = compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(SOURCE_A, SOURCE_B),
-        ctx=ctx,
-        write=False,
-    )
-    assert result.success is False
-    assert result.compiled_sources == []
-    assert len(result.errors) == 2
-
-
-def test_run_compile_empty_jobs_is_success_no_op(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def fail(_req):
-        raise AssertionError("call_model should never run on empty plan")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fail)
-
-    result = compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(),  # empty to_compile
-        ctx=ctx,
-        write=False,
-    )
-    assert result.success is True
-    assert result.compiled_sources == []
-    assert len(result.log_entries) == 1
-    assert result.log_entries[0].level == "info"
-    assert "no eligible sources" in result.log_entries[0].message
-
-
-def test_run_compile_write_true_atomically_writes_compile_result(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
-    )
-
-    result = compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(SOURCE_A),
-        ctx=ctx,
-        write=True,
-    )
-    cr_path = state_root / "compile_result.json"
-    assert cr_path.exists()
-    on_disk = json.loads(cr_path.read_text(encoding="utf-8"))
-    assert on_disk["run_id"] == result.run_id
-    assert on_disk["success"] is True
-    assert len(on_disk["compiled_sources"]) == 1
-
-
-def test_run_compile_dry_run_skips_compile_result_write_but_keeps_resp_stats_records(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
-    )
-
-    compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(SOURCE_A),
-        ctx=ctx,
-        write=False,
-    )
-    assert not (state_root / "compile_result.json").exists()
-    # Resp-stats record still written — debug artifact, not gated by write.
-    assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
-
-
-def test_run_compile_result_passes_aggregate_validator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The run_compile output is the exact shape patch_applier consumes,
-    so it must satisfy compile_result.schema.json + semantic checks."""
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
-    )
-
-    result = compiler.run_compile(
-        vault,
-        state_root=state_root,
-        scan=_scan(SOURCE_A),
-        ctx=ctx,
-        write=False,
-    )
-    validation = validate_compile_result(result.to_dict())
-    assert validation.is_valid, validation.detail_strings()
-
-
 # ---------- failure_* triplet wiring (Task #25) ----------
 
 def _failure_fields(state_root: Path, run_id: str) -> tuple:
@@ -1236,41 +1028,6 @@ def test_truncate_msg_above_cap_truncated() -> None:
     s = "x" * 2001
     out = compiler._truncate_msg(s)
     assert out == "x" * 2000 + "...[truncated]"
-
-
-# ---------- CLI ----------
-
-def test_cli_missing_scan_fails(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (tmp_path / "KDB" / "state").mkdir(parents=True)
-    rc = compiler.main(["--vault-root", str(tmp_path)])
-    assert rc == 1
-    assert "missing last_scan.json" in capsys.readouterr().err
-
-
-def test_cli_happy_path_returns_zero(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    (state_root / "last_scan.json").write_text(
-        json.dumps(_scan(SOURCE_A)), encoding="utf-8"
-    )
-
-    monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
-    )
-
-    rc = compiler.main(["--vault-root", str(vault)])
-    assert rc == 0
-    out = capsys.readouterr().out
-    assert "success=True" in out
-    assert (state_root / "compile_result.json").exists()
 
 
 # ---------- D-89-17: source_text_for returns (frontmatter, body) tuple ----------
