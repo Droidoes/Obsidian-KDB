@@ -23,7 +23,7 @@ from pathlib import Path
 
 # Allow running directly: add the repo root (tools/viewer/ -> parents[2]) to path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from graphdb_kdb.graphdb import GraphDB  # noqa: E402
+from kdb_graph.graphdb import GraphDB  # noqa: E402
 
 SKIP_NODE_TABLES = {"_SchemaMeta"}
 # Field preference order when choosing a node's on-screen display name.

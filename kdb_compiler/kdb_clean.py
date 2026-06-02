@@ -54,8 +54,8 @@ import kuzu
 
 from common import atomic_io
 from common.paths import slug_to_relpath
-from graphdb_kdb import default_graph_path
-from graphdb_kdb.queries import orphan_entities, outgoing_links
+from kdb_graph import default_graph_path
+from kdb_graph.queries import orphan_entities, outgoing_links
 
 
 def reap_orphans(manifest: dict) -> dict:
@@ -212,7 +212,7 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
     state_root = vault_root / "KDB" / "state"
 
     # GraphDB is the authority for orphan candidates.
-    from graphdb_kdb.graphdb import GraphDB
+    from kdb_graph.graphdb import GraphDB
     graph_path = default_graph_path()
     try:
         gdb = GraphDB(graph_path)
@@ -277,7 +277,7 @@ def _cmd_orphans(args: argparse.Namespace) -> int:
 
     # 6. live-sync the retraction into the graph (best-effort).
     try:
-        from graphdb_kdb.adapters.obsidian_runs import ObsidianRunsAdapter
+        from kdb_graph.adapters.obsidian_runs import ObsidianRunsAdapter
         sync = ObsidianRunsAdapter().sync_cleanup_run(retraction, run_id)
         print(f"          graph live-sync: {sync.entities_deleted} "
               f"entity(ies) retracted")

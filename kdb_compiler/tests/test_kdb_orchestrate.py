@@ -15,7 +15,7 @@ from kdb_compiler.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileSourceResult
-from graphdb_kdb.graphdb import GraphDB
+from kdb_graph.graphdb import GraphDB
 
 
 @pytest.fixture(autouse=True)

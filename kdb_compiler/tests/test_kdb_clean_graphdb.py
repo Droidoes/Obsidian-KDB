@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from graphdb_kdb.graphdb import GraphDB
-from graphdb_kdb.tests.conftest import (
+from kdb_graph.graphdb import GraphDB
+from kdb_graph.tests.conftest import (
     make_compile_result,
     make_compiled_source,
     make_page,

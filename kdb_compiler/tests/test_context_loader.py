@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from graphdb_kdb.graphdb import GraphDB
+from kdb_graph.graphdb import GraphDB
 from common.types import ContextSnapshot
 
 

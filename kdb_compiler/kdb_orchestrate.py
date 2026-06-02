@@ -23,8 +23,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from graphdb_kdb.graphdb import GraphDB
-from graphdb_kdb.ingestor import (
+from kdb_graph.graphdb import GraphDB
+from kdb_graph.ingestor import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
 from kdb_compiler import manifest_writer, page_writer, pipeline_registry

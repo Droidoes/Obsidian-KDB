@@ -29,7 +29,7 @@ import re
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from graphdb_kdb import queries
+from kdb_graph import queries
 from common.types import ContextPage, ContextSnapshot
 
 if TYPE_CHECKING:
@@ -443,7 +443,7 @@ def _resolve_to_canonical_slugs(
 ) -> dict[str, str]:
     """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
 
-    Thin wrapper over graphdb_kdb.queries.resolve_to_canonical_slugs — the
+    Thin wrapper over kdb_graph.queries.resolve_to_canonical_slugs — the
     Cypher + path-precedence logic now lives behind the single Kuzu door.
     Retained as a module-level symbol so existing importers (e.g.
     test_t2_resolver_parity.py) only repoint their import path.
@@ -457,6 +457,6 @@ def _resolve_to_canonical_slugs_batch(
 ) -> dict[str, str]:
     """Codex-tested batch resolver (D-90-9 escape hatch; pass resolver="batch").
 
-    Thin wrapper over graphdb_kdb.queries.resolve_to_canonical_slugs_batch.
+    Thin wrapper over kdb_graph.queries.resolve_to_canonical_slugs_batch.
     """
     return queries.resolve_to_canonical_slugs_batch(conn, raw_slugs)

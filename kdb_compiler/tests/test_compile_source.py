@@ -14,7 +14,7 @@ from kdb_compiler.canonicalize import load_or_empty
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileJob, CompileSourceResult, ContextSnapshot
-from graphdb_kdb.graphdb import GraphDB
+from kdb_graph.graphdb import GraphDB
 
 
 @pytest.fixture(autouse=True)

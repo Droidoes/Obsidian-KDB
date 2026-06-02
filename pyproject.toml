@@ -31,14 +31,14 @@ kdb-clean             = "kdb_compiler.kdb_clean:main"
 kdb-replay            = "kdb_compiler.response_replay:main"
 kdb-benchmark         = "kdb_benchmark.cli:main"
 kdb-orchestrate       = "kdb_compiler.kdb_orchestrate:main"
-graphdb-kdb           = "graphdb_kdb.cli:main"
+graphdb-kdb           = "kdb_graph.cli:main"
 
 [build-system]
 requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_compiler*", "kdb_benchmark*", "graphdb_kdb*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+include = ["kdb_compiler*", "kdb_benchmark*", "kdb_graph*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
 
 [tool.setuptools.package-data]
@@ -46,7 +46,7 @@ kdb_compiler  = ["schemas/*.json"]
 kdb_benchmark = ["models.json"]
 
 [tool.pytest.ini_options]
-testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "graphdb_kdb/tests", "tools/tests"]
+testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "kdb_graph/tests", "tools/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [

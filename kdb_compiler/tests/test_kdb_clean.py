@@ -31,7 +31,7 @@ def _stub_sync(monkeypatch):
     """Stub the graph live-sync so --apply tests don't spin up Kuzu."""
     import types as _types
     monkeypatch.setattr(
-        "graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter.sync_cleanup_run",
+        "kdb_graph.adapters.obsidian_runs.ObsidianRunsAdapter.sync_cleanup_run",
         lambda self, retraction, run_id, graph_dir=None: _types.SimpleNamespace(
             entities_deleted=0, run_id=run_id),
     )
@@ -39,8 +39,8 @@ def _stub_sync(monkeypatch):
 
 def _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone"):
     """Create an in-memory GraphDB with one orphan_candidate entity."""
-    from graphdb_kdb.graphdb import GraphDB
-    from graphdb_kdb.tests.conftest import (
+    from kdb_graph.graphdb import GraphDB
+    from kdb_graph.tests.conftest import (
         make_compile_result, make_compiled_source, make_page,
         make_scan, make_scan_entry,
     )
