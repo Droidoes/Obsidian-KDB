@@ -10,6 +10,37 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.1 — Codebase realignment, Phase A (tagged `v0.5.1`, 2026-06-02)
+
+**Theme:** make the implementation reflect the decided architecture — pay down the
+monolithic-`kdb_compile`-era terminology + structure debt **before** the 0.6 ingestion
+arc. Internal refactor, **zero behavior change**. (Task #105.)
+
+**Gate — run-6 clean E2E** (post-refactor): `exit_reason=ok` — 36 scanned / 36 enriched /
+**29 compiled / 7 noise / 0 quarantined / 0 invariant**; finalize wired 478 links, 0 orphans.
+Graph: 180 Entity · 29 Source · **10 Domain** · 100% `BELONGS_TO`. Structurally ≡ run-5 (the
+delta is normal LLM run-to-run variance) → behavior preserved end-to-end. 1175 non-live tests green.
+
+**What landed (Phase A — fix-in-place; one refactor, two sequential phases, A then B):**
+- **Retired the legacy batch path**: `kdb_compile.py` (the superseded "second orchestrator"),
+  its 427-ln `run_journal.py`, dead `planner.py`/`compiler.run_compile`, and 5 dead CLI bindings.
+- **Fixed two layering inversions** so `common`-level leaves (`types`, `source_io`) depend on
+  nothing above them (`SourceFrontmatter`→`types`, frontmatter parser→`source_io`); guard-tested.
+- **Honest renames**: `reconcile→repair` · `patch_applier→page_writer` ·
+  `source_state_update→manifest_writer` · `validate_compiled_source_response→validate_source_response` ·
+  `ingestion/→enrich/` (+`run_journal→enrich_journal`). (`manifest.json` file kept — its name is honest.)
+- **Single Kuzu door**: a 10-function context read-API in `graphdb_kdb/queries.py`;
+  `graph_context_loader→context_loader` now authors **zero Cypher** (byte-identical query port).
+- **North Star §5 rewritten** to the orchestrator architecture + stale-reference sweep.
+
+**Ratification:** 5-model panel (Codex · Deepseek · Qwen · Gemini · Grok-build), unanimous GO;
+blueprint v2 + reviews + synthesis under `docs/superpowers/specs/2026-06-01-codebase-realignment-*`.
+
+**Next:** **Phase B** — split the `kdb_compiler` monolith into peer packages
+(`common`/`ingestion`/`compiler`/`graph`=`kdb_graph`/`orchestrator`/`tools`), still before 0.6.
+
+---
+
 ## 0.5.0 — Reliable orchestration (tagged `v0.5.0`, 2026-05-31)
 
 **Theme:** the end-to-end `kdb-orchestrate` pipeline runs reliably, observably, and

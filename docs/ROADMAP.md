@@ -52,8 +52,18 @@ run-5. The full arc landed: ontology (ratified) → D1-A producer rebuild → co
 domain-scoping) → #102 stdout progress → run-4 (surfaced findings) → Pass-1 coercion +
 Pass-2 retry → **run-5 clean** (the gate).
 
-**Next target: 0.6 → 1.0 — ingestion pipelines.** Vault-in-place ingestion of the entire
-Obsidian vault at scale + 1–2 KDB/raw feeder pipelines (Task #88 family / tunnel-from-both-ends).
+**0.5.1 shipped 2026-06-02** (tagged `v0.5.1`) — **codebase realignment, Phase A** (Task #105):
+an internal, zero-behavior-change refactor so the implementation reflects the decided architecture
+(retire the legacy `kdb_compile` driver, honest renames, single Kuzu door, layering fix, North Star
+rewrite); gated on a clean **run-6** ≡ run-5. The terminology+structure debt is paid down *before*
+building 0.6 on top of it.
+
+**Immediate next: realignment Phase B** — split the `kdb_compiler` monolith into peer packages
+(`common`/`ingestion`/`compiler`/`graph`=`kdb_graph`/`orchestrator`/`tools`). Still pre-0.6.
+
+**Then 0.6 → 1.0 — ingestion pipelines.** Vault-in-place ingestion of the entire Obsidian vault at
+scale + 1–2 KDB/raw feeder pipelines (Task #88 family / tunnel-from-both-ends). Robustness candidate:
+the **repair→retry→repair→quarantine** ladder (Task #106).
 
 The Claim/Learn layer is explicitly **out of scope until 2.0** — kept in the
 schema as designed-but-unwired.
