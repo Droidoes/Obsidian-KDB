@@ -26,3 +26,29 @@ def _top_level_imports(pkg: str) -> set[str]:
 def test_common_is_a_leaf():
     assert _top_level_imports("common") == set(), \
         f"common must import no internal package, found: {_top_level_imports('common')}"
+
+
+import pytest
+
+ALLOWED = {
+    "common":       set(),
+    "kdb_graph":    {"common"},
+    "ingestion":    {"common"},
+    "compiler":     {"common", "kdb_graph"},
+    "orchestrator": {"common", "kdb_graph", "ingestion", "compiler", "tools"},  # 'tools' = documented cleanup edge
+    "tools":        {"common", "kdb_graph", "ingestion", "compiler"},
+}
+
+
+@pytest.mark.parametrize("pkg,allowed", list(ALLOWED.items()))
+def test_package_dependency_contract(pkg, allowed):
+    actual = _top_level_imports(pkg)
+    illegal = actual - allowed
+    assert not illegal, f"{pkg} imports outside its contract: {illegal}"
+
+
+def test_nothing_depends_on_tools_except_orchestrator_cleanup():
+    # 'nothing depends on tools' holds EXCEPT orchestrator->tools.cleanup
+    # (orchestrate.finalize calls cleanup inline; decoupling is deferred, out of Phase B move-scope).
+    for pkg in ("common", "ingestion", "compiler", "kdb_graph"):
+        assert "tools" not in _top_level_imports(pkg), f"{pkg} must not depend on tools"
