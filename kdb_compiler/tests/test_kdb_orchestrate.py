@@ -11,7 +11,7 @@ import pytest
 from kdb_compiler import compiler, kdb_orchestrate, prompt_builder
 from kdb_compiler.call_model import ModelResponse
 from kdb_compiler.canonicalize import load_or_empty
-from kdb_compiler.ingestion.pass1_caller import Pass1CallError, Pass1CallResult
+from kdb_compiler.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from kdb_compiler.run_context import RunContext
 from kdb_compiler.source_io import SourceFrontmatter
 from kdb_compiler.types import CompileSourceResult
@@ -273,7 +273,7 @@ def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
     (vault / "noise").mkdir()
     (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
@@ -304,7 +304,7 @@ def test_default_run_streams_progress_to_stdout(tmp_path, monkeypatch, capsys):
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
@@ -326,7 +326,7 @@ def test_quiet_suppresses_progress_but_keeps_jsonl(tmp_path, monkeypatch, capsys
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
@@ -347,7 +347,7 @@ def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
@@ -385,7 +385,7 @@ def test_run_quarantines_compile_error_and_continues(tmp_path, monkeypatch):
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def boom(req):
         if "a.md" in req.prompt:
@@ -438,7 +438,7 @@ def test_event_log_failure_is_surfaced_in_summary(tmp_path, monkeypatch):
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def boom(req):
         raise RuntimeError("model down")
@@ -487,7 +487,7 @@ def test_pass1_failure_event_references_raw_response_sidecar(tmp_path, monkeypat
             attempts=1,
         )
 
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", bad_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", bad_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("b.md", "summary-b")))
 
@@ -521,7 +521,7 @@ def test_pass2_invalid_response_event_references_raw_resp_stats(tmp_path, monkey
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def bad_json(req):
         return ModelResponse(
@@ -567,7 +567,7 @@ def test_finalize_runs_after_later_source_quarantine_and_wires_committed_links(
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     calls = {"n": 0}
 
@@ -611,7 +611,7 @@ def test_all_quarantined_skips_finalize_but_writes_summary_and_event_log(
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def boom(req):
         raise RuntimeError("model down")
@@ -638,7 +638,7 @@ def test_source_local_commit_failure_marks_error_commit_and_continues(tmp_path, 
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def model(req):
         if "a.md" in req.prompt:
@@ -678,7 +678,7 @@ def test_missing_raw_response_emits_unavailable_event(tmp_path, monkeypatch):
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def boom(req):
         raise RuntimeError("model down")
@@ -702,7 +702,7 @@ def test_unexpected_exception_writes_run_fatal_event_and_summary(tmp_path, monke
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
@@ -736,7 +736,7 @@ def test_orchestrator_invariant_violation_writes_event_and_summary(tmp_path, mon
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def malformed_compile_source(*_args, **_kwargs):
         return CompileSourceResult(cr={
@@ -799,7 +799,7 @@ def test_cli_makes_quarantine_alarm_visible(tmp_path, monkeypatch, capsys):
     (vault / "AIML").mkdir()
     (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
 
     def boom(req):
         raise RuntimeError("model down")
@@ -910,7 +910,7 @@ def test_run_limit_stops_after_n_compiled(tmp_path, monkeypatch):
     (vault / "AIML" / "a.md").write_text("# A\n\nFirst.\n", encoding="utf-8")
     (vault / "AIML" / "b.md").write_text("# B\n\nSecond.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
-    monkeypatch.setattr("kdb_compiler.ingestion.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("kdb_compiler.enrich.enrich.call_pass1", _fake_pass1)
     # Scan is alphabetical → AIML/a.md compiles first. limit=1 stops before b.md.
     compile_count = {"n": 0}
 

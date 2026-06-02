@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/pass1_prompt.py
+# kdb_compiler/enrich/pass1_prompt.py
 """Pass-1 prompt construction (Jinja2 template rendering)."""
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from kdb_compiler.ingestion.config_loader import load_domains, load_source_types
-from kdb_compiler.ingestion.pass1_schema import PASS1_SCHEMA_VERSION
+from kdb_compiler.enrich.config_loader import load_domains, load_source_types
+from kdb_compiler.enrich.pass1_schema import PASS1_SCHEMA_VERSION
 
 PASS1_PROMPT_VERSION = "1.2.0"  # Task #95: drop 4 code-owned fields; full JSON template; arrow→prose boundaries (2026-05-30)
 

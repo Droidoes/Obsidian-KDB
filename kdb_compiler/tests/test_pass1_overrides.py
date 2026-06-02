@@ -1,5 +1,5 @@
 # kdb_compiler/tests/test_pass1_overrides.py
-from kdb_compiler.ingestion.overrides import apply_overrides, build_override_block
+from kdb_compiler.enrich.overrides import apply_overrides, build_override_block
 
 
 # --- Task #95: single-producer override constructor ---

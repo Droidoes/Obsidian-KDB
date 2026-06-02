@@ -31,7 +31,7 @@ from kdb_compiler import manifest_writer, page_writer, pipeline_registry
 from kdb_compiler.atomic_io import atomic_write_json
 from kdb_compiler.canonicalize import load_or_empty
 from kdb_compiler.compiler import compile_source
-from kdb_compiler.ingestion.enrich import enrich_one
+from kdb_compiler.enrich.enrich import enrich_one
 from kdb_compiler.kdb_clean import build_cleanup_artifacts, reap_orphans_from_graph
 from kdb_compiler.kdb_scan import scan_scope
 from kdb_compiler.orchestrator_events import (

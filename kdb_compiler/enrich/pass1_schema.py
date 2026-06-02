@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/pass1_schema.py
+# kdb_compiler/enrich/pass1_schema.py
 """Pass-1 output schema (D-89-16 sectionalized: GraphDB-input + Audit).
 
 The Pass-1 LLM returns a structured JSON envelope; a deterministic
@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from kdb_compiler.ingestion.config_loader import load_domains, load_source_types
+from kdb_compiler.enrich.config_loader import load_domains, load_source_types
 
 PASS1_SCHEMA_VERSION = 1
 

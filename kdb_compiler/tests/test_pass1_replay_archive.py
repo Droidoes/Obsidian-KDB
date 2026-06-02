@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from kdb_compiler.ingestion.replay_archive import (
+from kdb_compiler.enrich.replay_archive import (
     encode_source_id, write_sidecar, SidecarPayload,
 )
 

@@ -23,7 +23,7 @@ dependencies = [
 dev = ["pytest>=7", "pytest-cov>=4"]
 
 [project.scripts]
-kdb-enrich            = "kdb_compiler.ingestion.kdb_enrich:main"
+kdb-enrich            = "kdb_compiler.enrich.kdb_enrich:main"
 kdb-scan              = "kdb_compiler.kdb_scan:main"
 kdb-validate          = "kdb_compiler.validate_compile_result:main"
 kdb-validate-response = "kdb_compiler.validate_source_response:main"

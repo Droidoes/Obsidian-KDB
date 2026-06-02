@@ -7,10 +7,10 @@ NOT built here (apply_overrides owns it downstream)."""
 import json
 import pytest
 
-from kdb_compiler.ingestion import pass1_caller as caller_mod
-from kdb_compiler.ingestion.pass1_caller import call_pass1, Pass1CallError
-from kdb_compiler.ingestion.pass1_prompt import PASS1_PROMPT_VERSION
-from kdb_compiler.ingestion.pass1_schema import PASS1_SCHEMA_VERSION
+from kdb_compiler.enrich import pass1_caller as caller_mod
+from kdb_compiler.enrich.pass1_caller import call_pass1, Pass1CallError
+from kdb_compiler.enrich.pass1_prompt import PASS1_PROMPT_VERSION
+from kdb_compiler.enrich.pass1_schema import PASS1_SCHEMA_VERSION
 from kdb_compiler.call_model import ModelResponse
 
 

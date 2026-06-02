@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/replay_archive.py
+# kdb_compiler/enrich/replay_archive.py
 """Pass-1 replay archive sidecar (Task #89 §5.3 + D-89-13).
 
 One JSON sidecar per Pass-1 call (success or fail) at

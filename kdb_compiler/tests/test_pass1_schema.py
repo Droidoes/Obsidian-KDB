@@ -1,7 +1,7 @@
 # kdb_compiler/tests/test_pass1_schema.py
 import json
 import pytest
-from kdb_compiler.ingestion.pass1_schema import (
+from kdb_compiler.enrich.pass1_schema import (
     Pass1Envelope, OverrideAudit, validate_envelope, build_json_schema,
     build_content_schema, validate_llm_content, PASS1_SCHEMA_VERSION,
 )
@@ -48,7 +48,7 @@ def test_validate_llm_content_rejects_more_than_10_entity_search_keys():
 
 
 def test_normalize_truncates_entity_search_keys_to_10():
-    from kdb_compiler.ingestion.pass1_schema import normalize_llm_content
+    from kdb_compiler.enrich.pass1_schema import normalize_llm_content
     p = _content_only()
     p["entity_search_keys"] = [f"k{i}" for i in range(13)]
     normalize_llm_content(p)
@@ -57,7 +57,7 @@ def test_normalize_truncates_entity_search_keys_to_10():
 
 
 def test_normalize_leaves_short_keys_untouched():
-    from kdb_compiler.ingestion.pass1_schema import normalize_llm_content
+    from kdb_compiler.enrich.pass1_schema import normalize_llm_content
     p = _content_only()
     p["entity_search_keys"] = ["a", "b"]
     normalize_llm_content(p)

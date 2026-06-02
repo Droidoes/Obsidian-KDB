@@ -1,6 +1,6 @@
 # kdb_compiler/tests/test_pass1_config_loader.py
 import pytest
-from kdb_compiler.ingestion.config_loader import (
+from kdb_compiler.enrich.config_loader import (
     load_domains, load_source_types, load_scope_config,
     DomainEntry, SourceTypeEntry, ScopeConfig,
 )

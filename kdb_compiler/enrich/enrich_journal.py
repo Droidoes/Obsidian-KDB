@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/run_journal.py
+# kdb_compiler/enrich/enrich_journal.py
 """Pass-1 run journal (Task #89 §5.4). Mirrors kdb_compile journal pattern."""
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """Guard test: common-layer modules (types, source_io) must not import upward.
 
 types.py must not import source_io (to avoid a cycle: source_io → types → source_io).
-source_io.py must not import kdb_compiler.ingestion.* (leaf must not depend on a stage).
+source_io.py must not import kdb_compiler.enrich.* (leaf must not depend on a stage).
 """
 import ast
 import pathlib
@@ -22,4 +22,4 @@ def test_types_does_not_import_source_io():
 
 
 def test_source_io_does_not_import_ingestion():
-    assert not any(m.startswith("kdb_compiler.ingestion") for m in _imports("source_io.py"))
+    assert not any(m.startswith("kdb_compiler.enrich") for m in _imports("source_io.py"))

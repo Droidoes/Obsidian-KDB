@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/config_loader.py
+# kdb_compiler/enrich/config_loader.py
 """Pass-1 config loader.
 
 Reads domains.json (NW-4 v0.4 vocabulary), source_types.json (NW-7 v0.2

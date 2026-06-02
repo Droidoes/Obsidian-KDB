@@ -4,10 +4,10 @@ import os
 import pytest
 from pathlib import Path
 
-from kdb_compiler.ingestion import enrich as enrich_mod
-from kdb_compiler.ingestion import pass1_caller as caller_mod
-from kdb_compiler.ingestion.enrich import enrich_one
-from kdb_compiler.ingestion.pass1_caller import Pass1CallResult
+from kdb_compiler.enrich import enrich as enrich_mod
+from kdb_compiler.enrich import pass1_caller as caller_mod
+from kdb_compiler.enrich.enrich import enrich_one
+from kdb_compiler.enrich.pass1_caller import Pass1CallResult
 
 
 def _signal_parsed(model: str = "m") -> dict:

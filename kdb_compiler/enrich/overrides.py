@@ -1,4 +1,4 @@
-# kdb_compiler/ingestion/overrides.py
+# kdb_compiler/enrich/overrides.py
 """Post-LLM deterministic override layer (Task #89 §4).
 
 Per D-89-3 §4.4: blacklist (force_noise) wins ties.
