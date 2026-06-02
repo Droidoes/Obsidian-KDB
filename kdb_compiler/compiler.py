@@ -38,7 +38,7 @@ from kdb_compiler.source_io import SourceFrontmatter, parse_source_file
 from kdb_compiler.call_model import ModelRequest
 from kdb_compiler.call_model_retry import call_model_with_retry
 from kdb_compiler.canonicalize import AliasLedger
-from kdb_compiler.graph_context_loader import T2Mode, build_context_snapshot
+from kdb_compiler.context_loader import T2Mode, build_context_snapshot
 from kdb_compiler.repair import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from kdb_compiler.run_context import RunContext

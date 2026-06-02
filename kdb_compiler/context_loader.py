@@ -1,4 +1,4 @@
-"""graph_context_loader — GraphDB-backed context snapshot for one compile job.
+"""context_loader — GraphDB-backed context snapshot for one compile job.
 
 Selected by planner.py via KDB_CONTEXT_SOURCE=graphdb. Does NOT read env vars
 itself (Codex F-5 purity invariant) — planner owns env-var parsing and threads
@@ -24,10 +24,9 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-import kuzu
-
+from graphdb_kdb import queries
 from kdb_compiler.types import ContextPage, ContextSnapshot
 
 if TYPE_CHECKING:
@@ -52,7 +51,7 @@ class T2Mode(str, Enum):
 
 
 def build_context_snapshot(
-    conn: kuzu.Connection,
+    conn: Any,
     *,
     source_id: str,
     source_text: str,
@@ -143,52 +142,26 @@ def build_context_snapshot(
 # ---------- Tier helpers ----------
 
 
-def _load_active_entities(conn: kuzu.Connection) -> dict[str, dict]:
+def _load_active_entities(conn: Any) -> dict[str, dict]:
     """Load all active entities as {slug: {title, page_type}}."""
-    result = conn.execute(
-        "MATCH (e:Entity) WHERE e.status = 'active' "
-        "RETURN e.slug, e.title, e.page_type"
-    )
-    entities: dict[str, dict] = {}
-    while result.has_next():
-        row = result.get_next()
-        entities[row[0]] = {"title": row[1], "page_type": row[2]}
-    return entities
+    return queries.active_entities(conn)
 
 
-def _domain_pool(conn: kuzu.Connection, domain: str) -> set[str]:
+def _domain_pool(conn: Any, domain: str) -> set[str]:
     """Slugs of active entities that BELONGS_TO `domain` (the same-domain gate).
 
     The Pass-2 context is pulled only from the source's Pass-1 domain (D3
     override → hard same-domain gate). Domain nodes are keyed by `Domain.name`,
     which is exactly the string Pass-1 emits as `frontmatter.domain`.
     """
-    result = conn.execute(
-        "MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain {name: $name}) "
-        "WHERE e.status = 'active' RETURN e.slug",
-        {"name": domain},
-    )
-    slugs: set[str] = set()
-    while result.has_next():
-        slugs.add(result.get_next()[0])
-    return slugs
+    return queries.domain_entity_slugs(conn, domain)
 
 
 def _t1_source_supported(
-    conn: kuzu.Connection, source_id: str, active_slugs: set[str]
+    conn: Any, source_id: str, active_slugs: set[str]
 ) -> set[str]:
-    """Entities the source currently SUPPORTS."""
-    result = conn.execute(
-        "MATCH (s:Source {source_id: $sid})-[:SUPPORTS]->(e:Entity) "
-        "RETURN e.slug",
-        {"sid": source_id},
-    )
-    slugs: set[str] = set()
-    while result.has_next():
-        slug = result.get_next()[0]
-        if slug in active_slugs:
-            slugs.add(slug)
-    return slugs
+    """Entities the source currently SUPPORTS (restricted to active slugs)."""
+    return queries.source_supported_slugs(conn, source_id) & active_slugs
 
 
 def _t2_slug_in_text(source_text: str, candidate_slugs: set[str]) -> set[str]:
@@ -258,7 +231,7 @@ def _t2_title_in_text(
 
 
 def _t3_neighbors(
-    conn: kuzu.Connection,
+    conn: Any,
     seeds: set[str],
     candidate_slugs: set[str],
     *,
@@ -275,22 +248,12 @@ def _t3_neighbors(
         next_frontier: set[str] = set()
         for slug in current_frontier:
             # outgoing
-            result = conn.execute(
-                "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) RETURN b.slug",
-                {"s": slug},
-            )
-            while result.has_next():
-                n = result.get_next()[0]
+            for n in queries.outgoing_neighbor_slugs(conn, slug):
                 if n in candidate_slugs and n not in visited:
                     all_neighbors.add(n)
                     next_frontier.add(n)
             # incoming
-            result = conn.execute(
-                "MATCH (a:Entity {slug: $s})<-[:LINKS_TO]-(b:Entity) RETURN b.slug",
-                {"s": slug},
-            )
-            while result.has_next():
-                n = result.get_next()[0]
+            for n in queries.incoming_neighbor_slugs(conn, slug):
                 if n in candidate_slugs and n not in visited:
                     all_neighbors.add(n)
                     next_frontier.add(n)
@@ -299,28 +262,23 @@ def _t3_neighbors(
     return all_neighbors
 
 
-def _pagerank_scores(conn: kuzu.Connection) -> dict[str, float]:
+def _pagerank_scores(conn: Any) -> dict[str, float]:
     """Compute PageRank over LINKS_TO topology. Returns {slug: score}."""
     try:
         import networkx as nx
     except ImportError:
         return {}
 
-    result = conn.execute(
-        "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug"
-    )
     g = nx.DiGraph()
-    while result.has_next():
-        row = result.get_next()
-        g.add_edge(row[0], row[1])
+    for from_slug, to_slug in queries.links_to_edges(conn):
+        g.add_edge(from_slug, to_slug)
 
     if not g.nodes:
         return {}
 
     # Add isolated active entities so they get a base score
-    result2 = conn.execute("MATCH (e:Entity) WHERE e.status = 'active' RETURN e.slug")
-    while result2.has_next():
-        g.add_node(result2.get_next()[0])
+    for slug in queries.active_entity_slugs(conn):
+        g.add_node(slug)
 
     return nx.pagerank(g)
 
@@ -329,19 +287,12 @@ def _pagerank_scores(conn: kuzu.Connection) -> dict[str, float]:
 
 
 def _batch_outgoing_links(
-    conn: kuzu.Connection, slugs: list[str]
+    conn: Any, slugs: list[str]
 ) -> dict[str, list[str]]:
     """For each slug, fetch its outgoing LINKS_TO target slugs."""
     out: dict[str, list[str]] = {}
     for slug in slugs:
-        result = conn.execute(
-            "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) RETURN b.slug ORDER BY b.slug",
-            {"s": slug},
-        )
-        links = []
-        while result.has_next():
-            links.append(result.get_next()[0])
-        out[slug] = links
+        out[slug] = queries.outgoing_links_ordered(conn, slug)
     return out
 
 
@@ -361,7 +312,7 @@ def _whole_word_alternation(slugs: list[str]) -> re.Pattern[str]:
 
 
 def _build_t2(
-    conn: kuzu.Connection,
+    conn: Any,
     *,
     source_text: str,
     candidate_slugs: set[str],
@@ -388,7 +339,7 @@ def _build_t2(
 
 
 def _t2_structured(
-    conn: kuzu.Connection,
+    conn: Any,
     frontmatter: "SourceFrontmatter | None",
     source_text: str,
     candidate_slugs: set[str],
@@ -415,7 +366,7 @@ def _t2_structured(
 
 
 def _t2_layered(
-    conn: kuzu.Connection,
+    conn: Any,
     frontmatter: "SourceFrontmatter | None",
     source_text: str,
     candidate_slugs: set[str],
@@ -463,7 +414,7 @@ def _t2_legacy(
 
 
 def _t2_from_search_keys(
-    conn: kuzu.Connection,
+    conn: Any,
     raw_keys: list[str],
     candidate_slugs: set[str],
     resolver: str,
@@ -484,110 +435,25 @@ def _t2_from_search_keys(
 
 
 def _resolve_to_canonical_slugs(
-    conn: kuzu.Connection,
+    conn: Any,
     raw_slugs: list[str],
 ) -> dict[str, str]:
     """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
 
-    Reachability per §3.1: direct PK → canonical_id (with target.status='active'
-    check — fixes B-2) → ALIAS_OF (canonical.status='active' check).
-
-    Returns {raw_slug: canonical_slug} for every raw key that resolves to an
-    active canonical entity. Unresolved raws are absent from the dict.
-
-    Defensive: trims whitespace + drops empty/whitespace-only entries (Qwen O-2).
+    Thin wrapper over graphdb_kdb.queries.resolve_to_canonical_slugs — the
+    Cypher + path-precedence logic now lives behind the single Kuzu door.
+    Retained as a module-level symbol so existing importers (e.g.
+    test_t2_resolver_parity.py) only repoint their import path.
     """
-    if not raw_slugs:
-        return {}
-    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
-    if not cleaned:
-        return {}
-
-    resolved: dict[str, str] = {}
-
-    # Single MATCH with two OPTIONAL chains: surface direct PK, canonical_id
-    # target status, and ALIAS_OF canonical info in one round-trip. Path
-    # precedence applied in Python: Path 2 (canonical_id) > Path 3 (ALIAS_OF)
-    # > Path 1 (direct leaf). Path 3 before Path 1 is required so that an
-    # entity with NO canonical_id but WITH an outgoing ALIAS_OF resolves via
-    # the alias target — and so that an alias with a DEAD target stays
-    # unresolved (does not fall back to self).
-    q = conn.execute(
-        """
-        MATCH (e:Entity)
-        WHERE e.slug IN $slugs
-        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
-        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
-        RETURN e.slug, e.status, e.canonical_id,
-               CASE WHEN target IS NULL THEN NULL ELSE target.status END,
-               CASE WHEN canon IS NULL THEN NULL ELSE canon.slug END,
-               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END
-        """,
-        {"slugs": cleaned},
-    )
-    while q.has_next():
-        slug, status, canonical_id, target_status, alias_canon, alias_canon_status = q.get_next()
-        if canonical_id is not None:
-            # Path 2 — canonical_id resolution (B-2 active check)
-            if target_status == "active":
-                resolved[slug] = canonical_id
-            # else: dead canonical_id target — unresolved
-        elif alias_canon is not None:
-            # Path 3 — ALIAS_OF safety net (entity declared itself an alias)
-            if alias_canon_status == "active":
-                resolved[slug] = alias_canon
-            # else: dead alias target — unresolved (NOT Path 1 fallback)
-        elif status == "active":
-            # Path 1 — direct leaf entity (no canonical_id, no outgoing ALIAS_OF)
-            resolved[slug] = slug
-
-    return resolved
+    return queries.resolve_to_canonical_slugs(conn, raw_slugs)
 
 
 def _resolve_to_canonical_slugs_batch(
-    conn: kuzu.Connection,
+    conn: Any,
     raw_slugs: list[str],
 ) -> dict[str, str]:
     """Codex-tested batch resolver (D-90-9 escape hatch, KDB_T2_RESOLVER=batch).
 
-    Single Cypher with UNWIND + chained OPTIONAL MATCH + CASE; empirically
-    validated on Kuzu 0.11.3 in the v0.1 panel review. Functional parity with
-    the simple resolver is enforced by test_t2_resolver_parity.py.
+    Thin wrapper over graphdb_kdb.queries.resolve_to_canonical_slugs_batch.
     """
-    if not raw_slugs:
-        return {}
-    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
-    if not cleaned:
-        return {}
-
-    # CASE precedence: Path 2 (canonical_id) > Path 3 (ALIAS_OF) > Path 1 (direct leaf).
-    # An entity that has DECLARED itself an alias (either via canonical_id or
-    # an outgoing ALIAS_OF edge) must NOT fall back to Path 1 if its declared
-    # target is inactive — the explicit-null clauses suppress that fallback.
-    # This keeps Path 1 reserved for true canonical leaves.
-    q = conn.execute(
-        """
-        UNWIND $raw_slugs AS raw
-        OPTIONAL MATCH (e:Entity {slug: raw})
-        WITH raw, e
-        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
-        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
-        RETURN raw,
-               CASE
-                 WHEN e IS NULL THEN NULL
-                 WHEN e.canonical_id IS NOT NULL AND target IS NOT NULL AND target.status = 'active' THEN e.canonical_id
-                 WHEN e.canonical_id IS NOT NULL THEN NULL
-                 WHEN canon IS NOT NULL AND canon.status = 'active' THEN canon.slug
-                 WHEN canon IS NOT NULL THEN NULL
-                 WHEN e.status = 'active' THEN e.slug
-                 ELSE NULL
-               END AS canonical
-        """,
-        {"raw_slugs": cleaned},
-    )
-    resolved: dict[str, str] = {}
-    while q.has_next():
-        raw, canonical = q.get_next()
-        if canonical is not None:
-            resolved[raw] = canonical
-    return resolved
+    return queries.resolve_to_canonical_slugs_batch(conn, raw_slugs)

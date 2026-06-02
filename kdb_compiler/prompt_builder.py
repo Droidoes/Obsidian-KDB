@@ -8,7 +8,7 @@ The prompt has two halves:
            that enforces the shape the Python side actually parses.
 
   user   — source_name (echoed for semantic check), the verbatim source
-           text, a context snapshot from graph_context_loader,
+           text, a context snapshot from context_loader,
            the per-source response schema, and a minimal exemplar.
 
 `load_system_prompt` and `load_response_schema_text` are memoised so a

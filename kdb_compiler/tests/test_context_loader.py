@@ -1,9 +1,8 @@
-"""Tests for graph_context_loader — real Kuzu, no mocks."""
+"""Tests for context_loader — real Kuzu, no mocks."""
 from __future__ import annotations
 
 from pathlib import Path
 
-import kuzu
 import pytest
 
 from graphdb_kdb.graphdb import GraphDB
@@ -75,13 +74,13 @@ def gdb(tmp_path: Path):
         yield g
 
 
-from kdb_compiler import graph_context_loader
+from kdb_compiler import context_loader
 
 
 class TestTierRanking:
     def test_t1_source_supported_entities_ranked_highest(self, gdb):
         """Entities supported by the source appear first (tier 3 score)."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="unrelated text with no slug mentions",
@@ -97,7 +96,7 @@ class TestTierRanking:
 
     def test_t2_slug_in_text_ranked_below_t1(self, gdb):
         """Slugs mentioned in source_text rank below source-supported."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="See also leaf-b for more context.",
@@ -113,7 +112,7 @@ class TestTierRanking:
 
     def test_t3_neighbors_ranked_below_t2(self, gdb):
         """1-hop neighbors of seeds rank below text-mention seeds."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-beta",
             source_text="no slug mentions here",
@@ -128,7 +127,7 @@ class TestTierRanking:
 
     def test_pagerank_breaks_ties_within_tier(self, gdb):
         """Within same tier, higher PageRank sorts first."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="",
@@ -141,7 +140,7 @@ class TestTierRanking:
 
     def test_page_cap_truncates(self, gdb):
         """page_cap limits total output."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="leaf-b orphan-x",
@@ -151,7 +150,7 @@ class TestTierRanking:
 
     def test_outgoing_links_populated(self, gdb):
         """Each ContextPage carries its outgoing_links from the graph."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="",
@@ -162,7 +161,7 @@ class TestTierRanking:
 
     def test_source_id_set_on_snapshot(self, gdb):
         """ContextSnapshot carries source_id."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="",
@@ -175,7 +174,7 @@ class TestEdgeCases:
     def test_empty_graph_returns_empty_snapshot(self, tmp_path):
         """Empty graph → empty pages, no crash."""
         with GraphDB(tmp_path / "empty-graph") as g:
-            snapshot = graph_context_loader.build_context_snapshot(
+            snapshot = context_loader.build_context_snapshot(
                 g.conn,
                 source_id="nonexistent",
                 source_text="anything",
@@ -186,7 +185,7 @@ class TestEdgeCases:
 
     def test_unknown_source_returns_text_matches_and_neighbors(self, gdb):
         """Source not in graph → no T1 seeds, but T2/T3 still work."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="unknown-source",
             source_text="hub is mentioned here",
@@ -201,7 +200,7 @@ class TestEdgeCases:
         gdb.conn.execute(
             "MATCH (e:Entity {slug: 'orphan-x'}) SET e.status = 'inactive'"
         )
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             source_text="orphan-x is mentioned",
@@ -300,7 +299,7 @@ class TestColdStartTitleMatching:
 
     def test_title_match_finds_multi_token_title(self, cold_start_gdb):
         """Multi-token title 'Margin of Safety' matches in source text."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-new",
             source_text="The concept of Margin of Safety is fundamental to investing.",
@@ -311,7 +310,7 @@ class TestColdStartTitleMatching:
 
     def test_title_match_finds_long_single_token(self, cold_start_gdb):
         """Single-token title >= 6 chars ('Legalism') matches in source text."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-new",
             source_text="Chinese Legalism influenced governance structures.",
@@ -329,17 +328,17 @@ class TestColdStartTitleMatching:
         the TITLE path doesn't add duplicate matches for ineligible titles).
         Guardrail correctness is primarily verified in the isolated tests.
         """
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Value") is False
 
     def test_title_guardrail_skips_very_short_integration(self, cold_start_gdb):
         """Title 'AI' (len <= 3) does NOT widen T2 via title matching."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("AI") is False
 
     def test_title_matching_only_fires_on_cold_start(self, cold_start_gdb):
         """When source has SUPPORTS edges (non-cold-start), title matching does NOT fire."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-existing",
             source_text="Deep Leaf is very interesting.",
@@ -360,37 +359,37 @@ class TestColdStartTitleGuardrailIsolated:
 
     def test_multi_token_title_eligible(self):
         """'Margin of Safety' — 3 tokens, eligible."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Margin of Safety") is True
 
     def test_long_single_token_eligible(self):
         """'Legalism' — 1 token, 8 chars, eligible."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Legalism") is True
 
     def test_short_single_token_ineligible(self):
         """'Value' — 1 token, 5 chars, ineligible."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Value") is False
 
     def test_very_short_title_ineligible(self):
         """'AI' — 2 chars, ineligible."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("AI") is False
 
     def test_three_char_title_ineligible(self):
         """'Oil' — 3 chars, ineligible (rule is > 3 not >= 3)."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Oil") is False
 
     def test_six_char_single_token_eligible(self):
         """'Taoism' — 1 token, 6 chars, eligible (rule is >= 6)."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Taoism") is True
 
     def test_five_char_single_token_ineligible(self):
         """'Stoic' — 1 token, 5 chars, ineligible."""
-        from kdb_compiler.graph_context_loader import _title_eligible
+        from kdb_compiler.context_loader import _title_eligible
         assert _title_eligible("Stoic") is False
 
 
@@ -404,7 +403,7 @@ class TestColdStart2HopExpansion:
         # 1-hop from legalism: hub-node (outgoing), margin-of-safety (incoming)
         # 2-hop from legalism: deep-leaf (via hub-node)
         # deep-leaf is ONLY reachable at 2-hop from this seed.
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-new",
             source_text="legalism shaped political thought",
@@ -420,7 +419,7 @@ class TestColdStart2HopExpansion:
         """Cold-start but T2 >= 5 seeds → T3 stays 1-hop."""
         # Need 5+ slug/title matches. We only have 6 entities total.
         # Use text that matches many slugs/titles.
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-new",
             source_text=(
@@ -437,7 +436,7 @@ class TestColdStart2HopExpansion:
 
     def test_2hop_does_not_fire_when_not_cold_start(self, cold_start_gdb):
         """Non-cold-start (T1 non-empty) → always 1-hop T3 regardless of T2 size."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb.conn,
             source_id="src-existing",
             source_text="no extra slug mentions",
@@ -463,7 +462,7 @@ class TestT3NeighborsRegression:
         """Same inputs twice → identical output. Locks the function's
         order-independence; future query-shape changes that introduce
         nondeterminism will trip this guard."""
-        from kdb_compiler.graph_context_loader import _t3_neighbors
+        from kdb_compiler.context_loader import _t3_neighbors
 
         seeds = {"margin-of-safety"}
         candidates = {
@@ -478,7 +477,7 @@ class TestT3NeighborsRegression:
         """The primitive walks both directions (per §4.3 contract — "in+out
         neighbors"). Regression guard against a future change that
         accidentally drops one direction."""
-        from kdb_compiler.graph_context_loader import _t3_neighbors
+        from kdb_compiler.context_loader import _t3_neighbors
 
         # legalism: outgoing → hub-node; incoming ← margin-of-safety
         seeds = {"legalism"}
@@ -490,7 +489,7 @@ class TestT3NeighborsRegression:
     def test_t3_neighbors_respects_candidate_filter(self, cold_start_gdb):
         """Neighbors outside the candidate set are filtered out — the
         `candidate_slugs` parameter is honored, not advisory."""
-        from kdb_compiler.graph_context_loader import _t3_neighbors
+        from kdb_compiler.context_loader import _t3_neighbors
 
         # legalism reaches both hub-node and margin-of-safety; restrict
         # candidates to hub-node only.
@@ -502,7 +501,7 @@ class TestT3NeighborsRegression:
     def test_t3_neighbors_excludes_seeds_from_output(self, cold_start_gdb):
         """The seed slugs themselves never appear in the output set —
         traversal excludes the starting frontier."""
-        from kdb_compiler.graph_context_loader import _t3_neighbors
+        from kdb_compiler.context_loader import _t3_neighbors
 
         seeds = {"legalism", "hub-node"}
         candidates = {
@@ -586,7 +585,7 @@ class TestColdStartWideningInvariant:
         title-match + 2-hop expansion widens the snapshot to ≥5 unique
         entities. Locks the primary value of #71: a new source without
         SUPPORTS edges still gets meaningful graph context."""
-        snapshot = graph_context_loader.build_context_snapshot(
+        snapshot = context_loader.build_context_snapshot(
             cold_start_gdb_rich.conn,
             source_id="src-new",
             source_text=(
@@ -662,7 +661,7 @@ def _vi_fm(keys):
 
 
 def test_t2_off_domain_key_is_dropped(gdb_dom):
-    snap = graph_context_loader.build_context_snapshot(
+    snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
         frontmatter=_vi_fm(["ai-node"]))
     slugs = [p.slug for p in snap.pages]
@@ -670,7 +669,7 @@ def test_t2_off_domain_key_is_dropped(gdb_dom):
 
 
 def test_t2_same_domain_key_is_kept(gdb_dom):
-    snap = graph_context_loader.build_context_snapshot(
+    snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
         frontmatter=_vi_fm(["vi-leaf"]))
     assert "vi-leaf" in [p.slug for p in snap.pages]
@@ -678,7 +677,7 @@ def test_t2_same_domain_key_is_kept(gdb_dom):
 
 def test_t3_excludes_cross_domain_neighbor(gdb_dom):
     # vi-hub LINKS_TO ai-node (cross-domain) and vi-leaf (same-domain).
-    snap = graph_context_loader.build_context_snapshot(
+    snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
         frontmatter=_vi_fm([]))
     slugs = [p.slug for p in snap.pages]
@@ -687,7 +686,7 @@ def test_t3_excludes_cross_domain_neighbor(gdb_dom):
 
 
 def test_no_padding_and_all_same_domain(gdb_dom):
-    snap = graph_context_loader.build_context_snapshot(
+    snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
         frontmatter=_vi_fm([]))
     slugs = {p.slug for p in snap.pages}
@@ -697,7 +696,7 @@ def test_no_padding_and_all_same_domain(gdb_dom):
 
 def test_no_domain_source_falls_back_to_full_graph(gdb_dom):
     # frontmatter=None → un-scoped; ai-node is reachable via T3 (vi-hub→ai-node).
-    snap = graph_context_loader.build_context_snapshot(
+    snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
         frontmatter=None)
     assert "ai-node" in [p.slug for p in snap.pages]
