@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# HISTORICAL one-shot migration (already applied); references modules that no longer exist. Not part of the live pipeline.
 """Task #66 one-shot migration — backfill last_compiled_hash on the live manifest.
 
 Existing source records predate Task #66 and have no `last_compiled_hash`. Without

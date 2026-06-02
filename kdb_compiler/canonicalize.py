@@ -14,7 +14,7 @@ References:
 - docs/what-is-ontology-for-V1.md §8.2 (canonicalization-first mandate)
 
 Errors raised here are fatal per D-R5-9 — Stage [6] failure prevents the
-compile from progressing to patch_applier so the vault is not written
+compile from progressing to page_writer so the vault is not written
 inconsistently with the graph.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ class LedgerLoadError(RuntimeError):
     """Raised when aliases.json is present but cannot be loaded or
     validated (malformed JSON, wrong shape, duplicate surface, missing
     required field). Fatal per D-R5-9 — caller must surface the failure
-    journal and halt the pipeline before patch_applier."""
+    journal and halt the pipeline before page_writer."""
 
 
 @dataclass(frozen=True)
@@ -96,7 +96,7 @@ def load_or_empty(path: Path | str) -> AliasLedger:
       computed over the raw file bytes.
     - **Present + malformed** → raises `LedgerLoadError`. Fatal per
       D-R5-9; Stage [6] writes a failure journal and the pipeline halts
-      before patch_applier so wiki and graph stay aligned on the
+      before page_writer so wiki and graph stay aligned on the
       previous state.
 
     Validation enforced:
@@ -204,7 +204,7 @@ class CircularAliasError(RuntimeError):
     """The alias ledger or its closure produces a cycle (e.g., A→B→A).
 
     Fatal per D-R5-9 — Stage [6] writes a failure journal and halts the
-    pipeline before patch_applier.
+    pipeline before page_writer.
     """
 
 
@@ -582,7 +582,7 @@ def run(
 
     The atomic write-back of the canonicalized `state/compile_result.json`
     is the caller's responsibility (see `write_canonicalized()`). Tests
-    and library callers can use `run()` standalone; the kdb_compile.py
+    and library callers can use `run()` standalone; the kdb_orchestrate.py
     Stage [6] wiring (Task #74.4) combines the two.
     """
     resolve = build_resolve_map(ledger)

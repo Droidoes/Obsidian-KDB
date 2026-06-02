@@ -136,8 +136,8 @@ class ProducerAdapter(Protocol):
         run_id: str,
         graph_dir: Path | None = None,
     ) -> SyncResult:
-        """Entry point for producer's live-sync hook (e.g., kdb_compile.py
-        Stage 9 — landing in #63.7-pre).
+        """Entry point for producer's live-sync hook (e.g., `kdb_orchestrate.py`
+        graph-sync step — originally wired in #63.7-pre via the deleted kdb_compile.py).
 
         Adapter opens a GraphDB connection at `graph_dir` (or default), calls
         `apply()` within a transaction, closes. This is the single

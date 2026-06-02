@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import page_writer as patch_applier
+from kdb_compiler import page_writer
 from kdb_compiler.page_writer import (
     ApplyResult,
     PagePatch,
@@ -433,7 +433,7 @@ def test_apply_normalizes_trailing_newline(tmp_path: Path) -> None:
 # ===========================================================================
 
 def _parse_mini_frontmatter(text: str) -> dict:
-    """Tiny parser matching patch_applier's emitter output (not a general YAML)."""
+    """Tiny parser matching page_writer's emitter output (not a general YAML)."""
     assert text.startswith("---\n")
     end = text.index("\n---\n", 4)
     block = text[4:end]

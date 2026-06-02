@@ -316,7 +316,7 @@ class CompileResult:
         }
 
 
-# ---------- M2 planner / context / resp-stats shapes ----------
+# ---------- M2 context / resp-stats shapes ----------
 
 @dataclass
 class ContextPage:

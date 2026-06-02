@@ -10,7 +10,7 @@ To run:
         .venv/bin/python3 -m pytest kdb_compiler/tests/test_m2_first_compile.py -s
 
 This is the "green-light" milestone per blueprint §14.6: the first
-evidence that the entire M2 stack (planner → prompt_builder → call_model
+evidence that the entire M2 stack (compiler → prompt_builder → call_model
 → response_normalizer → validator → resp_stats_writer) works end-to-end
 against a real provider.
 """

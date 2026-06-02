@@ -5,9 +5,9 @@ ingestion pipelines exist and how each is scoped. Unifies the v0.2
 blueprint's scan_roots.json + feeders.json. The orchestrator reads this at
 startup to present the pipeline-selection list and to scope the scan.
 
-Per-vault (roots are vault-specific), so state_root-parameterized like
-planner.plan. Does NOT replace the global load_scope_config() — per-pipeline
-scope migration is the orchestrator-integration step.
+Per-vault (roots are vault-specific), so state_root-parameterized like the
+orchestrator's scan setup. Does NOT replace the global load_scope_config() —
+per-pipeline scope migration is the orchestrator-integration step.
 """
 from __future__ import annotations
 

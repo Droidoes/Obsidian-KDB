@@ -1,5 +1,5 @@
 # kdb_compiler/enrich/enrich_journal.py
-"""Pass-1 run journal (Task #89 §5.4). Mirrors kdb_compile journal pattern."""
+"""Pass-1 run journal (Task #89 §5.4). Mirrors kdb_orchestrate journal pattern."""
 from __future__ import annotations
 
 import json

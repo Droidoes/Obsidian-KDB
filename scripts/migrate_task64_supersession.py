@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# HISTORICAL one-shot migration (already applied); references modules that no longer exist. Not part of the live pipeline.
 """Task #64 one-shot migration — apply recompile supersession to the live
 manifest for sources already recompiled before the Task #64 code fix landed.
 

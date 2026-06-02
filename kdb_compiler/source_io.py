@@ -1,20 +1,17 @@
 """Shared source-file I/O for kdb_compiler.
 
 Owns `parse_existing_frontmatter`, `SourceFrontmatter` (re-exported from
-types), and `parse_source_file()`. Used by both `planner.py` (plan-time
-frontmatter read for context-loader T2 construction) and `compiler.py`
-(compile-time `source_text_for` wrapper).
+types), and `parse_source_file()`. Used by the orchestrator and `compiler.py`
+(compile-time `source_text_for` wrapper) for frontmatter read at enrich/compile
+time.
 
-Fixes Bug B-1 (planner→compiler.py circular import) per Task #90 D-90-10:
-`compiler.py` already imports `planner` at module load, so `planner.py`
-cannot import `SourceFrontmatter` from `compiler.py`. Hoisting both the
-dataclass and the parse helper into this neutral module breaks the cycle.
-Also retires `planner._read_source_text`'s double-disk-read (Gemini F-4)
-by routing both callers through a single parse.
+Historical note: originally split from the deleted `planner.py` to break a
+circular-import cycle (Task #90 D-90-10, Bug B-1). The neutral placement here
+lets the enrich and compile stages import UP from this common leaf.
 
 Layering note (phase-a refactor): `parse_existing_frontmatter` lived in
-`kdb_compiler/ingestion/frontmatter_embedder.py` (a stage subpackage) but is
-a primitive needed by this common leaf; moved here so the ingestion stage
+`kdb_compiler/enrich/frontmatter_embedder.py` (a stage subpackage) but is
+a primitive needed by this common leaf; moved here so the enrich stage
 imports UP from the leaf, not the other way around.
 """
 from __future__ import annotations
@@ -61,7 +58,7 @@ def parse_source_file(path: Path) -> tuple[SourceFrontmatter | None, str]:
           than raise — Pass-1's bug to fix, not ours.
 
     Used by:
-        - planner.build_jobs (wraps in try/except for plan-time degrade)
+        - orchestrator / enrich stage (wraps in try/except for source-level degrade)
         - compiler.source_text_for (thin wrapper; propagates for compile_one's
           scaffold-and-fill error classification)
     """

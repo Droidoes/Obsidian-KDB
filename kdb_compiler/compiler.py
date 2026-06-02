@@ -1,7 +1,7 @@
 """compiler — per-source LLM compile orchestration.
 
 Pipeline position:
-    kdb_scan -> [compiler] -> validate -> patch_applier -> source_state_update
+    kdb_scan -> [compiler] -> validate -> page_writer -> manifest_writer
 
 Contract (per blueprint §5.7 / §9):
 
@@ -127,7 +127,7 @@ def source_text_for(job: CompileJob) -> tuple[SourceFrontmatter | None, str]:
     UnicodeDecodeError so compile_one's scaffold-and-fill can classify failure.
 
     Migrated to kdb_compiler.source_io 2026-05-27 (Task #90 D-90-10) to break
-    the planner→compiler.py circular-import cycle B-1.
+    a circular-import cycle (Bug B-1, formerly in the deleted planner.py).
 
     Task #91: prefers the orchestrator's in-memory (source_text, frontmatter)
     when present — zero disk reads; else falls back to disk (legacy path).

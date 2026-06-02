@@ -11,7 +11,7 @@ reads producer JSON by documented field names (D-B1 invariant; PR1 of
 extraction roadmap).
 
 Per D-S0 the producer's Stage 9 wiring calls `sync_current_run` here — that
-hookup itself lives in `kdb_compile.py` and is #63.7-pre's work.
+hookup itself lives in `kdb_orchestrate.py` (supersedes the deleted `kdb_compile.py`).
 """
 from __future__ import annotations
 
@@ -208,9 +208,9 @@ class ObsidianRunsAdapter:
     ) -> SyncResult:
         """Open a GraphDB at `graph_dir` and apply one run's payload.
 
-        Single Obsidian→graph entry point per D-S0; `kdb_compile.py` Stage 9
-        calls this (wired in #63.7-pre). The adapter owns connection lifecycle
-        here so the caller (producer code) never touches `graphdb_kdb.GraphDB`.
+        Single Obsidian→graph entry point per D-S0; `kdb_orchestrate.py` calls
+        this for graph-sync (wired in #63.7-pre). The adapter owns connection
+        lifecycle here so the caller (producer code) never touches `graphdb_kdb.GraphDB`.
         """
         from graphdb_kdb import default_graph_path
         from graphdb_kdb.graphdb import GraphDB

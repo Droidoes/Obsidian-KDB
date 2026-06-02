@@ -1,11 +1,17 @@
 """KDB Compiler — Karpathy-style LLM knowledge-base compiler for Obsidian.
 
-Pipeline:
-    kdb_scan  ->  planner  ->  compiler  ->  validate_compile_result  ->  page_writer  ->  manifest_writer
+Orchestrated by `kdb_orchestrate.py`. Per-source flow:
 
-LLM produces structured JSON patch-ops; Python owns every filesystem write.
+    kdb_scan -> enrich (Pass-1) -> compile (Pass-2: entities/LINKS_TO/SUPPORTS)
+             -> repair -> canonicalize -> page_writer -> graph-sync
 
-See docs/CODEBASE_OVERVIEW.md for architecture.
+Finalize pass: merge -> wire_links -> detect_orphans -> cleanup.
+
+The graph (graphdb_kdb / Kuzu) is the substrate; `context_loader` reads it
+via the graph query API. `manifest.json` is the source-state metadata ledger.
+LLM produces structured JSON; Python owns every filesystem write.
+
+See docs/CODEBASE_OVERVIEW.md §5 for architecture.
 """
 
 __version__ = "0.1.0-m0"

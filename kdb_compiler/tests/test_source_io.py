@@ -1,8 +1,8 @@
 """Unit tests for kdb_compiler.source_io.
 
-Covers the shared parse_source_file() helper that both planner and compiler
-consume (Task #90 D-90-10). Provides direct coverage previously implicit via
-compiler.source_text_for tests.
+Covers the shared parse_source_file() helper consumed by the orchestrator
+and compiler (Task #90 D-90-10). Provides direct coverage previously implicit
+via compiler.source_text_for tests.
 """
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ def test_author_null_when_absent(tmp_path: Path) -> None:
 
 
 def test_missing_file_raises_oserror(tmp_path: Path) -> None:
-    """OSError propagates — caller (planner) wraps for plan-time degrade."""
+    """OSError propagates — caller wraps for source-level degrade."""
     with pytest.raises(OSError):
         parse_source_file(tmp_path / "does-not-exist.md")
 

@@ -1,9 +1,12 @@
 """context_loader — GraphDB-backed context snapshot for one compile job.
 
-Selected by planner.py via KDB_CONTEXT_SOURCE=graphdb. Does NOT read env vars
-itself (Codex F-5 purity invariant) — planner owns env-var parsing and threads
-T2Mode/resolver as explicit params. Fails explicitly if graph state is
-insufficient.
+Called directly by the orchestrator (`kdb_orchestrate.py`). Does NOT read env
+vars itself (Codex F-5 purity invariant) — the caller threads T2Mode/resolver
+as explicit params. Fails explicitly if graph state is insufficient.
+
+Note: `KDB_CONTEXT_SOURCE`, `KDB_T2_MODE`, and `KDB_T2_RESOLVER` env vars no
+longer have any effect; selection and mode are wired directly by the
+orchestrator.
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
@@ -70,7 +73,7 @@ def build_context_snapshot(
             Drives T2 branch under STRUCTURED/LAYERED modes.
         mode: T2 production strategy (default STRUCTURED per D-90-1).
         resolver: "simple" (2-query default per D-90-9) or "batch" (Codex-tested
-            escape hatch via KDB_T2_RESOLVER=batch).
+            escape hatch; pass resolver="batch" explicitly).
     """
     active_entities = _load_active_entities(conn)
     if not active_entities:
@@ -452,7 +455,7 @@ def _resolve_to_canonical_slugs_batch(
     conn: Any,
     raw_slugs: list[str],
 ) -> dict[str, str]:
-    """Codex-tested batch resolver (D-90-9 escape hatch, KDB_T2_RESOLVER=batch).
+    """Codex-tested batch resolver (D-90-9 escape hatch; pass resolver="batch").
 
     Thin wrapper over graphdb_kdb.queries.resolve_to_canonical_slugs_batch.
     """
