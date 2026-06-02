@@ -10,7 +10,8 @@ recovery loop (Tier 2: journals AND Kuzu dir lost → restore from
 snapshot). Out of scope for #63.9.
 
 D34 invariant: this module reads ONLY from the Kuzu graph. No imports
-from kdb_compiler.* — snapshot represents graph state, not producer state.
+from compiler / ingestion / orchestrator — snapshot represents graph
+state, not producer state.
 
 Atomicity: write into `<out_dir>.tmp.<uuid>/`, write data files first,
 manifest.json last, then `os.rename` to `<out_dir>/`. If `<out_dir>`
@@ -254,8 +255,8 @@ def default_snapshot_dirname() -> str:
     """Filename-safe snapshot id: `YYYY-MM-DDTHH-MM-SS_<TZ>`.
 
     Mirrors `common.run_context.run_id_from_timestamp` format
-    without importing it (D34: no kdb_compiler imports inside
-    kdb_graph/).
+    without importing it (D34: no compiler/ingestion/orchestrator imports
+    inside kdb_graph/).
     """
     dt = datetime.now().astimezone()
     tz = dt.tzname() or "LOCAL"

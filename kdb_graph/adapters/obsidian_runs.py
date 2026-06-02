@@ -6,9 +6,9 @@ Bridges `kdb-compile`'s run-journal artifacts to GraphDB-KDB mutations:
   state/runs/<run_id>/compile_result.json  ← per-run mutation payload (sidecar, post-#63.7)
   state/runs/<run_id>/last_scan.json       ← per-run scan/state payload (sidecar, post-#63.7)
 
-Critical: no `import kdb_compiler.*` anywhere in this module. The adapter
-reads producer JSON by documented field names (D-B1 invariant; PR1 of
-extraction roadmap).
+Critical: no imports from `compiler`, `ingestion`, or `orchestrator` anywhere
+in this module. The adapter reads producer JSON by documented field names
+(D-B1 / D34 invariant; PR1 of extraction roadmap).
 
 Per D-S0 the producer's Stage 9 wiring calls `sync_current_run` here — that
 hookup itself lives in `kdb_orchestrate.py` (supersedes the deleted `kdb_compile.py`).

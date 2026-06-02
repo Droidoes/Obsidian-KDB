@@ -5,8 +5,8 @@ calls into this interface; producers also call `sync_current_run()` directly
 for live sync (D-S0).
 
 Critical invariant (D-B1): adapters parse producer JSON artifacts by documented
-field names. Adapters MUST NOT import producer Python types (no
-`from kdb_compiler.x import Y` inside `kdb_graph/`).
+field names. Adapters MUST NOT import producer Python types (no imports from
+`compiler`, `ingestion`, or `orchestrator` inside `kdb_graph/`).
 """
 from __future__ import annotations
 

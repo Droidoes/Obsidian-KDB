@@ -4,7 +4,7 @@ Test scope (per Codex review + Phase 2 design lock):
 1. JSONL parseability — every line in every file parses as JSON
 2. Manifest count + sha256 — recorded values match what's on disk
 3. Stable ordering — two snapshots of an unchanged graph are byte-identical
-4. D34 grep invariant — snapshot.py has no kdb_compiler imports
+4. D34 grep invariant — kdb_graph production code has no compiler/ingestion/orchestrator imports
 5. Atomic-failure cleanup — failed mid-snapshot leaves no `<out>/`
 6. latest.json pointer — points at the most recent snapshot dir
 """
@@ -181,21 +181,41 @@ def test_two_snapshots_of_unchanged_graph_are_byte_identical(graph_dir, tmp_path
 # ---------- 4. D34 grep invariant ----------
 
 
-def test_snapshot_module_has_no_kdb_compiler_imports():
-    """D34: parse import nodes via ast (not text grep — docstrings can
-    mention `kdb_compiler` legitimately)."""
+def test_kdb_graph_has_no_producer_imports():
+    """D34: kdb_graph production code must not import from the producer
+    packages (compiler / ingestion / orchestrator).  Imports from `common`
+    are allowed.
+
+    Uses AST parsing, not text grep, so legitimate mentions in docstrings
+    and comments (e.g. the D34 invariant statement itself) don't fire.
+
+    Scans all *.py files under kdb_graph/ except its own tests/ sub-tree.
+    """
     import ast
 
-    path = Path(__file__).resolve().parent.parent / "snapshot.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                assert not alias.name.startswith("kdb_compiler"), \
-                    f"D34 violation: import {alias.name}"
-        elif isinstance(node, ast.ImportFrom):
-            assert not (node.module or "").startswith("kdb_compiler"), \
-                f"D34 violation: from {node.module} import ..."
+    _PRODUCER_PREFIXES = ("compiler", "ingestion", "orchestrator")
+
+    pkg_root = Path(__file__).resolve().parent.parent  # kdb_graph/
+    tests_dir = pkg_root / "tests"
+
+    py_files = [
+        p for p in pkg_root.rglob("*.py")
+        if not p.is_relative_to(tests_dir)
+    ]
+    assert py_files, "No production .py files found — misconfigured test?"
+
+    for py_file in py_files:
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        rel = py_file.relative_to(pkg_root)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.split(".")[0] in _PRODUCER_PREFIXES, \
+                        f"D34 violation in {rel}: import {alias.name}"
+            elif isinstance(node, ast.ImportFrom):
+                top = (node.module or "").split(".")[0]
+                assert top not in _PRODUCER_PREFIXES, \
+                    f"D34 violation in {rel}: from {node.module} import ..."
 
 
 # ---------- 5. Atomic-failure cleanup ----------
