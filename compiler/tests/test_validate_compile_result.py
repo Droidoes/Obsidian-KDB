@@ -10,7 +10,7 @@ import pytest
 
 from compiler import validate_compile_result as vcr
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parents[2] / "tests" / "fixtures"
 REPO_ROOT = Path(__file__).parent.parent.parent
 
 

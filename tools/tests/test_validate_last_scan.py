@@ -11,7 +11,7 @@ import pytest
 
 from tools.diagnostics import validate_last_scan as vls
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parents[2] / "tests" / "fixtures"
 REPO_ROOT = Path(__file__).parent.parent.parent
 
 H1 = "sha256:" + "1" * 64

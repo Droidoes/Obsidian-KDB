@@ -22,7 +22,7 @@ from tools.replay import (
     replay_case,
 )
 
-_FIXTURES_DIR = Path(__file__).parent / "fixtures" / "response_replay"
+_FIXTURES_DIR = Path(__file__).parents[2] / "tests" / "fixtures" / "response_replay"
 
 
 # ---------- load_fixtures ----------
