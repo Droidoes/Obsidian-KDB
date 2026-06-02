@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.prompt_builder import build_prompt
+from compiler.prompt_builder import build_prompt
 from common.types import ContextSnapshot
 
 

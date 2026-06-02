@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import compiler, validate_source_response
+from compiler import compiler, validate_source_response
 from common.run_context import RunContext
 from common.types import CompileJob, ContextSnapshot
 

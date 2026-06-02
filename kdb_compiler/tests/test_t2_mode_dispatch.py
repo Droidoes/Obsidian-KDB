@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from kdb_graph.graphdb import GraphDB
-from kdb_compiler.context_loader import (
+from compiler.context_loader import (
     T2Mode,
     build_context_snapshot,
 )

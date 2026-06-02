@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import validate_compile_result as vcr
+from compiler import validate_compile_result as vcr
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -299,7 +299,7 @@ def test_pairing_type_mismatch_is_measure_not_gate() -> None:
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "kdb_compiler.validate_compile_result", *args],
+        [sys.executable, "-m", "compiler.validate_compile_result", *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

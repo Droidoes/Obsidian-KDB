@@ -25,8 +25,8 @@ dev = ["pytest>=7", "pytest-cov>=4"]
 [project.scripts]
 kdb-enrich            = "ingestion.enrich.kdb_enrich:main"
 kdb-scan              = "ingestion.kdb_scan:main"
-kdb-validate          = "kdb_compiler.validate_compile_result:main"
-kdb-validate-response = "kdb_compiler.validate_source_response:main"
+kdb-validate          = "compiler.validate_compile_result:main"
+kdb-validate-response = "compiler.validate_source_response:main"
 kdb-clean             = "kdb_compiler.kdb_clean:main"
 kdb-replay            = "kdb_compiler.response_replay:main"
 kdb-benchmark         = "kdb_benchmark.cli:main"
@@ -43,6 +43,7 @@ exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
 
 [tool.setuptools.package-data]
 kdb_compiler  = ["schemas/*.json"]
+compiler      = ["schemas/*.json"]
 kdb_benchmark = ["models.json"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 

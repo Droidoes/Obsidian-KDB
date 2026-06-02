@@ -74,7 +74,7 @@ def gdb(tmp_path: Path):
         yield g
 
 
-from kdb_compiler import context_loader
+from compiler import context_loader
 
 
 class TestTierRanking:
@@ -328,12 +328,12 @@ class TestColdStartTitleMatching:
         the TITLE path doesn't add duplicate matches for ineligible titles).
         Guardrail correctness is primarily verified in the isolated tests.
         """
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Value") is False
 
     def test_title_guardrail_skips_very_short_integration(self, cold_start_gdb):
         """Title 'AI' (len <= 3) does NOT widen T2 via title matching."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("AI") is False
 
     def test_title_matching_only_fires_on_cold_start(self, cold_start_gdb):
@@ -359,37 +359,37 @@ class TestColdStartTitleGuardrailIsolated:
 
     def test_multi_token_title_eligible(self):
         """'Margin of Safety' — 3 tokens, eligible."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Margin of Safety") is True
 
     def test_long_single_token_eligible(self):
         """'Legalism' — 1 token, 8 chars, eligible."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Legalism") is True
 
     def test_short_single_token_ineligible(self):
         """'Value' — 1 token, 5 chars, ineligible."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Value") is False
 
     def test_very_short_title_ineligible(self):
         """'AI' — 2 chars, ineligible."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("AI") is False
 
     def test_three_char_title_ineligible(self):
         """'Oil' — 3 chars, ineligible (rule is > 3 not >= 3)."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Oil") is False
 
     def test_six_char_single_token_eligible(self):
         """'Taoism' — 1 token, 6 chars, eligible (rule is >= 6)."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Taoism") is True
 
     def test_five_char_single_token_ineligible(self):
         """'Stoic' — 1 token, 5 chars, ineligible."""
-        from kdb_compiler.context_loader import _title_eligible
+        from compiler.context_loader import _title_eligible
         assert _title_eligible("Stoic") is False
 
 
@@ -462,7 +462,7 @@ class TestT3NeighborsRegression:
         """Same inputs twice → identical output. Locks the function's
         order-independence; future query-shape changes that introduce
         nondeterminism will trip this guard."""
-        from kdb_compiler.context_loader import _t3_neighbors
+        from compiler.context_loader import _t3_neighbors
 
         seeds = {"margin-of-safety"}
         candidates = {
@@ -477,7 +477,7 @@ class TestT3NeighborsRegression:
         """The primitive walks both directions (per §4.3 contract — "in+out
         neighbors"). Regression guard against a future change that
         accidentally drops one direction."""
-        from kdb_compiler.context_loader import _t3_neighbors
+        from compiler.context_loader import _t3_neighbors
 
         # legalism: outgoing → hub-node; incoming ← margin-of-safety
         seeds = {"legalism"}
@@ -489,7 +489,7 @@ class TestT3NeighborsRegression:
     def test_t3_neighbors_respects_candidate_filter(self, cold_start_gdb):
         """Neighbors outside the candidate set are filtered out — the
         `candidate_slugs` parameter is honored, not advisory."""
-        from kdb_compiler.context_loader import _t3_neighbors
+        from compiler.context_loader import _t3_neighbors
 
         # legalism reaches both hub-node and margin-of-safety; restrict
         # candidates to hub-node only.
@@ -501,7 +501,7 @@ class TestT3NeighborsRegression:
     def test_t3_neighbors_excludes_seeds_from_output(self, cold_start_gdb):
         """The seed slugs themselves never appear in the output set —
         traversal excludes the starting frontier."""
-        from kdb_compiler.context_loader import _t3_neighbors
+        from compiler.context_loader import _t3_neighbors
 
         seeds = {"legalism", "hub-node"}
         candidates = {

@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import compiler, prompt_builder
+from compiler import compiler, prompt_builder
 from common.call_model import ModelResponse
-from kdb_compiler.canonicalize import load_or_empty
+from compiler.canonicalize import load_or_empty
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileJob, CompileSourceResult, ContextSnapshot
@@ -114,7 +114,7 @@ def test_compile_source_produces_cr_and_writes_nothing(tmp_path, monkeypatch):
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -154,7 +154,7 @@ def test_compile_source_requests_json_mode(tmp_path, monkeypatch):
             text=json.dumps(_good_response("s.md")), input_tokens=100,
             output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
         )
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", capturing)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", capturing)
 
     with GraphDB(tmp_path / "graph") as g:
         compiler.compile_source(
@@ -173,7 +173,7 @@ def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
     snap = ContextSnapshot(source_id="KDB/raw/s.md", pages=[])
 
     # conn=None proves the pre-built snapshot path does no graph read.
@@ -212,7 +212,7 @@ def test_compile_source_alias_singleton_rename(tmp_path, monkeypatch):
              "outgoing_links": [], "confidence": "medium"},
         ])
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model(resp))
+        "compiler.compiler.call_model_with_retry", _fake_model(resp))
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -238,7 +238,7 @@ def test_compile_source_compile_error(tmp_path, monkeypatch):
 
     def boom(req):
         raise RuntimeError("model exploded")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -272,7 +272,7 @@ def test_compile_source_parse_error_exposes_raw_resp_stats_artifact(tmp_path, mo
             attempts=1,
         )
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", bad_json)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", bad_json)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -293,9 +293,9 @@ def test_compile_source_gate_error(tmp_path, monkeypatch):
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
-    from kdb_compiler.validate_compile_result import ValidationResult, ValidationFinding
+    from compiler.validate_compile_result import ValidationResult, ValidationFinding
     def fake_validate(cr):
         r = ValidationResult()
         r.gate_errors.append(ValidationFinding(
@@ -303,7 +303,7 @@ def test_compile_source_gate_error(tmp_path, monkeypatch):
             source_id="KDB/raw/s.md"))
         return r
     monkeypatch.setattr(
-        "kdb_compiler.compiler.validate_compile_result.validate", fake_validate)
+        "compiler.compiler.validate_compile_result.validate", fake_validate)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -323,13 +323,13 @@ def test_compile_source_reconcile_error(tmp_path, monkeypatch):
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
-    from kdb_compiler import repair as _rec
+    from compiler import repair as _rec
 
     def boom(cr, findings):
         raise _rec.RepairError("forced reconcile failure")
-    monkeypatch.setattr("kdb_compiler.compiler.repair.repair", boom)
+    monkeypatch.setattr("compiler.compiler.repair.repair", boom)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(

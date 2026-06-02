@@ -37,12 +37,12 @@ from common.types import ParsedSummary, RespStatsRecord
 if TYPE_CHECKING:
     # BuiltPrompt is defined in prompt_builder (Step F). Runtime uses duck
     # typing — any object with .system and .user str attrs works.
-    from kdb_compiler.prompt_builder import BuiltPrompt
+    from compiler.prompt_builder import BuiltPrompt
     # FailureTelemetry is defined in compiler.py. Same duck-typed contract
     # — any object with .stage, .exception_type, .message str attrs works.
     # Imported under TYPE_CHECKING to avoid the compiler -> resp_stats ->
     # compiler import cycle.
-    from kdb_compiler.compiler import FailureTelemetry
+    from compiler.compiler import FailureTelemetry
 
 _NONE_HASH = "sha256:none"
 _CAPTURE_FULL_ENV = "KDB_RESP_STATS_CAPTURE_FULL"

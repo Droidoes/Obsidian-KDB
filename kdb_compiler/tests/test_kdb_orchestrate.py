@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import compiler, kdb_orchestrate, prompt_builder
+from compiler import compiler, prompt_builder
+from kdb_compiler import kdb_orchestrate
 from common.call_model import ModelResponse
-from kdb_compiler.canonicalize import load_or_empty
+from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
@@ -92,7 +93,7 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     source_id = "AIML/s.md"
     post_embed_hash = "sha256:" + "a" * 64
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_model(_two_page_response()))
 
     with GraphDB(tmp_path / "graph") as g:
@@ -274,7 +275,7 @@ def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
     (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
     res = kdb_orchestrate.run(
@@ -305,7 +306,7 @@ def test_default_run_streams_progress_to_stdout(tmp_path, monkeypatch, capsys):
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
     kdb_orchestrate.run(
@@ -327,7 +328,7 @@ def test_quiet_suppresses_progress_but_keeps_jsonl(tmp_path, monkeypatch, capsys
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
     res = kdb_orchestrate.run(
@@ -348,7 +349,7 @@ def test_successful_run_writes_stage_and_source_events(tmp_path, monkeypatch):
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
     res = kdb_orchestrate.run(
@@ -391,7 +392,7 @@ def test_run_quarantines_compile_error_and_continues(tmp_path, monkeypatch):
         if "a.md" in req.prompt:
             raise RuntimeError("model down")
         return _fake_model(_compiled_response("b.md", "summary-b"))(req)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
@@ -442,7 +443,7 @@ def test_event_log_failure_is_surfaced_in_summary(tmp_path, monkeypatch):
 
     def boom(req):
         raise RuntimeError("model down")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     def broken_recorder(cls, *, state_root, run_id, log_level="warning", console=None):
         return cls(run_id=run_id, events_path=Path(state_root), log_level=log_level,
@@ -488,7 +489,7 @@ def test_pass1_failure_event_references_raw_response_sidecar(tmp_path, monkeypat
         )
 
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", bad_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("b.md", "summary-b")))
 
     res = kdb_orchestrate.run(
@@ -534,7 +535,7 @@ def test_pass2_invalid_response_event_references_raw_resp_stats(tmp_path, monkey
             attempts=1,
         )
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", bad_json)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", bad_json)
 
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
@@ -579,7 +580,7 @@ def test_finalize_runs_after_later_source_quarantine_and_wires_committed_links(
             return _fake_model(response)(req)
         raise RuntimeError("model down")
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", model)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
 
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
@@ -616,7 +617,7 @@ def test_all_quarantined_skips_finalize_but_writes_summary_and_event_log(
     def boom(req):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
@@ -645,7 +646,7 @@ def test_source_local_commit_failure_marks_error_commit_and_continues(tmp_path, 
             return _fake_model(_compiled_response("a.md", "summary-a"))(req)
         return _fake_model(_compiled_response("b.md", "summary-b"))(req)
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", model)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
     original_commit_source = kdb_orchestrate._commit_source
 
     def flaky_commit(*args, **kwargs):
@@ -683,7 +684,7 @@ def test_missing_raw_response_emits_unavailable_event(tmp_path, monkeypatch):
     def boom(req):
         raise RuntimeError("model down")
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
@@ -703,7 +704,7 @@ def test_unexpected_exception_writes_run_fatal_event_and_summary(tmp_path, monke
     (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
     _write_pipelines(state_root, vault)
     monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
     def boom_finalize(*_args, **_kwargs):
@@ -803,7 +804,7 @@ def test_cli_makes_quarantine_alarm_visible(tmp_path, monkeypatch, capsys):
 
     def boom(req):
         raise RuntimeError("model down")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", boom)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", boom)
 
     rc = kdb_orchestrate.main([
         "--pipeline", "vt", "--vault-root", str(vault),
@@ -919,7 +920,7 @@ def test_run_limit_stops_after_n_compiled(tmp_path, monkeypatch):
         # a.md is always first; return matching source_name
         return _fake_model(_compiled_response("a.md", "summary-a"))(req)
 
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry",
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         fake_model_counting)
 
     res = kdb_orchestrate.run(

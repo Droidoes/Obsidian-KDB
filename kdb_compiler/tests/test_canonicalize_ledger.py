@@ -1,4 +1,4 @@
-"""Tests for kdb_compiler.canonicalize ledger loader (Task #74.2).
+"""Tests for compiler.canonicalize ledger loader (Task #74.2).
 
 Anchors:
 - docs/task74-canonicalization-blueprint.md §6.3 (error semantics) + D-R5-8
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.canonicalize import (
+from compiler.canonicalize import (
     EMPTY_LEDGER_SHA,
     AliasEntry,
     AliasLedger,

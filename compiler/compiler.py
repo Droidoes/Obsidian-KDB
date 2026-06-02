@@ -16,7 +16,7 @@ Contract (per blueprint §5.7 / §9):
     the debug artifacts you run the pipeline *to* collect.
 
 `call_model_with_retry` is imported at module level so tests can
-monkeypatch `kdb_compiler.compiler.call_model_with_retry` as a clean
+monkeypatch `compiler.compiler.call_model_with_retry` as a clean
 seam without touching `call_model_retry` itself.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
 
-from kdb_compiler import (
+from compiler import (
     canonicalize,
     prompt_builder,
     repair,
@@ -37,9 +37,9 @@ from kdb_compiler import (
 from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
-from kdb_compiler.canonicalize import AliasLedger
-from kdb_compiler.context_loader import T2Mode, build_context_snapshot
-from kdb_compiler.repair import reconcile_body_links, reconcile_slug_lists
+from compiler.canonicalize import AliasLedger
+from compiler.context_loader import T2Mode, build_context_snapshot
+from compiler.repair import reconcile_body_links, reconcile_slug_lists
 from kdb_compiler.resp_stats_writer import build_resp_stats, write_resp_stats
 from common.run_context import RunContext
 from common.types import (

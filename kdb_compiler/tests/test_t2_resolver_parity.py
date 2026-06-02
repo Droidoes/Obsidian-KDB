@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from kdb_graph.graphdb import GraphDB
-from kdb_compiler.context_loader import (
+from compiler.context_loader import (
     _resolve_to_canonical_slugs,
     _resolve_to_canonical_slugs_batch,
 )

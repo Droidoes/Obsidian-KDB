@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from kdb_compiler.response_normalizer import extract_json_text, parse_json_object
+from compiler.response_normalizer import extract_json_text, parse_json_object
 
 
 # ---------- extract_json_text: accepted shapes ----------
@@ -142,7 +142,7 @@ def test_parse_rejects_non_object_even_if_extract_would_allow_it() -> None:
 def test_no_semantic_functions_present() -> None:
     """The module must only extract/parse — never coerce, rename, or infer.
     If this test fails, the shrink contract has been violated."""
-    import kdb_compiler.response_normalizer as rn
+    import compiler.response_normalizer as rn
     public_names = [n for n in dir(rn) if not n.startswith("_") and callable(getattr(rn, n))]
     public_names = [n for n in public_names if n not in ("json",)]  # imports are callable
     assert sorted(public_names) == ["extract_json_text", "parse_json_object"], (

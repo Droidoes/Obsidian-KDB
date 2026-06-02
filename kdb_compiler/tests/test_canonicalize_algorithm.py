@@ -1,4 +1,4 @@
-"""Tests for kdb_compiler.canonicalize Stage [6] algorithm (Task #74.3).
+"""Tests for compiler.canonicalize Stage [6] algorithm (Task #74.3).
 
 Covers:
 - `_normalize_slug` — slug normalization edge cases
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler.canonicalize import (
+from compiler.canonicalize import (
     AliasEntry,
     AliasLedger,
     CanonicalizationResult,

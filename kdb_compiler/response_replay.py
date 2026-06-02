@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from kdb_compiler import response_normalizer, validate_source_response
+from compiler import response_normalizer, validate_source_response
 
 
 @dataclass

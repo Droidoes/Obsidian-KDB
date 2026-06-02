@@ -238,7 +238,7 @@ def cypher(
 
 # ---------- context-snapshot read primitives (single Kuzu door) ----------
 #
-# Raw reads extracted verbatim from kdb_compiler.context_loader so the graph
+# Raw reads extracted verbatim from compiler.context_loader so the graph
 # package owns all Kuzu I/O. Each function is one `conn.execute` + drain,
 # returning plain data. The composition/ranking logic (tiering, BFS frontier
 # control, set algebra, networkx PageRank) lives in the loader, not here.

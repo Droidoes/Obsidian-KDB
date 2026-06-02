@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import prompt_builder
-from kdb_compiler.prompt_builder import (
+from compiler import prompt_builder
+from compiler.prompt_builder import (
     RESPONSE_CONTRACT,
     build_prompt,
     exemplar_response,
@@ -30,7 +30,7 @@ from kdb_compiler.prompt_builder import (
     load_system_prompt,
 )
 from common.types import ContextPage, ContextSnapshot
-from kdb_compiler.validate_source_response import semantic_check, validate
+from compiler.validate_source_response import semantic_check, validate
 
 SOURCE_NAME = "foo.md"
 SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction

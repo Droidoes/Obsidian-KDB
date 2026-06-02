@@ -13,7 +13,7 @@ Coverage per blueprint §10:
     - semantic failure writes a resp-stats record with semantic_ok=False
     - resp-stats record written EXACTLY ONCE per compile_one call, in every branch
 
-All tests use `monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fake)`
+All tests use `monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)`
 to stub the LLM. The resp-stats invariant check counts files on disk under
 <state_root>/llm_resp/<run_id>/, which is the authoritative evidence.
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import compiler, prompt_builder
+from compiler import compiler, prompt_builder
 from common.call_model import ModelResponse
 from common.run_context import RunContext
 from common.types import (
@@ -156,7 +156,7 @@ def test_compile_one_happy_path_returns_compiled_source(
     ctx = _ctx(vault)
 
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
     )
 
@@ -201,7 +201,7 @@ def test_compile_one_retries_on_bad_json_then_succeeds(
         return _good_model_response(SOURCE_A)
 
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad_then_good}),
     )
 
@@ -233,7 +233,7 @@ def test_compile_one_quarantines_after_all_attempts_fail(
         )
 
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: always_bad}),
     )
 
@@ -257,7 +257,7 @@ def test_compile_one_threads_compile_meta_from_model_response(
 
     mr = _good_model_response(SOURCE_A, attempts=2)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: mr}),
     )
 
@@ -320,7 +320,7 @@ def test_compile_one_reconciles_mis_filed_slug_lists(
         latency_ms=123, model="claude-opus-4-7", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: mr}),
     )
 
@@ -352,7 +352,7 @@ def test_compile_one_source_read_failure_writes_resp_stats_record(
 
     def fail(_req):
         raise AssertionError("call_model should not run after source-read failure")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", fail)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fail)
 
     cs, logs, warns, err = compiler.compile_one(
         _job(vault, SOURCE_A),
@@ -388,12 +388,12 @@ def test_compile_one_prompt_build_failure_writes_resp_stats_record(
     def boom(**_kwargs):
         raise RuntimeError("prompt build exploded")
     monkeypatch.setattr(
-        "kdb_compiler.compiler.prompt_builder.build_prompt", boom
+        "compiler.compiler.prompt_builder.build_prompt", boom
     )
 
     def noop(_req):
         raise AssertionError("call_model should not run after prompt-build failure")
-    monkeypatch.setattr("kdb_compiler.compiler.call_model_with_retry", noop)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", noop)
 
     cs, _, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
@@ -425,7 +425,7 @@ def test_compile_one_model_call_failure_writes_resp_stats_record(
     def blow_up(_req):
         raise RuntimeError("transport broke")
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: blow_up}),
     )
 
@@ -467,7 +467,7 @@ def test_compile_one_truncation_guard_short_circuits_extract(
         stop_reason="max_tokens",
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: truncated}),
     )
 
@@ -507,7 +507,7 @@ def test_compile_one_openai_length_stop_reason_also_guarded(
         stop_reason="length",
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: truncated}),
     )
 
@@ -540,7 +540,7 @@ def test_compile_one_extract_failure_writes_resp_stats_record(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -576,7 +576,7 @@ def test_compile_one_parse_failure_writes_resp_stats_record(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -616,7 +616,7 @@ def test_compile_one_schema_failure_writes_resp_stats_record(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -659,7 +659,7 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -694,7 +694,7 @@ def test_compile_one_persists_source_words_on_happy_path(
     ctx = _ctx(vault)
 
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
     )
 
@@ -729,7 +729,7 @@ def test_compile_one_persists_stop_reason_and_token_overrun_on_truncation(
         stop_reason="max_tokens",
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: truncated}),
     )
 
@@ -773,7 +773,7 @@ def test_failure_triplet_source_read_populates_oserror(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         lambda _req: (_ for _ in ()).throw(AssertionError("must not run")),
     )
 
@@ -798,7 +798,7 @@ def test_failure_triplet_prompt_build_populates(
     def boom(**_kwargs):
         raise RuntimeError("prompt build exploded")
     monkeypatch.setattr(
-        "kdb_compiler.compiler.prompt_builder.build_prompt", boom
+        "compiler.compiler.prompt_builder.build_prompt", boom
     )
 
     compiler.compile_one(
@@ -822,7 +822,7 @@ def test_failure_triplet_model_call_populates(
     def blow_up(_req):
         raise ValueError("transport broke")
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: blow_up}),
     )
 
@@ -854,7 +854,7 @@ def test_failure_triplet_truncation_uses_synthetic_token_overrun(
         stop_reason="max_tokens",
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: truncated}),
     )
 
@@ -883,7 +883,7 @@ def test_failure_triplet_extract_populates_valueerror(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -911,7 +911,7 @@ def test_failure_triplet_parse_populates_jsondecodeerror(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -935,7 +935,7 @@ def test_failure_triplet_all_none_on_happy_path(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
     )
 
@@ -967,7 +967,7 @@ def test_failure_triplet_stays_none_for_schema_failure(
         model="m", provider="anthropic", attempts=1,
     )
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: bad}),
     )
 
@@ -998,7 +998,7 @@ def test_failure_message_truncated_at_2000_chars(
     def boom(_req):
         raise RuntimeError(long_msg)
     monkeypatch.setattr(
-        "kdb_compiler.compiler.call_model_with_retry",
+        "compiler.compiler.call_model_with_retry",
         _fake_call({SOURCE_A: boom}),
     )
 
@@ -1034,7 +1034,7 @@ def test_truncate_msg_above_cap_truncated() -> None:
 
 def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
     """Per D-89-17 + §10.5: source_text_for splits frontmatter from body."""
-    from kdb_compiler.compiler import source_text_for
+    from compiler.compiler import source_text_for
     from common.source_io import SourceFrontmatter
 
     src = tmp_path / "essay.md"
@@ -1083,7 +1083,7 @@ def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
 
 def test_source_text_for_handles_pristine_source(tmp_path: Path) -> None:
     """A source without frontmatter (pre-Pass-1) still works — returns (None, body)."""
-    from kdb_compiler.compiler import source_text_for
+    from compiler.compiler import source_text_for
 
     src = tmp_path / "essay.md"
     src.write_text("# Essay\n\nBody only.\n", encoding="utf-8")
@@ -1108,7 +1108,7 @@ def test_page_intent_has_no_domain_fields():
 def test_response_schema_omits_page_domain():
     import json, pathlib
     schema = json.loads(pathlib.Path(
-        "kdb_compiler/schemas/compiled_source_response.schema.json").read_text())
+        "compiler/schemas/compiled_source_response.schema.json").read_text())
     # pages.items uses $ref -> #/$defs/pageIntent; resolve through $defs
     page_props = schema["$defs"]["pageIntent"]["properties"]
     assert "domain" not in page_props

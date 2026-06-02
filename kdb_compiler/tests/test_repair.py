@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from kdb_compiler import repair as reconcile, validate_compile_result as vcr
-from kdb_compiler.repair import RepairError as ReconcileError
-from kdb_compiler.validate_compile_result import ValidationFinding
+from compiler import repair as reconcile, validate_compile_result as vcr
+from compiler.repair import RepairError as ReconcileError
+from compiler.validate_compile_result import ValidationFinding
 
 
 SRC_ID = "KDB/raw/foo.md"

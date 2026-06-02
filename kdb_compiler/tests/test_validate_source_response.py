@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kdb_compiler import validate_source_response as V
+from compiler import validate_source_response as V
 
 
 SOURCE_NAME = "foo.md"
