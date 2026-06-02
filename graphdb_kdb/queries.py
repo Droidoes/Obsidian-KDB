@@ -234,3 +234,221 @@ def cypher(
         row = r.get_next()
         rows.append(dict(zip(col_names, row)))
     return rows
+
+
+# ---------- context-snapshot read primitives (single Kuzu door) ----------
+#
+# Raw reads extracted verbatim from kdb_compiler.context_loader so the graph
+# package owns all Kuzu I/O. Each function is one `conn.execute` + drain,
+# returning plain data. The composition/ranking logic (tiering, BFS frontier
+# control, set algebra, networkx PageRank) lives in the loader, not here.
+
+
+def active_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
+    """All active entities as {slug: {title, page_type}}."""
+    result = conn.execute(
+        "MATCH (e:Entity) WHERE e.status = 'active' "
+        "RETURN e.slug, e.title, e.page_type"
+    )
+    entities: dict[str, dict[str, Any]] = {}
+    while result.has_next():
+        row = result.get_next()
+        entities[row[0]] = {"title": row[1], "page_type": row[2]}
+    return entities
+
+
+def domain_entity_slugs(conn: kuzu.Connection, domain: str) -> set[str]:
+    """Slugs of active entities that BELONGS_TO `domain` (the same-domain gate)."""
+    result = conn.execute(
+        "MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain {name: $name}) "
+        "WHERE e.status = 'active' RETURN e.slug",
+        {"name": domain},
+    )
+    slugs: set[str] = set()
+    while result.has_next():
+        slugs.add(result.get_next()[0])
+    return slugs
+
+
+def source_supported_slugs(conn: kuzu.Connection, source_id: str) -> set[str]:
+    """Raw slugs of entities a Source SUPPORTS (no active filter — caller scopes)."""
+    result = conn.execute(
+        "MATCH (s:Source {source_id: $sid})-[:SUPPORTS]->(e:Entity) "
+        "RETURN e.slug",
+        {"sid": source_id},
+    )
+    slugs: set[str] = set()
+    while result.has_next():
+        slugs.add(result.get_next()[0])
+    return slugs
+
+
+def outgoing_neighbor_slugs(conn: kuzu.Connection, slug: str) -> list[str]:
+    """Direct (1-hop) outgoing LINKS_TO target slugs of `slug` (unordered)."""
+    result = conn.execute(
+        "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) RETURN b.slug",
+        {"s": slug},
+    )
+    out: list[str] = []
+    while result.has_next():
+        out.append(result.get_next()[0])
+    return out
+
+
+def incoming_neighbor_slugs(conn: kuzu.Connection, slug: str) -> list[str]:
+    """Direct (1-hop) incoming LINKS_TO source slugs of `slug` (unordered)."""
+    result = conn.execute(
+        "MATCH (a:Entity {slug: $s})<-[:LINKS_TO]-(b:Entity) RETURN b.slug",
+        {"s": slug},
+    )
+    out: list[str] = []
+    while result.has_next():
+        out.append(result.get_next()[0])
+    return out
+
+
+def links_to_edges(conn: kuzu.Connection) -> list[tuple[str, str]]:
+    """All LINKS_TO edges as (from_slug, to_slug) tuples (for PageRank topology)."""
+    result = conn.execute(
+        "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug"
+    )
+    edges: list[tuple[str, str]] = []
+    while result.has_next():
+        row = result.get_next()
+        edges.append((row[0], row[1]))
+    return edges
+
+
+def active_entity_slugs(conn: kuzu.Connection) -> list[str]:
+    """Slugs of all active entities (for PageRank isolated-node seeding)."""
+    result = conn.execute("MATCH (e:Entity) WHERE e.status = 'active' RETURN e.slug")
+    out: list[str] = []
+    while result.has_next():
+        out.append(result.get_next()[0])
+    return out
+
+
+def outgoing_links_ordered(conn: kuzu.Connection, slug: str) -> list[str]:
+    """Outgoing LINKS_TO target slugs of `slug`, ordered ascending by slug."""
+    result = conn.execute(
+        "MATCH (a:Entity {slug: $s})-[:LINKS_TO]->(b:Entity) "
+        "RETURN b.slug ORDER BY b.slug",
+        {"s": slug},
+    )
+    out: list[str] = []
+    while result.has_next():
+        out.append(result.get_next()[0])
+    return out
+
+
+# ---------- alias-aware canonical resolution (Task #90 v0.2 — D-90-9) ----------
+
+
+def resolve_to_canonical_slugs(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
+
+    Reachability per §3.1: direct PK → canonical_id (with target.status='active'
+    check — fixes B-2) → ALIAS_OF (canonical.status='active' check).
+
+    Returns {raw_slug: canonical_slug} for every raw key that resolves to an
+    active canonical entity. Unresolved raws are absent from the dict.
+
+    Defensive: trims whitespace + drops empty/whitespace-only entries (Qwen O-2).
+    """
+    if not raw_slugs:
+        return {}
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+
+    resolved: dict[str, str] = {}
+
+    # Single MATCH with two OPTIONAL chains: surface direct PK, canonical_id
+    # target status, and ALIAS_OF canonical info in one round-trip. Path
+    # precedence applied in Python: Path 2 (canonical_id) > Path 3 (ALIAS_OF)
+    # > Path 1 (direct leaf). Path 3 before Path 1 is required so that an
+    # entity with NO canonical_id but WITH an outgoing ALIAS_OF resolves via
+    # the alias target — and so that an alias with a DEAD target stays
+    # unresolved (does not fall back to self).
+    q = conn.execute(
+        """
+        MATCH (e:Entity)
+        WHERE e.slug IN $slugs
+        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
+        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
+        RETURN e.slug, e.status, e.canonical_id,
+               CASE WHEN target IS NULL THEN NULL ELSE target.status END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.slug END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END
+        """,
+        {"slugs": cleaned},
+    )
+    while q.has_next():
+        slug, status, canonical_id, target_status, alias_canon, alias_canon_status = q.get_next()
+        if canonical_id is not None:
+            # Path 2 — canonical_id resolution (B-2 active check)
+            if target_status == "active":
+                resolved[slug] = canonical_id
+            # else: dead canonical_id target — unresolved
+        elif alias_canon is not None:
+            # Path 3 — ALIAS_OF safety net (entity declared itself an alias)
+            if alias_canon_status == "active":
+                resolved[slug] = alias_canon
+            # else: dead alias target — unresolved (NOT Path 1 fallback)
+        elif status == "active":
+            # Path 1 — direct leaf entity (no canonical_id, no outgoing ALIAS_OF)
+            resolved[slug] = slug
+
+    return resolved
+
+
+def resolve_to_canonical_slugs_batch(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Codex-tested batch resolver (D-90-9 escape hatch, KDB_T2_RESOLVER=batch).
+
+    Single Cypher with UNWIND + chained OPTIONAL MATCH + CASE; empirically
+    validated on Kuzu 0.11.3 in the v0.1 panel review. Functional parity with
+    the simple resolver is enforced by test_t2_resolver_parity.py.
+    """
+    if not raw_slugs:
+        return {}
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+
+    # CASE precedence: Path 2 (canonical_id) > Path 3 (ALIAS_OF) > Path 1 (direct leaf).
+    # An entity that has DECLARED itself an alias (either via canonical_id or
+    # an outgoing ALIAS_OF edge) must NOT fall back to Path 1 if its declared
+    # target is inactive — the explicit-null clauses suppress that fallback.
+    # This keeps Path 1 reserved for true canonical leaves.
+    q = conn.execute(
+        """
+        UNWIND $raw_slugs AS raw
+        OPTIONAL MATCH (e:Entity {slug: raw})
+        WITH raw, e
+        OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
+        OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
+        RETURN raw,
+               CASE
+                 WHEN e IS NULL THEN NULL
+                 WHEN e.canonical_id IS NOT NULL AND target IS NOT NULL AND target.status = 'active' THEN e.canonical_id
+                 WHEN e.canonical_id IS NOT NULL THEN NULL
+                 WHEN canon IS NOT NULL AND canon.status = 'active' THEN canon.slug
+                 WHEN canon IS NOT NULL THEN NULL
+                 WHEN e.status = 'active' THEN e.slug
+                 ELSE NULL
+               END AS canonical
+        """,
+        {"raw_slugs": cleaned},
+    )
+    resolved: dict[str, str] = {}
+    while q.has_next():
+        raw, canonical = q.get_next()
+        if canonical is not None:
+            resolved[raw] = canonical
+    return resolved
