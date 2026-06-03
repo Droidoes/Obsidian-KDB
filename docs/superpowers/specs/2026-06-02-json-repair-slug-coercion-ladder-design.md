@@ -1,142 +1,154 @@
-# Task #106 — JSON-repair + slug-coercion robustness ladder (design)
+# Task #106 — JSON-escape + slug-coercion robustness ladder (design v0.2)
 
-> **Status:** design ratified-in-principle. **Phase B has now LANDED (`v0.5.2`, 2026-06-02)** — the post-Phase-B homes below are REAL (`common/paths.py`, `compiler/repair.py`, `compiler/compiler.py`, `compiler/schemas/`; `common/util/` + the `json-repair` dep are absent, created by #106). This spec is now at its **external panel-review gate** (project-default panel per `feedback_external_review_panel_composition`, CLI reviewers under the output-file-only guardrail). Panel feedback → `writing-plans` → TDD → run-8.
-> **Sequence:** Phase B (package split) → run-7 (validate zero-behavior-change) → **#106: panel-review this spec → writing-plans → TDD → into the new homes** → run-8 (validate robustness). Both land **before 0.6**.
-> **Why after B (reversal of the 2026-06-02 "#106-first" call):** #106's helpers belong in `common/` and `compiler/repair` — exactly the packages Phase B *creates*. Doing B first lets the helpers land in their final homes on the first write (zero relocation), makes the placement trivial, and turns #106 into a real-feature shakedown of B's package boundaries. Phase B is zero-behavior-change, so the recurring cases below stay retry-rescued throughout B — **no robustness gap is opened by waiting**.
+> **Status:** **v0.2 — panel-ratified** (5-model design panel 2026-06-02, unanimous GO-WITH-CHANGES; synthesis `docs/superpowers/specs/2026-06-02-task106-review-synthesis.md`). All load-bearing changes folded (rung-1 = targeted backslash-escaping not `json-repair`; semantic check moves into the attempt loop; phantom `warnings[].related_slugs[]` removed; regex wikilink rewrite; all-values collision guard; compositional telemetry; lowercase added to the coercion — Joseph's call B). **Ready for `writing-plans`.**
+> **Codebase:** Phase B / `v0.5.2` has landed — the homes below are REAL (`common/paths.py`, `compiler/repair.py`, `compiler/compiler.py`, `compiler/schemas/`; `common/util/` is created by this task). **No new pip dependency** (the `json-repair` package is dropped — see §3).
+> **Sequence:** writing-plans → TDD → run-8 (validate robustness), before 0.6.
 
 ---
 
 ## 1. Problem
 
-Two recurring **recoverable** LLM-emission malformation classes in Pass-2 (compile). Both are currently rescued **only by the stochastic retry** (`attempt 1/2 … retrying` → ✓) added in #104 — recovery rides on a lucky re-emission, not on anything deterministic. #106 makes the recovery deterministic so neither class can reach quarantine when it is in fact recoverable.
-
-Both classes are confirmed live (run-5 **and** run-6), each with a concrete example:
+Two recurring **recoverable** LLM-emission malformation classes in Pass-2 (compile), both currently rescued **only by the stochastic retry** (#104) — recovery rides on a lucky re-emission, not anything deterministic. #106 makes recovery deterministic so neither class reaches quarantine when it is in fact recoverable. Both are confirmed live (run-5 **and** run-6):
 
 | # | Class | Live case (run-6) | Error | Root cause |
 |---|---|---|---|---|
-| 1 | **JSON-syntax** (bytes don't parse) | `Relative Ranking Methods - Borda, Condorcet, and Aggregation.md` | `Pass-2 attempt 1/2 invalid JSON, retrying: Expecting ',' delimiter at line 20` | unescaped LaTeX (e.g. `\(n-1\)`) inside a JSON string value |
-| 2 | **Schema/slug** (parses, a slug field violates the pattern) | `Sleep and Aging - Research on Aging.md` | `[$.summary_slug] 'summary-sleep-and-aging---research-on-aging' does not match '^summary-[a-z0-9]+(?:-[a-z0-9]+)*$'` | the title's `" - "` (space-dash-space) slugified to `---`; the model mapped each separator to a hyphen instead of collapsing the run |
+| 1 | **JSON-syntax** (bytes don't parse) | `Relative Ranking Methods - Borda, …` | `Pass-2 attempt 1/2 invalid JSON, retrying: Expecting ',' delimiter` | unescaped LaTeX (e.g. `\(n-1\)`) inside a JSON string — a stray `\` before a non-JSON-escape char |
+| 2 | **Schema/slug** (parses, a slug violates the pattern) | `Sleep and Aging - Research on Aging.md` | `[$.summary_slug] 'summary-…aging---research-on-aging' does not match '^summary-[a-z0-9]+(?:-[a-z0-9]+)*$'` | the title's `" - "` slugified to `---`; the model didn't collapse the run |
 
-**Grounding insight for class 2:** the canonical `slugify()` (`paths.py`) is `re.sub(r"[^a-zA-Z0-9]+", "-", ascii).strip("-").lower()` — it **already collapses any run of non-alphanumerics to a single hyphen and strips the edges**. So `slugify("Sleep and Aging - Research on Aging")` → `sleep-and-aging-research-on-aging` (single hyphen). The model simply didn't apply the documented rule. The slug coercion is therefore **not a new invented rule** — it is **enforcing the existing D19 slug policy deterministically, post-LLM** (cf. memory `feedback_post_llm_deterministic_override`).
+**Grounding insight (covers both rungs).** The canonical `slugify()` (`common/paths.py:51`) is `re.sub(r"[^a-zA-Z0-9]+", "-", ascii).strip("-").lower()` — it **collapses any run of non-alphanumerics to one hyphen, strips the edges, and lowercases**. The model simply failed to apply rules it was supposed to. Slug coercion (§4) is therefore **enforcing the existing D19 slug policy deterministically, post-LLM** — not inventing a rule (cf. `feedback_post_llm_deterministic_override`). Rung 1 (§3) is the analogous enforcement of valid JSON string-escaping.
 
 ---
 
 ## 2. The ladder
 
-Per source, per pass (mirrors and extends #104's retry):
+Per source, per pass (extends #104's retry):
 
 ```
-emit → repair/normalize → validate
+emit → repair/normalize → validate(parse, schema, semantic)
    ├─ valid → proceed
    └─ invalid → retry (1 fresh emission) → repair/normalize → validate
           ├─ valid → proceed
           └─ invalid → quarantine
 ```
 
-i.e. **`emit → repair/normalize → retry → repair/normalize → quarantine`**. The repair/normalize step runs on **both** emissions — the retry can re-emit the same malformation, so normalizing its output too is what prevents the second-attempt quarantine.
-
-**Guardrail (preserves the "strict extraction, no semantic repair" integrity intent):** every repair is **re-validation-gated** — a repaired emission must pass the same `parse → schema → semantic` checks it would have without repair. A wrong/over-reaching repair cannot sneak through; it simply falls to the next rung (retry, then quarantine). Repair never *replaces* validation; it runs *before* it.
+i.e. **`emit → repair/normalize → retry → repair/normalize → quarantine`**. Repair runs on **both** emissions (the retry can re-emit the same malformation). **Guardrail:** every repair is **re-validation-gated** — a repaired emission must pass the same `parse → schema → semantic` it would without repair (and per LB2 below, *all three* are now checked inside the attempt loop). A wrong/over-reaching repair cannot sneak through; it falls to the next rung. `_MAX_COMPILE_ATTEMPTS` is unchanged (2 model calls); repairs are in-process and free.
 
 ---
 
-## 3. Rung 1 — JSON-syntax repair
+## 3. Rung 1 — targeted JSON backslash-escaping  *(panel LB1 — was `json-repair`)*
 
-- **Mechanism:** the **`json-repair`** pip package (purpose-built, dependency-free; do **not** hand-roll). **New dependency** — `json-repair` is not currently installed; #106 adds it to `pyproject.toml`.
-- **Trigger:** fires only when `json.loads` (the parse step) raises — never on already-valid JSON.
-- **Flow:** `parse fails → json_repair.repair_json(text) → re-parse → schema → semantic`. If the repaired bytes still don't parse, or parse but fail schema/semantic, fall to retry.
-- **Trust model:** trust the package's output **but gate it on re-parse + the existing schema + semantic validation**. `json-repair` can make aggressive guesses (e.g. inserting a delimiter); a wrong *structural* guess produces parseable-but-wrong JSON that the schema/semantic layer rejects → falls to retry/quarantine.
-- **⚠ Content-fidelity hole (the schema/semantic gate does NOT close it):** schema + semantic validation check *structure* and slug/link consistency — they do **not** validate body *content*. The Borda case is an unescaped LaTeX `\(n-1\)`; depending on how `json-repair` resolves the invalid `\(` escape it may emit **valid JSON with the backslash silently stripped** → passes every gate while corrupting the LaTeX. So full-trust-gated protects structure, **not content**. **writing-plans MUST** (a) probe `json-repair`'s *actual* behavior on an invalid `\(`/`\)` escape, and (b) decide whether the correct rung-1 fix for *this class* is **targeted backslash-escaping** (escape stray `\` before re-parse) rather than trusting `json-repair`'s guess. The test plan asserts the LaTeX **survives** (§9), not merely that the bytes parse.
-- **Home (post-Phase-B):** `common/util/json_repair.py` — a generic, stateless, stage-agnostic helper. *("util is common.")* This module is the **first occupant of `common/util/`**; Phase B does not pre-create the dir.
-- **Contract honesty:** repair must **not** live in `response_normalizer` — that module's stated contract is "strict extraction, NO semantic repair." A sibling leaf keeps that honest.
+- **Mechanism:** a **targeted, deterministic, content-preserving pre-processor** — NOT a general repair library. On the raw emission text, double any backslash that is **not** a valid JSON escape: `\` not followed by one of `["\\/bfnrtu]` or by `u[0-9a-fA-F]{4}` → `\\`. Re-parse. (~10 lines, zero dependencies.)
+- **Why not `json-repair`** (the panel was unanimous, 5/5): the only confirmed syntax class is the stray-backslash case, and targeted escaping is **content-preserving by construction** — the backslash survives in the parsed string exactly as the model intended, so the LaTeX `\(n-1\)` is preserved. A general fixer (`json-repair`) can "resolve" the same input by *silently stripping* the backslash → valid JSON that passes every structure gate while corrupting body content (the schema/semantic checks validate structure, not body prose). Its other guesses (delimiter insertion, quote/bracket fixup) are the same class of undetectable content-fidelity hole. The original spec flagged this as a ⚠; targeted escaping **closes it by construction**. **The `json-repair` pip dependency is dropped from scope** — reconsider only if a second, escaping-resistant syntax class appears live (data-before-principle).
+- **Trigger / flow:** fires only when `json.loads` (the parse step) raises → escape → re-parse → schema → semantic. If still unparseable (or parses but fails schema/semantic), fall to retry.
+- **Home:** `common/util/json_escape_fix.py` — a generic, stateless, stage-agnostic helper (named for the behavior). First occupant of `common/util/` (this task also creates `common/util/__init__.py`). *("util is common.")* Must **not** live in `response_normalizer` (its contract is "strict extraction, NO repair").
 
 ---
 
 ## 4. Rung 2 — slug coercion
 
-### 4a. The per-slug transform (conservative)
-- **Collapse** consecutive hyphens `-{2,}` → `-`, and **strip** leading/trailing `-`. Nothing else. This is exactly what `slugify()` would do to the malformed string.
-- **Deliberately NOT coerced:** lowercasing, space-stripping, invalid-character removal, unicode folding. A slug like `Bayes Theorem` (space + uppercase) or any genuinely garbled slug should still **fail → retry → quarantine**, not be silently rewritten. Collapse/edge-strip is *formatting* normalization where the model's intent is unambiguous; the rest would be us **guessing intent** and could **mask a real failure** (cf. memory `feedback_coerce_dont_reject` — reserve coercion for benign, confirmed classes; reject the unrecoverable).
-- **Home (post-Phase-B):** `common/paths.collapse_slug()` — sibling to `slugify()`/`validate_slug()`. It is slug **policy**, not a generic util → it lives with the policy authority, **not** in `common/util/`. *("common may not be util.")* Pass-agnostic, so future Pass-1 slugs call the same function.
+### 4a. The per-slug transform — `common/paths.collapse_slug()`
+- **Lowercase, then collapse** consecutive hyphens `-{2,}` → `-`, then **strip** leading/trailing `-`. This is exactly the deterministic, non-semantic subset of what `slugify()` applies. *(Decision B, Joseph 2026-06-02: lowercase is included — it is the same deterministic D19 rule as the collapse, casing is non-semantic in kebab-slug space, and wrong-case is a common LLM artifact; including it is consistent with the "enforce D19" justification.)*
+- **Deliberately NOT coerced:** space-stripping, invalid-character removal, unicode folding. A slug with a **space** (`Bayes Theorem`) or other non-`[a-zA-Z0-9-]` content is a *structural* extraction failure → still **fail → retry → quarantine**. Lowercase + hyphen-collapse + edge-strip are unambiguous formatting; removing spaces/chars would be guessing intent and could mask a real failure (`feedback_coerce_dont_reject`).
+- **Empty result → refuse:** a pure-separator slug (e.g. `---`) collapses to `""`. `collapse_slug` must **refuse** (return the input unchanged / signal no-coercion) when the result is empty or still fails `paths.validate_slug()` — never propagate `{old: ""}`.
+- **Reserved/length guard:** the coerced target must pass `paths.validate_slug()` (rejects reserved `index`/`log`, over-length, and any residual pattern violation). E.g. `index--` → `index` is a **reserved** slug → refuse the coercion (don't let it slip past the per-call gate to fail later at aggregate validation).
+- **Home:** `common/paths` — slug **policy**, sibling to `slugify`/`validate_slug`/`SLUG_PATTERN`, **not** `common/util`. Pass-agnostic, so future Pass-1 slugs reuse it.
 
-### 4b. Reference propagation (the non-trivial part)
-A slug is an **identifier**. Coercing one value must propagate to **every** reference in the same compile-result, or the result is internally inconsistent (dangling links, summary not matching its page). Build a rename map `{old_slug: new_slug}` and apply across **all** slug-bearing fields (per `compiled_source_response.schema.json`):
+### 4b. Reference propagation
+A slug is an **identifier**; coercing one value must propagate to **every** reference in the same `parsed_json`, or the result is internally inconsistent. Build a rename map `{old: new}` (only for values that actually change) and apply across the **7 real** slug-bearing fields (cross-checked against `compiler/schemas/compiled_source_response.schema.json` — `warnings` is `array<string>`, it has **no** `related_slugs`):
 
-- `summary_slug`
-- `concept_slugs[]`, `article_slugs[]`
-- `pages[].slug`
-- `pages[].outgoing_links[]`
-- the `[[slug]]` tokens inside `pages[].body` (bidirectional with `outgoing_links`) — **rewrite whole `[[…]]` tokens, not substring-replace** (a substring replace would corrupt a longer slug that contains the renamed one as a prefix)
-- `log_entries[].related_slugs[]` (and any `warnings[].related_slugs[]`)
+`summary_slug` · `concept_slugs[]` · `article_slugs[]` · `pages[].slug` · `pages[].outgoing_links[]` · whole `[[…]]` tokens in `pages[].body` · `log_entries[].related_slugs[]`.
 
-- **Home (post-Phase-B):** `compiler/repair` — this is compile-result-structural, belongs with the existing reconcilers (`reconcile_body_links`, `reconcile_slug_lists`). It **calls** `common/paths.collapse_slug()` for the per-slug transform. Dependency direction `compiler → common` is legal under Phase B's contract.
+- **Body wikilink rewrite (panel S1):** use a **regex** (modeled on the existing `_WIKILINK_RE` in `compiler/validate_source_response.py:115` / `compiler/canonicalize.py:216`) that matches the whole `[[…]]` token, rewrites **only the target-slug portion** through the rename map, and **preserves `|display` and `#anchor`** (`[[old|Text]]` → `[[new|Text]]`, `[[old#sec]]` → `[[new#sec]]`). Operate on the **raw body string** (not `body_wikilink_slugs()`, which only extracts *valid* slugs and would skip the malformed link). A literal `[[old]]→[[new]]` substring replace is wrong (misses alias/anchor forms; risks prefix corruption).
 
-### 4c. Collision guard (correctness)
-If collapsing makes two **distinct** slugs map to the **same** new slug (e.g. `foo--bar` and `foo-bar` both present), that is a genuine conflict — do **not** silently merge. The coercion must **detect the collision and refuse** (leave the result unchanged), letting it fall to retry → quarantine. Document and unit-test this case.
+### 4c. Collision guard
+Build `would_be = collapse_slug(v)` for **every distinct slug value present across all 7 bearing fields** (valid AND malformed). **Refuse the entire coercion** (leave `parsed_json` unchanged → fall to retry/quarantine) if either: any `would_be` bucket has **>1 distinct pre-image**, OR a `would_be` **collides with an unchanged already-valid slug**. This covers malformed-vs-malformed *and* the realistic malformed-vs-valid case (valid `foo-bar` + malformed `foo--bar` → collapse lands on the valid one). Only apply renames when there is no collision.
+- *(Optional refinement, Codex — defer unless needed: distinguish defining slugs `summary_slug`/`pages[].slug` from reference-only fields; a malformed reference collapsing onto an existing definition can be benign. The safe default above — refuse on any collision — is the writing-plans baseline.)*
+
+### 4d. Home for the orchestration
+The rename-map + propagation + collision-guard live in **`compiler/repair.py`** as a **sibling** to the existing `reconcile_body_links`/`reconcile_slug_lists`/`repair(cr, findings)` — a **distinctly named** new function operating on per-source `parsed_json` in-loop (e.g. `coerce_slugs_and_propagate(parsed_json) -> bool`), NOT a modification of `repair(cr, findings)` (which consumes the post-semantic compile_result `cr`). It calls `common/paths.collapse_slug()` for the per-value transform. `compiler → common` is legal under the B.3 contract.
 
 ---
 
-## 5. Placement in `compile_one`'s attempt loop
+## 5. Placement in `compile_one`'s attempt loop  *(incl. panel LB2)*
 
-Flow in `compiler/compiler.py` per attempt (real post-Phase-B locations): the attempt loop is at `compiler.py:242` (`for attempt in range(1, _MAX_COMPILE_ATTEMPTS + 1)`); within it `call → extract → parse (`json.loads` @305) → schema (`validate_source_response.validate` @322) → (retry on fail) → break → semantic → reconcile_body_links/reconcile_slug_lists` (`compiler/repair.py:153/179`). The two rungs insert **inside the attempt loop, before the retry decision**:
+Real flow in `compiler/compiler.py`: attempt loop @242; `json.loads` @305; `validate_source_response.validate` (schema) @322; today `break` on schema-ok @~339 then `semantic_check` @341 **after** the loop; reconcilers @354/362.
 
-- **Rung 1** at the **parse** step (`compiler/compiler.py:305`, the `json.loads` try; the "invalid JSON, retrying" branch is ~311): on `json.loads` failure → `json_repair` → re-parse. Only then decide retry/fail.
-- **Rung 2** at the **schema** step (`compiler/compiler.py:322`, after `validate`; the "schema invalid, retrying" branch is ~330): on **any** schema failure → attempt slug-collapse + propagation across all slug fields → re-validate (schema + semantic). **Do not sniff the error string** to detect the slug-pattern class — just attempt the collapse and let re-validation decide: if the failure wasn't a collapsible-slug one, the collapse is a no-op (or still-invalid) and it falls through unchanged. Only then decide retry/fail.
+**LB2 — make the re-validation gate real (semantic moves INTO the loop).** Today semantic runs post-loop, so a rung-2 coercion that passes schema but fails semantic would `break` → fail → quarantine with **no retry budget**, violating the guardrail. Restructure the per-attempt gate to:
+
+```
+call → extract → parse(+rung-1 escape on parse-fail) → schema(+rung-2 coerce on schema-fail) → semantic
+   break ONLY when schema_ok AND semantic_ok ; otherwise (non-final attempt) → retry
+```
+
+Insertion points, both **inside the loop, before the retry/break decision**:
+- **Rung 1** at the **parse** step (`compiler.py:305`): on `json.loads` failure → `json_escape_fix` → re-parse → continue to schema; only then decide retry/fail.
+- **Rung 2** at the **schema** step (`compiler.py:322`): on **any** schema failure → `coerce_slugs_and_propagate(parsed_json)` → re-validate. **Do not sniff the error string** — attempt the coercion and let re-validation decide (non-slug failures → no-op → fall through). *(Deliberate: class-agnostic; the no-op cost is negligible; the re-validation gate is the safety.)*
+
+**Mutation discipline (panel T3/T4):** repair a **candidate copy**, not `state["parsed_json"]` in place; assign to `state` only on acceptance (so a failed-repaired payload doesn't leak into resp-stats). **Reset attempt-local gate state** (`parse_ok`/`parsed_json`/`schema_errors`/…) at the top of each iteration so a final parse-fail can't read a prior attempt's stale `parsed_json`.
+
+After acceptance, the existing `reconcile_body_links`/`reconcile_slug_lists` run as today; because rung-2 already rewrote the body tokens and slug lists consistently, they are convergent near-no-ops. Writing-plans adds a debug (non-fatal) re-validate after the reconcilers to catch any divergence.
 
 ---
 
 ## 6. Pass scope
-
-- **Pass-2 (compile) gets both rungs now** — that is where both confirmed live failures occur.
-- **Rung 1 (`json_repair`) is built reusably** in `common/util/` so Pass-1 can adopt it the moment a live Pass-1 syntax failure appears — but it is **not wired into Pass-1 now** (data-before-principle; no Pass-1 syntax failure observed). Wiring it later is a one-liner.
-- **Rung 2 (`paths.collapse_slug`) is pass-agnostic** by construction — ready for future Pass-1 slugs without change.
-
----
-
-## 7. Measurability
-
-**Log which rung resolved each source** so we can prune repair scope if it ever over-reaches (cf. memory `feedback_measurability_over_defensive_complexity`). Taxonomy, persisted on the resp-stats / orchestrator record:
-
-`clean` · `repaired-syntax` (rung 1) · `coerced-slug` (rung 2) · `retried` (a 2nd emission was needed) · `quarantined`
-
-This makes the deterministic-recovery rate observable across runs and flags any case where a repair fired but shouldn't have.
+- **Pass-2 gets both rungs now** — both confirmed live failures are Pass-2.
+- **Rung 1 (`json_escape_fix`)** is built reusably in `common/util/`; Pass-1 adopts it only when a live Pass-1 syntax failure appears (data-before-principle).
+- **Rung 2 (`collapse_slug`)** is pass-agnostic by construction.
 
 ---
 
-## 8. Homes summary (post-Phase-B)
+## 7. Measurability  *(panel S3 — compositional, not a flat enum)*
 
-| Piece | Home | Rationale |
+The flat `clean/repaired-syntax/coerced-slug/retried/quarantined` enum is **not** mutually exclusive (a source can be retried **and** slug-coerced; one emission can need both rungs). Persist **orthogonal facts** on `RespStatsRecord` (and thence the orchestrator/run summary):
+- `compile_attempts: int` (1 or 2 — the loop attempt that produced the final `parsed_json`)
+- `syntax_repaired: bool` (rung 1 produced a parse-ok payload that reached schema)
+- `slug_coerced: bool` (rung 2 produced a schema-ok + semantic-ok payload)
+- `final_status` (derive: `clean` | `repaired` | `retried-and-repaired` | `quarantined`)
+
+Keep the existing `attempts` (SDK-level retry count) **separate** — don't overload it. Surface these on **failed/quarantined** sources too. Emit an info log when a rung rescues in-loop (e.g. `Pass-2 attempt 1/2 syntax-repaired, proceeding`) distinct from the existing failure-retry warning. Goal: make the deterministic-recovery rate observable and any over-reach detectable (`feedback_measurability_over_defensive_complexity`). Touches `common/types.py`, `common/llm_telemetry.py`, `compiler/compiler.py` (+ tests that build/assert `RespStatsRecord`).
+
+---
+
+## 8. Homes summary
+
+| Piece | Home | Notes |
 |---|---|---|
-| JSON-syntax repair (`json-repair` wrapper) | `common/util/json_repair.py` | generic stateless helper; *util is common*; first occupant of `common/util/` |
-| slug per-value transform (`collapse_slug`) | `common/paths` | slug **policy**, sibling of `slugify`/`validate_slug`; *common but not util* |
-| slug rename + propagation + collision guard | `compiler/repair` | compile-result-structural; with the existing reconcilers; `compiler → common` |
-| `json-repair` dependency | `pyproject.toml` | new dependency |
+| targeted JSON escape (rung 1) | `common/util/json_escape_fix.py` (+ `common/util/__init__.py`) | generic leaf; *util is common*; **no pip dep** |
+| slug transform `collapse_slug` (lowercase+collapse+strip) | `common/paths` | slug **policy**, sibling of `slugify`/`validate_slug` |
+| rename + propagation + collision guard | `compiler/repair.py` (new `coerce_slugs_and_propagate`, sibling to `repair(cr,…)`) | per-source `parsed_json`, in-loop; `compiler → common` legal |
+| compositional telemetry fields | `common/types.py` + `common/llm_telemetry.py` | `compile_attempts`/`syntax_repaired`/`slug_coerced`/`final_status` |
 
 ---
 
 ## 9. Test plan (TDD)
 
-- **Rung 1 unit:** `repair_json_text` on the Borda-class input (unescaped LaTeX → `Expecting ',' delimiter`) returns parseable JSON **that still contains the intact LaTeX `\(n-1\)`** (content-fidelity assertion, per §3's ⚠ — not merely "it parses"); on irreparable garbage returns something that still fails parse (so it falls through, not a false success).
-- **Rung 2 unit (transform):** `collapse_slug('summary-sleep-and-aging---research-on-aging')` → `'summary-sleep-and-aging-research-on-aging'`; edge-strip cases; **no-op** on already-valid slugs; **refuses** `Bayes Theorem`-class (uppercase/space) — leaves it to fail.
-- **Rung 2 unit (propagation):** a compile-result with a `---` summary_slug referenced in `pages[].slug`, `outgoing_links`, body `[[…]]`, and `related_slugs` → after coercion all references updated consistently; schema + semantic pass.
-- **Rung 2 unit (collision guard):** two distinct slugs collapsing to the same value → coercion refuses, result unchanged, falls through.
-- **Ladder integration:** the two live fixtures (Borda, Sleep-and-Aging) recover deterministically on attempt 1 (no retry needed); an irreparable case still quarantines; the resolving rung is logged.
-- **Live gate:** **run-8** on the sandbox vault in the post-Phase-B structure. Pass criteria: `exit_reason=ok`, 0 quarantined, the two recurring cases resolve via `repaired-syntax` / `coerced-slug` (not `retried`), links wired, 0 orphans.
+- **Rung 1:** `json_escape_fix` on the Borda-class input (unescaped `\(n-1\)`) → parseable JSON **with the `\(n-1\)` intact** (content-fidelity is the primary gate, not "it parses"); valid escapes (`\n`, `\\`, `\"`, `\uXXXX`) untouched; irreparable garbage still fails parse (falls through).
+- **Rung 2 transform:** `collapse_slug('summary-Sleep-and-Aging---Research')` → `'summary-sleep-and-aging-research'` (lowercase + collapse + strip, decision B); no-op on already-valid; **refuses** empty-result (`---`), reserved (`index--`→`index`), and space-bearing (`Bayes Theorem`) — those fall through.
+- **Rung 2 propagation:** a `---`/mixed-case `summary_slug` referenced in `pages[].slug`, `outgoing_links`, body `[[…]]` (incl. `[[old|Text]]` and `[[old#sec]]` forms), and `related_slugs` → after coercion all 7 fields consistent; schema + semantic pass.
+- **Rung 2 collision:** valid `foo-bar` + malformed `foo--bar` both present → coercion refuses, `parsed_json` unchanged, falls through. Same for two malformed slugs colliding.
+- **Semantic-in-loop (LB2):** a coercion that passes schema but fails semantic on a non-final attempt → **retries** (not immediate quarantine).
+- **Both rungs, one emission:** a syntax fix that still leaves a collapsible slug → both fire, source recovers.
+- **Ladder integration:** the two live fixtures (Borda, Sleep-and-Aging) recover deterministically on attempt 1 via the right rung (telemetry: `syntax_repaired`/`slug_coerced` true, `compile_attempts==1`); an irreparable case still quarantines; a non-slug schema error falls through with `parsed_json` unmutated.
+- **Live gate — run-8** (sandbox vault): `exit_reason=ok`, 0 quarantined, the two recurring cases resolve via repair (not retry), links wired, 0 orphans.
 
 ---
 
 ## 10. Decisions log
 
-- **Conservative repair/normalize, re-validation-gated** — confirmed (Joseph, 2026-06-02). Ladder: `emit → repair/normalize → retry → repair/normalize → quarantine`.
-- **Slug coercion = collapse + edge-strip only** (enforce D19; no intent-guessing) — confirmed.
-- **`util/` inside `common/`** taxonomy — adopted (Joseph): *util is common* (→ `common/util/json_repair`), *common may not be util* (→ slug policy stays in `common/paths`). Phase B does not pre-create `common/util/`; #106 creates it.
-- **Sequence: Phase B first, then #106** — confirmed (Joseph, 2026-06-02), reversing the earlier #106-first call; rationale in the header.
+- **Ladder + re-validation gate** — `emit → repair/normalize → retry → repair/normalize → quarantine`; conservative; re-validation-gated (now parse+schema+semantic in-loop, LB2).
+- **Rung 1 = targeted backslash-escaping, `json-repair` DROPPED** — panel-unanimous (5/5); content-preserving by construction; no new dependency.
+- **Rung 2 = lowercase + collapse `-{2,}` + edge-strip (decision B, Joseph 2026-06-02)** — the deterministic non-semantic subset of `slugify`; space/char-removal/unicode-folding excluded; empty/reserved → refuse.
+- **Collision guard over ALL present slug values** (valid + malformed); refuse on any collision.
+- **Body wikilink rewrite via regex preserving `|display`/`#anchor`** on raw body.
+- **Compositional telemetry flags** (not a flat enum); `attempts` kept separate.
+- **Homes:** `common/util/json_escape_fix` · `common/paths.collapse_slug` · `compiler/repair.coerce_slugs_and_propagate` (sibling to `repair(cr,…)`).
+- **Sequence:** Phase B shipped (`v0.5.2`); #106 next (panel-ratified v0.2 → writing-plans → run-8).
 
 ---
 
 ## 11. References
-
 - Memory: `project_json_repair_coerce_ladder`, `feedback_coerce_dont_reject`, `feedback_post_llm_deterministic_override`, `feedback_measurability_over_defensive_complexity`, `project_codebase_realignment`.
-- Realignment Phase-B brief: `docs/superpowers/specs/2026-06-01-codebase-realignment-panel-brief.md` (defines `common` / `tools` / `compiler` packages + dependency contract).
+- Panel review + synthesis: `docs/superpowers/specs/2026-06-02-task106-review-{codex,deepseek,qwen,gemini,grok}.md` + `…-review-synthesis.md`.
 - Slug policy (D19): `common/paths.py` (`slugify`, `validate_slug`, `SLUG_PATTERN`).
 - Pass-2 contract: `compiler/schemas/compiled_source_response.schema.json`.
-- Compile flow: `compiler/compiler.py` (`compile_one` attempt loop) + reconcilers `compiler/repair.py`.
+- Compile flow: `compiler/compiler.py` (`compile_one` attempt loop) + reconcilers `compiler/repair.py`; wikilink regex `compiler/validate_source_response.py` / `compiler/canonicalize.py`.
