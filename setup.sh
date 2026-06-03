@@ -60,7 +60,7 @@ cat <<'EOF'
 Next steps:
   1. Edit .env and set ANTHROPIC_API_KEY.
   2. Activate the venv:       source .venv/bin/activate
-  3. Try the CLIs:            kdb-scan --help    kdb-compile --help
+  3. Try the CLIs:            kdb-scan --help    kdb-orchestrate --help
   4. Green-light live compile (costs one API call):
-       KDB_RUN_LIVE_API=1 pytest kdb_compiler/tests/test_m2_first_compile.py -s
+       KDB_RUN_LIVE_API=1 pytest compiler/tests/test_m2_first_compile.py -s
 EOF

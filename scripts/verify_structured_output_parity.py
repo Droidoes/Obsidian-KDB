@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 import sys
 
-from kdb_compiler.call_model import ModelRequest, call_model, ModelConfigError
+from common.call_model import ModelRequest, call_model, ModelConfigError
 
-# Candidate models for Pass-1 (subset of kdb_benchmark/models.json that advertises
+# Candidate models for Pass-1 (subset of tools/benchmark/models.json that advertises
 # structured-output support). Per-entry knobs handle provider-specific quirks:
 #   extra_body: deepseek needs thinking disabled to prevent <think> tag pollution
 #   use_completion_tokens: GPT-5+ family requires max_completion_tokens not max_tokens

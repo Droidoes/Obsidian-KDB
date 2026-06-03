@@ -1,7 +1,7 @@
 # Obsidian-KDB — Codebase Overview (North Star)
 
 **Status:** v1 architecture locked; M0 → M2 landed (compiler + validator + reconciler + benchmark engine all live)
-**Last updated:** 2026-05-30
+**Last updated:** 2026-06-02
 **Owners:** Joseph (human) + Claude Opus 4.7 (staff architect) + GPT 5.4 / Codex 5.3 (external review)
 
 This is the **single source of truth** for the Obsidian-KDB project. All design rationale, decisions, and open questions live here. External AI consultation artifacts (Grok / Gemini Pro / GPT 5.4 / Codex 5.3) are referenced but not authoritative — they fed into the consensus captured below.
@@ -11,6 +11,8 @@ This is the **single source of truth** for the Obsidian-KDB project. All design 
 ## Milestone Changelog
 
 Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
+
+- **2026-06-02** — **Phase B package split (Task #12): `kdb_compiler` monolith → six peer packages (`common` / `ingestion` / `compiler` / `kdb_graph` / `orchestrator` / `tools`); B.3 dependency contract guard-tested; gated on run-7.**
 
 - **2026-06-02** — **🏁 Release `v0.5.1` — codebase realignment, Phase A (Task #105).** Architecture-level refactor so the implementation reflects the decided architecture (two pipelines — *ingestion* / *compiler* — over a *graph* substrate, conducted by an *orchestrator*, + *tools* and a *common* leaf). Thesis: **terminology debt IS the architecture problem.** 5-panel ratified (Codex/Deepseek/Qwen/Gemini/Grok-build); one refactor in two sequential phases — **A (fix-in-place) shipped, B (package split) next**, both before 0.6. Phase A retired the legacy `kdb_compile.py` batch driver + 427-ln `run_journal.py` + dead `planner`/`run_compile` + 5 CLI bindings; fixed 2 layering inversions (`common` is now a true leaf, guard-tested); renamed `reconcile→repair` · `patch_applier→page_writer` · `source_state_update→manifest_writer` · `validate_compiled_source_response→validate_source_response` · `ingestion/→enrich/` (+`run_journal→enrich_journal`); established the **single Kuzu door** (10-fn read API in `graphdb_kdb/queries.py`; `graph_context_loader→context_loader` authors zero Cypher, byte-identical port); rewrote §5 + swept stale refs. **Zero behavior change**, proven by **run-6** (`exit_reason=ok`: 29 compiled / 7 noise / 0 quarantined / 0 invariant; finalize 478 links, 0 orphans; graph 180 Entity / 29 Source / 10 Domain / **100% `BELONGS_TO`**) ≡ the run-5 standard. 1175 non-live tests green. Blueprint+plan: `docs/superpowers/{specs,plans}/2026-06-0{1,1}-codebase-realignment*`. See `docs/RELEASES.md`.
 - **2026-05-31** — **🏁 Release `v0.5.0` — reliable orchestration.** Gated on a clean run-5 (`exit_reason=ok`: 36 scanned / 29 compiled / 7 noise / **0 quarantined / 0 invariant**; finalize 449 links, 0 orphans; graph v2.4: 181 Entity / 29 Source / 10 Domain). Bundles: #96 quarantine-and-continue, D1-A derived domains, #102 live stdout progress, #103 domain-scoped Pass-2 context, #97 GraphDB viewer, and the run-4-finding fixes (#104: Pass-1 coercion + Pass-2 parse/schema retry — which recovered run-4's lone quarantine in run-5). 1219 non-live tests green. Next arc: 0.6→1.0 ingestion pipelines. See `docs/RELEASES.md`.
@@ -100,7 +102,30 @@ In-place enhancer for the Human Side. Scans user-authored notes and injects `[[w
 
 ## 5. Track 1 Pipeline (V1a)
 
-The live conductor is `kdb_orchestrate.py`. Per-source flow:
+### Package structure (Phase B — six peer packages)
+
+```
+common/          ← leaf: shared types, atomic I/O, call_model, paths, source_io
+ingestion/       ← Pass-1 pipeline: kdb_scan, enrich/ (signal/noise + entity_search_keys)
+compiler/        ← Pass-2 pipeline: compiler, repair, canonicalize, page_writer, context_loader
+kdb_graph/       ← producer-agnostic graph layer: schema, ingestor, queries, adapters
+orchestrator/    ← conductor: kdb_orchestrate, manifest_writer, event recorder
+tools/           ← operational tools: replay, cleanup, benchmark, viewer, diagnostics
+```
+
+**Dependency contract (B.3):**
+- `common` → nothing (true leaf; guard-tested)
+- `kdb_graph` → `common`
+- `ingestion` → `common`
+- `compiler` → `common` + `kdb_graph`
+- `orchestrator` → all packages (the conductor)
+- `tools` → `common` / `kdb_graph` / `ingestion` / `compiler`
+
+Nothing depends on `tools` EXCEPT one documented exception: `orchestrator` calls `tools.cleanup` for orphan cleanup inline (deferred decoupling, out of Phase B's move-only scope).
+
+---
+
+The live conductor is `orchestrator/kdb_orchestrate.py`. Per-source flow:
 
 ```
 ┌────────────────┐   ┌──────────────────────────┐   ┌──────────────────┐   ┌────────────┐
@@ -127,7 +152,7 @@ The live conductor is `kdb_orchestrate.py`. Per-source flow:
 **Strict separation of concerns:**
 - **LLM is stateless compute.** It receives prompt + source content + graph-derived context snapshot; returns structured JSON (no paths, no timestamps, no frontmatter). Never writes files. Never reads filesystem state.
 - **Python is deterministic state + I/O.** Scans, hashes, resolves paths, applies page intents (writes markdown), stamps frontmatter, updates ledger.
-- **GraphDB (`graphdb_kdb`/Kuzu) is the substrate.** `context_loader.py` reads it via the graph query API. `manifest.json` is the source-state metadata ledger (hashes, run_state, timestamps — not an ontology index per D50).
+- **GraphDB (`kdb_graph`/Kuzu) is the substrate.** `context_loader.py` reads it via the graph query API. `manifest.json` is the source-state metadata ledger (hashes, run_state, timestamps — not an ontology index per D50).
 - **Markdown vault is persistent state.** Everything the system knows is reconstructible from `raw/` + `wiki/` + `state/`.
 
 ### Page ownership split
@@ -187,7 +212,7 @@ The full spec lives in [`docs/archive/tasks/task19-kpi-design.md`](archive/tasks
 ### 7.1 Package layout & boundary
 
 ```
-kdb_benchmark/
+tools/benchmark/
 ├── runner.py     # invokes compile_one per source, isolated state_root
 ├── scorer.py     # per-measure functions, Borda, final_score
 ├── scorecard.py  # JSON + render_terminal artifact
@@ -201,7 +226,7 @@ benchmark/
 └── scores/       # JSON + .txt scorecards (tracked)
 ```
 
-**One-way import boundary** (D25): `kdb_benchmark` imports from `kdb_compiler` (via `compile_one`, validators, types); `kdb_compiler` never imports from `kdb_benchmark`. The benchmark depends on the compiler's contract, not the reverse — keeps the production pipeline unaware of measurement concerns.
+**One-way import boundary** (D25): `tools/benchmark` imports from `compiler` and `common` (via validators and types); the production packages never import from `tools`. The benchmark depends on the compiler's contract, not the reverse — keeps the production pipeline unaware of measurement concerns.
 
 ### 7.2 Input contract
 
@@ -331,12 +356,12 @@ The bet is **explicit edges beat implicit similarity** — vector RAG flattens o
 ### 8.1 Package layout & boundary
 
 ```
-graphdb_kdb/                                ← producer-agnostic ontology layer
+kdb_graph/                                  ← producer-agnostic ontology layer
 ├── schema.py                               # Kuzu DDL (Entity / Source / LINKS_TO / SUPPORTS)
 ├── types.py                                # Entity, Source dataclasses; SyncResult, RebuildResult
 ├── graphdb.py                              # GraphDB connection manager + idempotent schema bootstrap
 ├── ingestor.py                             # apply_compile_result — atomic per-run mutations
-├── queries.py                              # neighbors, paths, provenance reads
+├── queries.py                              # neighbors, paths, provenance reads (single Kuzu door)
 ├── analytics.py                            # PageRank, Louvain, structural holes (hybrid via NetworkX)
 ├── verifier.py                             # verify_against_manifest — overlap audit
 ├── rebuilder.py                            # rebuild() — generic chronological replay (D-B1)
@@ -347,9 +372,9 @@ graphdb_kdb/                                ← producer-agnostic ontology layer
 └── cli.py                                  # graphdb-kdb CLI dispatcher
 ```
 
-**One-way import boundary** (D34 + D-B1, mirrors D25 for kdb_benchmark): `graphdb_kdb/` has **zero imports from `kdb_compiler`**. Producer-specific knowledge lives inside `adapters/obsidian_runs.py` and is expressed as JSON parsing of producer artifacts — never as Python imports of producer types. A grep invariant on `from kdb_compiler\|import kdb_compiler` inside `graphdb_kdb/` returns nothing.
+**One-way import boundary** (D34 + D-B1, mirrors D25 for kdb_benchmark): `kdb_graph/` has **zero imports from the production compiler packages**. Producer-specific knowledge lives inside `adapters/obsidian_runs.py` and is expressed as JSON parsing of producer artifacts — never as Python imports of producer types. A grep invariant on `from compiler\|from ingestion\|from orchestrator` inside `kdb_graph/` returns nothing.
 
-**Physical separation** (D35): the Kuzu *data* directory lives at `~/Droidoes/GraphDB-KDB/` (sibling to `Obsidian-KDB/`, not OneDrive-synced — avoids binary-file corruption). The Python package code lives at `graphdb_kdb/` inside `Obsidian-KDB/` today; the extraction arc to a standalone repo `~/Droidoes/GraphDB-KDB-package/` is documented in `docs/reference/graphdb-kdb-extraction-roadmap.md`.
+**Physical separation** (D35): the Kuzu *data* directory lives at `~/Droidoes/GraphDB-KDB/` (sibling to `Obsidian-KDB/`, not OneDrive-synced — avoids binary-file corruption). The Python package code lives at `kdb_graph/` inside `Obsidian-KDB/`; the extraction arc to a standalone repo `~/Droidoes/GraphDB-KDB-package/` is documented in `docs/reference/graphdb-kdb-extraction-roadmap.md`.
 
 ### 8.2 Schema (Kuzu DDL)
 
@@ -413,7 +438,7 @@ Finalize graph_sync (D50: fatal for non-dry-run; revokes D38 non-fatal):
        → state/runs/<run_id>/{compile_result,last_scan}.json
        (compile_result is the CANONICALIZED version per D-R5-10, so the
         sidecar preserves canonical_meta for D39 replay)
-  9b. Live sync: graphdb_kdb.adapters.obsidian_runs.ObsidianRunsAdapter()
+  9b. Live sync: kdb_graph.adapters.obsidian_runs.ObsidianRunsAdapter()
        .sync_current_run(cr, scan_dict, run_id)
 ```
 
@@ -422,7 +447,7 @@ Two architectural properties of the wiring:
 1. **`kdb_orchestrate.py` imports ONLY `ObsidianRunsAdapter`** (D-S0). Never `GraphDB`, never `apply_compile_result` directly. The adapter is the single producer→graph entry point — same code path as `graphdb-kdb rebuild` uses.
 2. **Sidecar archival runs *before* the live sync.** If the sync fails, the sidecar still exists — so `graphdb-kdb rebuild` is a real recovery path. (Per D50, graph_sync failure is now fatal for non-dry-run compiles since GraphDB is the live ontology authority; D38 non-fatal semantics were revoked for ontology writes.)
 
-**Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `graphdb_kdb/ingestor.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
+**Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `kdb_graph/ingestor.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
 
 ### 8.4 Replay / rebuild path (D39 — the independence proof)
 
@@ -479,7 +504,7 @@ graphdb-kdb rebuild --vault-root <P> [--backfill-baton] # drop + replay (D-S2 wh
 
 ### 8.7 Graph context loader — retrieval tiers & cold-start widening
 
-`context_loader.py` builds a source-specific `ContextSnapshot` from the graph. It reads the graph via the `graphdb_kdb.queries` API (no raw Kuzu), replacing the legacy manifest-based approach. The loader assigns entities to **retrieval tiers** — relevance-source categories, not graph-distance measures:
+`context_loader.py` builds a source-specific `ContextSnapshot` from the graph. It reads the graph via the `kdb_graph.queries` API (no raw Kuzu), replacing the legacy manifest-based approach. The loader assigns entities to **retrieval tiers** — relevance-source categories, not graph-distance measures:
 
 | Tier | Name | Score | Semantics |
 |------|------|-------|-----------|

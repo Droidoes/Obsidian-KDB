@@ -7,7 +7,7 @@ Usage:
 """
 import argparse, json, tempfile
 from pathlib import Path
-from graphdb_kdb.graphdb import GraphDB
+from kdb_graph.graphdb import GraphDB
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--vault", required=True)

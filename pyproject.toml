@@ -23,30 +23,31 @@ dependencies = [
 dev = ["pytest>=7", "pytest-cov>=4"]
 
 [project.scripts]
-kdb-enrich            = "kdb_compiler.enrich.kdb_enrich:main"
-kdb-scan              = "kdb_compiler.kdb_scan:main"
-kdb-validate          = "kdb_compiler.validate_compile_result:main"
-kdb-validate-response = "kdb_compiler.validate_source_response:main"
-kdb-clean             = "kdb_compiler.kdb_clean:main"
-kdb-replay            = "kdb_compiler.response_replay:main"
-kdb-benchmark         = "kdb_benchmark.cli:main"
-kdb-orchestrate       = "kdb_compiler.kdb_orchestrate:main"
-graphdb-kdb           = "graphdb_kdb.cli:main"
+kdb-enrich            = "ingestion.enrich.kdb_enrich:main"
+kdb-scan              = "ingestion.kdb_scan:main"
+kdb-validate          = "compiler.validate_compile_result:main"
+kdb-validate-response = "compiler.validate_source_response:main"
+kdb-clean             = "tools.cleanup:main"
+kdb-replay            = "tools.replay:main"
+kdb-benchmark         = "tools.benchmark.cli:main"
+kdb-orchestrate       = "orchestrator.kdb_orchestrate:main"
+graphdb-kdb           = "kdb_graph.cli:main"
 
 [build-system]
 requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_compiler*", "kdb_benchmark*", "graphdb_kdb*"]
-exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*"]
+include = ["kdb_graph*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
-kdb_compiler  = ["schemas/*.json"]
-kdb_benchmark = ["models.json"]
+compiler      = ["schemas/*.json"]
+tools         = ["benchmark/models.json", "diagnostics/*.json", "viewer/*.html"]
+ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths    = ["kdb_compiler/tests", "kdb_benchmark/tests", "graphdb_kdb/tests"]
+testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [
