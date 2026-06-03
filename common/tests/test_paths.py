@@ -148,3 +148,29 @@ def test_within_kdb(tmp_path: Path) -> None:
     outside.write_text("x")
     assert paths.within_kdb(inside, root=tmp_path) is True
     assert paths.within_kdb(outside, root=tmp_path) is False
+
+
+# ---------- collapse_slug ----------
+
+from common.paths import collapse_slug
+
+
+def test_collapse_slug_lowercases_collapses_strips():
+    assert collapse_slug("summary-Sleep-and-Aging---Research") == "summary-sleep-and-aging-research"
+
+
+def test_collapse_slug_noop_on_already_valid():
+    assert collapse_slug("value-investing") == "value-investing"
+
+
+def test_collapse_slug_refuses_empty_result():
+    assert collapse_slug("---") is None          # collapses+strips to "" -> refuse
+
+
+def test_collapse_slug_refuses_reserved():
+    assert collapse_slug("index--") is None      # -> "index" is reserved -> refuse
+
+
+def test_collapse_slug_refuses_space_or_invalid_chars():
+    assert collapse_slug("Bayes Theorem") is None
+    assert collapse_slug("foo_bar") is None

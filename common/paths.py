@@ -71,6 +71,27 @@ def validate_slug(slug: str) -> str:
     return slug
 
 
+def collapse_slug(slug: str) -> str | None:
+    """Rung-2 transform (#106 spec section 4a): enforce, post-LLM, the
+    deterministic non-semantic subset of `slugify` — lowercase, collapse hyphen
+    runs, strip edge hyphens. Returns the coerced slug iff it is a valid slug;
+    otherwise None (un-coercible: empty, reserved, over-length, or still
+    pattern-invalid e.g. it contained spaces / underscores / other non-[a-z0-9-]
+    content).
+
+    Idempotent on already-valid input (returns it unchanged). Deliberately does
+    NOT strip spaces or other characters — those are structural failures that
+    must fall to retry/quarantine, not be silently rewritten.
+    """
+    if not isinstance(slug, str):
+        return None
+    coerced = re.sub(r"-{2,}", "-", slug.lower()).strip("-")
+    try:
+        return validate_slug(coerced)            # gates empty/reserved/over-len/pattern
+    except PathError:
+        return None
+
+
 def _validate_page_type(page_type: str) -> PageType:
     if page_type not in _SUBDIR:
         raise PathError(f"Unknown page_type: {page_type!r} (expected one of {PAGE_TYPES})")
