@@ -28,11 +28,18 @@ Invariants:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable
 
+from common.paths import collapse_slug
 from .validate_compile_result import ValidationFinding
 from .validate_source_response import body_wikilink_slugs
+
+# Whole-token wikilink matcher for the coercion rewrite. PERMISSIVE target group
+# (must see malformed slugs like `Foo---Bar` that the strict extractor ignores),
+# capturing #anchor and |display separately so they survive the rewrite.
+_COERCE_WIKILINK_RE = re.compile(r"\[\[([^\[\]|#]+?)(#[^\[\]|]*)?(\|[^\[\]]*)?\]\]")
 
 
 class RepairError(Exception):
@@ -144,6 +151,88 @@ def _fix_pairing_type_mismatch(src: dict, finding: ValidationFinding) -> Reconci
         source_id=finding.source_id,
         detail=detail,
     )
+
+
+# -------------------------------------------------------------------------
+# Rung-2: slug coercion
+# -------------------------------------------------------------------------
+
+def _all_slug_values(pj: dict) -> set[str]:
+    """Every distinct slug string present across the 7 bearing fields."""
+    vals: set[str] = set()
+    if isinstance(pj.get("summary_slug"), str):
+        vals.add(pj["summary_slug"])
+    for key in ("concept_slugs", "article_slugs"):
+        vals.update(s for s in (pj.get(key) or []) if isinstance(s, str))
+    for pg in (pj.get("pages") or []):
+        if not isinstance(pg, dict):
+            continue
+        if isinstance(pg.get("slug"), str):
+            vals.add(pg["slug"])
+        vals.update(s for s in (pg.get("outgoing_links") or []) if isinstance(s, str))
+        body = pg.get("body")
+        if isinstance(body, str):
+            vals.update(m.group(1) for m in _COERCE_WIKILINK_RE.finditer(body))
+    for le in (pj.get("log_entries") or []):
+        if isinstance(le, dict):
+            vals.update(s for s in (le.get("related_slugs") or []) if isinstance(s, str))
+    return vals
+
+
+def coerce_slugs_and_propagate(parsed_json: dict) -> bool:
+    """Rung-2 (#106 spec section 4): build a collision-free rename map from
+    `collapse_slug` over ALL present slug values, then apply it across every
+    slug-bearing field (incl. whole ``[[token]]`` rewrite preserving |display /
+    #anchor). Mutates `parsed_json` in place. Returns True iff anything changed.
+
+    Refuses (no mutation, returns False) if any present slug is un-coercible
+    (collapse_slug -> None for a value that is itself invalid) or if two
+    distinct slugs would collapse to the same value / a collapse collides with
+    an already-valid slug. The re-validation gate in compile_one is the final
+    arbiter; this just keeps the payload internally consistent or untouched.
+    """
+    values = _all_slug_values(parsed_json)
+    rename: dict[str, str] = {}
+    for v in values:
+        c = collapse_slug(v)
+        if c is None:
+            return False
+        if c != v:
+            rename[v] = c
+    if not rename:
+        return False
+    targets = list(rename.values())
+    unchanged = values - set(rename.keys())
+    if len(set(targets)) != len(targets) or (set(targets) & unchanged):
+        return False
+
+    def _swap(s: object) -> object:
+        return rename.get(s, s) if isinstance(s, str) else s  # type: ignore[arg-type]
+
+    def _swap_list(lst: object) -> object:
+        return [_swap(s) for s in lst] if isinstance(lst, list) else lst
+
+    def _rw(m: re.Match) -> str:
+        tgt, anchor, disp = m.group(1), m.group(2) or "", m.group(3) or ""
+        return f"[[{rename.get(tgt, tgt)}{anchor}{disp}]]"
+
+    parsed_json["summary_slug"] = _swap(parsed_json.get("summary_slug"))
+    for key in ("concept_slugs", "article_slugs"):
+        if key in parsed_json:
+            parsed_json[key] = _swap_list(parsed_json.get(key))
+    for pg in (parsed_json.get("pages") or []):
+        if not isinstance(pg, dict):
+            continue
+        pg["slug"] = _swap(pg.get("slug"))
+        if "outgoing_links" in pg:
+            pg["outgoing_links"] = _swap_list(pg.get("outgoing_links"))
+        body = pg.get("body")
+        if isinstance(body, str):
+            pg["body"] = _COERCE_WIKILINK_RE.sub(_rw, body)
+    for le in (parsed_json.get("log_entries") or []):
+        if isinstance(le, dict) and "related_slugs" in le:
+            le["related_slugs"] = _swap_list(le.get("related_slugs"))
+    return True
 
 
 # -------------------------------------------------------------------------
