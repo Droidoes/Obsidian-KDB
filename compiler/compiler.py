@@ -258,6 +258,8 @@ def compile_one(
             state["schema_errors"] = []
             state["semantic_ok"] = False
             state["semantic_errors"] = []
+            state["syntax_repaired"] = False
+            state["slug_coerced"] = False
 
             # --- model call ---
             try:

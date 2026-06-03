@@ -1263,3 +1263,73 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
     assert calls["n"] == 1
     # Coerced form: lowercased + triple-hyphen collapsed to single.
     assert cs.summary_slug == bad.lower().replace("---", "-")
+
+
+def test_final_status_clean_when_attempt1_repaired_but_attempt2_is_clean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Regression (#106): repair flags must reset per attempt so a clean
+    attempt-2 is not mis-labelled 'retried-and-repaired'.
+
+    Sequence:
+      Attempt 1 — rung-2 fires (bad summary_slug coerced → slug_coerced=True),
+                  but semantic still fails (coerced slug doesn't match any page)
+                  → continue.
+      Attempt 2 — fully clean response → succeeds.
+
+    Without the two reset lines, slug_coerced stays True from attempt 1 and
+    the finally derives final_status='retried-and-repaired'. With the fix,
+    slug_coerced is False on the winning attempt → final_status='clean'.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Attempt 1: summary_slug has uppercase + triple-hyphen (schema-invalid).
+    # coerce_slugs_and_propagate will coerce it to "summary-bar-baz", which
+    # passes schema but does NOT match the page slug "summary-foo" → semantic
+    # fails → retry.
+    bad = _good_response(SOURCE_A)
+    bad["summary_slug"] = "SUMMARY-Bar---Baz"
+    # Leave pages[0].slug as "summary-foo" (valid, stays unchanged by coercion)
+    # so after coercion summary_slug != any page slug → semantic fail.
+
+    # Attempt 2: fully clean (the standard good response).
+    good = _good_response(SOURCE_A)
+
+    seq = [bad, good]
+
+    def fake(req):
+        return ModelResponse(
+            text=json.dumps(seq.pop(0)),
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert cs is not None and err is None   # recovered on attempt 2
+
+    # Read the on-disk resp-stats record and assert telemetry reflects the
+    # winning (clean) attempt, not the repaired-but-failed attempt 1.
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["final_status"] == "clean"
+    assert rec["syntax_repaired"] is False
+    assert rec["slug_coerced"] is False
