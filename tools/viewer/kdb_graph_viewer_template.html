@@ -609,7 +609,7 @@
     </div>
     <div class="stats-summary" id="stats-header">
       <!-- Generated Dynamically -->
-      Nodes: <b id="stat-nodes">0</b> · Edges: <b id="stat-edges">0</b>
+      Nodes: <b id="stat-nodes">0</b> · Edges: <b id="stat-edges">0</b> · Zoom: <b id="stat-zoom">1.00&times;</b>
     </div>
   </header>
 
@@ -888,6 +888,15 @@
     let simulation = null;
     let width = 800, height = 600;
 
+    // Node captions only appear once zoomed in past this scale. Watch the
+    // "Zoom" readout in the header to tune this number to taste.
+    const LABEL_ZOOM_THRESHOLD = 1.5;
+    function onZoomChanged(k) {
+      const zEl = document.getElementById("stat-zoom");
+      if (zEl) zEl.textContent = k.toFixed(2) + "×";
+      if (labelsGroup) labelsGroup.style("display", k >= LABEL_ZOOM_THRESHOLD ? null : "none");
+    }
+
     // Load data counts dynamically
     const nodeCountsByType = {};
     const edgeCountsByType = {};
@@ -1008,9 +1017,11 @@
         .scaleExtent([0.1, 8])
         .on("zoom", (event) => {
           zoomContainer.attr("transform", event.transform);
+          onZoomChanged(event.transform.k);
         });
 
       svg.call(d3Zoom);
+      onZoomChanged(1.0);   // initialise the zoom readout + label visibility at load
 
       svg.on("click", (event) => {
         // Only deselect if clicking directly on the SVG canvas background (not on a node or link)
