@@ -86,6 +86,10 @@ def build_resp_stats(
     parsed_summary: ParsedSummary | None = None,
     source_words: int = 0,
     failure=None,
+    compile_attempts: int | None = None,
+    syntax_repaired: bool = False,
+    slug_coerced: bool = False,
+    final_status: str | None = None,
 ) -> RespStatsRecord:
     """Assemble one RespStatsRecord. Hashes always computed. See module
     docstring for the always-on vs env-gated field split.
@@ -173,6 +177,10 @@ def build_resp_stats(
         failure_stage=failure.stage if failure is not None else None,
         failure_exception_type=failure.exception_type if failure is not None else None,
         failure_exception_message=failure.message if failure is not None else None,
+        compile_attempts=compile_attempts,
+        syntax_repaired=syntax_repaired,
+        slug_coerced=slug_coerced,
+        final_status=final_status,
     )
 
 
