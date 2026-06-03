@@ -1333,3 +1333,287 @@ def test_final_status_clean_when_attempt1_repaired_but_attempt2_is_clean(
     assert rec["final_status"] == "clean"
     assert rec["syntax_repaired"] is False
     assert rec["slug_coerced"] is False
+
+
+# ---------- ladder edge cases (#106 Task 7) ----------
+
+def test_both_rungs_on_one_emission(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Both rung-1 (syntax) and rung-2 (slug) fire on the same attempt-1 emission.
+
+    The payload has BOTH a stray LaTeX backslash in the body AND an uppercase +
+    triple-hyphen summary slug (and matching page slug). The pipeline must:
+      - escape the backslash (parse_ok), then
+      - coerce both slugs (schema_ok), then
+      - pass semantic (coerced summary_slug matches coerced page slug).
+
+    Expected: recovers on attempt 1 (calls["n"]==1), err is None, the LaTeX
+    survives verbatim in the compiled page body, summary_slug is coerced
+    (lowercase + hyphen-collapsed), and the resp-stats record shows
+    syntax_repaired=True, slug_coerced=True, final_status="repaired".
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Build a payload with a bad slug on both the summary_slug and the page slug
+    # so coercion leaves them consistent, and semantic passes.
+    bad_slug = "Summary-Sleep-and-Aging---Deep"  # uppercase + triple-hyphen
+    payload = _good_response(SOURCE_A)
+    payload["summary_slug"] = bad_slug
+    for p in payload["pages"]:
+        if p.get("page_type") == "summary":
+            p["slug"] = bad_slug
+    payload["pages"][0]["body"] = "PLACEHOLDER_BODY"
+
+    raw = json.dumps(payload)
+    # Re-introduce the stray LaTeX backslash the model would have emitted:
+    raw = raw.replace('"PLACEHOLDER_BODY"', r'"the term \(n-1\) matters"')
+
+    calls = {"n": 0}
+
+    def fake(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=raw,
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert err is None and cs is not None      # both rungs recovered
+    assert calls["n"] == 1                     # deterministic — no retry
+
+    # LaTeX backslash must survive into the compiled page body.
+    body = next(p.body for p in cs.pages if r"n-1" in p.body)
+    assert r"\(n-1\)" in body
+
+    # summary_slug must be coerced (lowercase + collapsed hyphens).
+    expected_slug = bad_slug.lower().replace("---", "-")  # "summary-sleep-and-aging-deep"
+    assert cs.summary_slug == expected_slug
+
+    # Resp-stats telemetry on the written record.
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["syntax_repaired"] is True
+    assert rec["slug_coerced"] is True
+    assert rec["final_status"] == "repaired"
+
+
+def test_collision_falls_through_to_quarantine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rung-2 refuses when two distinct slugs collapse to the same value (collision).
+
+    Two concept pages have slugs 'Foo--Bar' and 'Foo----Bar'. Both collapse to
+    'foo-bar' via coerce_slugs_and_propagate, which detects the collision and
+    returns False (no mutation). Schema stays invalid, both attempts fail, and
+    the source is quarantined.
+
+    Expected: calls["n"]==2, cs is None, err mentions schema, resp-stats
+    final_status=="quarantined", slug_coerced==False.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Build payload with two concept pages whose slugs collide on coercion.
+    payload = _good_response(SOURCE_A)
+    payload["concept_slugs"] = ["Foo--Bar", "Foo----Bar"]
+    payload["pages"] += [
+        {
+            "slug": "Foo--Bar",
+            "page_type": "concept",
+            "title": "Foo Bar A",
+            "body": "Body A.",
+            "status": "active",
+            "outgoing_links": [],
+            "confidence": "medium",
+        },
+        {
+            "slug": "Foo----Bar",
+            "page_type": "concept",
+            "title": "Foo Bar B",
+            "body": "Body B.",
+            "status": "active",
+            "outgoing_links": [],
+            "confidence": "medium",
+        },
+    ]
+
+    calls = {"n": 0}
+
+    def always_collision(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=json.dumps(payload),
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_collision)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert calls["n"] == 2                    # exhausted both attempts
+    assert cs is None
+    assert err is not None
+    assert "schema" in err                    # schema validation failed
+
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["slug_coerced"] is False
+    assert rec["final_status"] == "quarantined"
+
+
+def test_non_slug_schema_error_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rung-2 is a safe no-op on schema errors that are not slug problems.
+
+    A response with an int summary_slug (wrong type) makes schema validation
+    fail. coerce_slugs_and_propagate has nothing to fix (the slug field isn't
+    a str); it returns False unchanged. Both attempts fail → quarantined.
+
+    Expected: calls["n"]==2, cs is None, schema error, slug_coerced==False.
+    This proves rung-2's class-agnostic "attempt on any schema failure, let
+    re-validation decide" is harmless on non-slug errors.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # summary_slug is an int — wrong type, not a slug pattern error, so
+    # collapse_slug gets None back (non-str) and coerce returns False immediately.
+    payload = _good_response(SOURCE_A)
+    payload["summary_slug"] = 42  # type: ignore[assignment]  # int, not str
+
+    calls = {"n": 0}
+
+    def always_bad(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=json.dumps(payload),
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_bad)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert calls["n"] == 2                    # retried then quarantined
+    assert cs is None
+    assert err is not None
+    assert "schema" in err
+
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["slug_coerced"] is False
+    assert rec["final_status"] == "quarantined"
+
+
+def test_irreparable_json_quarantines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rung-1 cannot fix JSON that is broken by more than stray backslashes.
+
+    Take a valid JSON dump of _good_response, delete the first comma (so it
+    becomes structurally invalid). escape_stray_backslashes returns the text
+    unchanged (no backslashes) → parse still fails → retries → quarantines.
+
+    Expected: calls["n"]==2, cs is None, err mentions "invalid JSON",
+    syntax_repaired==False, final_status=="quarantined".
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Drop the first comma from a valid JSON dump — creates a structural error
+    # that escape_stray_backslashes cannot recover.
+    good_json = json.dumps(_good_response(SOURCE_A))
+    broken_json = good_json.replace(",", "", 1)  # remove first comma only
+
+    calls = {"n": 0}
+
+    def always_broken(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=broken_json,
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_broken)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert calls["n"] == 2                    # retried then quarantined
+    assert cs is None
+    assert err is not None
+    assert "invalid JSON" in err              # parse failure message
+
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["syntax_repaired"] is False
+    assert rec["final_status"] == "quarantined"
