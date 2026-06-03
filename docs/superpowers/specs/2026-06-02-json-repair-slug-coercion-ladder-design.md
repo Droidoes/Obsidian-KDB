@@ -1,6 +1,6 @@
 # Task #106 — JSON-repair + slug-coercion robustness ladder (design)
 
-> **Status:** design ratified-in-principle (this doc), **execution deferred until after Realignment Phase B**. **Gate before implementation:** this spec goes to an **external panel review** at #106 pick-up — run *after* Phase B lands, so the panel reviews it against the real `common/` + `compiler/` structure (Joseph, 2026-06-02; project-default panel per `feedback_external_review_panel_composition`, CLI reviewers under the output-file-only guardrail).
+> **Status:** design ratified-in-principle. **Phase B has now LANDED (`v0.5.2`, 2026-06-02)** — the post-Phase-B homes below are REAL (`common/paths.py`, `compiler/repair.py`, `compiler/compiler.py`, `compiler/schemas/`; `common/util/` + the `json-repair` dep are absent, created by #106). This spec is now at its **external panel-review gate** (project-default panel per `feedback_external_review_panel_composition`, CLI reviewers under the output-file-only guardrail). Panel feedback → `writing-plans` → TDD → run-8.
 > **Sequence:** Phase B (package split) → run-7 (validate zero-behavior-change) → **#106: panel-review this spec → writing-plans → TDD → into the new homes** → run-8 (validate robustness). Both land **before 0.6**.
 > **Why after B (reversal of the 2026-06-02 "#106-first" call):** #106's helpers belong in `common/` and `compiler/repair` — exactly the packages Phase B *creates*. Doing B first lets the helpers land in their final homes on the first write (zero relocation), makes the placement trivial, and turns #106 into a real-feature shakedown of B's package boundaries. Phase B is zero-behavior-change, so the recurring cases below stay retry-rescued throughout B — **no robustness gap is opened by waiting**.
 
@@ -77,12 +77,10 @@ If collapsing makes two **distinct** slugs map to the **same** new slug (e.g. `f
 
 ## 5. Placement in `compile_one`'s attempt loop
 
-Current (pre-Phase-B) flow in `kdb_compiler/compiler.py` per attempt: `call → extract → parse → schema → (retry on fail) → break → semantic → reconcile_body_links/reconcile_slug_lists`. The two rungs insert **inside the attempt loop, before the retry decision**:
+Flow in `compiler/compiler.py` per attempt (real post-Phase-B locations): the attempt loop is at `compiler.py:242` (`for attempt in range(1, _MAX_COMPILE_ATTEMPTS + 1)`); within it `call → extract → parse (`json.loads` @305) → schema (`validate_source_response.validate` @322) → (retry on fail) → break → semantic → reconcile_body_links/reconcile_slug_lists` (`compiler/repair.py:153/179`). The two rungs insert **inside the attempt loop, before the retry decision**:
 
-- **Rung 1** at the **parse** step (~`compiler.py:300–318` today): on `json.loads` failure → `json_repair` → re-parse. Only then decide retry/fail.
-- **Rung 2** at the **schema** step (~`compiler.py:320–338` today): on **any** schema failure → attempt slug-collapse + propagation across all slug fields → re-validate (schema + semantic). **Do not sniff the error string** to detect the slug-pattern class — just attempt the collapse and let re-validation decide: if the failure wasn't a collapsible-slug one, the collapse is a no-op (or still-invalid) and it falls through unchanged. Only then decide retry/fail.
-
-(Line numbers are pre-Phase-B and will shift once `compiler.py` moves into the `compiler/` package; the *insertion points* — at parse-fail and at schema-fail, before the retry branch — are stable.)
+- **Rung 1** at the **parse** step (`compiler/compiler.py:305`, the `json.loads` try; the "invalid JSON, retrying" branch is ~311): on `json.loads` failure → `json_repair` → re-parse. Only then decide retry/fail.
+- **Rung 2** at the **schema** step (`compiler/compiler.py:322`, after `validate`; the "schema invalid, retrying" branch is ~330): on **any** schema failure → attempt slug-collapse + propagation across all slug fields → re-validate (schema + semantic). **Do not sniff the error string** to detect the slug-pattern class — just attempt the collapse and let re-validation decide: if the failure wasn't a collapsible-slug one, the collapse is a no-op (or still-invalid) and it falls through unchanged. Only then decide retry/fail.
 
 ---
 
@@ -139,6 +137,6 @@ This makes the deterministic-recovery rate observable across runs and flags any 
 
 - Memory: `project_json_repair_coerce_ladder`, `feedback_coerce_dont_reject`, `feedback_post_llm_deterministic_override`, `feedback_measurability_over_defensive_complexity`, `project_codebase_realignment`.
 - Realignment Phase-B brief: `docs/superpowers/specs/2026-06-01-codebase-realignment-panel-brief.md` (defines `common` / `tools` / `compiler` packages + dependency contract).
-- Slug policy (D19): `kdb_compiler/paths.py` (`slugify`, `validate_slug`, `SLUG_PATTERN`).
-- Pass-2 contract: `kdb_compiler/schemas/compiled_source_response.schema.json`.
-- Compile flow: `kdb_compiler/compiler.py` (`compile_one` attempt loop).
+- Slug policy (D19): `common/paths.py` (`slugify`, `validate_slug`, `SLUG_PATTERN`).
+- Pass-2 contract: `compiler/schemas/compiled_source_response.schema.json`.
+- Compile flow: `compiler/compiler.py` (`compile_one` attempt loop) + reconcilers `compiler/repair.py`.
