@@ -10,6 +10,43 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.2 — Codebase realignment, Phase B (tagged `v0.5.2`, 2026-06-02)
+
+**Theme:** finish the realignment — split the monolithic `kdb_compiler` package into the
+peer-package structure the architecture has described since `v0.5.0`, **before** the 0.6
+ingestion arc builds on top of it. Internal refactor, **zero behavior change**. (Task #105, Phase B.)
+
+**Gate — run-7 clean E2E** (post-split): `exit_reason=ok`; finalize wired **468 links, 0 orphans**;
+graph **193 Entity · 29 Source · 10 Domain · 195 `BELONGS_TO` · 202 `SUPPORTS`** — structurally ≡
+run-6 (the delta is normal LLM run-to-run variance) → behavior preserved end-to-end. **1191 non-live
+tests green** (1175 → 1191: +16 guard/split/render/gate tests, none lost).
+
+**What landed (Phase B — package split; leaf-first, move-don't-rewrite):**
+- **Six peer packages** replace the flat `kdb_compiler/` (+ `graphdb_kdb`, `kdb_benchmark`):
+  `common` (leaf) · `ingestion` · `compiler` · `kdb_graph` (was `graphdb_kdb`; `graphdb-kdb` CLI name kept) ·
+  `orchestrator` · `tools`. Extracted in dependency order so every step stayed green.
+- **B.3 dependency contract is guard-tested** — `tools/tests/test_package_boundaries.py` AST-asserts the
+  actual import graph equals the contract (`common`→∅ · `kdb_graph`→`common` · `ingestion`→`common` ·
+  `compiler`→`common`+`kdb_graph` · `orchestrator`→all · `tools`→{`common`,`kdb_graph`,`ingestion`,`compiler`}),
+  with one documented `orchestrator→tools.cleanup` inline-cleanup exception.
+- **One real restructure** — `resp_stats_writer` split into `common/llm_telemetry` (generic call telemetry)
+  + `compiler/resp_summary` (`build_parsed_summary`); the internal `parsed_summary` gate was **lifted** to the
+  compiler call site (byte-identical condition) to keep `common` a true leaf.
+- **Deferred Phase-A cleanups landed**: `failure_stage="reconcile"→"repair"`, `JOURNEY` `source_state.json→manifest.json`.
+- Tests redistributed into per-package `tests/` dirs behind a shared root `conftest.py`; `pyproject` discovery,
+  package-data, and `testpaths` updated; all 9 CLI entry points resolve.
+
+**Execution + review:** implemented **subagent-driven** (13-task plan, fresh agent per task, two-stage review on
+the logic-bearing ones). **5-panel code review** (Codex · Deepseek · Qwen · Gemini · Grok) → **GO-WITH-FIXES**, all
+must-fixes folded (F1–F6: guard retired migration scripts, `__version__`→`0.5.2`, `setup.sh`/boundary-set/wheel-exclude/
+stale-text). 3 non-blocking follow-ups (viewer packaging · `compiler.compiler` rename · cleanup decoupling) → **Task #107**.
+Synthesis: `docs/superpowers/specs/2026-06-02-phase-b-review-synthesis.md`. Merged `f28220e`.
+
+**Next:** the **0.6 robustness ladder** — **Task #106** (JSON-repair + slug-coercion), now landing in the real
+`common/util` + `compiler/repair` homes; panel-review its spec → writing-plans → run-8.
+
+---
+
 ## 0.5.1 — Codebase realignment, Phase A (tagged `v0.5.1`, 2026-06-02)
 
 **Theme:** make the implementation reflect the decided architecture — pay down the
