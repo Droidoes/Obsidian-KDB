@@ -658,3 +658,36 @@ def test_failure_fields_serialize_as_null_when_absent(tmp_path: Path) -> None:
     assert "failure_stage" in data and data["failure_stage"] is None
     assert "failure_exception_type" in data and data["failure_exception_type"] is None
     assert "failure_exception_message" in data and data["failure_exception_message"] is None
+
+
+# ---------- #106 repair-ladder compositional telemetry ----------
+
+def test_resp_stats_carries_compositional_repair_flags(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path)
+    rec = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="s",
+        prompt=None, raw_response_text="{}",
+        model_response=None, extract_ok=True, parse_ok=True, parsed_json={},
+        schema_ok=True, schema_errors=[], semantic_ok=True, semantic_errors=[],
+        compile_attempts=1, syntax_repaired=True, slug_coerced=False,
+        final_status="repaired",
+    )
+    assert rec.compile_attempts == 1
+    assert rec.syntax_repaired is True
+    assert rec.slug_coerced is False
+    assert rec.final_status == "repaired"
+    assert hasattr(rec, "attempts")        # SDK-level attempts stays a SEPARATE field
+
+
+def test_resp_stats_repair_flags_default_off(tmp_path: Path) -> None:
+    ctx = _ctx(tmp_path)
+    rec = resp_stats_writer.build_resp_stats(
+        ctx=ctx, source_id="s",
+        prompt=None, raw_response_text="{}",
+        model_response=None, extract_ok=True, parse_ok=True, parsed_json={},
+        schema_ok=True, schema_errors=[], semantic_ok=True, semantic_errors=[],
+    )
+    assert rec.syntax_repaired is False
+    assert rec.slug_coerced is False
+    assert rec.compile_attempts is None
+    assert rec.final_status is None

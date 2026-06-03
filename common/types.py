@@ -426,6 +426,12 @@ class RespStatsRecord:
     failure_stage: Optional[str] = None
     failure_exception_type: Optional[str] = None
     failure_exception_message: Optional[str] = None
+    # #106 repair-ladder telemetry (compositional — NOT mutually exclusive).
+    # `attempts` above is SDK-level retry count; these describe the Pass-2 ladder.
+    compile_attempts: Optional[int] = None      # loop attempt (1 or 2) that produced final parsed_json
+    syntax_repaired: bool = False               # rung-1 escaping rescued a parse
+    slug_coerced: bool = False                  # rung-2 coercion rescued schema/semantic
+    final_status: Optional[str] = None          # clean | repaired | retried-and-repaired | quarantined
 
     def to_dict(self) -> dict:
         d = asdict(self)
