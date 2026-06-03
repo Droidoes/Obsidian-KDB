@@ -2,9 +2,16 @@
 
 > Richest single catch-up artifact for the next session. Top-level so `session-catchup` finds it by mtime.
 
-## ⏩ STATUS UPDATE (end of session) — Phase B SHIPPED as v0.5.2
+## ⏩ END OF SESSION — TWO releases shipped: v0.5.2 (Phase B) + v0.5.3 (#106 ladder)
 
-Everything below this box was the *morning* plan; it has all been executed. Current state:
+Everything below this box was the *morning* plan; it has all been executed, plus #106. Current state:
+- **🏁 v0.5.3 shipped + pushed** — Task #106 Pass-2 robustness ladder (merge `2fb5d0e`, closure `b3ccf16`, tag `v0.5.3`). Deterministic re-validation-gated repair: rung-1 targeted backslash-escaping (`common/util/json_escape_fix`, no dep), rung-2 slug coercion (`common/paths.collapse_slug` lowercase+collapse+strip) + propagation/collision (`compiler/repair.coerce_slugs_and_propagate`), `semantic_check` in-loop (LB2), compositional telemetry. **run-8 clean** (172 Entity/29 Source/12 Domain; 1213 tests). 5-panel design review; subagent-driven TDD. Viewer tweak shipped too (zoom-gated captions).
+- **NEXT ARC = 0.6→1.0 ingestion pipelines** (#88 / tunnel-from-both-ends). Optional small precursors first: **#108** (extend ladder to Pass-1 — run-8 showed Pass-1 failures: empty-response + null-summary) and **#107** (Phase-B polish: viewer packaging · `compiler.compiler` rename · cleanup decoupling).
+- **Resume OneDrive sync** (paused for run-8).
+
+— older Phase-B status below (historical) —
+
+
 - **🏁 v0.5.2 shipped to `main`** — codebase realignment **Phase B** (Task #105 CLOSED). Six-package split (`common`/`ingestion`/`compiler`/`kdb_graph`/`orchestrator`/`tools`), executed **subagent-driven** (13 tasks), **run-7 clean**, B.3 dependency contract guard-tested, `resp_stats_writer` split. **5-panel code review → GO-WITH-FIXES**, all F1–F6 folded. Merge `f28220e`, closure `d6620b9`, tag `v0.5.2`. 1191 non-live tests green.
 - **✅ Pushed** — `main` (`9521baf`) + tag `v0.5.2` are on `origin`. Branch `refactor/phase-b-package-split` merged (can be deleted).
 - **Resume OneDrive sync** (was paused for run-7).
