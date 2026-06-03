@@ -10,6 +10,49 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.3 — Pass-2 robustness ladder (tagged `v0.5.3`, 2026-06-02)
+
+**Theme:** make Pass-2 deterministically recover from the two confirmed recoverable
+LLM-emission malformations instead of relying on a lucky retry — a re-validation-gated
+repair ladder (Task #106). 0.6-robustness precursor, on the 0.5.x line.
+
+**Gate — run-8 clean E2E:** `exit_reason=ok`; graph **172 Entity · 29 Source · 12 Domain ·
+173 `BELONGS_TO` · 177 `SUPPORTS` · 409 `LINKS_TO`** (≡ run-6/7 standard; 0 quarantined).
+**1213 non-live tests green.** The new compositional repair telemetry plumbed through end-to-end
+(all 29 Pass-2 compiles recorded `final_status='clean'` — the malformations didn't recur this run,
+so the rungs correctly stayed dormant; the repair paths are covered by 15+ unit/integration tests).
+
+**What landed (Task #106 — deterministic ladder: `emit → repair → retry → repair → quarantine`,
+every repair re-validation-gated):**
+- **Rung 1 — targeted JSON backslash-escaping** (`common/util/json_escape_fix`): doubles only the
+  stray `\` that JSON rejects (e.g. unescaped LaTeX `\(n-1\)`) so the bytes parse **and the backslash
+  survives** — content-preserving by construction. The 5-model design panel chose this over the
+  `json-repair` package (which can silently strip content); **no new pip dependency**.
+- **Rung 2 — slug coercion** (`common/paths.collapse_slug`): lowercase + collapse `-{2,}`→`-` +
+  edge-strip (the deterministic non-semantic subset of `slugify`), with full reference-propagation
+  across all 7 slug-bearing fields (regex wikilink rewrite preserving `|display`/`#anchor`) + an
+  all-values collision guard, in `compiler/repair.coerce_slugs_and_propagate`.
+- **LB2 — `semantic_check` moved inside the attempt loop** so a post-repair semantic failure retries
+  rather than quarantining with no budget left; per-attempt state reset fixes a latent stale-state class.
+- **Compositional telemetry** on `RespStatsRecord` (`compile_attempts`/`syntax_repaired`/`slug_coerced`/
+  `final_status`) — observable deterministic-recovery rate, so over-reach is detectable.
+
+**Also:** **viewer** — node captions now appear only past a zoom threshold (`LABEL_ZOOM_THRESHOLD`)
+with a live zoom readout in the header.
+
+**Process:** spec **5-panel design review** (Codex/Deepseek/Qwen/Gemini/Grok → unanimous
+GO-WITH-CHANGES; all folded, incl. the rung-1 escaping decision and Joseph's decision-B lowercase).
+Implemented **subagent-driven** (8-task TDD plan); per-task two-stage review caught two real bugs
+(a telemetry sticky-flag mis-report; the original semantic-gate gap). Merged `2fb5d0e`. Plan:
+`docs/superpowers/plans/2026-06-02-task106-json-escape-slug-coercion.md`; synthesis:
+`docs/superpowers/specs/2026-06-02-task106-review-synthesis.md`.
+
+**Next:** run-8 surfaced recoverable failures clustering in **Pass-1** (empty-response, null-summary;
+all retry-rescued) → **Task #108** (extend the ladder into Pass-1; rung-1 already reusable in
+`common/util`). Then the **0.6→1.0 ingestion-pipelines** arc.
+
+---
+
 ## 0.5.2 — Codebase realignment, Phase B (tagged `v0.5.2`, 2026-06-02)
 
 **Theme:** finish the realignment — split the monolithic `kdb_compiler` package into the
