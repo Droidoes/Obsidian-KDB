@@ -37,9 +37,10 @@ from compiler import (
 from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
+from common.util.json_escape_fix import escape_stray_backslashes
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
-from compiler.repair import reconcile_body_links, reconcile_slug_lists
+from compiler.repair import coerce_slugs_and_propagate, reconcile_body_links, reconcile_slug_lists
 from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
 from common.run_context import RunContext
@@ -188,6 +189,10 @@ def compile_one(
         "warnings": [],
         "source_words": 0,
         "failure": None,
+        # repair-ladder telemetry (#106)
+        "compile_attempts": None,
+        "syntax_repaired": False,
+        "slug_coerced": False,
     }
 
     try:
@@ -312,29 +317,54 @@ def compile_one(
                 state["error"] = f"{source_id}: extract failed: {e}"
                 return (None, [], [], state["error"])
 
-            # --- parse ---
+            # --- parse (+ rung-1: targeted backslash-escape on failure, #106) ---
             try:
                 state["parsed_json"] = json.loads(json_text)
                 state["parse_ok"] = True
             except json.JSONDecodeError as e:
-                if not last_attempt:
-                    log.warning(
-                        f"{source_id}: Pass-2 attempt {attempt}/"
-                        f"{_MAX_COMPILE_ATTEMPTS} invalid JSON, retrying: "
-                        f"{e.msg} at line {e.lineno}"
+                fixed = escape_stray_backslashes(json_text)
+                if fixed != json_text:
+                    try:
+                        state["parsed_json"] = json.loads(fixed)
+                        state["parse_ok"] = True
+                        state["syntax_repaired"] = True
+                        log.info(
+                            f"{source_id}: Pass-2 attempt {attempt} "
+                            f"syntax-repaired, proceeding"
+                        )
+                    except json.JSONDecodeError:
+                        pass
+                if not state["parse_ok"]:
+                    if not last_attempt:
+                        log.warning(
+                            f"{source_id}: Pass-2 attempt {attempt}/"
+                            f"{_MAX_COMPILE_ATTEMPTS} invalid JSON, retrying: "
+                            f"{e.msg} at line {e.lineno}"
+                        )
+                        continue
+                    _set_failure(state, "parse", type(e).__name__, str(e))
+                    state["error"] = (
+                        f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
                     )
-                    continue
-                _set_failure(state, "parse", type(e).__name__, str(e))
-                state["error"] = (
-                    f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
-                )
-                return (None, [], [], state["error"])
+                    return (None, [], [], state["error"])
 
-            # --- schema ---
+            # --- schema (+ rung-2: slug coercion on failure, #106) ---
             state["schema_errors"] = validate_source_response.validate(
                 state["parsed_json"]
             )
             state["schema_ok"] = state["schema_errors"] == []
+            if not state["schema_ok"]:
+                if coerce_slugs_and_propagate(state["parsed_json"]):
+                    state["schema_errors"] = validate_source_response.validate(
+                        state["parsed_json"]
+                    )
+                    state["schema_ok"] = state["schema_errors"] == []
+                    if state["schema_ok"]:
+                        state["slug_coerced"] = True
+                        log.info(
+                            f"{source_id}: Pass-2 attempt {attempt} "
+                            f"slug-coerced, proceeding"
+                        )
             if not state["schema_ok"]:
                 if not last_attempt:
                     log.warning(
@@ -370,6 +400,7 @@ def compile_one(
                 )
                 return (None, [], [], state["error"])
 
+            state["compile_attempts"] = attempt  # record winning attempt (#106)
             break  # parse_ok + schema_ok + semantic_ok → proceed
 
         # --- body-link reconciliation ---
@@ -444,6 +475,18 @@ def compile_one(
             if (state["parse_ok"] and isinstance(state["parsed_json"], dict))
             else None
         )
+        # Derive final_status for repair-ladder telemetry (#106).
+        _syntax_repaired = state["syntax_repaired"]
+        _slug_coerced = state["slug_coerced"]
+        _compile_attempts = state["compile_attempts"]
+        if state["error"] is not None:
+            _final_status = "quarantined"
+        elif _syntax_repaired or _slug_coerced:
+            _final_status = (
+                "retried-and-repaired" if _compile_attempts == 2 else "repaired"
+            )
+        else:
+            _final_status = "clean"
         record = build_resp_stats(
             ctx=ctx,
             source_id=source_id,
@@ -462,6 +505,10 @@ def compile_one(
             parsed_summary=parsed_summary,
             source_words=state["source_words"],
             failure=state["failure"],
+            compile_attempts=_compile_attempts,
+            syntax_repaired=_syntax_repaired,
+            slug_coerced=_slug_coerced,
+            final_status=_final_status,
         )
         resp_stats_path = write_resp_stats(
             record, state_root, artifact_dir=resp_stats_dir)

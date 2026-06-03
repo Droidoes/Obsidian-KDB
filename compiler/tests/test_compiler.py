@@ -1157,3 +1157,109 @@ def test_response_schema_omits_page_domain():
     page_props = schema["$defs"]["pageIntent"]["properties"]
     assert "domain" not in page_props
     assert "sub_domain" not in page_props
+
+
+# ---------- rung-1 / rung-2 repair ladder (#106) ----------
+
+def test_rung1_escape_recovers_latex_on_attempt_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rung-1: a stray LaTeX backslash (invalid JSON) is escaped in-place without
+    a model re-call.  The backslash survives into the compiled page body verbatim."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    payload = _good_response(SOURCE_A)
+    payload["pages"][0]["body"] = "PLACEHOLDER_BODY"
+    raw = json.dumps(payload)
+    # Re-introduce the stray backslash the model would have emitted:
+    raw = raw.replace('"PLACEHOLDER_BODY"', r'"the term \(n-1\) matters"')
+
+    calls = {"n": 0}
+
+    def fake(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=raw,
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert err is None and cs is not None      # recovered
+    assert calls["n"] == 1                     # deterministic — no retry
+    # Content fidelity: the backslash survived into the compiled page body.
+    body = next(p.body for p in cs.pages if r"n-1" in p.body)
+    assert r"\(n-1\)" in body
+
+
+def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Rung-2: uppercase + triple-hyphen slug is coerced (lowercase + collapse)
+    in-place without a model re-call; cs.summary_slug reflects the coerced form."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    payload = _good_response(SOURCE_A)
+    # Corrupt the summary slug with uppercase + triple hyphen.
+    old = payload["summary_slug"]
+    bad = (
+        old.replace("summary-", "summary-Sleep-and-Aging---", 1)
+        if old.startswith("summary-")
+        else "summary-Bad---Slug"
+    )
+    payload["summary_slug"] = bad
+    for p in payload["pages"]:
+        if p.get("page_type") == "summary":
+            p["slug"] = bad
+
+    calls = {"n": 0}
+
+    def fake(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=json.dumps(payload),
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert err is None and cs is not None
+    assert calls["n"] == 1
+    # Coerced form: lowercased + triple-hyphen collapsed to single.
+    assert cs.summary_slug == bad.lower().replace("---", "-")
