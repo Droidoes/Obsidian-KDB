@@ -6,7 +6,7 @@
 
 Everything below this box was the *morning* plan; it has all been executed. Current state:
 - **🏁 v0.5.2 shipped to `main`** — codebase realignment **Phase B** (Task #105 CLOSED). Six-package split (`common`/`ingestion`/`compiler`/`kdb_graph`/`orchestrator`/`tools`), executed **subagent-driven** (13 tasks), **run-7 clean**, B.3 dependency contract guard-tested, `resp_stats_writer` split. **5-panel code review → GO-WITH-FIXES**, all F1–F6 folded. Merge `f28220e`, closure `d6620b9`, tag `v0.5.2`. 1191 non-live tests green.
-- **⚠ NOT pushed** — the merge + tag are local only; **push is held for Joseph** (`git push && git push --tags`). Branch `refactor/phase-b-package-split` merged (can be deleted).
+- **✅ Pushed** — `main` (`9521baf`) + tag `v0.5.2` are on `origin`. Branch `refactor/phase-b-package-split` merged (can be deleted).
 - **Resume OneDrive sync** (was paused for run-7).
 - **NEXT ARC = Task #106** (JSON-repair + slug-coercion robustness ladder), now landing in the real `common/util` + `compiler/repair` homes: **panel-review its spec** (`docs/superpowers/specs/2026-06-02-json-repair-slug-coercion-ladder-design.md`) → `writing-plans` → TDD → run-8. Then **Task #107** (3 non-blocking Phase-B follow-ups: viewer packaging · `compiler.compiler` rename · cleanup decoupling).
 
