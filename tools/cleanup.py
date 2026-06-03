@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """kdb-clean — KDB maintenance CLI for review-gated cleanup of derived state.
 
-`kdb-compile` derives the current wiki from raw sources. `kdb-clean` retires
+`kdb-orchestrate` derives the current wiki from raw sources. `kdb-clean` retires
 state that derivation leaves behind. Same system, different risk class:
 cleanup is destructive (archive-then-remove), so it lives in its own command
-with its own review gate rather than as a `kdb-compile` flag.
+with its own review gate rather than as a pipeline-stage side effect.
 
 Modes (`kdb-clean <mode>`):
     orphans   archive orphan_candidate pages and drop them from the manifest

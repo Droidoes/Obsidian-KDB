@@ -34,7 +34,16 @@ from datetime import datetime
 from pathlib import Path
 
 from common import atomic_io
-from kdb_compiler.manifest_update import assert_manifest_invariants
+
+# RETIRED (Phase B): this already-applied one-shot migration depends on
+# kdb_compiler.manifest_update, removed in the realignment. Kept for historical
+# reference; fail fast with a clear message instead of a cryptic ModuleNotFoundError.
+sys.exit(
+    "RETIRED: Task #66 one-shot migration — already applied. It depends on "
+    "kdb_compiler.manifest_update, removed in Phase B. Not runnable; kept for reference."
+)
+
+from kdb_compiler.manifest_update import assert_manifest_invariants  # noqa: E402  (unreachable; historical)
 
 _COMPILED_STATES = {"compiled", "recompiled", "metadata_only"}
 

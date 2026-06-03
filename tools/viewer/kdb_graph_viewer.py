@@ -9,10 +9,10 @@ double-click the output HTML in a browser to explore the graph — no server.
 
 The original bake-off Gemini viewer (pure form, full-scale nodes, and the
 2-stage `export_graph.py` + `build_gemini.py` pipeline) is preserved under
-`tools/viewer-bakeoff/` as a fallback.
+`tools/viewer/bakeoff/` as a fallback.
 
 Usage:
-    python tools/kdb_graph_viewer.py --graph-path <kuzu-db> [--out graph-view.html]
+    python tools/viewer/kdb_graph_viewer.py --graph-path <kuzu-db> [--out graph-view.html]
 """
 from __future__ import annotations
 

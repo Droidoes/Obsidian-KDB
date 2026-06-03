@@ -2,7 +2,9 @@ import ast, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 INTERNAL = {"common", "ingestion", "compiler", "kdb_graph", "orchestrator", "tools",
-            "kdb_compiler", "kdb_graph"}
+            # removed package roots — kept here so a future stale import of one
+            # surfaces as an illegal edge rather than being silently ignored:
+            "kdb_compiler", "graphdb_kdb", "kdb_benchmark"}
 
 def _top_level_imports(pkg: str) -> set[str]:
     """All internal top-level packages imported anywhere under ROOT/pkg (non-test .py)."""
