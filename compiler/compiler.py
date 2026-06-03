@@ -242,6 +242,18 @@ def compile_one(
         for attempt in range(1, _MAX_COMPILE_ATTEMPTS + 1):
             last_attempt = attempt == _MAX_COMPILE_ATTEMPTS
 
+            # --- per-attempt state reset (LB2 #106) ---
+            # Clear gate fields so a later attempt cannot read stale values from
+            # a prior attempt's partial success (e.g. parse_ok=True but schema
+            # failed on the same run).
+            state["extract_ok"] = False
+            state["parse_ok"] = False
+            state["parsed_json"] = None
+            state["schema_ok"] = False
+            state["schema_errors"] = []
+            state["semantic_ok"] = False
+            state["semantic_errors"] = []
+
             # --- model call ---
             try:
                 state["model_response"] = call_model_with_retry(
@@ -336,20 +348,29 @@ def compile_one(
                 )
                 return (None, [], [], state["error"])
 
-            break  # extract_ok + parse_ok + schema_ok → proceed to semantic
-
-        # --- semantic ---
-        state["semantic_errors"] = (
-            validate_source_response.semantic_check(
+            # --- semantic (now INSIDE the loop; LB2 #106) ---
+            # Semantic runs after schema passes so a coercible schema failure
+            # (rung-2, Task 6) that fixes the payload can still be re-checked
+            # semantically on the same attempt.  A semantic failure on a
+            # non-final attempt retries the full model call before erroring.
+            state["semantic_errors"] = validate_source_response.semantic_check(
                 state["parsed_json"], source_name=source_name
             )
-        )
-        state["semantic_ok"] = state["semantic_errors"] == []
-        if not state["semantic_ok"]:
-            state["error"] = (
-                f"{source_id}: semantic check failed: {state['semantic_errors'][0]}"
-            )
-            return (None, [], [], state["error"])
+            state["semantic_ok"] = state["semantic_errors"] == []
+            if not state["semantic_ok"]:
+                if not last_attempt:
+                    log.warning(
+                        f"{source_id}: Pass-2 attempt {attempt}/"
+                        f"{_MAX_COMPILE_ATTEMPTS} semantic invalid, retrying: "
+                        f"{state['semantic_errors'][0]}"
+                    )
+                    continue
+                state["error"] = (
+                    f"{source_id}: semantic check failed: {state['semantic_errors'][0]}"
+                )
+                return (None, [], [], state["error"])
+
+            break  # parse_ok + schema_ok + semantic_ok → proceed
 
         # --- body-link reconciliation ---
         reconcile_body_links(state["parsed_json"])

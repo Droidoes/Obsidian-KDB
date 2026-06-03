@@ -680,6 +680,50 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
     assert record["semantic_ok"] is False
 
 
+def test_semantic_failure_retries_then_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LB2 (#106): a semantic failure on a non-final attempt retries (consumes
+    the 2nd model call) before erroring on the final attempt.  Pre-LB2, semantic
+    ran post-loop (1 call total); post-LB2, it runs inside the loop (2 calls)."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Schema-valid but summary_slug doesn't match any page slug -> semantic fails.
+    bad_payload = _good_response(SOURCE_A)
+    bad_payload["summary_slug"] = "summary-nonexistent"
+    calls = {"n": 0}
+
+    def always_semantic_bad(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=json.dumps(bad_payload),
+            input_tokens=10, output_tokens=5, latency_ms=10,
+            model="claude-opus-4-7", provider="anthropic", attempts=1,
+        )
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: always_semantic_bad}),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert cs is None
+    assert "semantic" in (err or "")
+    assert calls["n"] == 2   # LB2: retried before erroring (was 1 pre-LB2)
+
+
 # ---------- source_words capture (Task #29) ----------
 
 def test_compile_one_persists_source_words_on_happy_path(
