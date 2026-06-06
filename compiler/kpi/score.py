@@ -16,7 +16,7 @@ Direction table
 ---------------
 Every KPI in the current scored set is lower-is-better (↓):
   quarantine_rate, intervention_burden, latency   (processing.py)
-  link_resolution_rate                            (graph.py)
+  dangling_link_rate                            (graph.py)
 
 The ``KPI_LOWER_IS_BETTER`` lookup is the extension point: add a new KPI with
 ``False`` to register it as higher-is-better without touching any other code.
@@ -33,7 +33,7 @@ KPI_LOWER_IS_BETTER: dict[str, bool] = {
     "intervention_burden":  True,
     "latency":              True,
     # GRAPH-family scored KPIs
-    "link_resolution_rate": True,
+    "dangling_link_rate": True,
 }
 
 

@@ -429,7 +429,7 @@ def _score_command(argv: list[str]) -> int:
     # Key overlap check: processing scored keys:
     #   quarantine_rate, intervention_burden, latency
     # graph scored keys:
-    #   link_resolution_rate
+    #   dangling_link_rate
     # No overlap in current schema.
     models: list[dict] = []
     diagnostics_by_model: dict[str, dict] = {}

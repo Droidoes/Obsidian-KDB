@@ -28,7 +28,7 @@ def _make_measurements(
     quarantine_rate: float | None,
     intervention_burden: float | None,
     latency: float | None,
-    link_resolution_rate: float | None,
+    dangling_link_rate: float | None,
     entity_reuse: float | None = None,
     graph_connectivity: float | None = None,
     runs_root: Path,
@@ -68,7 +68,7 @@ def _make_measurements(
         },
         "graph": {
             "scored": {
-                "link_resolution_rate": link_resolution_rate,
+                "dangling_link_rate": dangling_link_rate,
             },
             "watched": {
                 "entity_reuse": entity_reuse,
@@ -110,7 +110,7 @@ class TestScoreHappyPath:
             quarantine_rate=0.01,
             intervention_burden=0.05,
             latency=1500.0,
-            link_resolution_rate=0.10,
+            dangling_link_rate=0.10,
             runs_root=runs_root,
         )
         _make_measurements(
@@ -120,7 +120,7 @@ class TestScoreHappyPath:
             quarantine_rate=0.05,
             intervention_burden=0.10,
             latency=2000.0,
-            link_resolution_rate=0.20,
+            dangling_link_rate=0.20,
             runs_root=runs_root,
         )
         _make_measurements(
@@ -130,7 +130,7 @@ class TestScoreHappyPath:
             quarantine_rate=0.02,
             intervention_burden=0.07,
             latency=1800.0,
-            link_resolution_rate=0.15,
+            dangling_link_rate=0.15,
             runs_root=runs_root,
         )
 
@@ -169,7 +169,7 @@ class TestScoreHappyPath:
             assert "per_kpi_borda" in entry, f"missing 'per_kpi_borda' for {gk}"
             # All four scored KPIs should be present
             for kpi in ("quarantine_rate", "intervention_burden", "latency",
-                        "link_resolution_rate"):
+                        "dangling_link_rate"):
                 assert kpi in entry["per_kpi_borda"], (
                     f"missing KPI '{kpi}' in per_kpi_borda for {gk}"
                 )
@@ -192,7 +192,7 @@ class TestScoreHappyPath:
             quarantine_rate=0.01,
             intervention_burden=0.05,
             latency=1500.0,
-            link_resolution_rate=0.10,
+            dangling_link_rate=0.10,
             runs_root=runs_root,
         )
         _make_measurements(
@@ -202,7 +202,7 @@ class TestScoreHappyPath:
             quarantine_rate=0.03,
             intervention_burden=0.07,
             latency=1700.0,
-            link_resolution_rate=0.12,
+            dangling_link_rate=0.12,
             runs_root=runs_root,
         )
 
@@ -235,7 +235,7 @@ class TestScoreFingerprintMismatch:
             quarantine_rate=0.01,
             intervention_burden=0.05,
             latency=1500.0,
-            link_resolution_rate=0.10,
+            dangling_link_rate=0.10,
             runs_root=runs_root,
         )
         _make_measurements(
@@ -245,7 +245,7 @@ class TestScoreFingerprintMismatch:
             quarantine_rate=0.02,
             intervention_burden=0.06,
             latency=1600.0,
-            link_resolution_rate=0.11,
+            dangling_link_rate=0.11,
             runs_root=runs_root,
         )
 
@@ -282,7 +282,7 @@ class TestScoreLatestPerGroupKey:
             quarantine_rate=0.10,  # worse
             intervention_burden=0.20,
             latency=3000.0,
-            link_resolution_rate=0.40,
+            dangling_link_rate=0.40,
             runs_root=runs_root,
         )
         # Later run for model-a (same group_key, should win)
@@ -293,7 +293,7 @@ class TestScoreLatestPerGroupKey:
             quarantine_rate=0.01,  # better
             intervention_burden=0.05,
             latency=1500.0,
-            link_resolution_rate=0.10,
+            dangling_link_rate=0.10,
             runs_root=runs_root,
         )
         # Different model
@@ -304,7 +304,7 @@ class TestScoreLatestPerGroupKey:
             quarantine_rate=0.03,
             intervention_burden=0.08,
             latency=1700.0,
-            link_resolution_rate=0.15,
+            dangling_link_rate=0.15,
             runs_root=runs_root,
         )
 
@@ -352,7 +352,7 @@ class TestScoreLatestPerGroupKey:
                 quarantine_rate=0.02,
                 intervention_burden=0.05,
                 latency=1500.0,
-                link_resolution_rate=0.10,
+                dangling_link_rate=0.10,
                 runs_root=runs_root,
             )
 

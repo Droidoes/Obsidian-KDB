@@ -92,19 +92,19 @@ class TestBordaNormalizeParity:
 
 class TestBordaScore:
     """
-    Fixture: 3 models, 2 KPIs: quarantine_rate (↓) and link_resolution_rate (↓).
+    Fixture: 3 models, 2 KPIs: quarantine_rate (↓) and dangling_link_rate (↓).
 
     Values:
-      alpha:  quarantine_rate=0.01, link_resolution_rate=0.20
-      beta:   quarantine_rate=0.05, link_resolution_rate=None  ← dropped from link_resolution_rate
-      gamma:  quarantine_rate=0.03, link_resolution_rate=0.10
+      alpha:  quarantine_rate=0.01, dangling_link_rate=0.20
+      beta:   quarantine_rate=0.05, dangling_link_rate=None  ← dropped from dangling_link_rate
+      gamma:  quarantine_rate=0.03, dangling_link_rate=0.10
 
     quarantine_rate (lower_is_better=True), 3 models, distinct values:
       Sorted best→worst: alpha(0.01) < gamma(0.03) < beta(0.05)
       ordinal ranks: alpha=1, gamma=2, beta=3; N=3
       scores: alpha=(3-1)/(3-1)=1.0, gamma=(3-2)/2=0.5, beta=(3-3)/2=0.0
 
-    link_resolution_rate (lower_is_better=True), 2 eligible models (beta dropped):
+    dangling_link_rate (lower_is_better=True), 2 eligible models (beta dropped):
       Sorted best→worst: gamma(0.10) < alpha(0.20)
       ordinal ranks: gamma=1, alpha=2; N=2
       scores: gamma=(2-1)/(2-1)=1.0, alpha=(2-2)/1=0.0
@@ -113,15 +113,15 @@ class TestBordaScore:
     Equal weights (weights=None → each KPI gets 1.0):
 
     alpha:
-      present KPIs: quarantine_rate(1.0) + link_resolution_rate(0.0)
+      present KPIs: quarantine_rate(1.0) + dangling_link_rate(0.0)
       composite = (1.0*1.0 + 1.0*0.0) / 2.0 = 0.5
 
     beta:
-      present KPIs: quarantine_rate only (link_resolution_rate=None → dropped)
+      present KPIs: quarantine_rate only (dangling_link_rate=None → dropped)
       composite = (1.0*0.0) / 1.0 = 0.0
 
     gamma:
-      present KPIs: quarantine_rate(0.5) + link_resolution_rate(1.0)
+      present KPIs: quarantine_rate(0.5) + dangling_link_rate(1.0)
       composite = (1.0*0.5 + 1.0*1.0) / 2.0 = 0.75
     """
 
@@ -132,21 +132,21 @@ class TestBordaScore:
                 "group_key": "alpha",
                 "scored": {
                     "quarantine_rate": 0.01,
-                    "link_resolution_rate": 0.20,
+                    "dangling_link_rate": 0.20,
                 },
             },
             {
                 "group_key": "beta",
                 "scored": {
                     "quarantine_rate": 0.05,
-                    "link_resolution_rate": None,   # beta dropped from this KPI
+                    "dangling_link_rate": None,   # beta dropped from this KPI
                 },
             },
             {
                 "group_key": "gamma",
                 "scored": {
                     "quarantine_rate": 0.03,
-                    "link_resolution_rate": 0.10,
+                    "dangling_link_rate": 0.10,
                 },
             },
         ]
@@ -158,18 +158,18 @@ class TestBordaScore:
         assert pm["gamma"]["per_kpi_borda"]["quarantine_rate"] == pytest.approx(0.5)
         assert pm["beta"]["per_kpi_borda"]["quarantine_rate"] == pytest.approx(0.0)
 
-    def test_per_kpi_borda_link_resolution_rate(self, models):
+    def test_per_kpi_borda_dangling_link_rate(self, models):
         result = borda_score(models)
         pm = result["per_model"]
         # gamma best (0.10), alpha worst (0.20) — 2 eligible, N=2
-        assert pm["gamma"]["per_kpi_borda"]["link_resolution_rate"] == pytest.approx(1.0)
-        assert pm["alpha"]["per_kpi_borda"]["link_resolution_rate"] == pytest.approx(0.0)
+        assert pm["gamma"]["per_kpi_borda"]["dangling_link_rate"] == pytest.approx(1.0)
+        assert pm["alpha"]["per_kpi_borda"]["dangling_link_rate"] == pytest.approx(0.0)
 
-    def test_none_model_dropped_from_link_resolution_rate_only(self, models):
+    def test_none_model_dropped_from_dangling_link_rate_only(self, models):
         result = borda_score(models)
         pm = result["per_model"]
-        # beta's link_resolution_rate borda is None (dropped from that ranking)
-        assert pm["beta"]["per_kpi_borda"]["link_resolution_rate"] is None
+        # beta's dangling_link_rate borda is None (dropped from that ranking)
+        assert pm["beta"]["per_kpi_borda"]["dangling_link_rate"] is None
         # but beta IS present in quarantine_rate ranking
         assert pm["beta"]["per_kpi_borda"]["quarantine_rate"] is not None
 
@@ -182,11 +182,11 @@ class TestBordaScore:
 
     def test_equal_weights_returned(self, models):
         result = borda_score(models)
-        assert result["weights"] == {"quarantine_rate": 1.0, "link_resolution_rate": 1.0}
+        assert result["weights"] == {"quarantine_rate": 1.0, "dangling_link_rate": 1.0}
 
     def test_custom_weights_applied(self, models):
         """Custom weights shift the composite proportionally."""
-        weights = {"quarantine_rate": 2.0, "link_resolution_rate": 1.0}
+        weights = {"quarantine_rate": 2.0, "dangling_link_rate": 1.0}
         result = borda_score(models, weights=weights)
         pm = result["per_model"]
         # alpha: (2.0*1.0 + 1.0*0.0) / 3.0 = 2/3

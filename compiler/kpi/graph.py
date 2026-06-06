@@ -25,7 +25,7 @@ DOMAIN_TAXONOMY_SIZE = 23
 def _iter_emitted_links(compile_result: dict) -> list[str]:
     """Flatten every page's outgoing_links across the compile_result.
 
-    Order-preserving, NOT de-duplicated — link_resolution_rate is over the
+    Order-preserving, NOT de-duplicated — dangling_link_rate is over the
     total count of emitted links (a slug linked twice counts twice).
     """
     targets: list[str] = []
@@ -96,7 +96,7 @@ def compute_graph(
         Live Kuzu connection to the graph the run built.
     compile_result:
         The run's aggregated Pass-2 output (compiled_sources[].pages[].
-        outgoing_links). The emitted-link payload for link_resolution_rate.
+        outgoing_links). The emitted-link payload for dangling_link_rate.
     finalize_artifacts:
         The cleanup/finalize report (tools.cleanup.reap_orphans_from_graph
         shape): {"reaped": [...], "retracted_slugs": [...], ...}. orphan_rate
@@ -119,7 +119,7 @@ def compute_graph(
     total_sources = queries.total_source_count(conn)
 
     # ---- SCORED -----------------------------------------------------------
-    # link_resolution_rate (dangling fraction, ↓): denominator = total emitted
+    # dangling_link_rate (dangling fraction, ↓): denominator = total emitted
     # outgoing_links; numerator = those that DON'T resolve to an active
     # canonical entity. Alias-aware: resolve_to_canonical_slugs maps an alias
     # slug to its canonical (so a link to an alias RESOLVES, not dangling).
@@ -127,16 +127,16 @@ def compute_graph(
     # which is correctly not in active_canonical → dangling. None when 0 links.
     emitted = _iter_emitted_links(compile_result)
     if not emitted:
-        link_resolution_rate: float | None = None
+        dangling_link_rate: float | None = None
     else:
         resolved = queries.resolve_to_canonical_slugs(conn, emitted)
         dangling = sum(
             1 for t in emitted if resolved.get(t) not in active_canonical
         )
-        link_resolution_rate = dangling / len(emitted)
+        dangling_link_rate = dangling / len(emitted)
 
     scored: dict[str, Any] = {
-        "link_resolution_rate": link_resolution_rate,
+        "dangling_link_rate": dangling_link_rate,
     }
 
     # ---- WATCHED ----------------------------------------------------------

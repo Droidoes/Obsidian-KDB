@@ -52,7 +52,7 @@ The scored set is deliberately lean: a Borda-scored KPI must have a defensible G
 ### 2C. Graph — per-run (whole graph; full-corpus runs only)
 | KPI | role | dir | norm | definition / source |
 |---|---|---|---|---|
-| **link_resolution_rate** (dangling-link) | 🟢 | ↓ | ratio | body `[[wikilinks]]` / emitted `outgoing_links` that resolve to no entity. **Hybrid compute**: emitted links from `compile_result.json` vs `queries.active_entity_slugs` — NOT from `LINKS_TO` (the ingestor silently drops dangling targets, `ingestor.py:316-337`, so graph-only would always read 0) |
+| **dangling_link_rate** (dangling-link) | 🟢 | ↓ | ratio | body `[[wikilinks]]` / emitted `outgoing_links` that resolve to no entity. **Hybrid compute**: emitted links from `compile_result.json` vs `queries.active_entity_slugs` — NOT from `LINKS_TO` (the ingestor silently drops dangling targets, `ingestor.py:316-337`, so graph-only would always read 0) |
 | entity reuse / fragmentation | 🟡 | ↑ reuse | ratio | share of canonical non-summary entities supported by ≥2 sources; or SUPPORTS-per-canonical distribution. *The* central graph-quality axis once robustness is solved (codex) |
 | graph connectivity | 🟡 | ↑ | ratio | largest connected-component ratio over LINKS_TO; topological coherence (qwen) |
 | orphan / unsupported-entity rate | 🟡 | ↓ | per-1M-tok | from finalize artifacts (`orphans_marked`/`reaped`/`retracted`), NOT live graph (orphans are reaped pre-finalize → live read would false-zero). Def = canonical entities with zero SUPPORTS, not "no links" |
@@ -74,7 +74,7 @@ The scored set is deliberately lean: a Borda-scored KPI must have a defensible G
 |---|---|---|
 | **S0** pipeline_success | reframe → `quarantine_rate` | post-#106 the gate chain is the repair ladder; outcome is `final_status` |
 | **S1/S2/S3** parse/schema/hard-zero | fold → diagnostic breakdown of `final_status` | were weight-0 diagnostics |
-| **M1** link target resolution | **migrate → graph** `link_resolution_rate` | reframed to dangling-link over the corpus entity set; rename to avoid false continuity with old per-response M1 |
+| **M1** link target resolution | **migrate → graph** `dangling_link_rate` | reframed to dangling-link over the corpus entity set; rename to avoid false continuity with old per-response M1 |
 | **M2 / M3** slug-pairing Jaccard | **kill** | declared concept/article lists are rebuilt from `pages[].page_type`; pairing findings are reconcilable measure-severity → no graded signal left |
 | **M4** semantic_pass | demote → diagnostic | see §2B (narrow + hard-gated) |
 | **M5** body-wikilink emit-set coverage | **kill** (rationale corrected) | declared emit-set coverage is the wrong quality target + redundant with `link_resolution`. *NOT* "wikilinks have no role" — `reconcile_body_links` does derive `outgoing_links` from body wikilinks (codex catch) |
@@ -130,7 +130,7 @@ Verdicts: **4× GO-WITH-CHANGES, 1× REWORK (gemini)**.
 ---
 
 ## 8. Summary count
-🟢 **4 scored:** quarantine_rate · intervention_burden · link_resolution_rate · latency
+🟢 **4 scored:** quarantine_rate · intervention_burden · dangling_link_rate · latency
 🟡 **4 watched** (promote on run-1): entity reuse/fragmentation · graph connectivity · orphan/unsupported rate · entity_search_key_resolution
 ⚪ **~10 diagnostic:** retry · token-overrun · repair-rung · cost · signal/noise · semantic-pass · BELONGS_TO coverage · domain-null · density · domain-breadth · alias/canon
 **Killed:** M2 · M3 · M5

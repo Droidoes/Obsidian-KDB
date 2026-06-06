@@ -117,7 +117,7 @@ _FINALIZE = {"reaped": [{"page_id": "p", "slug": "orphan-z", "page_type": "conce
              "retracted_slugs": ["orphan-z"]}
 
 
-# ---------- SCORED: link_resolution_rate ----------
+# ---------- SCORED: dangling_link_rate ----------
 
 def test_link_resolution_alias_resolves_dangling_counts(graph_dir):
     """beta resolves (active canonical), alpha-alias resolves via canonical_id
@@ -127,7 +127,7 @@ def test_link_resolution_alias_resolves_dangling_counts(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["link_resolution_rate"] == pytest.approx(1 / 3)
+    assert out["scored"]["dangling_link_rate"] == pytest.approx(1 / 3)
 
 
 def test_link_resolution_none_when_zero_links(graph_dir):
@@ -136,7 +136,7 @@ def test_link_resolution_none_when_zero_links(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["link_resolution_rate"] is None
+    assert out["scored"]["dangling_link_rate"] is None
 
 
 def test_link_resolution_all_resolve_is_zero_not_none(graph_dir):
@@ -144,7 +144,7 @@ def test_link_resolution_all_resolve_is_zero_not_none(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["link_resolution_rate"] == 0.0
+    assert out["scored"]["dangling_link_rate"] == 0.0
 
 
 # ---------- WATCHED ----------
@@ -202,7 +202,7 @@ def test_return_dict_keys(graph_dir):
         _seed(gdb)
         out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
     assert set(out) == {"scored", "watched", "diagnostic"}
-    assert set(out["scored"]) == {"link_resolution_rate"}
+    assert set(out["scored"]) == {"dangling_link_rate"}
     assert set(out["watched"]) == {
         "entity_reuse", "graph_connectivity", "orphan_rate",
         "entity_search_key_resolution",

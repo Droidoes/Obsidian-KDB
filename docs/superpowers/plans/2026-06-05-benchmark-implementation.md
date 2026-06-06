@@ -169,7 +169,7 @@ def test_pass1_json_escape_repair(monkeypatch):
 **Files:** Create `compiler/kpi/graph.py`; Test `tests/compiler/kpi/test_graph.py`
 
 - [ ] **Step 1: Failing test** — over a fixture Kuzu graph + a `compile_result`-shaped dict of emitted `outgoing_links`:
-  - `link_resolution_rate`: a link to a **non-existent** slug counts dangling; a link to an **alias** slug (canonical_id set) counts **resolved** (alias-aware); zero emitted links → `None`.
+  - `dangling_link_rate`: a link to a **non-existent** slug counts dangling; a link to an **alias** slug (canonical_id set) counts **resolved** (alias-aware); zero emitted links → `None`.
   - watched: `entity_reuse` (share canonical non-summary with ≥2 SUPPORTS), `graph_connectivity` (largest component ratio), `orphan_rate` (from finalize artifacts fixture).
   - diagnostics: `belongs_to_coverage`, `domain_null_rate`, `link_density`, `domain_breadth`.
 - [ ] **Step 2: Run** → FAIL
