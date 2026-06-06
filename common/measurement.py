@@ -37,6 +37,45 @@ class PassCallMeasurement:
     schema_ok: bool
     semantic_ok: bool | None
 
+    @classmethod
+    def from_pass2(cls, rec: dict) -> "PassCallMeasurement":
+        """Project a RespStatsRecord dict (from to_dict() or persisted JSON)
+        into a PassCallMeasurement.
+
+        RespStatsRecord has no prompt_version field; prompt_version is set to "".
+
+        Back-compat: records persisted before Task #109 (missing total_input_tokens,
+        total_output_tokens, total_latency_ms, call_count, final_attempt_index) fall
+        back to the single-attempt per-call values so older runs still project cleanly.
+        """
+        return cls(
+            run_id=rec["run_id"],
+            source_id=rec["source_id"],
+            pass_="pass2",
+            provider=rec["provider"],
+            model=rec["model"],
+            # RespStatsRecord has no prompt_version; closest field is prompt_hash (a
+            # hash, not a version string).  Emit "" so callers can fill in from
+            # run-level metadata if needed.
+            prompt_version="",
+            final_status=rec.get("final_status") or "",
+            attempts=rec["attempts"],
+            syntax_repaired=rec.get("syntax_repaired", False),
+            slug_coerced=rec.get("slug_coerced", False),
+            token_overrun=rec.get("token_overrun", False),
+            # Aggregate totals — new in #109.  Fall back to single-attempt values
+            # for records written before these fields existed.
+            total_input_tokens=rec.get("total_input_tokens", rec.get("input_tokens", 0)),
+            total_output_tokens=rec.get("total_output_tokens", rec.get("output_tokens", 0)),
+            total_latency_ms=rec.get("total_latency_ms", rec.get("latency_ms", 0)),
+            call_count=rec.get("call_count", 1),
+            final_attempt_index=rec.get("final_attempt_index", 1),
+            source_words=rec.get("source_words", 0),
+            parse_ok=rec.get("parse_ok", False),
+            schema_ok=rec.get("schema_ok", False),
+            semantic_ok=rec.get("semantic_ok"),
+        )
+
 
 @dataclass(frozen=True)
 class RunMeasurementHeader:
