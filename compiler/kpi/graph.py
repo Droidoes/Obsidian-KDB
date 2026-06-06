@@ -85,6 +85,8 @@ def compute_graph(
     conn: kuzu.Connection,
     compile_result: dict,
     finalize_artifacts: dict,
+    *,
+    pass1_search_keys: list[str] | None = None,
 ) -> dict:
     """Compute GRAPH-family KPIs for one benchmark run.
 
@@ -99,6 +101,11 @@ def compute_graph(
         The cleanup/finalize report (tools.cleanup.reap_orphans_from_graph
         shape): {"reaped": [...], "retracted_slugs": [...], ...}. orphan_rate
         is derived from len(reaped); pass {} if cleanup did not run.
+    pass1_search_keys:
+        Union/concat of all emitted entity_search_keys across the run's
+        Pass-1 sidecars (kebab-case slugs). Feeds entity_search_key_resolution
+        (watched diagnostic, ↑ better). None or [] → None (don't conflate
+        no-keys with zero-resolution). Wired by the orchestrator (#109 §3D).
 
     Returns
     -------
@@ -157,10 +164,27 @@ def compute_graph(
         n_orphans / total_entities if total_entities else None
     )
 
+    # entity_search_key_resolution: alias-aware fraction of Pass-1
+    # entity_search_keys that resolve to an active canonical entity.
+    # Keys are kebab-case slugs (same anchor space as link targets) so the
+    # same resolve_to_canonical_slugs + active_canonical membership pattern
+    # applies.  None when pass1_search_keys is None or empty — don't conflate
+    # no-keys with zero-resolution.
+    if not pass1_search_keys:
+        entity_search_key_resolution: float | None = None
+    else:
+        key_resolved = queries.resolve_to_canonical_slugs(conn, pass1_search_keys)
+        n_resolved = sum(
+            1 for k in pass1_search_keys
+            if key_resolved.get(k) in active_canonical
+        )
+        entity_search_key_resolution = n_resolved / len(pass1_search_keys)
+
     watched: dict[str, Any] = {
         "entity_reuse": entity_reuse,
         "graph_connectivity": graph_connectivity,
         "orphan_rate": orphan_rate,
+        "entity_search_key_resolution": entity_search_key_resolution,
     }
 
     # ---- DIAGNOSTIC -------------------------------------------------------

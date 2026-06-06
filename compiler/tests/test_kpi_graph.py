@@ -203,11 +203,49 @@ def test_return_dict_keys(graph_dir):
         out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
     assert set(out) == {"scored", "watched", "diagnostic"}
     assert set(out["scored"]) == {"link_resolution_rate"}
-    assert set(out["watched"]) == {"entity_reuse", "graph_connectivity", "orphan_rate"}
+    assert set(out["watched"]) == {
+        "entity_reuse", "graph_connectivity", "orphan_rate",
+        "entity_search_key_resolution",
+    }
     assert set(out["diagnostic"]) == {
         "belongs_to_coverage", "domain_null_rate", "link_density",
         "supports_density", "domain_breadth",
     }
+
+
+# ---------- WATCHED: entity_search_key_resolution ----------
+
+def test_entity_search_key_resolution_alias_aware(graph_dir):
+    """alpha resolves (active canonical); alpha-alias resolves via ALIAS_OF to
+    alpha (active canonical); nonexistent-key does not resolve.
+    2 resolved / 3 total → 2/3."""
+    cr = _compile_result([[]])
+    with GraphDB(graph_dir) as gdb:
+        _seed(gdb)
+        out = compute_graph(
+            gdb.conn, cr, _FINALIZE,
+            pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"],
+        )
+    assert out["watched"]["entity_search_key_resolution"] == pytest.approx(2 / 3)
+
+
+def test_entity_search_key_resolution_none_keys(graph_dir):
+    """pass1_search_keys=None → None (not zero — don't conflate no-keys with
+    zero-resolution)."""
+    cr = _compile_result([[]])
+    with GraphDB(graph_dir) as gdb:
+        _seed(gdb)
+        out = compute_graph(gdb.conn, cr, _FINALIZE, pass1_search_keys=None)
+    assert out["watched"]["entity_search_key_resolution"] is None
+
+
+def test_entity_search_key_resolution_empty_keys(graph_dir):
+    """pass1_search_keys=[] → None (same rationale as None)."""
+    cr = _compile_result([[]])
+    with GraphDB(graph_dir) as gdb:
+        _seed(gdb)
+        out = compute_graph(gdb.conn, cr, _FINALIZE, pass1_search_keys=[])
+    assert out["watched"]["entity_search_key_resolution"] is None
 
 
 # ---------- union-find unit coverage (empty + singleton + chain) ----------
