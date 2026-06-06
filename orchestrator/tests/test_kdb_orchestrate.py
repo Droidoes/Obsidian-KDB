@@ -13,6 +13,7 @@ from orchestrator import kdb_orchestrate
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
+from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileSourceResult
@@ -942,3 +943,53 @@ def test_run_limit_stops_after_n_compiled(tmp_path, monkeypatch):
     # manifest: only 1 of 2 sources is committed (second still has no record)
     manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest.get("sources", {})) == 1
+
+
+# ---------- Task #109 B1 delta #3: measurement_header.json at finalize ----------
+
+def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
+    """run() writes measurement_header.json to the run dir at finalize.
+
+    Setup: 1 signal source (AIML/a.md) + 1 noise source (noise/b.md via
+    force_noise pipeline rule).  Expected header:
+        scanned=2, to_compile=2, signal=1, noise=1,
+        p1_attempted=2, p2_attempted=1,
+        corpus_fingerprint = 64-hex sha256,
+        pass1_prompt_version = PASS1_PROMPT_VERSION,
+        pass2_prompt_version = "".
+    """
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    (vault / "noise").mkdir()
+    (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+
+    header_path = state_root / "runs" / res.run_id / "measurement_header.json"
+    assert header_path.exists(), f"measurement_header.json not found at {header_path}"
+
+    hdr = json.loads(header_path.read_text(encoding="utf-8"))
+    assert hdr["run_id"] == res.run_id
+    assert hdr["scanned"] == 2
+    assert hdr["to_compile"] == 2
+    assert hdr["signal"] == 1
+    assert hdr["noise"] == 1
+    assert hdr["p1_attempted"] == 2
+    assert hdr["p2_attempted"] == 1
+    # corpus_fingerprint: 64-char lowercase hex
+    fp = hdr["corpus_fingerprint"]
+    assert len(fp) == 64
+    assert all(c in "0123456789abcdef" for c in fp)
+    # prompt versions
+    assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
+    assert hdr["pass2_prompt_version"] == ""
