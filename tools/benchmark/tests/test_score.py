@@ -1,10 +1,11 @@
 """Tests for the `score` subcommand of tools.benchmark.cli (Task #109).
 
-Covers:
-- Happy-path: 3 synthetic measurements.json → score command → assert JSON output
-  has per-model composites + per-kpi Borda.
-- Mismatched corpus_fingerprint → rejected with non-zero exit code.
-- Latest-per-group_key selection when two runs share a group_key.
+2026-06-06 redesign: `score` is an incremental model **leaderboard** updater.
+- A persistent leaderboard file maps {model_slug -> latest run_dir} + a ranking.
+- Each invocation incorporates run dirs (one row per header.model, latest wins),
+  re-reads every listed run's measurements.json live, Borda-ranks at equal weight.
+- NO corpus_fingerprint gate (cross-run corpora are assumed to differ).
+- Reset = delete the leaderboard file.
 """
 from __future__ import annotations
 
@@ -17,367 +18,305 @@ from tools.benchmark import cli
 
 
 # ---------------------------------------------------------------------------
-# Fixture helpers
+# Fixture helper — write a synthetic measurements.json keyed by header.model
 # ---------------------------------------------------------------------------
 
 def _make_measurements(
     *,
-    run_id: str,
-    group_key: str,
-    corpus_fingerprint: str,
-    quarantine_rate: float | None,
-    intervention_burden: float | None,
-    latency: float | None,
-    dangling_link_rate: float | None,
-    entity_reuse: float | None = None,
-    graph_connectivity: float | None = None,
+    run_dir: str,
+    model: str,
     runs_root: Path,
+    quarantine_rate: float | None = 0.0,
+    recovery_rate: float | None = 0.0,
+    latency: float | None = 1000.0,
+    entity_reuse: float | None = 0.10,
+    graph_connectivity: float | None = 0.2,
+    link_density: float | None = 2.0,
+    supports_density: float | None = 5.0,
+    corpus_fingerprint: str = "fp",
+    provider: str = "prov",
 ) -> None:
-    """Write a synthetic measurements.json to <runs_root>/<run_id>/."""
-    run_dir = runs_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    """Write <runs_root>/<run_dir>/measurements.json with header.model = model.
+
+    §6 structure: 3 processing scored + 4 graph scored KPIs.
+    """
+    d = runs_root / run_dir
+    d.mkdir(parents=True, exist_ok=True)
     payload = {
         "header": {
-            "run_id": run_id,
-            "group_key": group_key,
+            "run_id": run_dir,
+            "provider": provider,
+            "model": model,
             "corpus_fingerprint": corpus_fingerprint,
             "pass1_prompt_version": "1.0",
-            "pass2_prompt_version": "2.0",
-            "scanned": 10,
-            "to_compile": 8,
-            "signal": 8,
-            "noise": 2,
-            "p1_attempted": 8,
-            "p2_attempted": 8,
+            "pass2_prompt_version": "",
+            "scanned": 10, "to_compile": 10, "signal": 8, "noise": 2,
+            "p1_attempted": 10, "p2_attempted": 8,
         },
         "processing": {
             "scored": {
                 "quarantine_rate": quarantine_rate,
-                "intervention_burden": intervention_burden,
+                "recovery_rate": recovery_rate,
                 "latency": latency,
             },
-            "diagnostic": {
-                "retry_load": 0.05,
-                "token_overrun_rate": 0.01,
-                "repair_rung_rate": 0.02,
-                "semantic_pass_rate": 0.95,
-                "signal_noise_ratio": 0.8,
-                "quarantine_rate_pass1": 0.01,
-                "quarantine_rate_pass2": 0.02,
-            },
+            "diagnostic": {"signal_noise_ratio": 0.8, "latency_pass1": 500.0,
+                           "latency_pass2": 500.0},
         },
         "graph": {
             "scored": {
-                "dangling_link_rate": dangling_link_rate,
-            },
-            "watched": {
                 "entity_reuse": entity_reuse,
                 "graph_connectivity": graph_connectivity,
-                "orphan_rate": 0.05,
-                "entity_search_key_resolution": None,
+                "link_density": link_density,
+                "supports_density": supports_density,
             },
-            "diagnostic": {
-                "belongs_to_coverage": 0.9,
-                "domain_null_rate": 0.1,
-                "link_density": 3.2,
-                "supports_density": 2.1,
-                "domain_breadth": 0.65,
-            },
+            "watched": {"orphan_rate": 0.0, "entity_search_key_resolution": None},
+            "diagnostic": {"belongs_to_coverage": 1.0, "domain_null_rate": 0.0,
+                           "domain_breadth": 0.4},
         },
     }
-    (run_dir / "measurements.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
+    (d / "measurements.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _load(lb: Path) -> dict:
+    return json.loads(lb.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Fresh leaderboard
 # ---------------------------------------------------------------------------
 
-class TestScoreHappyPath:
-    """3 synthetic runs → score → valid scorecard JSON."""
-
-    def test_scorecard_written_with_per_model_composites_and_kpi_borda(
-        self, tmp_path
-    ):
-        runs_root = tmp_path / "benchmark" / "runs"
-        scores_dir = tmp_path / "benchmark" / "scores"
-
-        _make_measurements(
-            run_id="2026-06-01T10-00-00_EDT-model-a",
-            group_key="provider-a:model-a:1.0/2.0",
-            corpus_fingerprint="abc123",
-            quarantine_rate=0.01,
-            intervention_burden=0.05,
-            latency=1500.0,
-            dangling_link_rate=0.10,
-            runs_root=runs_root,
-        )
-        _make_measurements(
-            run_id="2026-06-01T10-00-01_EDT-model-b",
-            group_key="provider-b:model-b:1.0/2.0",
-            corpus_fingerprint="abc123",
-            quarantine_rate=0.05,
-            intervention_burden=0.10,
-            latency=2000.0,
-            dangling_link_rate=0.20,
-            runs_root=runs_root,
-        )
-        _make_measurements(
-            run_id="2026-06-01T10-00-02_EDT-model-c",
-            group_key="provider-c:model-c:1.0/2.0",
-            corpus_fingerprint="abc123",
-            quarantine_rate=0.02,
-            intervention_burden=0.07,
-            latency=1800.0,
-            dangling_link_rate=0.15,
-            runs_root=runs_root,
-        )
-
-        rc = cli.main([
-            "score",
-            "2026-06-01T10-00-00_EDT-model-a",
-            "2026-06-01T10-00-01_EDT-model-b",
-            "2026-06-01T10-00-02_EDT-model-c",
-            "--runs-root", str(runs_root),
-            "--scores-dir", str(scores_dir),
-        ])
-
-        assert rc == 0, f"expected exit code 0, got {rc}"
-
-        scorecard_files = list(scores_dir.glob("*.json"))
-        assert len(scorecard_files) == 1, "expected exactly one scorecard file"
-
-        data = json.loads(scorecard_files[0].read_text(encoding="utf-8"))
-
-        # Top-level structure
-        assert "borda" in data
-        assert "candidate_set" in data
-        assert sorted(data["candidate_set"]) == sorted([
-            "provider-a:model-a:1.0/2.0",
-            "provider-b:model-b:1.0/2.0",
-            "provider-c:model-c:1.0/2.0",
-        ])
-
-        # Per-model composite + per-kpi Borda
-        per_model = data["borda"]["per_model"]
-        assert len(per_model) == 3
-
-        for gk, entry in per_model.items():
-            assert "composite" in entry, f"missing 'composite' for {gk}"
-            assert isinstance(entry["composite"], float), f"composite not float for {gk}"
-            assert "per_kpi_borda" in entry, f"missing 'per_kpi_borda' for {gk}"
-            # All four scored KPIs should be present
-            for kpi in ("quarantine_rate", "intervention_burden", "latency",
-                        "dangling_link_rate"):
-                assert kpi in entry["per_kpi_borda"], (
-                    f"missing KPI '{kpi}' in per_kpi_borda for {gk}"
-                )
-
-        # Weights present
-        assert "weights" in data["borda"]
-
-        # corpus_fingerprint carried
-        assert data["corpus_fingerprint"] == "abc123"
-
-    def test_scorecard_has_diagnostics_by_model(self, tmp_path):
-        """Scorecard carries diagnostics/watched for human inspection."""
+class TestFreshLeaderboard:
+    def test_creates_leaderboard_and_ranks_all_models(self, tmp_path):
         runs_root = tmp_path / "runs"
-        scores_dir = tmp_path / "scores"
+        lb = tmp_path / "leaderboard.json"
+        # identical processing KPIs (tie → 0.5 each), entity_reuse varies → decides
+        _make_measurements(run_dir="model-a-T1", model="model-a", entity_reuse=0.10, runs_root=runs_root)
+        _make_measurements(run_dir="model-b-T1", model="model-b", entity_reuse=0.30, runs_root=runs_root)
+        _make_measurements(run_dir="model-c-T1", model="model-c", entity_reuse=0.20, runs_root=runs_root)
 
-        _make_measurements(
-            run_id="2026-06-02T09-00-00_EDT-ma",
-            group_key="prov:ma:1/2",
-            corpus_fingerprint="fp1",
-            quarantine_rate=0.01,
-            intervention_burden=0.05,
-            latency=1500.0,
-            dangling_link_rate=0.10,
-            runs_root=runs_root,
-        )
-        _make_measurements(
-            run_id="2026-06-02T09-00-01_EDT-mb",
-            group_key="prov:mb:1/2",
-            corpus_fingerprint="fp1",
-            quarantine_rate=0.03,
-            intervention_burden=0.07,
-            latency=1700.0,
-            dangling_link_rate=0.12,
-            runs_root=runs_root,
-        )
-
-        rc = cli.main([
-            "score",
-            "2026-06-02T09-00-00_EDT-ma",
-            "2026-06-02T09-00-01_EDT-mb",
-            "--runs-root", str(runs_root),
-            "--scores-dir", str(scores_dir),
-        ])
+        rc = cli.main(["score", "model-a-T1", "model-b-T1", "model-c-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
+        assert lb.exists()
 
-        data = json.loads(list(scores_dir.glob("*.json"))[0].read_text())
-        assert "diagnostics_by_model" in data
-        assert "prov:ma:1/2" in data["diagnostics_by_model"]
-        assert "prov:mb:1/2" in data["diagnostics_by_model"]
+        data = _load(lb)
+        assert set(data["models"].keys()) == {"model-a", "model-b", "model-c"}
+        # leaderboard stores POINTERS (run-dir strings), not KPI values
+        assert data["models"]["model-b"] == "model-b-T1"
+        assert all(isinstance(v, str) for v in data["models"].values())
 
+        ranking = data["ranking"]
+        assert len(ranking) == 3
+        assert [r["rank"] for r in ranking] == [1, 2, 3]
+        # entity_reuse is ↑ → highest reuse (model-b) ranks #1
+        assert ranking[0]["model"] == "model-b"
+        assert ranking[-1]["model"] == "model-a"
 
-class TestScoreFingerprintMismatch:
-    """Two runs with different corpus_fingerprints → rejected."""
-
-    def test_mismatched_fingerprint_returns_nonzero(self, tmp_path, capsys):
+    def test_missing_run_dir_errors(self, tmp_path):
         runs_root = tmp_path / "runs"
-        scores_dir = tmp_path / "scores"
+        lb = tmp_path / "leaderboard.json"
+        rc = cli.main(["score", "does-not-exist",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc != 0
+        assert not lb.exists()
 
-        _make_measurements(
-            run_id="2026-06-01T10-00-00_EDT-ma",
-            group_key="prov:ma:1/2",
-            corpus_fingerprint="fingerprint-X",
-            quarantine_rate=0.01,
-            intervention_burden=0.05,
-            latency=1500.0,
-            dangling_link_rate=0.10,
-            runs_root=runs_root,
-        )
-        _make_measurements(
-            run_id="2026-06-01T10-00-01_EDT-mb",
-            group_key="prov:mb:1/2",
-            corpus_fingerprint="fingerprint-Y-DIFFERENT",
-            quarantine_rate=0.02,
-            intervention_burden=0.06,
-            latency=1600.0,
-            dangling_link_rate=0.11,
-            runs_root=runs_root,
-        )
-
-        rc = cli.main([
-            "score",
-            "2026-06-01T10-00-00_EDT-ma",
-            "2026-06-01T10-00-01_EDT-mb",
-            "--runs-root", str(runs_root),
-            "--scores-dir", str(scores_dir),
-        ])
-
-        assert rc != 0, "expected non-zero exit for fingerprint mismatch"
-        err = capsys.readouterr().err
-        assert "corpus_fingerprint" in err.lower() or "mismatch" in err.lower(), (
-            f"expected fingerprint mismatch message in stderr, got: {err!r}"
-        )
-
-        # No scorecard should have been written
-        assert not list(scores_dir.glob("*.json"))
-
-
-class TestScoreLatestPerGroupKey:
-    """When two run_ids share a group_key, the lexically-latest run_id wins."""
-
-    def test_later_run_id_supersedes_earlier(self, tmp_path, capsys):
+    def test_writes_markdown_leaderboard(self, tmp_path):
         runs_root = tmp_path / "runs"
-        scores_dir = tmp_path / "scores"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root)
+        _make_measurements(run_dir="model-b-T1", model="model-b",
+                           entity_reuse=0.30, link_density=4.0, runs_root=runs_root)
+        cli.main(["score", "model-a-T1", "model-b-T1",
+                  "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        md = lb.with_suffix(".md")
+        assert md.exists(), "leaderboard.md should be written alongside the JSON"
+        txt = md.read_text(encoding="utf-8")
+        assert txt.startswith("# Model leaderboard")
+        assert "| rank | model |" in txt          # markdown ranking table header
+        assert "graph_score" in txt
+        assert "## Raw measured values" in txt     # raw-values detail table
+        assert "model-a" in txt and "model-b" in txt
+        # raw values surface in the detail table (e.g. link_density 4.0 for model-b)
+        assert "link_density" in txt
 
-        # Earlier run for model-a
-        _make_measurements(
-            run_id="2026-06-01T08-00-00_EDT-ma",
-            group_key="prov:ma:1/2",
-            corpus_fingerprint="fp_same",
-            quarantine_rate=0.10,  # worse
-            intervention_burden=0.20,
-            latency=3000.0,
-            dangling_link_rate=0.40,
-            runs_root=runs_root,
-        )
-        # Later run for model-a (same group_key, should win)
-        _make_measurements(
-            run_id="2026-06-01T12-00-00_EDT-ma",
-            group_key="prov:ma:1/2",
-            corpus_fingerprint="fp_same",
-            quarantine_rate=0.01,  # better
-            intervention_burden=0.05,
-            latency=1500.0,
-            dangling_link_rate=0.10,
-            runs_root=runs_root,
-        )
-        # Different model
-        _make_measurements(
-            run_id="2026-06-01T10-00-00_EDT-mb",
-            group_key="prov:mb:1/2",
-            corpus_fingerprint="fp_same",
-            quarantine_rate=0.03,
-            intervention_burden=0.08,
-            latency=1700.0,
-            dangling_link_rate=0.15,
-            runs_root=runs_root,
-        )
 
-        rc = cli.main([
-            "score",
-            "2026-06-01T08-00-00_EDT-ma",   # earlier
-            "2026-06-01T12-00-00_EDT-ma",   # later — should win
-            "2026-06-01T10-00-00_EDT-mb",
-            "--runs-root", str(runs_root),
-            "--scores-dir", str(scores_dir),
-        ])
+class TestCombinedGraphScore:
+    """The §6 lesson encoded: the richness/coherence trio drives graph_score even
+    when entity_reuse disagrees (the gemini-vs-deepseek case)."""
 
+    def test_richness_trio_beats_lone_entity_reuse(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        # 'rich' wins connectivity + link + supports (3 of 4 graph KPIs, weight
+        # 0.85) but loses entity_reuse; 'lean' is the sparse-but-high-reuse one.
+        # Processing KPIs tied → graph decides.
+        _make_measurements(run_dir="rich-T1", model="rich", runs_root=runs_root,
+                           graph_connectivity=0.5, link_density=4.0,
+                           supports_density=8.0, entity_reuse=0.05)
+        _make_measurements(run_dir="lean-T1", model="lean", runs_root=runs_root,
+                           graph_connectivity=0.1, link_density=1.0,
+                           supports_density=3.0, entity_reuse=0.20)
+        rc = cli.main(["score", "rich-T1", "lean-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
-        out = capsys.readouterr().out
+        rows = {r["model"]: r for r in _load(lb)["ranking"]}
+        # graph_score is reported, and the richer graph wins it despite lower reuse
+        assert "graph_score" in rows["rich"]
+        assert rows["rich"]["graph_score"] == pytest.approx(0.85)   # 0.35+0.30+0.20
+        assert rows["lean"]["graph_score"] == pytest.approx(0.15)   # reuse only
+        # and 'rich' wins the overall composite (graph is 40%; processing tied)
+        assert rows["rich"]["rank"] == 1
 
-        scorecard_files = list(scores_dir.glob("*.json"))
-        assert len(scorecard_files) == 1
 
-        data = json.loads(scorecard_files[0].read_text())
+# ---------------------------------------------------------------------------
+# Incremental accumulation
+# ---------------------------------------------------------------------------
 
-        # Only two unique group_keys should be in the scorecard
-        assert len(data["borda"]["per_model"]) == 2
-
-        # The run_ids_used dict should point at the LATER run for prov:ma:1/2
-        run_ids_used = data["run_ids_used"]
-        assert run_ids_used["prov:ma:1/2"] == "2026-06-01T12-00-00_EDT-ma", (
-            f"expected later run to be selected, got: {run_ids_used['prov:ma:1/2']!r}"
-        )
-
-        # Score should confirm it skipped the earlier run
-        assert "skipped" in out.lower() or "superseded" in out.lower(), (
-            f"expected a 'skipped/superseded' message in stdout, got: {out!r}"
-        )
-
-    def test_group_key_deduplication_reduces_candidate_set(self, tmp_path):
-        """Two runs for the same group_key → only ONE model entry in scorecard."""
+class TestIncremental:
+    def test_new_model_joins_existing_leaderboard(self, tmp_path):
         runs_root = tmp_path / "runs"
-        scores_dir = tmp_path / "scores"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root)
+        _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root)
+        cli.main(["score", "model-a-T1", "model-b-T1",
+                  "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
 
-        for ts in ("2026-06-03T10-00-00_EDT", "2026-06-03T11-00-00_EDT"):
-            _make_measurements(
-                run_id=f"{ts}-mx",
-                group_key="prov:mx:1/2",
-                corpus_fingerprint="fp_dedup",
-                quarantine_rate=0.02,
-                intervention_burden=0.05,
-                latency=1500.0,
-                dangling_link_rate=0.10,
-                runs_root=runs_root,
-            )
-
-        rc = cli.main([
-            "score",
-            "2026-06-03T10-00-00_EDT-mx",
-            "2026-06-03T11-00-00_EDT-mx",
-            "--runs-root", str(runs_root),
-            "--scores-dir", str(scores_dir),
-        ])
+        # incorporate a third model with just its run dir
+        _make_measurements(run_dir="model-c-T1", model="model-c", runs_root=runs_root)
+        rc = cli.main(["score", "model-c-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
+        data = _load(lb)
+        assert set(data["models"].keys()) == {"model-a", "model-b", "model-c"}
+        assert len(data["ranking"]) == 3
 
-        data = json.loads(list(scores_dir.glob("*.json"))[0].read_text())
-        assert len(data["borda"]["per_model"]) == 1
-        assert list(data["borda"]["per_model"].keys()) == ["prov:mx:1/2"]
+    def test_rerun_existing_model_replaces_its_run_dir(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-x-T1", model="model-x", entity_reuse=0.10, runs_root=runs_root)
+        cli.main(["score", "model-x-T1",
+                  "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert _load(lb)["models"]["model-x"] == "model-x-T1"
+
+        # a newer run of the SAME model slug → replaces the pointer, still one row
+        _make_measurements(run_dir="model-x-T2", model="model-x", entity_reuse=0.50, runs_root=runs_root)
+        rc = cli.main(["score", "model-x-T2",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        data = _load(lb)
+        assert list(data["models"].keys()) == ["model-x"]
+        assert data["models"]["model-x"] == "model-x-T2"
+
+    def test_two_runs_same_model_one_invocation_latest_wins(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-y-T1", model="model-y", runs_root=runs_root)
+        _make_measurements(run_dir="model-y-T2", model="model-y", runs_root=runs_root)
+        rc = cli.main(["score", "model-y-T1", "model-y-T2",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        data = _load(lb)
+        assert list(data["models"].keys()) == ["model-y"]
+        # lexically-greater run dir (T2) wins
+        assert data["models"]["model-y"] == "model-y-T2"
+
+
+# ---------------------------------------------------------------------------
+# No fingerprint gate
+# ---------------------------------------------------------------------------
+
+class TestNoFingerprintGate:
+    def test_different_fingerprints_still_rank(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a",
+                           corpus_fingerprint="fingerprint-X", runs_root=runs_root)
+        _make_measurements(run_dir="model-b-T1", model="model-b",
+                           corpus_fingerprint="fingerprint-Y-DIFFERENT", runs_root=runs_root)
+        rc = cli.main(["score", "model-a-T1", "model-b-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        # No gate → ranks both despite mismatched fingerprints
+        assert rc == 0
+        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
+
+
+# ---------------------------------------------------------------------------
+# Reset
+# ---------------------------------------------------------------------------
+
+class TestReset:
+    def test_deleting_leaderboard_starts_fresh(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root)
+        _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root)
+        cli.main(["score", "model-a-T1", "model-b-T1",
+                  "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
+
+        lb.unlink()  # reset
+
+        _make_measurements(run_dir="model-c-T1", model="model-c", runs_root=runs_root)
+        cli.main(["score", "model-c-T1",
+                  "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        # fresh — only the newly-incorporated model
+        assert set(_load(lb)["models"].keys()) == {"model-c"}
+
+
+# ---------------------------------------------------------------------------
+# Legacy --models path still routes to the run command
+# ---------------------------------------------------------------------------
+
+class TestCrossTierLookup:
+    """Scored KPI values are looked up across ALL emitted tiers — a KPI sitting
+    in watched/diagnostic (e.g. a pre-§6 run, before the values were promoted to
+    `scored`) is still scored, no re-run needed. Unknown keys (e.g. an old
+    `intervention_burden`) are carried as diagnostics, not scored."""
+
+    def _write_pre_promotion(self, runs_root, run_dir, model, *, conn, link, sup, reuse):
+        # graph quality KPIs live in watched/diagnostic (not scored), as older runs
+        # emitted them; processing carries the pre-rename `intervention_burden`.
+        d = runs_root / run_dir
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "measurements.json").write_text(json.dumps({
+            "header": {"run_id": run_dir, "provider": "p", "model": model,
+                       "corpus_fingerprint": "fp", "pass1_prompt_version": "1",
+                       "pass2_prompt_version": "", "scanned": 10, "to_compile": 10,
+                       "signal": 8, "noise": 2, "p1_attempted": 10, "p2_attempted": 8},
+            "processing": {"scored": {"quarantine_rate": 0.0, "intervention_burden": 0.0,
+                                      "latency": 1000.0}, "diagnostic": {}},
+            "graph": {"scored": {"entity_reuse": reuse},
+                      "watched": {"graph_connectivity": conn},
+                      "diagnostic": {"link_density": link, "supports_density": sup}},
+        }), encoding="utf-8")
+
+    def test_graph_kpis_in_watched_diagnostic_are_still_scored(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        # 'rich' wins the trio (which sit in watched/diagnostic); 'lean' has higher reuse only.
+        self._write_pre_promotion(runs_root, "rich-T1", "rich",
+                                  conn=0.5, link=4.0, sup=8.0, reuse=0.05)
+        self._write_pre_promotion(runs_root, "lean-T1", "lean",
+                                  conn=0.1, link=1.0, sup=3.0, reuse=0.20)
+        rc = cli.main(["score", "rich-T1", "lean-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        rows = {r["model"]: r for r in _load(lb)["ranking"]}
+        # graph_score combines all 4 graph KPIs even though 3 were in watched/diagnostic
+        assert rows["rich"]["graph_score"] == pytest.approx(0.85)
+        assert rows["lean"]["graph_score"] == pytest.approx(0.15)
+        # the cross-tier values made it into the scored set...
+        assert rows["rich"]["per_kpi_borda"]["link_density"] is not None
+        assert rows["rich"]["per_kpi_borda"]["graph_connectivity"] is not None
+        # ...and the unknown pre-rename key is NOT scored (it's a diagnostic)
+        assert "intervention_burden" not in rows["rich"]["per_kpi_borda"]
+        # recovery_rate was genuinely never measured here → None (dropped pro-rata)
+        assert rows["rich"]["per_kpi_borda"]["recovery_rate"] is None
 
 
 class TestScoreExistingCLIUnchanged:
-    """The legacy --models path must still work after score dispatch was added."""
-
     def test_legacy_path_reached_with_models_flag(self, tmp_path, monkeypatch):
-        """Verify that passing --models still hits _main_run (not score).
-
-        We confirm this by monkeypatching _main_run to track calls.
-        """
         calls = []
 
         def fake_main_run(argv):
@@ -385,7 +324,6 @@ class TestScoreExistingCLIUnchanged:
             return 0
 
         monkeypatch.setattr("tools.benchmark.cli._main_run", fake_main_run)
-
         rc = cli.main(["--models", "some-model"])
         assert rc == 0
         assert calls, "expected _main_run to be called"

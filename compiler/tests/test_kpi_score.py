@@ -14,7 +14,14 @@ from __future__ import annotations
 import pytest
 from types import SimpleNamespace
 
-from compiler.kpi.score import borda_normalize, borda_score
+from compiler.kpi.score import (
+    GRAPH_WEIGHTS,
+    TOP_WEIGHTS,
+    borda_normalize,
+    borda_score,
+    combined_graph_score,
+    score_models,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -92,61 +99,64 @@ class TestBordaNormalizeParity:
 
 class TestBordaScore:
     """
-    Fixture: 3 models, 2 KPIs: quarantine_rate (↓) and dangling_link_rate (↓).
+    Fixture: 3 models, 2 KPIs — quarantine_rate (↓ lower better) and
+    entity_reuse (↑ higher better — the post-2026-06-06 scored graph KPI).
+    This exercises the mixed-direction path: borda_score reads direction from
+    KPI_LOWER_IS_BETTER, where entity_reuse is registered False.
 
     Values:
-      alpha:  quarantine_rate=0.01, dangling_link_rate=0.20
-      beta:   quarantine_rate=0.05, dangling_link_rate=None  ← dropped from dangling_link_rate
-      gamma:  quarantine_rate=0.03, dangling_link_rate=0.10
+      alpha:  quarantine_rate=0.01, entity_reuse=0.20
+      beta:   quarantine_rate=0.05, entity_reuse=None  ← dropped from entity_reuse
+      gamma:  quarantine_rate=0.03, entity_reuse=0.10
 
     quarantine_rate (lower_is_better=True), 3 models, distinct values:
       Sorted best→worst: alpha(0.01) < gamma(0.03) < beta(0.05)
       ordinal ranks: alpha=1, gamma=2, beta=3; N=3
       scores: alpha=(3-1)/(3-1)=1.0, gamma=(3-2)/2=0.5, beta=(3-3)/2=0.0
 
-    dangling_link_rate (lower_is_better=True), 2 eligible models (beta dropped):
-      Sorted best→worst: gamma(0.10) < alpha(0.20)
-      ordinal ranks: gamma=1, alpha=2; N=2
-      scores: gamma=(2-1)/(2-1)=1.0, alpha=(2-2)/1=0.0
+    entity_reuse (lower_is_better=False → HIGHER better), 2 eligible (beta dropped):
+      Sorted best→worst: alpha(0.20) > gamma(0.10)
+      ordinal ranks: alpha=1, gamma=2; N=2
+      scores: alpha=(2-1)/(2-1)=1.0, gamma=(2-2)/1=0.0
       beta: None (not in result)
 
     Equal weights (weights=None → each KPI gets 1.0):
 
     alpha:
-      present KPIs: quarantine_rate(1.0) + dangling_link_rate(0.0)
-      composite = (1.0*1.0 + 1.0*0.0) / 2.0 = 0.5
+      present KPIs: quarantine_rate(1.0) + entity_reuse(1.0)
+      composite = (1.0*1.0 + 1.0*1.0) / 2.0 = 1.0
 
     beta:
-      present KPIs: quarantine_rate only (dangling_link_rate=None → dropped)
+      present KPIs: quarantine_rate only (entity_reuse=None → dropped)
       composite = (1.0*0.0) / 1.0 = 0.0
 
     gamma:
-      present KPIs: quarantine_rate(0.5) + dangling_link_rate(1.0)
-      composite = (1.0*0.5 + 1.0*1.0) / 2.0 = 0.75
+      present KPIs: quarantine_rate(0.5) + entity_reuse(0.0)
+      composite = (1.0*0.5 + 1.0*0.0) / 2.0 = 0.25
     """
 
     @pytest.fixture
     def models(self):
         return [
             {
-                "group_key": "alpha",
+                "model": "alpha",
                 "scored": {
                     "quarantine_rate": 0.01,
-                    "dangling_link_rate": 0.20,
+                    "entity_reuse": 0.20,
                 },
             },
             {
-                "group_key": "beta",
+                "model": "beta",
                 "scored": {
                     "quarantine_rate": 0.05,
-                    "dangling_link_rate": None,   # beta dropped from this KPI
+                    "entity_reuse": None,   # beta dropped from this KPI
                 },
             },
             {
-                "group_key": "gamma",
+                "model": "gamma",
                 "scored": {
                     "quarantine_rate": 0.03,
-                    "dangling_link_rate": 0.10,
+                    "entity_reuse": 0.10,
                 },
             },
         ]
@@ -158,43 +168,44 @@ class TestBordaScore:
         assert pm["gamma"]["per_kpi_borda"]["quarantine_rate"] == pytest.approx(0.5)
         assert pm["beta"]["per_kpi_borda"]["quarantine_rate"] == pytest.approx(0.0)
 
-    def test_per_kpi_borda_dangling_link_rate(self, models):
+    def test_per_kpi_borda_entity_reuse_higher_is_better(self, models):
         result = borda_score(models)
         pm = result["per_model"]
-        # gamma best (0.10), alpha worst (0.20) — 2 eligible, N=2
-        assert pm["gamma"]["per_kpi_borda"]["dangling_link_rate"] == pytest.approx(1.0)
-        assert pm["alpha"]["per_kpi_borda"]["dangling_link_rate"] == pytest.approx(0.0)
+        # entity_reuse is ↑: alpha highest (0.20) → best, gamma (0.10) → worst.
+        # 2 eligible (beta None), N=2. Direction comes from KPI_LOWER_IS_BETTER.
+        assert pm["alpha"]["per_kpi_borda"]["entity_reuse"] == pytest.approx(1.0)
+        assert pm["gamma"]["per_kpi_borda"]["entity_reuse"] == pytest.approx(0.0)
 
-    def test_none_model_dropped_from_dangling_link_rate_only(self, models):
+    def test_none_model_dropped_from_entity_reuse_only(self, models):
         result = borda_score(models)
         pm = result["per_model"]
-        # beta's dangling_link_rate borda is None (dropped from that ranking)
-        assert pm["beta"]["per_kpi_borda"]["dangling_link_rate"] is None
+        # beta's entity_reuse borda is None (dropped from that ranking)
+        assert pm["beta"]["per_kpi_borda"]["entity_reuse"] is None
         # but beta IS present in quarantine_rate ranking
         assert pm["beta"]["per_kpi_borda"]["quarantine_rate"] is not None
 
     def test_composite_scores(self, models):
         result = borda_score(models)
         pm = result["per_model"]
-        assert pm["alpha"]["composite"] == pytest.approx(0.5)
+        assert pm["alpha"]["composite"] == pytest.approx(1.0)
         assert pm["beta"]["composite"] == pytest.approx(0.0)
-        assert pm["gamma"]["composite"] == pytest.approx(0.75)
+        assert pm["gamma"]["composite"] == pytest.approx(0.25)
 
     def test_equal_weights_returned(self, models):
         result = borda_score(models)
-        assert result["weights"] == {"quarantine_rate": 1.0, "dangling_link_rate": 1.0}
+        assert result["weights"] == {"quarantine_rate": 1.0, "entity_reuse": 1.0}
 
     def test_custom_weights_applied(self, models):
         """Custom weights shift the composite proportionally."""
-        weights = {"quarantine_rate": 2.0, "dangling_link_rate": 1.0}
+        weights = {"quarantine_rate": 2.0, "entity_reuse": 1.0}
         result = borda_score(models, weights=weights)
         pm = result["per_model"]
-        # alpha: (2.0*1.0 + 1.0*0.0) / 3.0 = 2/3
-        assert pm["alpha"]["composite"] == pytest.approx(2.0 / 3.0)
+        # alpha: (2.0*1.0 + 1.0*1.0) / 3.0 = 1.0
+        assert pm["alpha"]["composite"] == pytest.approx(1.0)
         # beta: (2.0*0.0) / 2.0 = 0.0  (only quarantine_rate present)
         assert pm["beta"]["composite"] == pytest.approx(0.0)
-        # gamma: (2.0*0.5 + 1.0*1.0) / 3.0 = 2/3
-        assert pm["gamma"]["composite"] == pytest.approx(2.0 / 3.0)
+        # gamma: (2.0*0.5 + 1.0*0.0) / 3.0 = 1/3
+        assert pm["gamma"]["composite"] == pytest.approx(1.0 / 3.0)
 
     def test_all_models_present_in_result(self, models):
         result = borda_score(models)
@@ -203,3 +214,73 @@ class TestBordaScore:
     def test_result_keys(self, models):
         result = borda_score(models)
         assert set(result.keys()) == {"per_model", "weights"}
+
+
+# ===========================================================================
+# 3. combined_graph_score + weight invariants (§6)
+# ===========================================================================
+
+class TestCombinedGraphScore:
+    def test_all_graph_kpis_present_weighted_mean(self):
+        # GRAPH_WEIGHTS 35/30/20/15; reuse borda = 0 → 0.35+0.30+0.20 = 0.85.
+        pkb = {
+            "graph_connectivity": 1.0, "link_density": 1.0,
+            "supports_density": 1.0, "entity_reuse": 0.0,
+            "quarantine_rate": 0.5,  # non-graph KPI ignored
+        }
+        assert combined_graph_score(pkb) == pytest.approx(0.85)
+
+    def test_missing_graph_kpi_prorata_renormalizes(self):
+        # entity_reuse absent → renormalize over present (conn+link+supports).
+        pkb = {"graph_connectivity": 1.0, "link_density": 0.0, "supports_density": 0.0}
+        assert combined_graph_score(pkb) == pytest.approx(0.35 / 0.85)
+
+    def test_no_graph_kpis_returns_none(self):
+        assert combined_graph_score({"quarantine_rate": 1.0}) is None
+
+    def test_top_weights_sum_to_one(self):
+        assert sum(TOP_WEIGHTS.values()) == pytest.approx(1.0)
+
+    def test_graph_weights_sum_to_one(self):
+        assert sum(GRAPH_WEIGHTS.values()) == pytest.approx(1.0)
+
+
+class TestScoreModelsHierarchical:
+    """score_models: per-KPI Borda → graph_score → top-level composite, and the
+    40/40/10/10 split holds EXACTLY even when a model is missing a graph KPI."""
+
+    def test_missing_graph_kpi_keeps_graph_at_40_percent(self):
+        # X wins the richness trio but has entity_reuse=None (degenerate corner);
+        # Y has all four. The flat approach would redistribute X's missing-reuse
+        # weight onto quarantine; the hierarchical scorer must NOT — graph stays 40%.
+        models = [
+            {"model": "X", "scored": {
+                "quarantine_rate": 0.0, "recovery_rate": 0.0, "latency": 100.0,
+                "graph_connectivity": 0.5, "link_density": 5.0,
+                "supports_density": 8.0, "entity_reuse": None}},
+            {"model": "Y", "scored": {
+                "quarantine_rate": 0.0, "recovery_rate": 0.0, "latency": 100.0,
+                "graph_connectivity": 0.1, "link_density": 1.0,
+                "supports_density": 2.0, "entity_reuse": 0.3}},
+        ]
+        pm = score_models(models)["per_model"]
+        # X: wins conn/link/supports (borda 1.0), reuse dropped → graph_score = 1.0
+        assert pm["X"]["graph_score"] == pytest.approx(1.0)
+        # Y: loses the trio (0.0), wins reuse (1.0) → 0.15
+        assert pm["Y"]["graph_score"] == pytest.approx(0.15)
+        # processing all tied → 0.5 each. composite = 0.40·0.5+0.10·0.5+0.10·0.5 + 0.40·graph
+        # X: 0.30 + 0.40·1.0 = 0.70  (graph is a full 40% despite the missing reuse KPI)
+        assert pm["X"]["composite"] == pytest.approx(0.70)
+        # Y: 0.30 + 0.40·0.15 = 0.36
+        assert pm["Y"]["composite"] == pytest.approx(0.36)
+
+    def test_result_shape(self):
+        models = [
+            {"model": "A", "scored": {"quarantine_rate": 0.0, "recovery_rate": 0.0,
+                                      "latency": 1.0, "graph_connectivity": 0.2,
+                                      "link_density": 2.0, "supports_density": 5.0,
+                                      "entity_reuse": 0.1}},
+        ]
+        res = score_models(models)
+        assert set(res) == {"per_model", "top_weights", "graph_weights"}
+        assert set(res["per_model"]["A"]) == {"composite", "graph_score", "per_kpi_borda"}
