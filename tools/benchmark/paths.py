@@ -24,4 +24,3 @@ RUNS_DIR    = BENCHMARK_DIR / "runs"
 SCORES_DIR  = BENCHMARK_DIR / "scores"
 INSPECT_DIR = BENCHMARK_DIR / "inspect"
 
-MODELS_JSON = Path(__file__).resolve().parent / "models.json"

@@ -265,7 +265,7 @@ class TestReset:
 
 
 # ---------------------------------------------------------------------------
-# Legacy --models path still routes to the run command
+# Cross-tier KPI lookup
 # ---------------------------------------------------------------------------
 
 class TestCrossTierLookup:
@@ -313,18 +313,3 @@ class TestCrossTierLookup:
         assert "intervention_burden" not in rows["rich"]["per_kpi_borda"]
         # recovery_rate was genuinely never measured here → None (dropped pro-rata)
         assert rows["rich"]["per_kpi_borda"]["recovery_rate"] is None
-
-
-class TestScoreExistingCLIUnchanged:
-    def test_legacy_path_reached_with_models_flag(self, tmp_path, monkeypatch):
-        calls = []
-
-        def fake_main_run(argv):
-            calls.append(argv)
-            return 0
-
-        monkeypatch.setattr("tools.benchmark.cli._main_run", fake_main_run)
-        rc = cli.main(["--models", "some-model"])
-        assert rc == 0
-        assert calls, "expected _main_run to be called"
-        assert "--models" in calls[0]
