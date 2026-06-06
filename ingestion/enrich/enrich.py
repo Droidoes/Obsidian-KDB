@@ -109,6 +109,12 @@ def enrich_one(
             output_tokens=call_result.output_tokens,
             latency_ms=call_result.latency_ms,
             attempts=call_result.attempts,
+            total_input_tokens=call_result.total_input_tokens,
+            total_output_tokens=call_result.total_output_tokens,
+            total_latency_ms=call_result.total_latency_ms,
+            call_count=call_result.call_count,
+            final_attempt_index=call_result.final_attempt_index,
+            syntax_repaired=call_result.syntax_repaired,
         )
         sidecar = _write_sidecar_failed(
             runs_root, run_id, source_id, source_path,
@@ -225,7 +231,7 @@ def _write_sidecar_failed(runs_root, run_id, source_id, source_path,
             # terminal status on the failure path (covers both call exhaustion
             # and Stage-2 envelope-validation failure).
             "final_status": "quarantined",
-            "syntax_repaired": False,
+            "syntax_repaired": getattr(error, "syntax_repaired", False),
             "total_input_tokens": getattr(error, "total_input_tokens", 0),
             "total_output_tokens": getattr(error, "total_output_tokens", 0),
             "total_latency_ms": getattr(error, "total_latency_ms", 0),

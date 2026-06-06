@@ -348,6 +348,65 @@ class TestSidecarKeys:
 # remain quarantined but now carry the label
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Part C — Stage-2 envelope-validation failure preserves telemetry (#108 review)
+# ---------------------------------------------------------------------------
+
+class TestStage2FailureTelemetry:
+    """Stage-2 validate_envelope raises AFTER Pass-1 succeeds with real tokens.
+    The resulting sidecar must carry non-zero aggregate telemetry — proving
+    the token/latency data from the model call is not silently zeroed out."""
+
+    def test_stage2_failure_preserves_aggregate_telemetry(
+            self, tmp_path, monkeypatch):
+        """Pass-1 call succeeds (model called, real tokens), but Stage-2
+        validate_envelope raises → sidecar final_status='quarantined' AND
+        total_input_tokens > 0 and call_count >= 1 (telemetry preserved)."""
+        import json as _json
+        from ingestion.enrich import enrich as enrich_mod
+        from ingestion.enrich import pass1_caller as p1_caller_mod
+        from ingestion.enrich.enrich import enrich_one
+
+        src = tmp_path / "note.md"
+        src.write_text("# Note\n\nSome content.\n", encoding="utf-8")
+        runs = tmp_path / "runs"
+
+        # Stub call_model to return a clean, valid response so Pass-1 succeeds.
+        monkeypatch.setattr(
+            p1_caller_mod, "call_model",
+            lambda req: p1_caller_mod.ModelResponse(
+                text=_content_json(),
+                input_tokens=42, output_tokens=17, latency_ms=300,
+                model="m", provider="p", raw={},
+            ),
+        )
+
+        # Force validate_envelope to raise so Stage-2 triggers the failure path.
+        monkeypatch.setattr(
+            enrich_mod, "validate_envelope",
+            lambda envelope: (_ for _ in ()).throw(
+                ValueError("injected Stage-2 failure")
+            ),
+        )
+
+        res = enrich_one(
+            source_path=src, source_id="note.md",
+            runs_root=runs, run_id="r1", provider="p", model="m",
+        )
+
+        assert res.outcome == "enrich_failed"
+        sidecar = _json.loads(res.sidecar_path.read_text(encoding="utf-8"))
+        rr = sidecar["raw_response"]
+        assert rr["final_status"] == "quarantined"
+        # The model WAS called — aggregate telemetry must not be zeroed.
+        assert rr["total_input_tokens"] > 0, (
+            "total_input_tokens should be non-zero (model was called)"
+        )
+        assert rr["call_count"] >= 1, (
+            "call_count should be >= 1 (model was called)"
+        )
+
+
 class TestExistingFailureClassesStillQuarantine:
     """Empty response and summary=None remain retry→quarantine; now labeled."""
 

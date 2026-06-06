@@ -66,6 +66,7 @@ class Pass1CallError(Exception):
         attempts: int = 0,
         # Task #108: aggregation fields for sidecar telemetry on the quarantine path.
         final_status: str = "quarantined",
+        syntax_repaired: bool = False,
         total_input_tokens: int = 0,
         total_output_tokens: int = 0,
         total_latency_ms: int = 0,
@@ -82,6 +83,7 @@ class Pass1CallError(Exception):
         self.latency_ms = latency_ms
         self.attempts = attempts
         self.final_status = final_status
+        self.syntax_repaired = syntax_repaired
         self.total_input_tokens = total_input_tokens
         self.total_output_tokens = total_output_tokens
         self.total_latency_ms = total_latency_ms
@@ -142,9 +144,9 @@ def call_pass1(
                 try:
                     parsed = json.loads(escaped)
                     syntax_repaired = True
-                except json.JSONDecodeError as inner_e:
+                except json.JSONDecodeError:
                     # Repair failed — let outer except handle retry/quarantine.
-                    raise inner_e
+                    raise
 
             # Coerce benign shape deviations (e.g. >10 entity_search_keys) BEFORE
             # validation — don't burn a retry over a lossless, mechanical fix.
