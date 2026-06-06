@@ -859,58 +859,12 @@ def borda_normalize(
 ) -> dict[str, float]:
     """Average-rank (fractional rank) Borda normalization across candidates.
 
-    Per § 7:
-      1. Drop RunScores where measures[measure].rate is None.
-      2. Sort the remaining N runs by raw rate (asc if lower_is_better else desc).
-      3. Assign fractional ranks (tied candidates share the average of their
-         tied ordinal positions).
-      4. Convert rank → score in [0, 1]:
-            score = (N − rank) / (N − 1)         if N ≥ 2
-            score = 1.0                          if N == 1
-         All-equal candidates → 0.5 each (no signal).
-
-    Returns {model_id → normalized score in [0, 1]}.
+    Implementation lives in compiler.kpi.score (B.3-safe production home).
+    Re-exported here so all callers and tests of tools.benchmark.scorer
+    continue to work unchanged.
     """
-    eligible = [
-        (r.model_id, r.measures[measure].rate)
-        for r in runs
-        if r.measures[measure].rate is not None
-    ]
-    n = len(eligible)
-    if n == 0:
-        return {}
-    if n == 1:
-        return {eligible[0][0]: 1.0}
-
-    # Sort by raw rate (best first). For ties, ordinal position is deterministic
-    # by stable sort but the fractional-rank-with-averaging will give all
-    # tied entries the same value, so the within-tie order doesn't matter.
-    sorted_pairs = sorted(eligible, key=lambda mr: mr[1], reverse=not lower_is_better)
-
-    # Assign fractional ranks: for each group of ties, all members get the
-    # average of their consecutive ordinal positions (1-indexed).
-    ranks: dict[str, float] = {}
-    i = 0
-    while i < n:
-        j = i
-        while j + 1 < n and sorted_pairs[j + 1][1] == sorted_pairs[i][1]:
-            j += 1
-        # tied span [i, j] inclusive — ordinal positions i+1 .. j+1
-        avg_rank = (i + 1 + j + 1) / 2.0
-        for k in range(i, j + 1):
-            ranks[sorted_pairs[k][0]] = avg_rank
-        i = j + 1
-
-    # All-equal special case: every candidate shares the central rank → score 0.5
-    distinct_rates = {rate for _, rate in eligible}
-    if len(distinct_rates) == 1:
-        return {model_id: 0.5 for model_id, _ in eligible}
-
-    # Convert ranks to scores
-    return {
-        model_id: (n - rank) / (n - 1)
-        for model_id, rank in ranks.items()
-    }
+    from compiler.kpi.score import borda_normalize as _borda_normalize  # noqa: PLC0415
+    return _borda_normalize(runs, measure, lower_is_better=lower_is_better)
 
 
 # In-scope measures for outlier penalty (D31.5): S0 + M1..M5; M6/M7 excluded
