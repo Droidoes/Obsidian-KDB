@@ -90,6 +90,11 @@ def build_resp_stats(
     syntax_repaired: bool = False,
     slug_coerced: bool = False,
     final_status: str | None = None,
+    total_input_tokens: int | None = None,
+    total_output_tokens: int | None = None,
+    total_latency_ms: int | None = None,
+    call_count: int = 1,
+    final_attempt_index: int = 1,
 ) -> RespStatsRecord:
     """Assemble one RespStatsRecord. Hashes always computed. See module
     docstring for the always-on vs env-gated field split.
@@ -147,6 +152,14 @@ def build_resp_stats(
         extract_ok and parse_ok and schema_ok and semantic_ok
     )
 
+    # Discarded-attempt aggregation (#109 Task 2).
+    # When the caller supplies explicit totals (multi-attempt path), use them.
+    # Otherwise, fall back to the single-attempt values so 1-attempt runs are
+    # always back-compat (totals == per-call values, call_count=1, final_attempt_index=1).
+    agg_input_tokens = total_input_tokens if total_input_tokens is not None else input_tokens
+    agg_output_tokens = total_output_tokens if total_output_tokens is not None else output_tokens
+    agg_latency_ms = total_latency_ms if total_latency_ms is not None else latency_ms
+
     return RespStatsRecord(
         run_id=ctx.run_id,
         source_id=source_id,
@@ -181,6 +194,11 @@ def build_resp_stats(
         syntax_repaired=syntax_repaired,
         slug_coerced=slug_coerced,
         final_status=final_status,
+        total_input_tokens=agg_input_tokens,
+        total_output_tokens=agg_output_tokens,
+        total_latency_ms=agg_latency_ms,
+        call_count=call_count,
+        final_attempt_index=final_attempt_index,
     )
 
 

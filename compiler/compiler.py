@@ -193,6 +193,12 @@ def compile_one(
         "compile_attempts": None,
         "syntax_repaired": False,
         "slug_coerced": False,
+        # discarded-attempt aggregation (#109 Task 2)
+        "_agg_input_tokens": 0,
+        "_agg_output_tokens": 0,
+        "_agg_latency_ms": 0,
+        "_call_count": 0,
+        "_final_attempt_index": 0,   # 0 = no winning attempt yet (quarantine path)
     }
 
     try:
@@ -279,6 +285,15 @@ def compile_one(
                     )
                 )
                 state["raw_response_text"] = state["model_response"].text
+                # Accumulate per-attempt stats (#109 Task 2): capture AFTER a
+                # successful model call so a model-call exception doesn't inflate
+                # the counters. The accumulator runs each attempt that reached
+                # the model, whether or not the response passes later stages.
+                mr = state["model_response"]
+                state["_agg_input_tokens"] += mr.input_tokens
+                state["_agg_output_tokens"] += mr.output_tokens
+                state["_agg_latency_ms"] += mr.latency_ms
+                state["_call_count"] += 1
             except Exception as e:
                 _set_failure(state, "model_call", type(e).__name__, str(e))
                 state["error"] = (
@@ -403,6 +418,7 @@ def compile_one(
                 return (None, [], [], state["error"])
 
             state["compile_attempts"] = attempt  # record winning attempt (#106)
+            state["_final_attempt_index"] = attempt  # record winning index (#109)
             break  # parse_ok + schema_ok + semantic_ok → proceed
 
         # --- body-link reconciliation ---
@@ -489,6 +505,19 @@ def compile_one(
             )
         else:
             _final_status = "clean"
+        # Discarded-attempt aggregation (#109 Task 2): resolve final_attempt_index.
+        # On the winning path _final_attempt_index was set inside the loop;
+        # on the quarantine path it stays 0 — use _call_count as a proxy
+        # (last attempt index that reached the model).
+        # On a pre-loop failure (source_read/prompt_build), _call_count=0 and
+        # we fall back to 1 so the field is never 0 on the persisted record.
+        _call_count = state["_call_count"]
+        _raw_final = state["_final_attempt_index"]
+        _final_attempt_index = _raw_final if _raw_final > 0 else max(_call_count, 1)
+        # Pass explicit aggregated totals only when at least one model call was made.
+        # build_resp_stats falls back to per-call values from model_response when
+        # total_* is None, preserving the zeroed sentinel path (pre-model failures).
+        _has_calls = _call_count > 0
         record = build_resp_stats(
             ctx=ctx,
             source_id=source_id,
@@ -511,6 +540,11 @@ def compile_one(
             syntax_repaired=_syntax_repaired,
             slug_coerced=_slug_coerced,
             final_status=_final_status,
+            total_input_tokens=state["_agg_input_tokens"] if _has_calls else None,
+            total_output_tokens=state["_agg_output_tokens"] if _has_calls else None,
+            total_latency_ms=state["_agg_latency_ms"] if _has_calls else None,
+            call_count=_call_count if _has_calls else 1,
+            final_attempt_index=_final_attempt_index,
         )
         resp_stats_path = write_resp_stats(
             record, state_root, artifact_dir=resp_stats_dir)

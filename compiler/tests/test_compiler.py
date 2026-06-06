@@ -1559,6 +1559,109 @@ def test_non_slug_schema_error_unchanged(
     assert rec["final_status"] == "quarantined"
 
 
+# ---------- discarded-attempt aggregation (#109 Task 2) ----------
+
+def test_two_attempt_compile_aggregates_tokens_and_latency(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Attempt 1 fails to parse (invalid JSON); attempt 2 succeeds.  The
+    resulting RespStatsRecord must aggregate across BOTH model calls:
+      - total_input_tokens  == sum of both calls' input_tokens
+      - total_output_tokens == sum of both calls' output_tokens
+      - total_latency_ms    == sum of both calls' latency_ms
+      - call_count          == 2
+      - final_attempt_index == 2
+    and the existing single-call fields (input_tokens, output_tokens,
+    latency_ms) must still reflect the WINNING attempt's response.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    calls = {"n": 0}
+
+    def bad_then_good(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # attempt 1: invalid JSON — forces a retry
+            return ModelResponse(
+                text='{"bad": "json",,}',
+                input_tokens=30, output_tokens=15, latency_ms=200,
+                model="claude-opus-4-7", provider="anthropic", attempts=1,
+            )
+        # attempt 2: good response
+        return ModelResponse(
+            text=json.dumps(_good_response(SOURCE_A)),
+            input_tokens=100, output_tokens=50, latency_ms=400,
+            model="claude-opus-4-7", provider="anthropic", attempts=1,
+        )
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: bad_then_good}),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+
+    assert calls["n"] == 2
+    assert err is None
+    assert cs is not None
+
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+
+    # Aggregate fields: sum of both attempts
+    assert rec["total_input_tokens"] == 30 + 100   # 130
+    assert rec["total_output_tokens"] == 15 + 50   # 65
+    assert rec["total_latency_ms"] == 200 + 400    # 600
+    assert rec["call_count"] == 2
+    assert rec["final_attempt_index"] == 2
+
+    # Single-attempt back-compat: winning attempt's per-call values intact
+    assert rec["input_tokens"] == 100
+    assert rec["output_tokens"] == 50
+    assert rec["latency_ms"] == 400
+
+
+def test_single_attempt_compile_totals_equal_per_attempt_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Back-compat: a 1-attempt compile must set totals == per-attempt values,
+    call_count == 1, final_attempt_index == 1."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
+    )
+
+    compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+
+    # For 1 attempt, totals == per-call values
+    assert rec["total_input_tokens"] == rec["input_tokens"]
+    assert rec["total_output_tokens"] == rec["output_tokens"]
+    assert rec["total_latency_ms"] == rec["latency_ms"]
+    assert rec["call_count"] == 1
+    assert rec["final_attempt_index"] == 1
+
+
 def test_irreparable_json_quarantines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
