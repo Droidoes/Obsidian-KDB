@@ -10,6 +10,7 @@ import pytest
 
 from compiler import compiler, prompt_builder
 from orchestrator import kdb_orchestrate
+import orchestrator.emit_kpis as _emit_kpis_mod
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
@@ -993,3 +994,122 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     # prompt versions
     assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
     assert hdr["pass2_prompt_version"] == ""
+
+
+# ---------- Task #109: --emit-kpis writes benchmark/runs/<id>/measurements.json ----------
+
+def _setup_single_signal_vault(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Set up a vault with one signal source and monkeypatched LLM calls.
+
+    Returns (vault, state_root).
+    """
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+    return vault, state_root
+
+
+def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
+    """--emit-kpis writes benchmark/runs/<run_id>/measurements.json with
+    header (+ group_key), processing.scored, and graph.scored keys.
+    Redirected to tmp_path/benchmark/runs so it doesn't touch the real repo.
+    """
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    # Redirect benchmark/runs/ to tmp_path so no real repo files are written.
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="testprovider", model="testmodel",
+        max_tokens=4096, emit_kpis=True)
+
+    assert res.ok, res.exit_reason
+
+    mpath = bench_runs / res.run_id / "measurements.json"
+    assert mpath.exists(), f"measurements.json not found at {mpath}"
+
+    m = json.loads(mpath.read_text(encoding="utf-8"))
+
+    # Top-level keys
+    assert "header" in m
+    assert "processing" in m
+    assert "graph" in m
+
+    # header must have group_key
+    hdr = m["header"]
+    assert "group_key" in hdr
+    assert hdr["group_key"].startswith("testprovider:testmodel:")
+    assert hdr["run_id"] == res.run_id
+
+    # processing must have scored sub-key
+    assert "scored" in m["processing"]
+
+    # graph must have scored sub-key
+    assert "scored" in m["graph"]
+
+
+def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):
+    """Without --emit-kpis, no measurements.json is written anywhere."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    # Redirect so if anything is accidentally written we can detect it.
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m",
+        max_tokens=4096, emit_kpis=False)
+
+    assert res.ok, res.exit_reason
+
+    mpath = bench_runs / res.run_id / "measurements.json"
+    assert not mpath.exists(), "measurements.json must NOT be written without --emit-kpis"
+
+
+def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):
+    """When all sources are quarantined (finalize skipped), emit-kpis does not crash."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        lambda req: (_ for _ in ()).throw(RuntimeError("model down")))
+
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m",
+        max_tokens=4096, emit_kpis=True)
+
+    # Run still OK (quarantined) — emit-kpis gracefully skipped, no file
+    assert res.ok, res.exit_reason
+    assert res.finalize is None   # finalize was skipped
+    assert not any(bench_runs.rglob("measurements.json"))
+
+
+def test_cli_emit_kpis_flag_parsed(tmp_path):
+    """--emit-kpis is parsed as True by the CLI argument parser."""
+    args = kdb_orchestrate._build_parser().parse_args([
+        "--vault-root", str(tmp_path), "--emit-kpis",
+    ])
+    assert args.emit_kpis is True
+
+
+def test_cli_emit_kpis_default_false(tmp_path):
+    """--emit-kpis defaults to False (opt-in, normal runs unaffected)."""
+    args = kdb_orchestrate._build_parser().parse_args([
+        "--vault-root", str(tmp_path),
+    ])
+    assert args.emit_kpis is False
