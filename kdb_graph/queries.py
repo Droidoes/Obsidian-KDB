@@ -328,6 +328,118 @@ def active_entity_slugs(conn: kuzu.Connection) -> list[str]:
     return out
 
 
+# ---------- GRAPH-family KPI read primitives (#109) ----------
+#
+# Single-door reads feeding compiler.kpi.graph.compute_graph. Each is one
+# conn.execute + drain returning plain counts/slugs. The KPI module owns the
+# computation (ratios, union-find); these own the Kuzu I/O.
+#
+# Two canonical populations are deliberately distinct (do not unify):
+#   - active_canonical_entity_slugs: status='active' AND canonical_id IS NULL —
+#     the membership set for link_resolution (a link resolves iff it lands here).
+#   - canonical_entity_slugs: canonical_id IS NULL (no status filter) — the
+#     denominator for entity_reuse / connectivity / belongs_to_coverage /
+#     link_density.
+
+
+def active_canonical_entity_slugs(conn: kuzu.Connection) -> set[str]:
+    """Active, non-alias entities (status='active' AND canonical_id IS NULL).
+
+    The link_resolution membership set: an emitted link resolves iff its
+    alias-resolved canonical slug is in this set.
+    """
+    result = conn.execute(
+        "MATCH (e:Entity) WHERE e.status = 'active' AND e.canonical_id IS NULL "
+        "RETURN e.slug"
+    )
+    out: set[str] = set()
+    while result.has_next():
+        out.add(result.get_next()[0])
+    return out
+
+
+def canonical_entity_slugs(conn: kuzu.Connection) -> list[str]:
+    """All canonical (non-alias) entity slugs (canonical_id IS NULL; no status
+    filter). The denominator population for entity_reuse / connectivity /
+    belongs_to_coverage / link_density."""
+    result = conn.execute("MATCH (e:Entity) WHERE e.canonical_id IS NULL RETURN e.slug")
+    out: list[str] = []
+    while result.has_next():
+        out.append(result.get_next()[0])
+    return out
+
+
+def total_entity_count(conn: kuzu.Connection) -> int:
+    """Count of ALL Entity nodes (any status, alias or canonical). The
+    orphan_rate denominator."""
+    result = conn.execute("MATCH (e:Entity) RETURN count(e)")
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def canonical_nonsummary_supports_counts(conn: kuzu.Connection) -> list[int]:
+    """For each canonical (canonical_id IS NULL) non-summary (page_type !=
+    'summary') entity, the number of DISTINCT supporting Sources.
+
+    Returns one int per qualifying entity (0 for entities with no SUPPORTS).
+    Feeds entity_reuse (share with >= 2 distinct sources).
+    """
+    result = conn.execute(
+        "MATCH (e:Entity) "
+        "WHERE e.canonical_id IS NULL AND e.page_type <> 'summary' "
+        "OPTIONAL MATCH (s:Source)-[:SUPPORTS]->(e) "
+        "RETURN e.slug, count(DISTINCT s.source_id)"
+    )
+    out: list[int] = []
+    while result.has_next():
+        out.append(int(result.get_next()[1]))
+    return out
+
+
+def canonical_belongs_to_count(conn: kuzu.Connection) -> int:
+    """Count of canonical (canonical_id IS NULL) entities with >= 1 BELONGS_TO
+    edge. The belongs_to_coverage numerator."""
+    result = conn.execute(
+        "MATCH (e:Entity)-[:BELONGS_TO]->(:Domain) "
+        "WHERE e.canonical_id IS NULL "
+        "RETURN count(DISTINCT e.slug)"
+    )
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def total_source_count(conn: kuzu.Connection) -> int:
+    """Count of all Source nodes. Denominator for domain_null_rate +
+    supports_density."""
+    result = conn.execute("MATCH (s:Source) RETURN count(s)")
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def null_domain_source_count(conn: kuzu.Connection) -> int:
+    """Count of Sources whose domain is NULL or empty-string. The
+    domain_null_rate numerator."""
+    result = conn.execute(
+        "MATCH (s:Source) WHERE s.domain IS NULL OR s.domain = '' RETURN count(s)"
+    )
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def total_links_to_count(conn: kuzu.Connection) -> int:
+    """Count of all LINKS_TO edges. The link_density numerator."""
+    result = conn.execute("MATCH (:Entity)-[r:LINKS_TO]->(:Entity) RETURN count(r)")
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def total_supports_count(conn: kuzu.Connection) -> int:
+    """Count of all SUPPORTS edges. The supports_density numerator."""
+    result = conn.execute("MATCH (:Source)-[r:SUPPORTS]->(:Entity) RETURN count(r)")
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
+def distinct_domain_count(conn: kuzu.Connection) -> int:
+    """Count of distinct Domain nodes. The domain_breadth numerator."""
+    result = conn.execute("MATCH (d:Domain) RETURN count(d)")
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
 def outgoing_links_ordered(conn: kuzu.Connection, slug: str) -> list[str]:
     """Outgoing LINKS_TO target slugs of `slug`, ordered ascending by slug."""
     result = conn.execute(

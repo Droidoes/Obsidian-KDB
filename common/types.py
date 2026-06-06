@@ -432,6 +432,15 @@ class RespStatsRecord:
     syntax_repaired: bool = False               # rung-1 escaping rescued a parse
     slug_coerced: bool = False                  # rung-2 coercion rescued schema/semantic
     final_status: Optional[str] = None          # clean | repaired | retried-and-repaired | quarantined
+    # #109 Task 2: discarded-attempt aggregation.
+    # Aggregated across ALL Pass-2 loop attempts (including failed/discarded ones).
+    # For a 1-attempt run: totals == per-attempt values, call_count=1, final_attempt_index=1.
+    # Defaults to 0/1 so older persisted JSON without these fields still loads cleanly.
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_latency_ms: int = 0
+    call_count: int = 1                         # number of model calls made in the Pass-2 loop
+    final_attempt_index: int = 1                # loop attempt number that produced the winning record
 
     def to_dict(self) -> dict:
         d = asdict(self)

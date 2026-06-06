@@ -10,9 +10,11 @@ import pytest
 
 from compiler import compiler, prompt_builder
 from orchestrator import kdb_orchestrate
+import orchestrator.emit_kpis as _emit_kpis_mod
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
+from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileSourceResult
@@ -942,3 +944,172 @@ def test_run_limit_stops_after_n_compiled(tmp_path, monkeypatch):
     # manifest: only 1 of 2 sources is committed (second still has no record)
     manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
     assert len(manifest.get("sources", {})) == 1
+
+
+# ---------- Task #109 B1 delta #3: measurement_header.json at finalize ----------
+
+def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
+    """run() writes measurement_header.json to the run dir at finalize.
+
+    Setup: 1 signal source (AIML/a.md) + 1 noise source (noise/b.md via
+    force_noise pipeline rule).  Expected header:
+        scanned=2, to_compile=2, signal=1, noise=1,
+        p1_attempted=2, p2_attempted=1,
+        corpus_fingerprint = 64-hex sha256,
+        pass1_prompt_version = PASS1_PROMPT_VERSION,
+        pass2_prompt_version = "".
+    """
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    (vault / "noise").mkdir()
+    (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+
+    header_path = state_root / "runs" / res.run_id / "measurement_header.json"
+    assert header_path.exists(), f"measurement_header.json not found at {header_path}"
+
+    hdr = json.loads(header_path.read_text(encoding="utf-8"))
+    assert hdr["run_id"] == res.run_id
+    assert hdr["scanned"] == 2
+    assert hdr["to_compile"] == 2
+    assert hdr["signal"] == 1
+    assert hdr["noise"] == 1
+    assert hdr["p1_attempted"] == 2
+    assert hdr["p2_attempted"] == 1
+    # corpus_fingerprint: 64-char lowercase hex
+    fp = hdr["corpus_fingerprint"]
+    assert len(fp) == 64
+    assert all(c in "0123456789abcdef" for c in fp)
+    # prompt versions
+    assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
+    assert hdr["pass2_prompt_version"] == ""
+
+
+# ---------- Task #109: --emit-kpis writes benchmark/runs/<id>/measurements.json ----------
+
+def _setup_single_signal_vault(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Set up a vault with one signal source and monkeypatched LLM calls.
+
+    Returns (vault, state_root).
+    """
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+    return vault, state_root
+
+
+def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
+    """--emit-kpis writes benchmark/runs/<run_id>/measurements.json with
+    header (+ group_key), processing.scored, and graph.scored keys.
+    Redirected to tmp_path/benchmark/runs so it doesn't touch the real repo.
+    """
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    # Redirect benchmark/runs/ to tmp_path so no real repo files are written.
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="testprovider", model="testmodel",
+        max_tokens=4096, emit_kpis=True)
+
+    assert res.ok, res.exit_reason
+
+    mpath = bench_runs / res.run_id / "measurements.json"
+    assert mpath.exists(), f"measurements.json not found at {mpath}"
+
+    m = json.loads(mpath.read_text(encoding="utf-8"))
+
+    # Top-level keys
+    assert "header" in m
+    assert "processing" in m
+    assert "graph" in m
+
+    # header must have group_key
+    hdr = m["header"]
+    assert "group_key" in hdr
+    assert hdr["group_key"].startswith("testprovider:testmodel:")
+    assert hdr["run_id"] == res.run_id
+
+    # processing must have scored sub-key
+    assert "scored" in m["processing"]
+
+    # graph must have scored sub-key
+    assert "scored" in m["graph"]
+
+
+def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):
+    """Without --emit-kpis, no measurements.json is written anywhere."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    # Redirect so if anything is accidentally written we can detect it.
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m",
+        max_tokens=4096, emit_kpis=False)
+
+    assert res.ok, res.exit_reason
+
+    mpath = bench_runs / res.run_id / "measurements.json"
+    assert not mpath.exists(), "measurements.json must NOT be written without --emit-kpis"
+
+
+def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):
+    """When all sources are quarantined (finalize skipped), emit-kpis does not crash."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        lambda req: (_ for _ in ()).throw(RuntimeError("model down")))
+
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m",
+        max_tokens=4096, emit_kpis=True)
+
+    # Run still OK (quarantined) — emit-kpis gracefully skipped, no file
+    assert res.ok, res.exit_reason
+    assert res.finalize is None   # finalize was skipped
+    assert not any(bench_runs.rglob("measurements.json"))
+
+
+def test_cli_emit_kpis_flag_parsed(tmp_path):
+    """--emit-kpis is parsed as True by the CLI argument parser."""
+    args = kdb_orchestrate._build_parser().parse_args([
+        "--vault-root", str(tmp_path), "--emit-kpis",
+    ])
+    assert args.emit_kpis is True
+
+
+def test_cli_emit_kpis_default_false(tmp_path):
+    """--emit-kpis defaults to False (opt-in, normal runs unaffected)."""
+    args = kdb_orchestrate._build_parser().parse_args([
+        "--vault-root", str(tmp_path),
+    ])
+    assert args.emit_kpis is False

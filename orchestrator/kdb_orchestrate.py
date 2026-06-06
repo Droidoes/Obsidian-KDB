@@ -18,6 +18,8 @@ and writes last_orchestrate.json.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import json
 import sys
 from dataclasses import dataclass, field
@@ -42,8 +44,11 @@ from orchestrator.orchestrator_events import (
     OrchestratorLogLevel,
     check_orchestrator_invariant,
 )
+from common.measurement import RunMeasurementHeader
 from common.run_context import RunContext, now_iso
+from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
+from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 
 MANIFEST_NAME = "manifest.json"
 
@@ -451,6 +456,17 @@ def _event_alarm_counts(recorder: EventRecorder) -> dict:
     }
 
 
+def _corpus_fingerprint(scan_files) -> str:
+    """sha256 of the sorted {source_id: content_hash} mapping.
+
+    Covers all scanned files (not just to_compile) so corpus identity
+    reflects the full pipeline scope, including unchanged sources.
+    """
+    mapping = {e.path: e.current_hash for e in scan_files}
+    payload = json.dumps(sorted(mapping.items())).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _check_invariant(
     condition: bool,
     *,
@@ -476,7 +492,7 @@ def run(
     *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
     limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
-    quiet: bool = False,
+    quiet: bool = False, emit_kpis: bool = False,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Source-local failures are quarantined
@@ -520,6 +536,7 @@ def run(
     abort: tuple[str, str, str | None] | None = None   # (stage, source_id, error)
     crashed_reason: str | None = None
     limit_reached: bool = False
+    p1_attempted: int = 0    # sources that entered the Pass-1 enrich step
 
     # Scan needs no graph — do it first so --dry-run can preview without opening
     # (or mutating) the graph and without firing any API call.
@@ -584,6 +601,7 @@ def run(
 
             # --- compile queue: NEW/CHANGED (+ MOVED+CHANGED) ---
             for source_id in scan.to_compile:
+                p1_attempted += 1
                 scan_entry = files_by_id[source_id]
                 recorder.record(
                     stage="source", event_type="source_started", severity="info",
@@ -919,6 +937,39 @@ def run(
             event_log_failed=recorder.event_log_failed,
             quarantined_sources=quarantined_sources,
             **alarm_counts)
+        # B1 delta #3 — write measurement_header.json to the run dir.
+        # Pass-2 has no named prompt-version constant (uses prompt_hash at runtime);
+        # pass2_prompt_version is "" per the PassCallMeasurement.from_pass2() contract.
+        signal = counts["sources_enriched"] - counts["sources_noise"]
+        header = RunMeasurementHeader(
+            run_id=ctx.run_id,
+            corpus_fingerprint=_corpus_fingerprint(scan.files),
+            pass1_prompt_version=PASS1_PROMPT_VERSION,
+            pass2_prompt_version="",
+            scanned=counts["sources_scanned"],
+            to_compile=len(scan.to_compile),
+            signal=signal,
+            noise=counts["sources_noise"],
+            p1_attempted=p1_attempted,
+            p2_attempted=signal,
+        )
+        run_dir = runs_root / ctx.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(run_dir / "measurement_header.json", dataclasses.asdict(header))
+        # --emit-kpis: compute + write benchmark/runs/<run_id>/measurements.json.
+        # Gated: finalize must have run (compile_result.json exists); wrapped in
+        # try/except inside maybe_emit_kpis so a failure NEVER aborts the run.
+        maybe_emit_kpis(
+            emit_kpis=emit_kpis,
+            run_id=ctx.run_id,
+            run_dir=run_dir,
+            graph_path=graph_path,
+            state_root=state_root,
+            provider=provider,
+            model=model,
+            header=header,
+            finalize_ran=finalize_stats is not None,
+        )
 
     return OrchestrateResult(
         run_id=ctx.run_id, exit_code=exit_code, exit_reason=exit_reason,
@@ -962,6 +1013,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quiet", action="store_true",
                    help="suppress the live stdout progress narrative "
                         "(the final report and event log are unaffected)")
+    p.add_argument("--emit-kpis", action="store_true",
+                   help="benchmark mode: after the run finalizes, compute KPIs and "
+                        "write benchmark/runs/<run_id>/measurements.json. "
+                        "Normal runs are unaffected when this flag is absent.")
     return p
 
 
@@ -992,7 +1047,8 @@ def main(argv: list[str] | None = None) -> int:
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
         graph_path=graph_path, provider=args.provider, model=args.model,
         max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit,
-        log_level=_resolve_log_level(args), quiet=args.quiet)
+        log_level=_resolve_log_level(args), quiet=args.quiet,
+        emit_kpis=args.emit_kpis)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")

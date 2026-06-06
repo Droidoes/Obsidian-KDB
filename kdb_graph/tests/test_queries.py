@@ -352,3 +352,164 @@ def test_shortest_path_runtime_guard(graph_dir):
         f"shortest_path('a','d') on 4-node chain took {elapsed:.3f}s "
         f"(threshold 0.1s) — runtime regression"
     )
+
+
+# ---------- #109: GRAPH-family KPI read primitives ----------
+#
+# Hand-rolled graphs (raw conn.execute) following the established
+# test_canonicalization_invariants pattern — the precise mix of canonical /
+# alias / orphan entities, SUPPORTS multiplicity, BELONGS_TO, and null-domain
+# sources cannot be produced through apply_compile_result without fighting the
+# ingestion derivations.
+
+from kdb_graph import queries as _q
+
+
+def _mk_entity(conn, slug, *, canonical_id="NULL", page_type="concept",
+               status="active"):
+    cid = "NULL" if canonical_id == "NULL" else f"'{canonical_id}'"
+    conn.execute(
+        f"CREATE (e:Entity {{slug: '{slug}', canonical_id: {cid}, "
+        f"title: '', page_type: '{page_type}', status: '{status}', "
+        f"confidence: '', created_at: '2026-06-05', updated_at: '2026-06-05', "
+        f"first_run_id: 'm', last_run_id: 'm'}})"
+    )
+
+
+def _mk_source(conn, sid, *, domain="'finance'"):
+    conn.execute(
+        f"CREATE (s:Source {{source_id: '{sid}', source_type: 'file', "
+        f"canonical_path: '{sid}', status: 'active', file_type: 'markdown', "
+        f"hash: 'h', size_bytes: 1, first_seen_at: '', last_seen_at: '', "
+        f"last_ingested_at: '', ingest_state: '', ingest_count: 1, "
+        f"last_run_id: 'm', moved_to: '', summary: '', author: '', "
+        f"domain: {domain}}})"
+    )
+
+
+def _mk_supports(conn, sid, slug):
+    conn.execute(
+        f"MATCH (s:Source {{source_id: '{sid}'}}), (e:Entity {{slug: '{slug}'}}) "
+        f"CREATE (s)-[:SUPPORTS {{role: '', hash_at_time: '', run_id: 'm', "
+        f"created_at: ''}}]->(e)"
+    )
+
+
+def _seed_kpi_graph(gdb):
+    """Canonical: alpha, beta, gamma, summary-x (summary), orphan-z.
+    Alias: aapl -> apple-inc? No — alias targets alpha. Sources: s1 (finance),
+    s2 (finance), s3 (NULL domain). Domain: finance with BELONGS_TO from alpha.
+    SUPPORTS: alpha<-s1,s2 (reuse); beta<-s1; gamma<-(none).
+    """
+    c = gdb.conn
+    _mk_entity(c, "alpha")
+    _mk_entity(c, "beta")
+    _mk_entity(c, "gamma")
+    _mk_entity(c, "summary-x", page_type="summary")
+    _mk_entity(c, "orphan-z", status="orphan_candidate")
+    # alias entity pointing at alpha (canonical_id set + ALIAS_OF edge)
+    _mk_entity(c, "alpha-alias", canonical_id="alpha", page_type="alias",
+               status="active")
+    c.execute(
+        "MATCH (a:Entity {slug: 'alpha-alias'}), (b:Entity {slug: 'alpha'}) "
+        "CREATE (a)-[:ALIAS_OF {run_id: 'm', created_at: '', algorithm: 'l'}]->(b)"
+    )
+    # sources
+    _mk_source(c, "s1")
+    _mk_source(c, "s2")
+    _mk_source(c, "s3", domain="NULL")
+    _mk_supports(c, "s1", "alpha")
+    _mk_supports(c, "s2", "alpha")
+    _mk_supports(c, "s1", "beta")
+    # Domain + BELONGS_TO (alpha only)
+    c.execute("CREATE (d:Domain {name: 'finance', created_at: '', first_run_id: 'm'})")
+    c.execute(
+        "MATCH (e:Entity {slug: 'alpha'}), (d:Domain {name: 'finance'}) "
+        "CREATE (e)-[:BELONGS_TO {run_id: 'm', created_at: '', support_count: 2}]->(d)"
+    )
+    # LINKS_TO: alpha -> beta (both canonical)
+    c.execute(
+        "MATCH (a:Entity {slug: 'alpha'}), (b:Entity {slug: 'beta'}) "
+        "CREATE (a)-[:LINKS_TO {run_id: 'm', created_at: ''}]->(b)"
+    )
+
+
+def test_active_canonical_entity_slugs(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        slugs = _q.active_canonical_entity_slugs(gdb.conn)
+    # active + canonical_id IS NULL: alpha, beta, gamma, summary-x.
+    # Excludes alpha-alias (canonical_id set) and orphan-z (status != active).
+    assert slugs == {"alpha", "beta", "gamma", "summary-x"}
+
+
+def test_canonical_entity_slugs(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        slugs = set(_q.canonical_entity_slugs(gdb.conn))
+    # canonical_id IS NULL (any status): includes orphan-z, excludes alias.
+    assert slugs == {"alpha", "beta", "gamma", "summary-x", "orphan-z"}
+
+
+def test_total_entity_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        n = _q.total_entity_count(gdb.conn)
+    # 5 canonical + 1 alias = 6
+    assert n == 6
+
+
+def test_canonical_nonsummary_supports_counts(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        counts = sorted(_q.canonical_nonsummary_supports_counts(gdb.conn))
+    # canonical non-summary: alpha(2), beta(1), gamma(0), orphan-z(0).
+    # summary-x excluded (summary); alias excluded (canonical_id set).
+    assert counts == [0, 0, 1, 2]
+
+
+def test_canonical_belongs_to_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        n = _q.canonical_belongs_to_count(gdb.conn)
+    assert n == 1  # only alpha
+
+
+def test_total_source_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        assert _q.total_source_count(gdb.conn) == 3
+
+
+def test_null_domain_source_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        assert _q.null_domain_source_count(gdb.conn) == 1  # s3
+
+
+def test_total_links_to_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        assert _q.total_links_to_count(gdb.conn) == 1  # alpha->beta
+
+
+def test_total_supports_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        assert _q.total_supports_count(gdb.conn) == 3  # s1->alpha, s2->alpha, s1->beta
+
+
+def test_distinct_domain_count(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed_kpi_graph(gdb)
+        assert _q.distinct_domain_count(gdb.conn) == 1  # finance
+
+
+def test_null_domain_counts_empty_string(graph_dir):
+    """Empty-string domain counts as null per domain_null_rate spec."""
+    with GraphDB(graph_dir) as gdb:
+        c = gdb.conn
+        _mk_source(c, "s-empty", domain="''")
+        _mk_source(c, "s-full", domain="'tech'")
+        n = _q.null_domain_source_count(c)
+    assert n == 1  # s-empty

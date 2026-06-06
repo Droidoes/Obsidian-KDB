@@ -1,4 +1,4 @@
-"""kdb-benchmark CLI — Tasks #30 / #31 / #22 / #33 / #42 / #46 orchestrator.
+"""kdb-benchmark CLI — Tasks #30 / #31 / #22 / #33 / #42 / #46 / #109 orchestrator.
 
 Usage:
   kdb-benchmark --models <model_id> \\
@@ -9,9 +9,22 @@ Usage:
                 [--max-tokens 32768] \\
                 [--no-merge]
 
+  kdb-benchmark score <run_id> [<run_id> ...] \\
+                [--runs-root benchmark/runs] \\
+                [--scores-dir benchmark/scores]
+
 Single-model invocation (Task #46): `--models` accepts ONE model_id.
 Multi-model comparison happens via cross-run merge (Task #42) — fire each
 model separately and the latest final scorecard accumulates the union.
+
+score subcommand (Task #109):
+  Load one or more measurements.json files produced by kdb-orchestrate
+  --emit-kpis.  All runs must share the same corpus_fingerprint (same
+  source corpus) — a mismatch aborts with an error.  Where multiple runs
+  share a group_key the latest (lexically-greatest run_id) is kept; others
+  are skipped and reported.  Computes cross-model Borda composite over the
+  merged scored KPIs and writes benchmark/scores/<scorecard_id>.json plus a
+  rendered terminal table.
 
 Flow:
   1. Print config header (provider/model, ctx, --max-tokens, prices, sources)
@@ -35,6 +48,7 @@ Exit code: 0 on success, non-zero on user error / runtime failure.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -54,6 +68,7 @@ from tools.benchmark.scorecard import (
 from dataclasses import replace
 
 from tools.benchmark.scorer import RunScore, score_run, score_runs
+from common.run_context import now_iso
 
 
 _DEFAULT_SYSTEM_PROMPT = Path.home() / "Obsidian" / "KDB" / "KDB-Compiler-System-Prompt.md"
@@ -188,7 +203,301 @@ def _merge_with_prior_final(
     return enriched_active, dropped, source_map, dropped_reasons
 
 
+# ---------------------------------------------------------------------------
+# score subcommand (Task #109)
+# ---------------------------------------------------------------------------
+
+def _build_score_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="kdb-benchmark score",
+        description=(
+            "Cross-model Borda scoring over measurements.json files from "
+            "kdb-orchestrate --emit-kpis runs. All supplied runs must share "
+            "the same corpus_fingerprint; latest run per group_key wins "
+            "(tie-break: lexical-max of run_id, which is timestamp-prefixed)."
+        ),
+    )
+    p.add_argument(
+        "run_ids",
+        nargs="+",
+        metavar="RUN_ID",
+        help="One or more run_ids (directory names under --runs-root).",
+    )
+    p.add_argument(
+        "--runs-root",
+        type=Path,
+        default=RUNS_DIR,
+        help=f"Where per-run benchmark outputs land (default: {RUNS_DIR})",
+    )
+    p.add_argument(
+        "--scores-dir",
+        type=Path,
+        default=SCORES_DIR,
+        help=f"Where cross-model scorecards are written (default: {SCORES_DIR})",
+    )
+    return p
+
+
+def _render_score_table(borda_result: dict, diagnostics_by_model: dict) -> str:
+    """Render a terminal table for the score subcommand.
+
+    Columns: rank | group_key | <scored KPI columns> | composite
+    Followed by a diagnostics/watched section for human inspection.
+    """
+    per_model = borda_result["per_model"]
+    weights = borda_result["weights"]
+    all_kpis = list(weights.keys())
+
+    # Sort models by composite descending
+    ranked = sorted(
+        per_model.items(),
+        key=lambda kv: (-(kv[1]["composite"] or 0.0),),
+    )
+
+    lines: list[str] = []
+    lines.append("=" * 100)
+    lines.append(
+        f"Cross-model Borda scorecard  "
+        f"(weights: equal — post-run-1 calibration not yet applied)"
+    )
+    lines.append("=" * 100)
+
+    # Header row
+    kpi_header = "  ".join(f"{k:>22}" for k in all_kpis)
+    lines.append(
+        f"{'rank':>4}  {'group_key':<36}  {kpi_header}  {'composite':>9}"
+    )
+    lines.append("-" * 100)
+
+    for i, (gk, entry) in enumerate(ranked, start=1):
+        per_kpi = entry["per_kpi_borda"]
+        kpi_cells = "  ".join(
+            f"{per_kpi[k]:.4f}" if per_kpi[k] is not None else "   n/a"
+            for k in all_kpis
+        )
+        # Each cell is right-justified to 22 chars
+        kpi_cells = "  ".join(
+            f"{(f'{per_kpi[k]:.4f}' if per_kpi[k] is not None else 'n/a'):>22}"
+            for k in all_kpis
+        )
+        composite_str = f"{entry['composite']:.4f}"
+        lines.append(
+            f"{i:>4}  {gk:<36}  {kpi_cells}  {composite_str:>9}"
+        )
+
+    # Diagnostics/watched section
+    if diagnostics_by_model:
+        lines.append("")
+        lines.append("Diagnostics / watched (not ranked, for inspection only):")
+        # Collect all diag/watched KPI names
+        all_diag: list[str] = []
+        seen_d: set[str] = set()
+        for vals in diagnostics_by_model.values():
+            for k in vals:
+                if k not in seen_d:
+                    all_diag.append(k)
+                    seen_d.add(k)
+        diag_header = "  ".join(f"{k:>24}" for k in all_diag)
+        lines.append(f"  {'group_key':<36}  {diag_header}")
+        lines.append("  " + "-" * 90)
+        for gk, vals in sorted(diagnostics_by_model.items()):
+            cells = "  ".join(
+                f"{(f'{vals[k]:.4f}' if (k in vals and vals[k] is not None) else 'n/a'):>24}"
+                for k in all_diag
+            )
+            lines.append(f"  {gk:<36}  {cells}")
+
+    lines.append("")
+    lines.append(
+        "NOTE: composite is comparable ONLY within this candidate set "
+        "(average-rank Borda — adding/removing a candidate shifts ranks)."
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _score_command(argv: list[str]) -> int:
+    """Implement the `score` subcommand (Task #109).
+
+    Tie-break policy: when multiple run_ids share the same group_key,
+    keep the one with the lexically GREATEST run_id.  Run IDs are
+    timestamp-prefixed (YYYY-MM-DDTHH-MM-SS_TZ format), so lexical-max
+    equals chronologically-latest.
+
+    Epsilon / quantile method: defined in promotion.py (EPSILON = 1e-3,
+    method="inclusive") — not used here; score_command carries diagnostics
+    and watched KPI values for human reading but promotion is a separate
+    tool.
+    """
+    from compiler.kpi.score import borda_score
+
+    parser = _build_score_parser()
+    args = parser.parse_args(argv)
+
+    runs_root: Path = args.runs_root
+    scores_dir: Path = args.scores_dir
+
+    # --- Load measurements.json for each run_id ---
+    loaded: list[dict] = []  # {"run_id", "group_key", "corpus_fingerprint", "measurements"}
+    for run_id in args.run_ids:
+        mpath = runs_root / run_id / "measurements.json"
+        if not mpath.exists():
+            print(
+                f"error: measurements.json not found for run_id '{run_id}' "
+                f"(expected: {mpath})",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            data = json.loads(mpath.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(
+                f"error: failed to parse {mpath}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+
+        header = data.get("header", {})
+        group_key = header.get("group_key")
+        corpus_fp = header.get("corpus_fingerprint")
+        if not group_key:
+            print(
+                f"error: run_id '{run_id}': measurements.json missing "
+                f"header.group_key",
+                file=sys.stderr,
+            )
+            return 1
+        if not corpus_fp:
+            print(
+                f"error: run_id '{run_id}': measurements.json missing "
+                f"header.corpus_fingerprint",
+                file=sys.stderr,
+            )
+            return 1
+
+        loaded.append({
+            "run_id": run_id,
+            "group_key": group_key,
+            "corpus_fingerprint": corpus_fp,
+            "measurements": data,
+        })
+
+    if not loaded:
+        print("error: no valid runs loaded", file=sys.stderr)
+        return 1
+
+    # --- GATE: all runs must share the same corpus_fingerprint ---
+    fingerprints = {r["corpus_fingerprint"] for r in loaded}
+    if len(fingerprints) > 1:
+        details = "\n".join(
+            f"  {r['run_id']}: {r['corpus_fingerprint']}" for r in loaded
+        )
+        print(
+            f"error: corpus_fingerprint mismatch — all runs must come from the "
+            f"same source corpus to be comparable.\n{details}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # --- Keep latest run per group_key (lexical-max run_id) ---
+    # Tie-break: run_ids are timestamp-prefixed → lexical-max = latest.
+    best_by_group: dict[str, dict] = {}
+    skipped: list[tuple[str, str]] = []  # (run_id, group_key)
+
+    for entry in loaded:
+        gk = entry["group_key"]
+        if gk not in best_by_group:
+            best_by_group[gk] = entry
+        else:
+            prior_run_id = best_by_group[gk]["run_id"]
+            if entry["run_id"] > prior_run_id:
+                skipped.append((prior_run_id, gk))
+                best_by_group[gk] = entry
+            else:
+                skipped.append((entry["run_id"], gk))
+
+    if skipped:
+        for skipped_id, gk in skipped:
+            print(
+                f"[score] skipped {skipped_id} (superseded by later run for "
+                f"group_key '{gk}')"
+            )
+
+    active_entries = list(best_by_group.values())
+
+    # --- Build models list for borda_score ---
+    # scored = {**processing["scored"], **graph["scored"]}
+    # Key overlap check: processing scored keys:
+    #   quarantine_rate, intervention_burden, latency
+    # graph scored keys:
+    #   dangling_link_rate
+    # No overlap in current schema.
+    models: list[dict] = []
+    diagnostics_by_model: dict[str, dict] = {}
+
+    for entry in active_entries:
+        meas = entry["measurements"]
+        processing = meas.get("processing", {})
+        graph = meas.get("graph", {})
+
+        p_scored = processing.get("scored", {}) or {}
+        g_scored = graph.get("scored", {}) or {}
+        merged_scored: dict[str, float | None] = {**p_scored, **g_scored}
+
+        models.append({
+            "group_key": entry["group_key"],
+            "scored": merged_scored,
+        })
+
+        # Carry diagnostics + watched for human reading (not ranked)
+        p_diag = processing.get("diagnostic", {}) or {}
+        g_diag = graph.get("diagnostic", {}) or {}
+        g_watched = graph.get("watched", {}) or {}
+        combined_diag: dict[str, float | None] = {**p_diag, **g_diag, **g_watched}
+        diagnostics_by_model[entry["group_key"]] = combined_diag
+
+    # --- Run borda_score (equal weights — calibration is post-run-1) ---
+    borda_result = borda_score(models, weights=None)
+
+    # --- Write scorecard JSON ---
+    scorecard_id = now_iso().replace(":", "-")
+    payload: dict = {
+        "scorecard_id": scorecard_id,
+        "emitted_at": now_iso(),
+        "corpus_fingerprint": next(iter(fingerprints)),
+        "candidate_set": sorted(best_by_group.keys()),
+        "borda": borda_result,
+        "diagnostics_by_model": diagnostics_by_model,
+        "run_ids_used": {gk: e["run_id"] for gk, e in best_by_group.items()},
+    }
+
+    scores_dir.mkdir(parents=True, exist_ok=True)
+    out_path = scores_dir / f"{scorecard_id}.json"
+    out_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    # --- Render table ---
+    table = _render_score_table(borda_result, diagnostics_by_model)
+    print(table)
+    print(f"scorecard written: {out_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Entry point — dispatches to 'score' subcommand or legacy run path."""
+    effective = list(sys.argv[1:] if argv is None else argv)
+
+    # Dispatch: if the first positional token is 'score', route there.
+    # This preserves the flat --models legacy path byte-for-byte.
+    if effective and effective[0] == "score":
+        return _score_command(effective[1:])
+
+    return _main_run(effective)
+
+
+def _main_run(argv: list[str] | None = None) -> int:
+    """Original kdb-benchmark run logic (formerly `main`)."""
     args = _build_parser().parse_args(argv)
     model_ids = [m.strip() for m in args.models.split(",") if m.strip()]
     if not model_ids:
@@ -233,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"[{model_id}] config: {entry.provider}/{entry.model}  "
             f"ctx_window={entry.ctx_window}  --max-tokens={args.max_tokens}  "
-            f"prices=${entry.price_in}/${entry.price_out}/1M-tok"
+            f"prices=${entry.price_in}/{entry.price_out}/1M-tok"
         )
     print(f"[{model_id}] sources: {args.sources}")
     print(f"[{model_id}] running benchmark...", flush=True)
