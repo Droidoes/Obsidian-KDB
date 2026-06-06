@@ -14,12 +14,24 @@ Provides:
 
 Direction table
 ---------------
-Every KPI in the current scored set is lower-is-better (↓):
-  quarantine_rate, intervention_burden, latency   (processing.py)
-  dangling_link_rate                            (graph.py)
+Scored KPIs and their ranking direction (§6, 2026-06-06):
+  quarantine_rate, recovery_rate, latency                  (processing, ↓ lower better)
+  entity_reuse, graph_connectivity, link_density, supports_density  (graph, ↑ higher better)
 
-The ``KPI_LOWER_IS_BETTER`` lookup is the extension point: add a new KPI with
-``False`` to register it as higher-is-better without touching any other code.
+The ``KPI_LOWER_IS_BETTER`` lookup is the extension point: register a KPI with
+``False`` for higher-is-better or ``True`` for lower-is-better, without touching
+any other code — borda_normalize absorbs direction via ``reverse=not lower_is_better``.
+
+Scoring
+-------
+``score_models`` is the §6 hierarchical scorer: per-KPI Borda → combined
+graph_score (``GRAPH_WEIGHTS``) → top-level composite (``TOP_WEIGHTS`` =
+quarantine 40 / graph 40 / recovery 10 / latency 10). Hierarchical (not a flat
+7-KPI weighted sum) so the 40/40/10/10 split holds EXACTLY even when a model is
+missing a scored KPI — a missing graph KPI renormalizes within graph_score, not
+across the whole composite. Weight VALUES are a rationale-based starting point
+tuned with multi-model data; the weighting MECHANISM is the deliverable.
+``borda_score`` remains the per-KPI Borda engine that ``score_models`` builds on.
 """
 from __future__ import annotations
 
@@ -28,13 +40,118 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 KPI_LOWER_IS_BETTER: dict[str, bool] = {
-    # PROCESSING-family scored KPIs
+    # PROCESSING-family scored KPIs (↓ lower-is-better)
     "quarantine_rate":      True,
-    "intervention_burden":  True,
+    "recovery_rate":        True,
     "latency":              True,
-    # GRAPH-family scored KPIs
-    "dangling_link_rate": True,
+    # GRAPH-family scored KPIs (↑ higher-is-better) — components of the
+    # combined graph score; no single one suffices (see compiler.kpi.graph).
+    "entity_reuse":         False,
+    "graph_connectivity":   False,
+    "link_density":         False,
+    "supports_density":     False,
 }
+
+# Top-level composite weights — §6 calibration STARTING point (2026-06-06).
+# HIERARCHICAL: the four scored graph KPIs first combine into one graph_score
+# (GRAPH_WEIGHTS), then graph_score enters the composite as a single 40% term
+# alongside the processing KPIs. This honors 40/40/10/10 EXACTLY even when a
+# model is missing a scored KPI (pro-rata happens within each family, not across
+# the flat 7) — see score_models. Sum = 1.0.
+TOP_WEIGHTS: dict[str, float] = {
+    "quarantine_rate": 0.40,
+    "recovery_rate":   0.10,
+    "latency":         0.10,
+    "graph":           0.40,   # the combined graph score (see GRAPH_WEIGHTS)
+}
+
+# Within-graph weights for the combined graph score (sum to 1.0).
+GRAPH_WEIGHTS: dict[str, float] = {
+    "graph_connectivity": 0.35,
+    "link_density":       0.30,
+    "supports_density":   0.20,
+    "entity_reuse":       0.15,
+}
+
+# The processing KPIs that enter the composite directly (TOP_WEIGHTS keys minus
+# the synthetic "graph" term).
+_PROCESSING_KPIS = ("quarantine_rate", "recovery_rate", "latency")
+
+
+def combined_graph_score(per_kpi_borda: dict) -> float | None:
+    """Synthesize the four graph KPIs' Borda values into one graph-quality score.
+
+    ``per_kpi_borda`` is a model's ``{kpi: borda_value|None}`` map (from
+    ``borda_score(...)["per_model"][model]["per_kpi_borda"]``). Returns the
+    GRAPH_WEIGHTS-weighted mean over the *present* (non-None) graph KPIs
+    (pro-rata), in [0, 1], higher = better. None when the model has no graph
+    KPI present.
+    """
+    num = 0.0
+    den = 0.0
+    for kpi, w in GRAPH_WEIGHTS.items():
+        b = per_kpi_borda.get(kpi)
+        if b is not None:
+            num += w * b
+            den += w
+    return num / den if den > 0 else None
+
+
+def _hierarchical_composite(per_kpi_borda: dict, graph_score: float | None) -> float:
+    """Top-level weighted composite from the processing-KPI Borda values + the
+    combined graph_score, using TOP_WEIGHTS. Pro-rata over *present* top-level
+    terms (a None processing KPI or a None graph_score drops only its own term),
+    so the family split stays faithful (graph is 40% of whatever's present)
+    rather than redistributing a missing graph KPI's weight onto quarantine.
+    Returns 0.0 when nothing is present.
+    """
+    num = 0.0
+    den = 0.0
+    for kpi in _PROCESSING_KPIS:
+        b = per_kpi_borda.get(kpi)
+        if b is not None:
+            num += TOP_WEIGHTS[kpi] * b
+            den += TOP_WEIGHTS[kpi]
+    if graph_score is not None:
+        num += TOP_WEIGHTS["graph"] * graph_score
+        den += TOP_WEIGHTS["graph"]
+    return num / den if den > 0 else 0.0
+
+
+def score_models(models: list[dict]) -> dict:
+    """Hierarchical benchmark scorer (§6).
+
+    1. per-KPI Borda-normalize every scored KPI across the cohort (via
+       borda_score — weight-independent ranks).
+    2. combine the four graph KPIs → one graph_score per model (GRAPH_WEIGHTS).
+    3. composite = top-level weighted sum of the processing Borda values +
+       graph_score (TOP_WEIGHTS = quarantine 40 / graph 40 / recovery 10 /
+       latency 10), pro-rata within family.
+
+    Returns::
+
+        {
+          "per_model": { model: {"composite", "graph_score", "per_kpi_borda"} },
+          "top_weights":   TOP_WEIGHTS,
+          "graph_weights": GRAPH_WEIGHTS,
+        }
+    """
+    base = borda_score(models)  # only per_kpi_borda is used (weight-independent)
+    per_model: dict[str, dict] = {}
+    for m in models:
+        slug = m["model"]
+        pkb = base["per_model"][slug]["per_kpi_borda"]
+        gscore = combined_graph_score(pkb)
+        per_model[slug] = {
+            "composite": _hierarchical_composite(pkb, gscore),
+            "graph_score": gscore,
+            "per_kpi_borda": pkb,
+        }
+    return {
+        "per_model": per_model,
+        "top_weights": dict(TOP_WEIGHTS),
+        "graph_weights": dict(GRAPH_WEIGHTS),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -133,14 +250,15 @@ def borda_score(
         List of per-model records, each::
 
             {
-                "group_key": str,          # unique model identifier
+                "model": str,              # unique model slug (the identifier)
                 "scored": {
                     kpi_name: float | None,  # None = model absent from this KPI
                     ...
                 },
             }
 
-        ``group_key`` is the identifier used in the returned dict.  A model
+        ``model`` is the unique model slug used as the identifier in the
+        returned dict (one row per model — no provider grouping).  A model
         whose value for a KPI is None is excluded from that KPI's ranking
         (Borda-normalize drops it), but still receives a composite from the
         remaining KPIs it participated in.
@@ -158,7 +276,7 @@ def borda_score(
 
         {
             "per_model": {
-                group_key: {
+                model_slug: {
                     "composite": float,           # weighted Borda sum, normalised
                     "per_kpi_borda": {
                         kpi_name: float | None,   # None = dropped from that KPI
@@ -204,7 +322,7 @@ def borda_score(
             kpi: SimpleNamespace(rate=scored.get(kpi))
             for kpi in all_kpis
         }
-        return SimpleNamespace(model_id=m["group_key"], measures=measures)
+        return SimpleNamespace(model_id=m["model"], measures=measures)
 
     shims = [_make_shim(m) for m in models]
 
@@ -217,12 +335,12 @@ def borda_score(
     # Build per-model composite (pro-rata weighted sum).
     per_model: dict[str, dict] = {}
     for m in models:
-        gk = m["group_key"]
+        slug = m["model"]
         per_kpi_borda: dict[str, float | None] = {}
         score_sum = 0.0
         present_weights = 0.0
         for kpi in all_kpis:
-            borda_val = per_kpi_results[kpi].get(gk)  # None if dropped
+            borda_val = per_kpi_results[kpi].get(slug)  # None if dropped
             per_kpi_borda[kpi] = borda_val
             if borda_val is not None:
                 w = effective_weights[kpi]
@@ -230,7 +348,7 @@ def borda_score(
                 present_weights += w
 
         composite = score_sum / present_weights if present_weights > 0.0 else 0.0
-        per_model[gk] = {
+        per_model[slug] = {
             "composite": composite,
             "per_kpi_borda": per_kpi_borda,
         }

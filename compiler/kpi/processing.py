@@ -26,10 +26,11 @@ def compute_processing(
     Returns
     -------
     dict with exactly two keys:
-      "scored"     — {"quarantine_rate", "intervention_burden", "latency"}
+      "scored"     — {"quarantine_rate", "recovery_rate", "latency"}
       "diagnostic" — {"retry_load", "token_overrun_rate", "repair_rung_rate",
                       "semantic_pass_rate", "signal_noise_ratio",
-                      "quarantine_rate_pass1", "quarantine_rate_pass2"}
+                      "quarantine_rate_pass1", "quarantine_rate_pass2",
+                      "latency_pass1", "latency_pass2"}
 
     All per-token rates are None when the relevant token denominator is 0.
     retry_load is None when N == 0.
@@ -56,18 +57,24 @@ def compute_processing(
 
     n_quarantined = sum(1 for c in calls if c.final_status == "quarantined")
 
-    # Intervention: non-quarantined survivors only; disjoint from quarantine set.
-    n_intervention = sum(
+    # recovery_rate: non-quarantined survivors that needed RETRY or REPAIR to
+    # succeed (syntax_repaired ∨ slug_coerced = repair; attempts>1 = retry).
+    # token_overrun is NOT counted here — it's degraded-survival, not
+    # retry/repair, and lives as its own diagnostic (token_overrun_rate).
+    # Disjoint from the quarantine set (survivors only → no double-count).
+    n_recovery = sum(
         1 for c in calls
         if c.final_status != "quarantined"
-        and (c.syntax_repaired or c.slug_coerced or c.attempts > 1 or c.token_overrun)
+        and (c.syntax_repaired or c.slug_coerced or c.attempts > 1)
     )
 
     total_latency_ms = sum(c.total_latency_ms for c in calls)
+    latency_ms_pass1 = sum(c.total_latency_ms for c in pass1_calls)
+    latency_ms_pass2 = sum(c.total_latency_ms for c in pass2_calls)
 
     scored: dict = {
         "quarantine_rate": _rate(n_quarantined, T),
-        "intervention_burden": _rate(n_intervention, T),
+        "recovery_rate": _rate(n_recovery, T),
         "latency": _rate(total_latency_ms, T),
     }
 
@@ -112,6 +119,10 @@ def compute_processing(
         "signal_noise_ratio": signal_noise_ratio,
         "quarantine_rate_pass1": _rate(n_quar_pass1, T_pass1),
         "quarantine_rate_pass2": _rate(n_quar_pass2, T_pass2),
+        # Per-pass latency split (ms per 1M tokens of that pass) — combined
+        # `latency` stays the scored KPI; these isolate where time is spent.
+        "latency_pass1": _rate(latency_ms_pass1, T_pass1),
+        "latency_pass2": _rate(latency_ms_pass2, T_pass2),
     }
 
     return {"scored": scored, "diagnostic": diagnostic}

@@ -25,6 +25,7 @@ from common.atomic_io import atomic_write_json
 from common.measurement import RunMeasurementHeader, load_run_measurements
 from compiler.kpi.processing import compute_processing
 from compiler.kpi.graph import compute_graph
+from compiler.kpi.report import render_report
 from kdb_graph.graphdb import GraphDB
 
 log = logging.getLogger(__name__)
@@ -104,10 +105,6 @@ def emit_run_kpis(
     # Compute PROCESSING KPIs
     proc = compute_processing(header, calls)
 
-    # Load compile_result (written by _finalize)
-    compile_result_path = state_root / "compile_result.json"
-    compile_result = json.loads(compile_result_path.read_text(encoding="utf-8"))
-
     # Load finalize artifacts (from persisted retraction.json, not re-running reap)
     finalize_artifacts = _load_finalize_artifacts(state_root, run_id)
 
@@ -117,28 +114,28 @@ def emit_run_kpis(
     # Compute GRAPH KPIs (reopen read-only after the context manager exited)
     with GraphDB(graph_path, read_only=True) as gdb:
         graph = compute_graph(
-            gdb.conn, compile_result, finalize_artifacts,
+            gdb.conn, finalize_artifacts,
             pass1_search_keys=pass1_search_keys,
         )
 
-    # Assemble group_key from provider/model + prompt versions from header
-    group_key = (
-        f"{provider}:{model}:"
-        f"{header.pass1_prompt_version}/{header.pass2_prompt_version}"
-    )
-
+    # Emit provider + model explicitly in the header. `model` is the unique
+    # slug the leaderboard keys on (one row per model — no group_key/grouping).
     payload = {
-        "header": {**dataclasses.asdict(header), "group_key": group_key},
+        "header": {**dataclasses.asdict(header), "provider": provider, "model": model},
         "processing": proc,
         "graph": graph,
     }
 
-    # Write to benchmark/runs/<run_id>/measurements.json
+    # Write to benchmark/runs/<model>-<run_id>/ — model-prefixed dir restores the
+    # pre-refactor naming convention (human-browsable); header.run_id stays the
+    # bare timestamp (the link back to the operational state/runs/<run_id>/).
     benchmark_runs_dir = get_benchmark_runs_dir()
-    out_dir = benchmark_runs_dir / run_id
+    out_dir = benchmark_runs_dir / f"{model}-{run_id}"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "measurements.json"
     atomic_write_json(out_path, payload)
+    # Rendered human-readable report alongside the machine payload.
+    (out_dir / "report.md").write_text(render_report(payload), encoding="utf-8")
     return out_path
 
 

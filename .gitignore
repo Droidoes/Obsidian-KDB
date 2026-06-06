@@ -41,3 +41,6 @@ Thumbs.db
 # artifacts and ad-hoc inspection snapshots are not)
 benchmark/runs/
 benchmark/inspect/
+# Live leaderboard state (json + rendered md) — machine-local; references
+# gitignored run dirs.
+benchmark/scores/leaderboard.*

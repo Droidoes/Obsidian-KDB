@@ -1015,8 +1015,8 @@ def _setup_single_signal_vault(tmp_path: Path, monkeypatch) -> tuple[Path, Path]
 
 
 def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
-    """--emit-kpis writes benchmark/runs/<run_id>/measurements.json with
-    header (+ group_key), processing.scored, and graph.scored keys.
+    """--emit-kpis writes benchmark/runs/<model>-<run_id>/measurements.json +
+    report.md, with header (+ group_key), processing.scored, and graph.scored.
     Redirected to tmp_path/benchmark/runs so it doesn't touch the real repo.
     """
     vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
@@ -1032,8 +1032,15 @@ def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
 
     assert res.ok, res.exit_reason
 
-    mpath = bench_runs / res.run_id / "measurements.json"
+    # Dir name is model-prefixed (restores the pre-refactor convention).
+    out_dir = bench_runs / f"testmodel-{res.run_id}"
+    mpath = out_dir / "measurements.json"
     assert mpath.exists(), f"measurements.json not found at {mpath}"
+
+    # Rendered human-readable report lands alongside the machine payload.
+    report_path = out_dir / "report.md"
+    assert report_path.exists(), f"report.md not found at {report_path}"
+    assert report_path.read_text(encoding="utf-8").startswith("# Benchmark run")
 
     m = json.loads(mpath.read_text(encoding="utf-8"))
 
@@ -1042,17 +1049,22 @@ def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
     assert "processing" in m
     assert "graph" in m
 
-    # header must have group_key
+    # header carries provider + model explicitly (group_key removed 2026-06-06;
+    # the leaderboard keys on model).
     hdr = m["header"]
-    assert "group_key" in hdr
-    assert hdr["group_key"].startswith("testprovider:testmodel:")
+    assert hdr["provider"] == "testprovider"
+    assert hdr["model"] == "testmodel"
+    assert "group_key" not in hdr
+    # header.run_id stays the bare timestamp (the link back to state/runs/<id>/).
     assert hdr["run_id"] == res.run_id
 
     # processing must have scored sub-key
     assert "scored" in m["processing"]
 
-    # graph must have scored sub-key
+    # graph scored is now entity_reuse (dangling_link_rate deleted 2026-06-06).
     assert "scored" in m["graph"]
+    assert "entity_reuse" in m["graph"]["scored"]
+    assert "dangling_link_rate" not in m["graph"]["scored"]
 
 
 def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):
@@ -1070,8 +1082,9 @@ def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch
 
     assert res.ok, res.exit_reason
 
-    mpath = bench_runs / res.run_id / "measurements.json"
-    assert not mpath.exists(), "measurements.json must NOT be written without --emit-kpis"
+    assert not any(bench_runs.rglob("measurements.json")), (
+        "measurements.json must NOT be written without --emit-kpis"
+    )
 
 
 def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):

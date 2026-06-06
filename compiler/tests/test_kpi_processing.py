@@ -9,7 +9,7 @@ integer-fraction literals.
   C1: pass1, clean, attempts=1, in=500, out=200, lat=100
   C2: pass1, syntax_repaired+retried (attempts=2), in=600, out=300, lat=200
   C3: pass2, clean, semantic_ok=True, in=400, out=100, lat=50
-  C4: pass2, quarantined, syntax_repaired (excluded from intervention), in=300, out=150, lat=80
+  C4: pass2, quarantined, syntax_repaired (excluded from recovery), in=300, out=150, lat=80
   C5: pass2, slug_coerced+token_overrun, semantic_ok=False, in=200, out=100, lat=30
 
 T (all tokens) = 700+900+500+450+300 = 2850
@@ -18,7 +18,7 @@ N = 5
 Scored
 ------
 quarantine_rate      = 1 * 1e6 / 2850          (C4 only)
-intervention_burden  = 2 * 1e6 / 2850          (C2, C5 — C4 excluded as quarantined)
+recovery_rate  = 2 * 1e6 / 2850          (C2, C5 — C4 excluded as quarantined)
 latency              = (100+200+50+80+30)*1e6/2850 = 460*1e6/2850
 
 Diagnostic
@@ -124,11 +124,11 @@ class TestComputeProcessingStructure:
         result = compute_processing(HEADER, ALL_CALLS)
         assert set(result["scored"].keys()) == {
             "quarantine_rate",
-            "intervention_burden",
+            "recovery_rate",
             "latency",
         }
 
-    def test_diagnostic_has_exactly_seven_keys(self):
+    def test_diagnostic_has_exactly_nine_keys(self):
         result = compute_processing(HEADER, ALL_CALLS)
         assert set(result["diagnostic"].keys()) == {
             "retry_load",
@@ -138,6 +138,8 @@ class TestComputeProcessingStructure:
             "signal_noise_ratio",
             "quarantine_rate_pass1",
             "quarantine_rate_pass2",
+            "latency_pass1",
+            "latency_pass2",
         }
 
 
@@ -153,11 +155,25 @@ class TestScoredKPIs:
         expected = 1 * 1e6 / T
         assert self.scored["quarantine_rate"] == pytest.approx(expected)
 
-    def test_intervention_burden(self):
-        # Non-quarantined with any repair flag or retry or overrun: C2, C5 → 2
-        # C4 is quarantined → excluded
+    def test_recovery_rate(self):
+        # Non-quarantined that needed retry or repair: C2 (retry+syntax_repair),
+        # C5 (slug_coerced) → 2.  C4 is quarantined → excluded.  token_overrun
+        # is NOT a recovery trigger (§6) — C5 still counts via slug_coerced.
         expected = 2 * 1e6 / T
-        assert self.scored["intervention_burden"] == pytest.approx(expected)
+        assert self.scored["recovery_rate"] == pytest.approx(expected)
+
+    def test_token_overrun_alone_is_not_recovery(self):
+        # §6 behavior change: a survivor that ONLY hit the token ceiling (no
+        # retry, no repair) is NOT counted as recovery — token_overrun was
+        # dropped from the definition (it remains its own diagnostic).
+        overrun_only = _call(
+            pass_="pass2", final_status="clean", attempts=1, token_overrun=True,
+            total_input_tokens=100, total_output_tokens=100, total_latency_ms=10,
+        )
+        result = compute_processing(HEADER, [overrun_only])
+        assert result["scored"]["recovery_rate"] == 0.0
+        # but it still shows up in the token_overrun_rate diagnostic
+        assert result["diagnostic"]["token_overrun_rate"] == pytest.approx(1 * 1e6 / 200)
 
     def test_latency(self):
         # sum latency = 100+200+50+80+30 = 460 ms × 1e6 / 2850
@@ -205,19 +221,27 @@ class TestDiagnosticKPIs:
         # 1 * 1e6 / 1250 = 800.0
         assert self.diag["quarantine_rate_pass2"] == pytest.approx(800.0)
 
+    def test_latency_pass1(self):
+        # pass1 latency = 100+200 = 300 ms; pass1 T=1600 → 300 * 1e6 / 1600
+        assert self.diag["latency_pass1"] == pytest.approx(300 * 1e6 / 1600)
+
+    def test_latency_pass2(self):
+        # pass2 latency = 50+80+30 = 160 ms; pass2 T=1250 → 160 * 1e6 / 1250
+        assert self.diag["latency_pass2"] == pytest.approx(160 * 1e6 / 1250)
+
 
 class TestInterventionDisjointFromQuarantine:
-    """A quarantined call that also has syntax_repaired must NOT count in intervention_burden."""
+    """A quarantined call that also has syntax_repaired must NOT count in recovery_rate."""
 
-    def test_quarantined_with_repair_excluded_from_intervention(self):
+    def test_quarantined_with_repair_excluded_from_recovery(self):
         # C4 is quarantined AND syntax_repaired; it should count in quarantine_rate
-        # but NOT in intervention_burden.
+        # but NOT in recovery_rate.
         result = compute_processing(HEADER, ALL_CALLS)
         scored = result["scored"]
         # quarantine_rate includes C4
         assert scored["quarantine_rate"] == pytest.approx(1 * 1e6 / T)
-        # intervention_burden must be exactly 2 (C2 + C5), not 3
-        assert scored["intervention_burden"] == pytest.approx(2 * 1e6 / T)
+        # recovery_rate must be exactly 2 (C2 + C5), not 3
+        assert scored["recovery_rate"] == pytest.approx(2 * 1e6 / T)
 
 
 class TestEdgeCaseTZero:
@@ -240,8 +264,8 @@ class TestEdgeCaseTZero:
     def test_quarantine_rate_is_none(self):
         assert self.scored["quarantine_rate"] is None
 
-    def test_intervention_burden_is_none(self):
-        assert self.scored["intervention_burden"] is None
+    def test_recovery_rate_is_none(self):
+        assert self.scored["recovery_rate"] is None
 
     def test_latency_is_none(self):
         assert self.scored["latency"] is None
@@ -275,7 +299,7 @@ class TestEdgeCaseNZero:
 
     def test_scored_all_none(self):
         assert self.scored["quarantine_rate"] is None
-        assert self.scored["intervention_burden"] is None
+        assert self.scored["recovery_rate"] is None
         assert self.scored["latency"] is None
 
     def test_retry_load_is_none_when_n_zero(self):

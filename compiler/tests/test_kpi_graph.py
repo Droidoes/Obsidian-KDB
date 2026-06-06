@@ -1,14 +1,16 @@
 """Tests for compiler.kpi.graph.compute_graph (#109).
 
-GRAPH-family KPI computation over a hand-rolled Kuzu graph + an emitted-link
-compile_result payload + a finalize_artifacts report. Each KPI is asserted
-against hand-computed values.
+GRAPH-family KPI computation over a hand-rolled Kuzu graph + a finalize_artifacts
+report. Each KPI is asserted against hand-computed values.
 
 The graph is hand-rolled via raw conn.execute (the established
 test_canonicalization_invariants pattern) because the precise mix of canonical/
 alias/orphan entities, SUPPORTS multiplicity, BELONGS_TO, and a null-domain
 source cannot be produced through apply_compile_result without fighting the
 ingestion derivations.
+
+2026-06-06 refinement: dangling_link_rate (and the compile_result emitted-link
+param) were deleted; entity_reuse is the sole scored graph KPI.
 """
 from __future__ import annotations
 
@@ -94,122 +96,84 @@ def _seed(gdb):
     )
 
 
-def _compile_result(links_per_page):
-    """Wrap a list of outgoing_links lists into a compile_result, one page each."""
-    return {
-        "run_id": "test",
-        "success": True,
-        "compiled_sources": [
-            {
-                "source_id": "KDB/raw/s.md",
-                "pages": [
-                    {"slug": f"p{i}", "outgoing_links": links}
-                    for i, links in enumerate(links_per_page)
-                ],
-            }
-        ],
-        "errors": [],
-        "warnings": [],
-    }
-
-
 _FINALIZE = {"reaped": [{"page_id": "p", "slug": "orphan-z", "page_type": "concept"}],
              "retracted_slugs": ["orphan-z"]}
 
 
-# ---------- SCORED: dangling_link_rate ----------
+# ---------- SCORED: entity_reuse ----------
 
-def test_link_resolution_alias_resolves_dangling_counts(graph_dir):
-    """beta resolves (active canonical), alpha-alias resolves via canonical_id
-    -> alpha (a link to an alias is RESOLVED), nonexistent-xyz dangles.
-    dangling=1, total=3 → 1/3."""
-    cr = _compile_result([["beta", "alpha-alias"], ["nonexistent-xyz"]])
+def test_entity_reuse_scored(graph_dir):
+    """canonical non-summary: alpha(2 sources), beta(1), gamma(0), orphan-z(0).
+    >=2 sources: alpha → 1/4 = 0.25. entity_reuse is now the SCORED graph KPI."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["dangling_link_rate"] == pytest.approx(1 / 3)
-
-
-def test_link_resolution_none_when_zero_links(graph_dir):
-    """Zero emitted links → None (NOT 0.0 — don't conflate with all-resolve)."""
-    cr = _compile_result([[], []])
-    with GraphDB(graph_dir) as gdb:
-        _seed(gdb)
-        out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["dangling_link_rate"] is None
-
-
-def test_link_resolution_all_resolve_is_zero_not_none(graph_dir):
-    cr = _compile_result([["alpha", "beta", "alpha-alias"]])
-    with GraphDB(graph_dir) as gdb:
-        _seed(gdb)
-        out = compute_graph(gdb.conn, cr, _FINALIZE)
-    assert out["scored"]["dangling_link_rate"] == 0.0
+        out = compute_graph(gdb.conn, _FINALIZE)
+    assert out["scored"]["entity_reuse"] == pytest.approx(0.25)
 
 
 # ---------- WATCHED ----------
 
-def test_entity_reuse(graph_dir):
-    """canonical non-summary: alpha(2 sources), beta(1), gamma(0), orphan-z(0).
-    >=2 sources: alpha → 1/4 = 0.25."""
-    with GraphDB(graph_dir) as gdb:
-        _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
-    assert out["watched"]["entity_reuse"] == pytest.approx(0.25)
-
-
 def test_graph_connectivity_two_components(graph_dir):
     """canonical = {alpha,beta,gamma,summary-x,orphan-z} (5). Edge alpha-beta
     → largest component {alpha,beta}=2; gamma/summary-x/orphan-z singletons.
-    2/5 = 0.4."""
+    2/5 = 0.4.  graph_connectivity is now a SCORED graph KPI (§6)."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
-    assert out["watched"]["graph_connectivity"] == pytest.approx(0.4)
+        out = compute_graph(gdb.conn, _FINALIZE)
+    assert out["scored"]["graph_connectivity"] == pytest.approx(0.4)
 
 
 def test_orphan_rate(graph_dir):
     """len(reaped)=1 ÷ total entities=6 (5 canonical + 1 alias) = 1/6."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
+        out = compute_graph(gdb.conn, _FINALIZE)
     assert out["watched"]["orphan_rate"] == pytest.approx(1 / 6)
 
 
 def test_orphan_rate_empty_finalize_is_zero(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), {})
+        out = compute_graph(gdb.conn, {})
     assert out["watched"]["orphan_rate"] == 0.0
 
 
 # ---------- DIAGNOSTIC ----------
 
+def test_scored_density_values(graph_dir):
+    """link_density + supports_density are now SCORED graph KPIs (§6)."""
+    with GraphDB(graph_dir) as gdb:
+        _seed(gdb)
+        out = compute_graph(gdb.conn, _FINALIZE)
+    s = out["scored"]
+    assert s["link_density"] == pytest.approx(1 / 5)          # 1 edge / 5 canonical
+    assert s["supports_density"] == pytest.approx(3 / 3)      # 3 SUPPORTS / 3 sources
+
+
 def test_diagnostic_values(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
+        out = compute_graph(gdb.conn, _FINALIZE)
     d = out["diagnostic"]
     assert d["belongs_to_coverage"] == pytest.approx(1 / 5)   # alpha of 5 canonical
     assert d["domain_null_rate"] == pytest.approx(1 / 3)      # s3 of 3 sources
-    assert d["link_density"] == pytest.approx(1 / 5)          # 1 edge / 5 canonical
-    assert d["supports_density"] == pytest.approx(3 / 3)      # 3 SUPPORTS / 3 sources
     assert d["domain_breadth"] == pytest.approx(1 / 23)       # 1 domain / 23
 
 
 def test_return_dict_keys(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _compile_result([[]]), _FINALIZE)
+        out = compute_graph(gdb.conn, _FINALIZE)
     assert set(out) == {"scored", "watched", "diagnostic"}
-    assert set(out["scored"]) == {"dangling_link_rate"}
+    # §6: the 4 graph quality KPIs are scored together (combined graph score).
+    assert set(out["scored"]) == {
+        "entity_reuse", "graph_connectivity", "link_density", "supports_density",
+    }
     assert set(out["watched"]) == {
-        "entity_reuse", "graph_connectivity", "orphan_rate",
-        "entity_search_key_resolution",
+        "orphan_rate", "entity_search_key_resolution",
     }
     assert set(out["diagnostic"]) == {
-        "belongs_to_coverage", "domain_null_rate", "link_density",
-        "supports_density", "domain_breadth",
+        "belongs_to_coverage", "domain_null_rate", "domain_breadth",
     }
 
 
@@ -219,11 +183,10 @@ def test_entity_search_key_resolution_alias_aware(graph_dir):
     """alpha resolves (active canonical); alpha-alias resolves via ALIAS_OF to
     alpha (active canonical); nonexistent-key does not resolve.
     2 resolved / 3 total → 2/3."""
-    cr = _compile_result([[]])
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out = compute_graph(
-            gdb.conn, cr, _FINALIZE,
+            gdb.conn, _FINALIZE,
             pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"],
         )
     assert out["watched"]["entity_search_key_resolution"] == pytest.approx(2 / 3)
@@ -232,19 +195,17 @@ def test_entity_search_key_resolution_alias_aware(graph_dir):
 def test_entity_search_key_resolution_none_keys(graph_dir):
     """pass1_search_keys=None → None (not zero — don't conflate no-keys with
     zero-resolution)."""
-    cr = _compile_result([[]])
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, cr, _FINALIZE, pass1_search_keys=None)
+        out = compute_graph(gdb.conn, _FINALIZE, pass1_search_keys=None)
     assert out["watched"]["entity_search_key_resolution"] is None
 
 
 def test_entity_search_key_resolution_empty_keys(graph_dir):
     """pass1_search_keys=[] → None (same rationale as None)."""
-    cr = _compile_result([[]])
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, cr, _FINALIZE, pass1_search_keys=[])
+        out = compute_graph(gdb.conn, _FINALIZE, pass1_search_keys=[])
     assert out["watched"]["entity_search_key_resolution"] is None
 
 
