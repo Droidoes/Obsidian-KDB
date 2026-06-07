@@ -117,6 +117,18 @@ def test_fits_context_exact_boundary_is_ok():
     assert fits_context(est_input=910, requested_output=90, ctx_window=1000) is True
 
 
+def test_deprecated_grok_is_archived():
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("grok-4-1-fast-reasoning")  # deprecated → archived
+
+def test_new_grok_resolves_with_correct_provider_and_pricing():
+    spec = resolve_models_json("grok-4.20-0309-non-reasoning")
+    assert spec.provider == "xai"
+    assert spec.ctx_window == 1_000_000
+    assert spec.price_in == 1.25 and spec.price_out == 2.50
+    assert spec.extra_body is None  # non-reasoning ⇒ no thinking to disable
+
+
 _COMMON_DIR = Path(__file__).parent.parent
 
 def test_active_pool_has_no_dropped_entries():

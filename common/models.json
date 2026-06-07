@@ -28,14 +28,6 @@
     "price_out": 4.5
   },
   {
-    "id": "grok-4-1-fast-reasoning",
-    "provider": "xai",
-    "model": "grok-4-1-fast-reasoning",
-    "ctx_window": 2000000,
-    "price_in": 0.2,
-    "price_out": 0.5
-  },
-  {
     "id": "gemma4-obsidian-bench",
     "provider": "ollama-local",
     "model": "gemma4-obsidian-bench",
@@ -91,5 +83,13 @@
     "price_in": 0.435,
     "price_out": 0.87,
     "thinking": "disabled"
+  },
+  {
+    "id": "grok-4.20-0309-non-reasoning",
+    "provider": "xai",
+    "model": "grok-4.20-0309-non-reasoning",
+    "ctx_window": 1000000,
+    "price_in": 1.25,
+    "price_out": 2.50
   }
 ]
