@@ -1,19 +1,30 @@
+import json
 import pytest
+from pathlib import Path
 from common.model_pool import (
     ModelSpec,
     resolve_models_json,
     PoolError,
     UnknownModelError,
-    DroppedModelError,
     load_pool,
 )
 
 
-def test_dropped_id_raises_dropped_model_error():
-    # The dropped-guard must be distinguishable from "unknown id".
-    with pytest.raises(DroppedModelError):
-        resolve_models_json("qwen-flash-us")  # in pool, marked dropped
-    assert issubclass(DroppedModelError, PoolError)
+def test_dropped_id_now_raises_unknown_model_error():
+    # Post-split: a formerly-dropped id is simply not in the active pool.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("qwen-flash-us")  # moved to models_dropped.json
+
+
+def test_moved_out_route_raises_unknown_model_error():
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("deepseek-v4-flash:alibaba")  # archived route
+
+
+def test_load_pool_returns_active_entries_only():
+    ids = {e["id"] for e in load_pool()}
+    assert "deepseek-v4-flash" in ids              # active default
+    assert "deepseek-v4-flash:alibaba" not in ids  # archived, NOT loaded by code
 
 
 def test_unknown_id_raises_unknown_model_error():
@@ -35,14 +46,6 @@ def test_resolve_unknown_id_errors_with_id_list():
     with pytest.raises(PoolError) as e:
         resolve_models_json("no-such-model")
     assert "deepseek-v4-flash" in str(e.value)  # lists available ids
-
-def test_resolve_dropped_entry_errors_with_reason():
-    with pytest.raises(PoolError) as e:
-        resolve_models_json("deepseek-v4-flash:alibaba")  # the dropped alibaba route
-    msg = str(e.value)
-    assert "dropped" in msg.lower()
-    assert "dominated" in msg  # echoes dropped_reason
-
 
 def test_resolve_alibaba_thinking_disable_generated_from_field():
     # alibaba's disable param is enable_thinking:False, generated from `thinking`.
@@ -85,18 +88,24 @@ def test_resolve_explicit_extra_body_merges_and_overrides(monkeypatch):
     spec = mp.resolve_models_json("crafted")
     assert spec.extra_body == {"enable_thinking": False, "foo": 1}
 
-def test_load_pool_returns_all_entries_including_dropped():
-    pool = load_pool()
-    ids = {e["id"] for e in pool}
-    assert "deepseek-v4-flash" in ids        # active default
-    assert "deepseek-v4-flash:alibaba" in ids  # dropped ones still present (ledger)
-
 def test_resolve_local_model_has_zero_price_and_default_knobs():
-    spec = resolve_models_json("gemma4-obsidian-bench")
+    spec = resolve_models_json("gemma-4-12b-qat")
     assert spec.provider == "ollama-local"
     assert spec.price_in == 0.0 and spec.price_out == 0.0
     assert spec.extra_body is None
     assert spec.use_completion_tokens is False
+
+
+def test_gemma_4_12b_qat_resolves_as_local_zero_price():
+    spec = resolve_models_json("gemma-4-12b-qat")
+    assert spec.provider == "ollama-local"
+    assert spec.price_in == 0.0 and spec.price_out == 0.0
+    assert spec.extra_body is None
+
+
+def test_old_gemma_bench_alias_gone():
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("gemma4-obsidian-bench")
 
 
 from common.model_pool import estimate_prompt_tokens, fits_context
@@ -118,3 +127,38 @@ def test_fits_context_false_when_over():
 def test_fits_context_exact_boundary_is_ok():
     # est_input + requested_output == ctx_window must fit (<=)
     assert fits_context(est_input=910, requested_output=90, ctx_window=1000) is True
+
+
+def test_deprecated_grok_is_archived():
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("grok-4-1-fast-reasoning")  # deprecated → archived
+
+def test_new_grok_resolves_with_correct_provider_and_pricing():
+    spec = resolve_models_json("grok-4.20-0309-non-reasoning")
+    assert spec.provider == "xai"
+    assert spec.ctx_window == 1_000_000
+    assert spec.price_in == 1.25 and spec.price_out == 2.50
+    assert spec.extra_body is None  # non-reasoning ⇒ no thinking to disable
+
+
+_COMMON_DIR = Path(__file__).parent.parent
+
+def test_active_pool_has_no_dropped_entries():
+    # After the split, models.json holds ACTIVE entries only.
+    active = json.loads((_COMMON_DIR / "models.json").read_text(encoding="utf-8"))
+    assert all("dropped" not in e for e in active), \
+        "models.json must not contain dropped entries after the split"
+
+def test_dropped_archive_is_valid_json_and_holds_the_moved_entries():
+    arch = json.loads((_COMMON_DIR / "models_dropped.json").read_text(encoding="utf-8"))
+    ids = {e["id"] for e in arch}
+    assert {"gemini-3-flash-preview", "deepseek-v4-flash:cloud",
+            "qwen-flash-us", "deepseek-v4-flash:alibaba"} <= ids
+    assert all(e.get("dropped") is True and e.get("dropped_reason") for e in arch), \
+        "archive entries keep their dropped/dropped_reason record"
+
+
+def test_gpt_5_4_mini_carries_reasoning_config():
+    spec = resolve_models_json("gpt-5.4-mini")
+    assert spec.provider == "openai"
+    assert spec.extra_body == {"reasoning_effort": "low"}

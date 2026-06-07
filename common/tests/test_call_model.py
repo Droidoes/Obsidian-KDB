@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import types as genai_types
 
 from common import call_model as cm
 from common.call_model import ModelConfigError, ModelRequest, call_model
@@ -84,28 +85,122 @@ def test_openai_dispatch(monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
     assert resp.provider == "openai"
 
 
-def test_gemini_dispatch_uses_compat_endpoint(
-    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
-) -> None:
-    _use_settings(monkeypatch, gemini_api_key="AIza-test")
-    client = MagicMock()
-    client.chat.completions.create.return_value = openai_resp
-    with patch("common.call_model.OpenAI", return_value=client) as ctor:
-        call_model(ModelRequest(provider="gemini", model="gemini-2.5-flash", prompt="hi"))
-    assert "generativelanguage.googleapis.com" in ctor.call_args.kwargs["base_url"]
-    # Gemini endpoint needs the 'models/' prefix
-    assert client.chat.completions.create.call_args.kwargs["model"] == "models/gemini-2.5-flash"
+def _make_gemini_resp() -> MagicMock:
+    """Build a minimal google-genai response mock.
+
+    finish_reason uses the REAL FinishReason enum so the test exercises
+    `.value` extraction rather than trivially passing on a plain string.
+    """
+    resp = MagicMock()
+    resp.text = "hello from gemini"
+    resp.usage_metadata.prompt_token_count = 8
+    resp.usage_metadata.candidates_token_count = 3
+    resp.usage_metadata.thoughts_token_count = 1
+    cand = MagicMock()
+    cand.finish_reason = genai_types.FinishReason.STOP  # real enum, not a plain string
+    resp.candidates = [cand]
+    return resp
 
 
-def test_gemini_does_not_double_prefix_models(
-    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
-) -> None:
+def test_gemini_native_dispatch_bare_model_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini native path passes model id BARE — no 'models/' prefix."""
     _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()
     client = MagicMock()
-    client.chat.completions.create.return_value = openai_resp
-    with patch("common.call_model.OpenAI", return_value=client):
-        call_model(ModelRequest(provider="gemini", model="models/gemini-2.5-flash", prompt="hi"))
-    assert client.chat.completions.create.call_args.kwargs["model"] == "models/gemini-2.5-flash"
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi",
+        ))
+    kwargs = client.models.generate_content.call_args.kwargs
+    assert kwargs["model"] == "gemini-3.1-flash-lite"
+    assert resp.text == "hello from gemini"
+    assert resp.provider == "gemini"
+
+
+def test_gemini_native_json_mode_sets_response_mime_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    """json_mode=True → config.response_mime_type == 'application/json'."""
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi", json_mode=True,
+        ))
+    kwargs = client.models.generate_content.call_args.kwargs
+    config = kwargs["config"]
+    assert config.response_mime_type == "application/json"
+
+
+def test_gemini_native_thinking_level_minimal_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default thinking_level is 'minimal' (floor for flash-lite)."""
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi",
+        ))
+    kwargs = client.models.generate_content.call_args.kwargs
+    config = kwargs["config"]
+    # SDK normalises "minimal" → ThinkingLevel.MINIMAL enum; compare by value.
+    assert str(config.thinking_config.thinking_level.value).upper() == "MINIMAL"
+
+
+def test_gemini_native_system_instruction_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """system is forwarded as system_instruction in GenerateContentConfig."""
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite",
+            prompt="hi", system="be concise",
+        ))
+    kwargs = client.models.generate_content.call_args.kwargs
+    config = kwargs["config"]
+    assert config.system_instruction == "be concise"
+
+
+def test_gemini_native_usage_maps_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """input_tokens = prompt_token_count; output_tokens = candidates + thoughts."""
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi",
+        ))
+    assert resp.input_tokens == 8   # prompt_token_count
+    assert resp.output_tokens == 4  # candidates_token_count(3) + thoughts_token_count(1)
+
+
+def test_gemini_native_stop_reason_bare_enum_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """stop_reason is the bare enum value string ("STOP"), NOT the verbose repr.
+
+    This test would FAIL against the old ``str(fr)`` code which emits
+    "FinishReason.STOP" — it verifies that ``.value`` extraction is in place.
+    """
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()  # finish_reason = FinishReason.STOP (real enum)
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi",
+        ))
+    assert resp.stop_reason == "STOP"
+
+
+def test_gemini_native_missing_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty gemini_api_key → ModelConfigError."""
+    _use_settings(monkeypatch, gemini_api_key="")
+    with pytest.raises(ModelConfigError, match="GEMINI_API_KEY"):
+        call_model(ModelRequest(provider="gemini", model="gemini-3.1-flash-lite", prompt="hi"))
 
 
 def test_ollama_local_dispatch_uses_local_url(
@@ -282,12 +377,6 @@ def test_missing_openai_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_settings(monkeypatch, openai_api_key="")
     with pytest.raises(ModelConfigError):
         call_model(ModelRequest(provider="openai", model="gpt", prompt="hi"))
-
-
-def test_missing_gemini_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    _use_settings(monkeypatch, gemini_api_key="")
-    with pytest.raises(ModelConfigError):
-        call_model(ModelRequest(provider="gemini", model="gemini-pro", prompt="hi"))
 
 
 def test_missing_xai_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:

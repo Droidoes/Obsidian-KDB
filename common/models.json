@@ -24,57 +24,17 @@
     "ctx_window": 400000,
     "max_output_tokens": 128000,
     "use_completion_tokens": true,
+    "extra_body": { "reasoning_effort": "low" },
     "price_in": 0.75,
     "price_out": 4.5
   },
   {
-    "id": "gemini-3-flash-preview",
-    "provider": "gemini",
-    "model": "gemini-3-flash-preview",
-    "ctx_window": 1048576,
-    "max_output_tokens": 65536,
-    "price_in": 0.5,
-    "price_out": 3.0,
-    "dropped": true,
-    "dropped_reason": "high run-to-run variance + intermittent token-overrun (2026-05-08 fires: S0=0.6→0.2 within 1 hour)"
-  },
-  {
-    "id": "grok-4-1-fast-reasoning",
-    "provider": "xai",
-    "model": "grok-4-1-fast-reasoning",
-    "ctx_window": 2000000,
-    "price_in": 0.2,
-    "price_out": 0.5
-  },
-  {
-    "id": "gemma4-obsidian-bench",
+    "id": "gemma-4-12b-qat",
     "provider": "ollama-local",
-    "model": "gemma4-obsidian-bench",
+    "model": "gemma-4-12b-qat",
     "ctx_window": 65536,
     "price_in": 0.0,
     "price_out": 0.0
-  },
-  {
-    "id": "deepseek-v4-flash:cloud",
-    "provider": "ollama-cloud",
-    "model": "deepseek-v4-flash:cloud",
-    "ctx_window": 1000000,
-    "max_output_tokens": 393200,
-    "price_in": 0.14,
-    "price_out": 0.28,
-    "dropped": true,
-    "dropped_reason": "strictly dominated by deepseek-v4-flash via alibaba (DashScope) at identical model + identical pricing: M7=39263ms/1Kw vs alibaba's 9830ms/1Kw (~4x slower). Quality identical. 2026-05-10T12:29 cross-provider trial confirmed; keep dropped record as audit trail of the comparison."
-  },
-  {
-    "id": "qwen-flash-us",
-    "provider": "alibaba",
-    "model": "qwen-flash-us",
-    "ctx_window": 1000000,
-    "max_output_tokens": 32768,
-    "price_in": 0.05,
-    "price_out": 0.40,
-    "dropped": true,
-    "dropped_reason": "M5 (body_emit_set_coverage) = 0.111 in post-#60 regression scorecard (2026-05-10T12:08): declares concept_slugs but barely integrates them via cross-page wikilinks (KB-graph value degraded). The pre-#59 reading of M5=1.000 was the tautological-by-construction artifact; the new measure surfaces real model behavior. Excellent cost+latency don't compensate for this quality gap on the canonical corpus."
   },
   {
     "id": "qwen3.5-flash",
@@ -85,17 +45,6 @@
     "price_in": 0.029,
     "price_out": 0.287,
     "thinking": "disabled"
-  },
-  {
-    "id": "deepseek-v4-flash:alibaba",
-    "provider": "alibaba",
-    "model": "deepseek-v4-flash",
-    "ctx_window": 1050000,
-    "max_output_tokens": 393216,
-    "price_in": 0.14,
-    "price_out": 0.28,
-    "dropped": true,
-    "dropped_reason": "Strictly dominated by deepseek-v4-flash:direct (DeepSeek native API at https://api.deepseek.com) on the canonical corpus (2026-05-23). The 2026-05-14 6/6 JSON-gate failures (character-level malformation, leaked </think> tags) and the #63.7-A4 live-compile failure on the Buffett source were caused by Alibaba's OpenAI-compatibility layer stripping or mis-routing 'response_format' for non-Qwen models, NOT a capability gap in deepseek-v4-flash itself (corrected diagnosis 2026-05-23, overturning the 2026-05-15 reasoning). Empirical proof: direct-route fire returned S0=1.000, M1-M5=1.000, M7=3578ms (2.75x faster than this entry's best historical 9830ms). The qwen3.6-flash 'control' on 2026-05-15 was misframed: it only proved Alibaba's native Qwen model survived its own routing, not that all models survive the compat layer. Keep dropped as audit trail of the routing-vs-capability investigation."
   },
   {
     "id": "gemini-3.1-flash-lite",
@@ -135,5 +84,13 @@
     "price_in": 0.435,
     "price_out": 0.87,
     "thinking": "disabled"
+  },
+  {
+    "id": "grok-4.20-0309-non-reasoning",
+    "provider": "xai",
+    "model": "grok-4.20-0309-non-reasoning",
+    "ctx_window": 1000000,
+    "price_in": 1.25,
+    "price_out": 2.50
   }
 ]
