@@ -613,6 +613,8 @@ def compile_source(
     price_in: float = 0.0,
     price_out: float = 0.0,
     ctx_window: int | None = None,
+    use_completion_tokens: bool = False,
+    extra_body: dict | None = None,
     context_snapshot: ContextSnapshot | None = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
@@ -654,6 +656,7 @@ def compile_source(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
         price_in=price_in, price_out=price_out, ctx_window=ctx_window,
+        use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         resp_stats_dir=state_root / "runs" / ctx.run_id / "pass2",
         stats_record_sink=_capture,
     )

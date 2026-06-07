@@ -46,6 +46,28 @@ def test_caller_stamps_code_owned_and_omits_override(monkeypatch):
     assert res.attempts == 1
 
 
+def test_caller_threads_pool_knobs_to_model_request(monkeypatch):
+    """#110 final review: call_pass1 must forward use_completion_tokens +
+    extra_body (resolved from the model-pool ModelSpec) into the constructed
+    ModelRequest. Without this, deepseek's extra_body and gpt-5.4-mini's
+    use_completion_tokens are dropped before the API call.
+    """
+    captured = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return _fake_response(_content_json())
+    monkeypatch.setattr(caller_mod, "call_model", capturing)
+
+    knob_extra_body = {"thinking": {"type": "disabled"}}
+    call_pass1(source_text="body", source_path="x.md",
+               provider="deepseek", model="deepseek-v4-flash",
+               use_completion_tokens=True, extra_body=knob_extra_body)
+
+    assert captured["req"].use_completion_tokens is True
+    assert captured["req"].extra_body == knob_extra_body
+
+
 def test_caller_coerces_over_cap_keys_without_retry(monkeypatch):
     monkeypatch.setattr(
         caller_mod, "call_model",

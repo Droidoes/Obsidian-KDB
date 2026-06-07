@@ -104,6 +104,7 @@ _PASS1_MAX_OUTPUT_TOKENS = 4096  # reserved output room (the per-call max_tokens
 def call_pass1(
     *, source_text: str, source_path: str, provider: str, model: str,
     max_retries: int = 1, ctx_window: int | None = None,
+    use_completion_tokens: bool = False, extra_body: dict | None = None,
 ) -> Pass1CallResult:
     """Fire one Pass-1 LLM call. Returns parsed + validated envelope.
 
@@ -168,6 +169,7 @@ def call_pass1(
         req = ModelRequest(
             provider=provider, model=model, prompt=prompt,
             json_mode=True, temperature=0.0, max_tokens=_PASS1_MAX_OUTPUT_TOKENS,
+            use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         )
         try:
             resp = call_model(req)

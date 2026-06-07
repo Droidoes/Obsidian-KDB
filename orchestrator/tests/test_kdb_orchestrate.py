@@ -888,6 +888,33 @@ def test_main_dropped_model_errors_despite_provider_override(tmp_path):
         ])
 
 
+def test_main_known_id_conflicting_provider_errors(tmp_path):
+    # #110 spec §4: a KNOWN pool id pins its provider. If --provider is also
+    # passed and CONFLICTS, error (catch the mistake) rather than silently
+    # ignoring --provider. deepseek-v4-flash resolves to provider 'deepseek';
+    # --provider openai conflicts → PoolError before run().
+    import common.model_pool
+    with pytest.raises(common.model_pool.PoolError):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--provider", "openai", "--model", "deepseek-v4-flash",
+        ])
+
+
+def test_main_known_id_matching_provider_does_not_error(tmp_path, monkeypatch):
+    # Non-conflicting --provider (same as the pool's) must NOT error: it sails
+    # past the guard into run(). Sentinel-raise run() to prove we got past the
+    # resolve block without firing the real pipeline (or the model).
+    def _sentinel(**kwargs):
+        raise RuntimeError("reached_run")
+    monkeypatch.setattr(kdb_orchestrate, "run", _sentinel)
+    with pytest.raises(RuntimeError, match="reached_run"):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--provider", "deepseek", "--model", "deepseek-v4-flash",
+        ])
+
+
 def test_run_writes_event_log_path_to_summary(tmp_path):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"

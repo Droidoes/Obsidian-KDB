@@ -286,7 +286,7 @@ class TestSidecarKeys:
         }
 
         def fake_call_pass1(*, source_text, source_path, provider, model,
-                            ctx_window=None):
+                            ctx_window=None, **_kwargs):
             return Pass1CallResult(
                 parsed=parsed, raw_response_text="{}",
                 request_prompt="p", request_model=model, request_provider=provider,

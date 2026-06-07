@@ -45,7 +45,7 @@ from orchestrator.orchestrator_events import (
     check_orchestrator_invariant,
 )
 from common.measurement import RunMeasurementHeader
-from common.model_pool import resolve, UnknownModelError, DroppedModelError
+from common.model_pool import resolve, UnknownModelError, DroppedModelError, PoolError
 from common.run_context import RunContext, now_iso
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
@@ -619,7 +619,8 @@ def run(
                     runs_root=runs_root, run_id=ctx.run_id,
                     provider=provider, model=model,
                     force_signal=pipeline.force_signal, force_noise=pipeline.force_noise,
-                    price_in=price_in, price_out=price_out, ctx_window=ctx_window)
+                    price_in=price_in, price_out=price_out, ctx_window=ctx_window,
+                    use_completion_tokens=use_completion_tokens, extra_body=extra_body)
                 if enrich.outcome == "enrich_failed":
                     failure = _last_failure(
                         ctx=ctx,
@@ -704,7 +705,8 @@ def run(
                     frontmatter=SourceFrontmatter.from_dict(enrich.parsed_envelope),
                     conn=g.conn, vault_root=vault_root, state_root=state_root, ctx=ctx,
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens,
-                    price_in=price_in, price_out=price_out, ctx_window=ctx_window)
+                    price_in=price_in, price_out=price_out, ctx_window=ctx_window,
+                    use_completion_tokens=use_completion_tokens, extra_body=extra_body)
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
@@ -1053,6 +1055,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         spec = resolve(args.model)
+        # spec §4: a KNOWN pool id pins its provider. If --provider is also passed
+        # and CONFLICTS with the pool's provider, error (catch the mistake) rather
+        # than silently ignoring --provider. Same provider / absent → no error.
+        if args.provider is not None and args.provider != spec.provider:
+            raise PoolError(
+                f"--provider {args.provider!r} conflicts with pool model "
+                f"{args.model!r} (provider {spec.provider!r}). Omit --provider "
+                f"for known pool ids, or pass the matching provider.")
         provider, model = spec.provider, spec.model
         use_completion_tokens = spec.use_completion_tokens
         extra_body = spec.extra_body
