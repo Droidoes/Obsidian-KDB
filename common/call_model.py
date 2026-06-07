@@ -43,7 +43,11 @@ class ModelRequest:
     prompt: str = ""
     system: str | None = None
     json_mode: bool = False
-    temperature: float = 0.0
+    # `temperature=None` OMITS the temperature kwarg entirely (the API applies
+    # its own default), required by reasoning-family models like gpt-5.4-mini
+    # that 400 on any non-default temperature. Threads from a nullable per-model
+    # pool override (ModelSpec.temperature). Default 0.0 = deterministic.
+    temperature: float | None = 0.0
     max_tokens: int = 4096
     # `use_completion_tokens=True` switches the openai-compat path from the
     # legacy `max_tokens` body field to `max_completion_tokens`, required by
@@ -134,9 +138,10 @@ def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
     kwargs: dict[str, Any] = {
         "model": req.model,
         "max_tokens": req.max_tokens,
-        "temperature": req.temperature,
         "messages": [{"role": "user", "content": req.prompt}],
     }
+    if req.temperature is not None:
+        kwargs["temperature"] = req.temperature
     if req.system is not None:
         kwargs["system"] = req.system
     kwargs.update(req.extra)
@@ -213,9 +218,10 @@ def _call_openai_compat(
     kwargs: dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "temperature": req.temperature,
         max_tokens_param: req.max_tokens,
     }
+    if req.temperature is not None:
+        kwargs["temperature"] = req.temperature
     if req.json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     if req.extra_body:

@@ -25,14 +25,15 @@
     "max_output_tokens": 128000,
     "use_completion_tokens": true,
     "extra_body": { "reasoning_effort": "low" },
+    "temperature": null,
     "price_in": 0.75,
     "price_out": 4.5
   },
   {
-    "id": "gemma-4-12b-qat",
+    "id": "gemma4-12b-qat-128k",
     "provider": "ollama-local",
-    "model": "gemma-4-12b-qat",
-    "ctx_window": 65536,
+    "model": "gemma4-12b-qat-128k",
+    "ctx_window": 131072,
     "price_in": 0.0,
     "price_out": 0.0
   },

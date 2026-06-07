@@ -42,6 +42,11 @@ class ModelSpec:
     max_output_tokens: int | None = None
     use_completion_tokens: bool = False
     extra_body: dict | None = None
+    # `temperature=None` OMITS the temperature kwarg on the call (the API applies
+    # its own default), set via an explicit JSON `null` for reasoning-family
+    # models like gpt-5.4-mini that 400 on any non-default temperature. An absent
+    # key resolves to 0.0 (deterministic default for every other model).
+    temperature: float | None = 0.0
     price_in: float = 0.0
     price_out: float = 0.0
 
@@ -82,6 +87,8 @@ def resolve_models_json(model_id: str) -> ModelSpec:
         max_output_tokens=entry.get("max_output_tokens"),
         use_completion_tokens=entry.get("use_completion_tokens", False),
         extra_body=extra_body,
+        # Explicit JSON `null` → None (omit temperature); absent key → 0.0.
+        temperature=entry.get("temperature", 0.0),
         price_in=entry.get("price_in", 0.0),
         price_out=entry.get("price_out", 0.0),
     )

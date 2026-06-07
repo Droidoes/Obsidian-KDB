@@ -20,9 +20,12 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
   `common/models_dropped.json` (a pure human archive the code never reads). The now-dead
   dropped-guard retired: a dropped/archived id resolves to `UnknownModelError` (the
   `DroppedModelError` branch is gone). Roster: dropped `grok-4-1-fast-reasoning` (deprecated)
-  → archive; added `grok-4.20-0309-non-reasoning` + `gemma-4-12b-qat` (active, not in batch-1).
-- **`gpt-5.4-mini` reasoning** — `extra_body={"reasoning_effort": "low"}` for structured
-  output (verified; `"low"` is OpenAI's extraction floor).
+  → archive; added `grok-4.20-0309-non-reasoning` + `gemma4-12b-qat-128k` (ollama-local, 128k ctx).
+- **`gpt-5.4-mini` reasoning + temperature** — `extra_body={"reasoning_effort": "low"}` for
+  structured output (`"low"` is OpenAI's extraction floor). **Temperature is now a nullable
+  per-model pool override** — gpt-5.4-mini sets it `null` so we omit the `temperature` kwarg
+  entirely (GPT-5 reasoning models reject any non-default `temperature`; ours hardcoded `0.0`
+  and 400'd). Every other model still sends `temperature=0.0` (deterministic extraction).
 - **Gemini → native `google-genai` SDK** — new `_call_gemini` handler (sibling to
   `_call_anthropic`) moves Gemini **off the second-class openai-compat shim**: JSON mode
   (`response_mime_type="application/json"`) + `thinking_config.thinking_level="minimal"`
