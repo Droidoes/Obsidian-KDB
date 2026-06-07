@@ -22,6 +22,12 @@ from compiler.kpi.score import (
     combined_graph_score,
     score_models,
 )
+from compiler.kpi.score import (
+    weak_spot_penalty,
+    WEAK_SPOT_THRESHOLD,
+    WEAK_SPOT_PENALTY_CAP,
+    COMPOSITE_SCALE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -250,9 +256,6 @@ class TestScoreModelsHierarchical:
     40/40/10/10 split holds EXACTLY even when a model is missing a graph KPI."""
 
     def test_missing_graph_kpi_keeps_graph_at_40_percent(self):
-        # X wins the richness trio but has entity_reuse=None (degenerate corner);
-        # Y has all four. The flat approach would redistribute X's missing-reuse
-        # weight onto quarantine; the hierarchical scorer must NOT — graph stays 40%.
         models = [
             {"model": "X", "scored": {
                 "quarantine_rate": 0.0, "recovery_rate": 0.0, "latency": 100.0,
@@ -264,15 +267,20 @@ class TestScoreModelsHierarchical:
                 "supports_density": 2.0, "entity_reuse": 0.3}},
         ]
         pm = score_models(models)["per_model"]
-        # X: wins conn/link/supports (borda 1.0), reuse dropped → graph_score = 1.0
+        # graph_score unchanged ([0,1] component): X=1.0, Y=0.15
         assert pm["X"]["graph_score"] == pytest.approx(1.0)
-        # Y: loses the trio (0.0), wins reuse (1.0) → 0.15
         assert pm["Y"]["graph_score"] == pytest.approx(0.15)
-        # processing all tied → 0.5 each. composite = 0.40·0.5+0.10·0.5+0.10·0.5 + 0.40·graph
-        # X: 0.30 + 0.40·1.0 = 0.70  (graph is a full 40% despite the missing reuse KPI)
-        assert pm["X"]["composite"] == pytest.approx(0.70)
-        # Y: 0.30 + 0.40·0.15 = 0.36
-        assert pm["Y"]["composite"] == pytest.approx(0.36)
+        # X: processing tied (0.5 each), graph 1.0 -> pre = 0.70.
+        #    weakest axis = 0.5 (processing) == tau -> penalty 0. composite = 70.0
+        assert pm["X"]["composite_pre_penalty"] == pytest.approx(70.0)
+        assert pm["X"]["penalty"] == pytest.approx(0.0)
+        assert pm["X"]["composite"] == pytest.approx(70.0)
+        # Y: pre = 0.30 + 0.40*0.15 = 0.36. weakest = graph 0.15 -> penalty
+        #    0.10*(0.5-0.15)/0.5 = 0.07. composite = 0.29. Scaled: pre 36, pen 7, comp 29
+        assert pm["Y"]["composite_pre_penalty"] == pytest.approx(36.0)
+        assert pm["Y"]["penalty"] == pytest.approx(7.0)
+        assert pm["Y"]["weakest_kpi"] == "graph"
+        assert pm["Y"]["composite"] == pytest.approx(29.0)
 
     def test_result_shape(self):
         models = [
@@ -282,5 +290,55 @@ class TestScoreModelsHierarchical:
                                       "entity_reuse": 0.1}},
         ]
         res = score_models(models)
-        assert set(res) == {"per_model", "top_weights", "graph_weights"}
-        assert set(res["per_model"]["A"]) == {"composite", "graph_score", "per_kpi_borda"}
+        assert set(res) == {"per_model", "top_weights", "graph_weights", "penalty_params"}
+        assert set(res["per_model"]["A"]) == {
+            "composite", "composite_pre_penalty", "penalty", "weakest_kpi",
+            "graph_score", "per_kpi_borda",
+        }
+        assert res["penalty_params"] == {
+            "threshold": WEAK_SPOT_THRESHOLD, "cap": WEAK_SPOT_PENALTY_CAP}
+        # single model -> every KPI borda 1.0 -> pre 1.0, no penalty -> 100.0
+        assert res["per_model"]["A"]["composite"] == pytest.approx(100.0)
+
+
+# ===========================================================================
+# 4. weak_spot_penalty unit tests
+# ===========================================================================
+
+class TestWeakSpotPenalty:
+    def test_balanced_model_no_penalty(self):
+        # all four axes at/above tau=0.5 -> no glaring weak spot
+        pkb = {"quarantine_rate": 0.6, "recovery_rate": 0.7, "latency": 0.5}
+        penalty, weakest = weak_spot_penalty(pkb, graph_score=0.9)
+        assert penalty == 0.0
+        assert weakest == "latency"  # the min, but it is AT tau -> no penalty
+
+    def test_weakest_zero_hits_cap(self):
+        pkb = {"quarantine_rate": 1.0, "recovery_rate": 1.0, "latency": 1.0}
+        penalty, weakest = weak_spot_penalty(pkb, graph_score=0.0)
+        assert penalty == pytest.approx(WEAK_SPOT_PENALTY_CAP)  # 0.10
+        assert weakest == "graph"
+
+    def test_partial_weak_spot_linear(self):
+        # weakest=0.15, tau=0.5 -> 0.10 * (0.5-0.15)/0.5 = 0.07
+        pkb = {"quarantine_rate": 0.9, "recovery_rate": 0.9, "latency": 0.9}
+        penalty, weakest = weak_spot_penalty(pkb, graph_score=0.15)
+        assert penalty == pytest.approx(0.07)
+        assert weakest == "graph"
+
+    def test_threshold_boundary_is_zero(self):
+        pkb = {"quarantine_rate": 0.5, "recovery_rate": 0.9, "latency": 0.9}
+        penalty, _ = weak_spot_penalty(pkb, graph_score=0.9)
+        assert penalty == 0.0  # weakest == tau exactly -> deadband
+
+    def test_none_axes_skipped(self):
+        # graph_score None and one processing KPI None -> min over present axes
+        pkb = {"quarantine_rate": 0.1, "recovery_rate": None, "latency": 0.8}
+        penalty, weakest = weak_spot_penalty(pkb, graph_score=None)
+        assert weakest == "quarantine_rate"
+        assert penalty == pytest.approx(0.10 * (0.5 - 0.1) / 0.5)  # 0.08
+
+    def test_no_present_axis_returns_zero_none(self):
+        penalty, weakest = weak_spot_penalty({}, graph_score=None)
+        assert penalty == 0.0
+        assert weakest is None
