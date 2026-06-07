@@ -861,10 +861,10 @@ def test_provider_default_is_none_escape_hatch():
 
 
 def test_default_model_resolves_to_active_deepseek():
-    from common.model_pool import resolve
+    from common.model_pool import resolve_models_json
     parser = kdb_orchestrate._build_parser()
     args = parser.parse_args(["--vault-root", "/tmp/x", "--pipeline", "p"])
-    spec = resolve(args.model)
+    spec = resolve_models_json(args.model)
     assert spec.provider == "deepseek"
     assert spec.model == "deepseek-v4-flash"
 
@@ -884,7 +884,7 @@ def test_main_dropped_model_errors_despite_provider_override(tmp_path):
     with pytest.raises(common.model_pool.DroppedModelError):
         kdb_orchestrate.main([
             "--vault-root", str(tmp_path), "--pipeline", "p",
-            "--provider", "deepseek", "--model", "deepseek-v4-pro",
+            "--provider", "alibaba", "--model", "qwen-flash-us",
         ])
 
 

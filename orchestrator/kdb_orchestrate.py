@@ -45,7 +45,7 @@ from orchestrator.orchestrator_events import (
     check_orchestrator_invariant,
 )
 from common.measurement import RunMeasurementHeader
-from common.model_pool import resolve, UnknownModelError, DroppedModelError, PoolError
+from common.model_pool import resolve_models_json, UnknownModelError, DroppedModelError, PoolError
 from common.run_context import RunContext, now_iso
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
@@ -1054,7 +1054,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        spec = resolve(args.model)
+        spec = resolve_models_json(args.model)
         # spec §4: a KNOWN pool id pins its provider. If --provider is also passed
         # and CONFLICTS with the pool's provider, error (catch the mistake) rather
         # than silently ignoring --provider. Same provider / absent → no error.

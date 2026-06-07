@@ -15,6 +15,15 @@ from functools import lru_cache
 _POOL_PATH = Path(__file__).with_name("models.json")
 WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
 
+# Provider -> the extra_body param that DISABLES thinking. ONLY verified providers
+# go here — never guess a param (it would fire on a paid call). Unmapped providers
+# are a no-op: anthropic/ollama (thinking off by default / no thinking mode), and
+# gemini/openai/xai (TODO: verify their disable param before adding).
+_THINKING_DISABLE_EXTRA_BODY = {
+    "alibaba": {"enable_thinking": False},
+    "deepseek": {"thinking": {"type": "disabled"}},
+}
+
 
 class PoolError(ValueError):
     """Base: unknown id, or selection of a dropped (documented-rejected) model."""
@@ -47,7 +56,7 @@ def load_pool() -> list[dict]:
     return json.loads(_POOL_PATH.read_text(encoding="utf-8"))
 
 
-def resolve(model_id: str) -> ModelSpec:
+def resolve_models_json(model_id: str) -> ModelSpec:
     """alias id -> ModelSpec. Raises PoolError on unknown or dropped id."""
     by_id = {e["id"]: e for e in load_pool()}
     entry = by_id.get(model_id)
@@ -57,6 +66,19 @@ def resolve(model_id: str) -> ModelSpec:
     if entry.get("dropped"):
         reason = entry.get("dropped_reason", "(no reason recorded)")
         raise DroppedModelError(f"Model {model_id!r} is dropped: {reason}")
+
+    # Translate the semantic `thinking` field to the right per-provider disable
+    # param — but ONLY for providers with a verified mapping (never guess a param,
+    # it would fire on a paid call). Explicit extra_body keys override.
+    thinking = entry.get("thinking", "disabled")
+    if thinking not in ("disabled", "enabled"):
+        raise PoolError(f"Model {model_id!r}: invalid thinking={thinking!r} (expected 'disabled' or 'enabled')")
+    disable_param = (_THINKING_DISABLE_EXTRA_BODY.get(entry["provider"], {})
+                     if thinking == "disabled" else {})
+    raw_extra = entry.get("extra_body") or {}
+    merged = {**disable_param, **raw_extra}  # explicit extra_body wins on key conflict
+    extra_body = merged or None
+
     return ModelSpec(
         id=entry["id"],
         provider=entry["provider"],
@@ -64,7 +86,7 @@ def resolve(model_id: str) -> ModelSpec:
         ctx_window=entry.get("ctx_window"),
         max_output_tokens=entry.get("max_output_tokens"),
         use_completion_tokens=entry.get("use_completion_tokens", False),
-        extra_body=entry.get("extra_body"),
+        extra_body=extra_body,
         price_in=entry.get("price_in", 0.0),
         price_out=entry.get("price_out", 0.0),
     )
