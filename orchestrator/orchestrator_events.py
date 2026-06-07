@@ -105,6 +105,10 @@ class EventRecorder:
         # Live progress tee (None = file-only). The console renderer is
         # independent of the JSONL severity filter (see record_event).
         self._console = console
+        # Verbatim accumulation of everything teed to the console sink, so the
+        # run can persist the live narrative (console.log) without re-deriving
+        # it. Best-effort: capture mirrors exactly what reaches the console.
+        self._console_lines: list[str] = []
         self._clock = clock
         self._start = clock()
         self._stage_t0 = self._start
@@ -129,6 +133,26 @@ class EventRecorder:
         events_path = Path(state_root) / "runs" / run_id / "orchestrator_events.jsonl"
         return cls(run_id=run_id, events_path=events_path, log_level=log_level,
                    console=console)
+
+    def _console_write(self, text: str) -> None:
+        """Append to the captured narrative, then tee to the console sink.
+
+        No-op when no console is attached (the capture mirrors exactly what
+        reaches the console). Append-first so a console I/O error never drops a
+        captured line. Chunks are stored verbatim, trailing newlines included.
+        """
+        if self._console is None:
+            return
+        self._console_lines.append(text)
+        self._console.write(text)
+
+    def console_text(self) -> str:
+        """The live progress narrative teed to the console, verbatim.
+
+        A byte-for-byte copy of what reached the console sink (empty when no
+        console was attached). Best-effort: never raises.
+        """
+        return "".join(self._console_lines)
 
     def should_record(self, severity: OrchestratorSeverity) -> bool:
         if severity in HIGH_VISIBILITY_SEVERITIES:
@@ -194,7 +218,7 @@ class EventRecorder:
         if self._console is None:
             return
         try:
-            self._console.write(
+            self._console_write(
                 f"kdb-orchestrate · run {self.run_id} · "
                 f"{total} to process, {skipped} unchanged (skipped)\n\n")
             self._console.flush()
@@ -237,7 +261,7 @@ class EventRecorder:
             pass  # console is best-effort
 
     def _write_progress(self, event: OrchestratorEvent, et: str) -> None:
-        w = self._console.write
+        w = self._console_write
         src = (self._current_source or "")[-48:]
         den = self._total if self._total else "?"
         if et == "source_started":

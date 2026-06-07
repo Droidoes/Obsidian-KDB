@@ -91,6 +91,7 @@ def emit_run_kpis(
     provider: str,
     model: str,
     header: RunMeasurementHeader,
+    console_text: str | None = None,
 ) -> Path:
     """Compute and write benchmark/runs/<run_id>/measurements.json.
 
@@ -136,6 +137,14 @@ def emit_run_kpis(
     atomic_write_json(out_path, payload)
     # Rendered human-readable report alongside the machine payload.
     (out_dir / "report.md").write_text(render_report(payload), encoding="utf-8")
+    # The live progress narrative (orchestrate stdout), saved verbatim. Its own
+    # try/except: a console.log failure must not be reported as "KPI emission
+    # failed" — measurements.json/report.md are already on disk by now.
+    if console_text:
+        try:
+            (out_dir / "console.log").write_text(console_text, encoding="utf-8")
+        except OSError:
+            log.warning("emit-kpis: could not write console.log for run %s", run_id)
     return out_path
 
 
@@ -150,6 +159,7 @@ def maybe_emit_kpis(
     model: str,
     header: RunMeasurementHeader,
     finalize_ran: bool,
+    console_text: str | None = None,
 ) -> None:
     """Gate: emit KPIs only when --emit-kpis set AND finalize ran (compile_result exists).
 
@@ -174,6 +184,7 @@ def maybe_emit_kpis(
             provider=provider,
             model=model,
             header=header,
+            console_text=console_text,
         )
         log.info("emit-kpis: measurements written to %s", out_path)
     except Exception as exc:  # noqa: BLE001

@@ -26,6 +26,27 @@ def test_runheader_fields():
     assert h.signal == 29
 
 
+def test_header_carries_release_version():
+    from common.measurement import RunMeasurementHeader
+    import dataclasses
+    h = RunMeasurementHeader(
+        run_id="r", corpus_fingerprint="cf", pass1_prompt_version="1",
+        pass2_prompt_version="", scanned=1, to_compile=1, signal=1, noise=0,
+        p1_attempted=1, p2_attempted=1, release_version="v0.5.5",
+    )
+    assert dataclasses.asdict(h)["release_version"] == "v0.5.5"
+
+
+def test_header_release_version_defaults_empty():
+    from common.measurement import RunMeasurementHeader
+    h = RunMeasurementHeader(
+        run_id="r", corpus_fingerprint="cf", pass1_prompt_version="1",
+        pass2_prompt_version="", scanned=1, to_compile=1, signal=1, noise=0,
+        p1_attempted=1, p2_attempted=1,
+    )
+    assert h.release_version == ""
+
+
 # ---------------------------------------------------------------------------
 # from_pass2 adapter (Task #109 B1)
 # ---------------------------------------------------------------------------

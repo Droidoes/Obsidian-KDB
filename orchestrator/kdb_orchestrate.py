@@ -47,6 +47,7 @@ from orchestrator.orchestrator_events import (
 from common.measurement import RunMeasurementHeader
 from common.model_pool import resolve_models_json, UnknownModelError, DroppedModelError, PoolError
 from common.run_context import RunContext, now_iso
+from common.version import release_version
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
@@ -950,6 +951,7 @@ def run(
         signal = counts["sources_enriched"] - counts["sources_noise"]
         header = RunMeasurementHeader(
             run_id=ctx.run_id,
+            release_version=release_version(),
             corpus_fingerprint=_corpus_fingerprint(scan.files),
             pass1_prompt_version=PASS1_PROMPT_VERSION,
             pass2_prompt_version="",
@@ -976,6 +978,7 @@ def run(
             model=model,
             header=header,
             finalize_ran=finalize_stats is not None,
+            console_text=recorder.console_text() if not quiet else None,
         )
 
     return OrchestrateResult(

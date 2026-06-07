@@ -161,6 +161,7 @@ class RunMeasurementHeader:
     noise: int
     p1_attempted: int
     p2_attempted: int
+    release_version: str = ""
 
 
 # ---------------------------------------------------------------------------
