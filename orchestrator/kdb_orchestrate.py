@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kdb_graph.graphdb import GraphDB
-from kdb_graph.ingestor import (
+from kdb_graph.intake import (
     apply_cleanup, apply_compile_result, detect_orphans, wire_links,
 )
 from orchestrator import manifest_writer

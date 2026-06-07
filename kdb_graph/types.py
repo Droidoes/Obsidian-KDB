@@ -1,7 +1,7 @@
 """Public dataclasses returned by GraphDB queries.
 
 #63.1 shipped Entity + Source (renamed from Page per D-A1 2026-05-14).
-#63.2 adds SyncResult. VerifyResult / RebuildResult arrive in their
+#63.2 adds IntakeResult. VerifyResult / RebuildResult arrive in their
 respective sub-tasks (#63.5 / #63.6).
 #83/#84 schema v2.2 adds Claim (D-83/84-6 F1 family/version split;
 STRING[] arrays for scope + object slugs).
@@ -13,8 +13,8 @@ from typing import Optional
 
 
 @dataclass
-class SyncResult:
-    """Per-run ingest summary returned by apply_compile_result."""
+class IntakeResult:
+    """Per-run intake summary returned by apply_compile_result."""
     run_id: str = ""
     entities_upserted: int = 0    # Entity MERGE ops in Phase 3 (renamed from pages_upserted per D-A1)
     edges_upserted: int = 0       # LINKS_TO edges present after replacement (Phase 3)
@@ -57,7 +57,7 @@ class Source:
     ingest_count: int         # renamed from compile_count per D-A2
     last_run_id: str
     moved_to: str
-    # D-89-17: Pass-1 frontmatter fields written by ingestor when source_meta present
+    # D-89-17: Pass-1 frontmatter fields written by intake when source_meta present
     summary: Optional[str] = None
     author: Optional[str] = None
     domain: Optional[str] = None

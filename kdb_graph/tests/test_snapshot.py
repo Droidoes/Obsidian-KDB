@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from kdb_graph.graphdb import GraphDB
-from kdb_graph.ingestor import apply_compile_result
+from kdb_graph.intake import apply_compile_result
 from kdb_graph.snapshot import (
     SNAPSHOT_FORMAT_VERSION,
     default_snapshot_dirname,
@@ -714,7 +714,7 @@ def test_snapshot_writes_claim_layer_content(graph_dir, tmp_path):
 def _seed_graph_with_pass1_sources(graph_dir: Path) -> None:
     """Seed a graph with Source nodes that have summary/author/domain populated
     (simulating what Pass-1 ingestion writes). Uses direct Kuzu INSERT to
-    set the new columns; the ingestor path is Task B.2 scope, not B.1."""
+    set the new columns; the intake path is Task B.2 scope, not B.1."""
     with GraphDB(graph_dir) as gdb:
         c = gdb.conn
         # Source with all three Pass-1 columns populated.
@@ -767,7 +767,7 @@ def test_snapshot_sources_jsonl_includes_pass1_columns(graph_dir, tmp_path):
 def test_snapshot_sources_jsonl_null_columns_for_pre_pass1_graph(graph_dir, tmp_path):
     """Sources written before Pass-1 runs produce null for summary/author/domain
     in the snapshot (back-compat: v4 format rows are extended, not replaced)."""
-    _seed_graph(graph_dir)  # plain seed via ingestor (no Pass-1 columns set)
+    _seed_graph(graph_dir)  # plain seed via intake (no Pass-1 columns set)
     out = tmp_path / "snap"
     snapshot(graph_dir, out)
     rows = [
