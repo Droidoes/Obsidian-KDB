@@ -1,8 +1,8 @@
 """model_pool — user-owned model registry loaded from common/models.json.
 
 The JSON is DATA (pool + per-model knobs + curation ledger); this module is
-the LOOKUP layer (alias -> ModelSpec, dropped-guard) plus token-estimate
-helpers for the context-overrun pre-flight guard.
+the LOOKUP layer (alias -> ModelSpec) plus token-estimate helpers for the
+context-overrun pre-flight guard.
 call_model.py (the engine) is untouched and still takes explicit provider+model.
 """
 from __future__ import annotations
@@ -26,15 +26,11 @@ _THINKING_DISABLE_EXTRA_BODY = {
 
 
 class PoolError(ValueError):
-    """Base: unknown id, or selection of a dropped (documented-rejected) model."""
+    """Base: unknown id or invalid pool entry."""
 
 
 class UnknownModelError(PoolError):
     """Model id not found in the pool."""
-
-
-class DroppedModelError(PoolError):
-    """Model id is in the pool but marked dropped (documented-rejected)."""
 
 
 @dataclass(frozen=True)
@@ -52,20 +48,19 @@ class ModelSpec:
 
 @lru_cache(maxsize=1)
 def load_pool() -> list[dict]:
-    """Load the raw pool (all entries, including dropped)."""
+    """Load the active pool from models.json. Dropped entries live in
+    models_dropped.json (a human archive the code never reads)."""
     return json.loads(_POOL_PATH.read_text(encoding="utf-8"))
 
 
 def resolve_models_json(model_id: str) -> ModelSpec:
-    """alias id -> ModelSpec. Raises PoolError on unknown or dropped id."""
+    """alias id -> ModelSpec. Raises UnknownModelError for an id not in the
+    active pool (dropped ids were archived out of models.json)."""
     by_id = {e["id"]: e for e in load_pool()}
     entry = by_id.get(model_id)
     if entry is None:
-        avail = ", ".join(sorted(e["id"] for e in load_pool() if not e.get("dropped")))
+        avail = ", ".join(sorted(e["id"] for e in load_pool()))
         raise UnknownModelError(f"Unknown model id {model_id!r}. Available: {avail}")
-    if entry.get("dropped"):
-        reason = entry.get("dropped_reason", "(no reason recorded)")
-        raise DroppedModelError(f"Model {model_id!r} is dropped: {reason}")
 
     # Translate the semantic `thinking` field to the right per-provider disable
     # param — but ONLY for providers with a verified mapping (never guess a param,
