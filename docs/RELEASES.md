@@ -10,6 +10,34 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.5 — #111 Phase 0: run provenance + release-keyed leaderboard (tagged `v0.5.5`, 2026-06-07)
+
+**Theme:** the baseline-0 marker for the #111 two-phase de-risk — make every benchmark
+run version-attributable *before* re-benchmarking, so the optimal-call upgrades in
+Phase 1/2 land as isolated, per-model-comparable deltas. Pure provenance/scoring
+plumbing; **no model-call-path change** (Phase 1 begins that).
+
+**What landed (#111 Phase 0, merged from `feat/111-structured-output-upgrade`):**
+- **Run provenance** — `common/version.py` `release_version()` (`git describe --tags
+  --dirty --always`, best-effort → `"unknown"`) stamped into
+  `RunMeasurementHeader.release_version` and the emitted `measurements.json` (back-compat
+  default `""` for pre-#111 headers).
+- **Saved run narrative** — orchestrate stdout accumulated by the `EventRecorder` and
+  written to per-run `benchmark/runs/<id>/console.log`.
+- **Release-keyed leaderboard** — `kdb-benchmark score` now keys rows on
+  **`(provider, model, release_version)`** (`provider/model@version`), so the same model
+  at different releases accumulates as distinct, comparable rows; the same triple re-run
+  replaces. *Migration: a pre-#111 bare-model leaderboard is incompatible — delete
+  `benchmark/scores/leaderboard.{json,md}` once.*
+
+1221 non-live tests green. Sets up the clean-slate **baseline-0** cohort
+(deepseek-v4-flash / qwen3.5-flash / gpt-5.4-mini / gemini-3.1-flash-lite) to be fired
+at this tag. The prior 3-model cohort has been preserved as the `@v0.5.4` baseline.
+Plan: `docs/superpowers/plans/2026-06-07-phase0-run-provenance-leaderboard-key.md`.
+Spec: `docs/superpowers/specs/2026-06-07-optimal-model-calls-design.md`.
+
+---
+
 ## 0.5.4 — Benchmark framework + user-owned model pool (tagged `v0.5.4`, 2026-06-07)
 
 **Theme:** the infrastructure that sets up a *fair* model evaluation — the GT-free benchmark
