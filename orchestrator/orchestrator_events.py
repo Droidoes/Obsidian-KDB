@@ -269,7 +269,10 @@ class EventRecorder:
         elif et == "pass1_enrich_started":
             w("         pass-1 enrich…\n")
         elif et == "pass1_enrich_completed":
-            w(f"         pass-1 ✓ {self._elapsed(self._stage_t0)}\n")
+            # #111 display-only: per-source token in/out (always shown, even 0).
+            _ctx = event.context or {}
+            _tok = f" · in {_ctx.get('in_tokens', 0):,} / out {_ctx.get('out_tokens', 0):,}"
+            w(f"         pass-1 ✓ {self._elapsed(self._stage_t0)}{_tok}\n")
         elif et == "pass1_gate_noise":
             w(f"         noise — skipping pass-2  · {self._counts_tail()}\n")
         elif et == "pass2_compile_started":
@@ -279,10 +282,14 @@ class EventRecorder:
             # The orchestrator threads attempts into event.context when the compile
             # loop retried (attempts==compile_meta.attempts via Fix 3a).
             _attempts = event.context.get("attempts", 1) if event.context else 1
+            # #111 display-only: per-source token in/out (always shown, even 0),
+            # appended to BOTH the (N attempts) line and the plain line.
+            _ctx = event.context or {}
+            _tok = f" · in {_ctx.get('in_tokens', 0):,} / out {_ctx.get('out_tokens', 0):,}"
             if _attempts > 1:
-                w(f"         pass-2 ✓ ({_attempts} attempts) {self._elapsed(self._stage_t0)}\n")
+                w(f"         pass-2 ✓ ({_attempts} attempts) {self._elapsed(self._stage_t0)}{_tok}\n")
             else:
-                w(f"         pass-2 ✓ {self._elapsed(self._stage_t0)}\n")
+                w(f"         pass-2 ✓ {self._elapsed(self._stage_t0)}{_tok}\n")
         elif et == "source_commit_completed":
             w(f"         committed ✓  · {self._counts_tail()}\n")
         elif event.severity in _ALARM_SEVERITIES:

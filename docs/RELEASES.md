@@ -38,8 +38,11 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
   records `final_status="retried"`; `compile_meta.attempts` carries the re-prompt count; and the
   per-source `pass-2 ✓ (N attempts)` line + `console.log` now surface retries. Makes the
   baseline-1 `recovery_rate` axis trustworthy.
+- **Per-source token telemetry** — the `pass-1 ✓` / `pass-2 ✓` console lines now show
+  `· in <n> / out <n>` (per-source token in/out, alongside latency), captured in each run's
+  `console.log` via the `EventRecorder`. Display-only — no `measurements.json`/KPI change.
 
-deepseek + qwen were already optimal (#110), so they're unchanged. 1241 non-live tests green;
+deepseek + qwen were already optimal (#110), so they're unchanged. 1247 non-live tests green;
 Gemini native path live-smoke validated (exit 0, 0 quarantined, native `usage_metadata` tokens).
 Sets up **baseline-1** (batch-1 four models at `v0.5.6`) against the `@v0.5.4` baseline-0; for
 Gemini the `@v0.5.4 → @v0.5.6` delta isolates the native-vs-shim effect. Plans:

@@ -35,6 +35,12 @@ class EnrichResult:
     post_embed_mtime: float | None = None
     artifacts: dict[str, str] = field(default_factory=dict)
     raw_response_available: bool = False
+    # #111 display-only: aggregated Pass-1 tokens (same totals written into the
+    # sidecar raw_response). Populated only on the enriched success path; failed/
+    # skipped paths keep the 0 defaults. The orchestrator renders these on the
+    # pass-1 ✓ console line. NOT a measurement — telemetry stays in the sidecar.
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
 
 
 def _whole_file_hash(source_path: Path) -> str:
@@ -173,7 +179,9 @@ def enrich_one(
     sidecar = write_sidecar(runs_root, run_id, sidecar_payload)
     return EnrichResult(source_id, outcome, envelope, sidecar, None,
                         body=body, post_embed_hash=post_embed_hash,
-                        post_embed_mtime=post_embed_mtime)
+                        post_embed_mtime=post_embed_mtime,
+                        total_input_tokens=call_result.total_input_tokens,
+                        total_output_tokens=call_result.total_output_tokens)
 
 
 def _local_iso() -> str:

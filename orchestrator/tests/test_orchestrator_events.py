@@ -356,3 +356,66 @@ def test_pass2_completed_single_attempt_renders_bare_line(tmp_path: Path) -> Non
     text = out.getvalue()
     assert "pass-2 ✓ 11.8s" in text
     assert "attempts" not in text
+
+
+# ---------------------------------------------------------------------------
+# #111 display-only: per-source token in/out on pass-1/pass-2 ✓ console lines
+# ---------------------------------------------------------------------------
+
+def test_pass1_completed_renders_token_counts(tmp_path: Path) -> None:
+    """#111: pass1_enrich_completed context carries in/out tokens, which the
+    recorder appends to the pass-1 ✓ line with comma thousands separators."""
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    clk.now = 10.0
+    rec.record(stage="pass1_enrich", event_type="pass1_enrich_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 13.3
+    rec.record(stage="pass1_enrich", event_type="pass1_enrich_completed",
+               severity="info", message="", source_id="a.md",
+               context={"in_tokens": 6430, "out_tokens": 273})
+    text = out.getvalue()
+    assert "pass-1 ✓ 3.3s · in 6,430 / out 273" in text
+
+
+def test_pass1_completed_renders_zero_tokens_when_absent(tmp_path: Path) -> None:
+    """#111: tokens are shown always (even 0) — missing context keys default 0."""
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out)
+    rec.record(stage="pass1_enrich", event_type="pass1_enrich_completed",
+               severity="info", message="", source_id="a.md")
+    assert "· in 0 / out 0" in out.getvalue()
+
+
+def test_pass2_completed_renders_token_counts(tmp_path: Path) -> None:
+    """#111: pass2_compile_completed appends tokens to the plain ✓ line."""
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="pass2_compile", event_type="pass2_compile_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 13.2
+    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
+               severity="info", message="", source_id="a.md",
+               context={"in_tokens": 9234, "out_tokens": 1203})
+    assert "pass-2 ✓ 13.2s · in 9,234 / out 1,203" in out.getvalue()
+
+
+def test_pass2_completed_renders_tokens_with_attempts(tmp_path: Path) -> None:
+    """#111: tokens are appended after the (N attempts) annotation too."""
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="pass2_compile", event_type="pass2_compile_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 13.2
+    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
+               severity="info", message="", source_id="a.md",
+               context={"attempts": 2, "in_tokens": 9234, "out_tokens": 1203})
+    assert "pass-2 ✓ (2 attempts) 13.2s · in 9,234 / out 1,203" in out.getvalue()
