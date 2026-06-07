@@ -12,11 +12,11 @@
 
 **Conventions:** run tests with `.venv/bin/pytest -m "not live"` (plain `pytest`/`python` aren't on PATH; `.env` auto-loads keys so always pass `-m "not live"`). **Baseline test count at branch start: 1221 passed, 1 skipped.**
 
-**⚠️ Two tasks are VERIFICATION-GATED (Joseph fires, API cost) — do NOT guess a param on a paid call:**
-- **Task 6 (gpt-5.4-mini reasoning):** spec Verification #1 — does `gpt-5.4-mini` accept `reasoning_effort:"none"`, and is `"low"` better for our extraction workload? Default `"low"` (OpenAI's extraction floor) but the exact key/value lands only after the probe.
-- **Task 7 (gemini thinking):** spec Verification #2 — does the Gemini **compat** endpoint accept a thinking-disable `extra_body`? If yes → lands here. If no → **defer Gemini's thinking config to Phase 2** (native handler) and skip Task 7.
+**RESOLVED (2026-06-07, Joseph's verifications):**
+- **Task 6 (gpt-5.4-mini reasoning):** ✅ **`reasoning_effort: "low"`** for structured output (Joseph confirmed). Landed.
+- **Task 7 (gemini thinking):** ❌ **DROPPED FROM PHASE 1 → deferred to Phase 2.** Decision settled: Gemini goes through the **native `google-genai` SDK** handler (`_call_gemini`), where `thinking_config={"thinking_budget":0}` and `response_json_schema` are delivered together (see `docs/reference/model-provider-api-calls.md` "⚠️ FINDING" + spec §6c). No compat probe; building the native handler for thinking-only in Phase 1 would be premature — it lands with the schema work in Phase 2.
 
-Tasks 1–5 are fully deterministic and unblock immediately.
+Tasks 1–6 done. Task 7 carried to Phase 2.
 
 ---
 
@@ -352,9 +352,11 @@ git commit -m "feat(pool): gpt-5.4-mini reasoning_effort=low (verified) (#111 Ph
 
 ---
 
-## Task 7: `gemini-3.1-flash-lite` thinking config — VERIFICATION-GATED (spec Verification #2)
+## Task 7: `gemini-3.1-flash-lite` thinking config — ❌ DEFERRED TO PHASE 2 (not done in Phase 1)
 
-> **BLOCKED until Joseph's probe, and MAY DEFER TO PHASE 2.** Question: does the Gemini **compat** endpoint accept a thinking-disable `extra_body`? **If NO → skip this task entirely; Gemini's thinking config moves to Phase 2's native `_call_gemini` handler.** If YES → add the verified disable param to the per-provider table.
+> **RESOLVED 2026-06-07: deferred to Phase 2.** Gemini is settled to use the native `google-genai` SDK handler (`_call_gemini`), where `thinking_config={"thinking_budget":0}` + `response_json_schema` are built together (`docs/reference/model-provider-api-calls.md` "⚠️ FINDING"; spec §6c). The Phase-1 compat-`extra_body` approach below is therefore **not pursued** — kept here only as the record of the path not taken. Do NOT implement this in Phase 1.
+
+<details><summary>Original (not-pursued) Phase-1 compat approach</summary>
 
 **Files:**
 - Modify: `common/model_pool.py` (`_THINKING_DISABLE_EXTRA_BODY`), `common/models.json`
@@ -391,6 +393,8 @@ Then add `"thinking": "disabled"` to the `gemini-3.1-flash-lite` entry in `commo
 git add common/model_pool.py common/models.json common/tests/test_model_pool.py
 git commit -m "feat(pool): gemini thinking-disable via compat (verified) (#111 Phase 1)"
 ```
+
+</details>
 
 ---
 
