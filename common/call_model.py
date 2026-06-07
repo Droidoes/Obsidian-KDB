@@ -51,6 +51,7 @@ class ModelRequest:
     use_completion_tokens: bool = False
     # `extra_body` is forwarded to the openai-compat SDK as `extra_body=...`,
     # carrying provider-specific kwargs (e.g. Qwen's `{"think": false}`).
+    # The gemini-native path reads `extra_body["thinking_level"]` specifically.
     extra_body: dict | None = None
     extra: dict = field(default_factory=dict)
 
@@ -166,6 +167,9 @@ def _call_gemini(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
         cfg_kwargs["system_instruction"] = req.system
     if req.json_mode:
         cfg_kwargs["response_mime_type"] = "application/json"
+    # NB: req.extra (the openai-compat escape hatch) is intentionally NOT honored here —
+    # GenerateContentConfig is a typed model with a different kwarg shape; gemini-native
+    # knobs ride extra_body (e.g. thinking_level). Thread a typed gemini override here if needed.
     config = genai_types.GenerateContentConfig(**cfg_kwargs)
 
     resp = client.models.generate_content(
@@ -175,13 +179,15 @@ def _call_gemini(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
     usage = resp.usage_metadata
     input_tokens = getattr(usage, "prompt_token_count", 0) or 0
     # thinking tokens bill as output; include them (≈0 at minimal, but correct).
-    output_tokens = (getattr(usage, "candidates_token_count", 0) or 0) + \
-                    (getattr(usage, "thoughts_token_count", 0) or 0)
+    output_tokens = (
+        (getattr(usage, "candidates_token_count", 0) or 0)
+        + (getattr(usage, "thoughts_token_count", 0) or 0)
+    )
     stop_reason = None
     cands = getattr(resp, "candidates", None) or []
     if cands:
         fr = getattr(cands[0], "finish_reason", None)
-        stop_reason = str(fr) if fr is not None else None
+        stop_reason = fr.value if fr is not None else None
     return text, input_tokens, output_tokens, stop_reason, resp
 
 

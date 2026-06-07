@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.genai import types as genai_types
 
 from common import call_model as cm
 from common.call_model import ModelConfigError, ModelRequest, call_model
@@ -85,14 +86,18 @@ def test_openai_dispatch(monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
 
 
 def _make_gemini_resp() -> MagicMock:
-    """Build a minimal google-genai response mock."""
+    """Build a minimal google-genai response mock.
+
+    finish_reason uses the REAL FinishReason enum so the test exercises
+    `.value` extraction rather than trivially passing on a plain string.
+    """
     resp = MagicMock()
     resp.text = "hello from gemini"
     resp.usage_metadata.prompt_token_count = 8
     resp.usage_metadata.candidates_token_count = 3
     resp.usage_metadata.thoughts_token_count = 1
     cand = MagicMock()
-    cand.finish_reason = "STOP"
+    cand.finish_reason = genai_types.FinishReason.STOP  # real enum, not a plain string
     resp.candidates = [cand]
     return resp
 
@@ -172,6 +177,23 @@ def test_gemini_native_usage_maps_correctly(monkeypatch: pytest.MonkeyPatch) -> 
         ))
     assert resp.input_tokens == 8   # prompt_token_count
     assert resp.output_tokens == 4  # candidates_token_count(3) + thoughts_token_count(1)
+
+
+def test_gemini_native_stop_reason_bare_enum_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """stop_reason is the bare enum value string ("STOP"), NOT the verbose repr.
+
+    This test would FAIL against the old ``str(fr)`` code which emits
+    "FinishReason.STOP" — it verifies that ``.value`` extraction is in place.
+    """
+    _use_settings(monkeypatch, gemini_api_key="AIza-test")
+    gemini_resp = _make_gemini_resp()  # finish_reason = FinishReason.STOP (real enum)
+    client = MagicMock()
+    client.models.generate_content.return_value = gemini_resp
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.1-flash-lite", prompt="hi",
+        ))
+    assert resp.stop_reason == "STOP"
 
 
 def test_gemini_native_missing_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
