@@ -31,7 +31,8 @@ def test_enrich_returns_body_and_post_embed_hash(tmp_path, monkeypatch):
     src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
     runs = tmp_path / "ingest_runs"
 
-    def fake_call_pass1(*, source_text, source_path, provider, model):
+    def fake_call_pass1(*, source_text, source_path, provider, model,
+                        ctx_window=None):
         return Pass1CallResult(
             parsed=_signal_parsed(model), raw_response_text="{}",
             request_prompt="prompt", request_model=model, request_provider=provider,
@@ -56,7 +57,8 @@ def test_enrich_sidecar_cost_usd_from_aggregated_tokens(tmp_path, monkeypatch):
     src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
     runs = tmp_path / "ingest_runs"
 
-    def fake_call_pass1(*, source_text, source_path, provider, model):
+    def fake_call_pass1(*, source_text, source_path, provider, model,
+                        ctx_window=None):
         return Pass1CallResult(
             parsed=_signal_parsed(model), raw_response_text="{}",
             request_prompt="prompt", request_model=model, request_provider=provider,
@@ -82,7 +84,8 @@ def test_enrich_pipeline_force_noise_param_overrides(tmp_path, monkeypatch):
     src.write_text("# Standup\n\nNotes for today.\n", encoding="utf-8")
     runs = tmp_path / "ingest_runs"
 
-    def fake_call_pass1(*, source_text, source_path, provider, model):
+    def fake_call_pass1(*, source_text, source_path, provider, model,
+                        ctx_window=None):
         return Pass1CallResult(
             parsed=_signal_parsed(model), raw_response_text="{}",
             request_prompt="p", request_model=model, request_provider=provider,

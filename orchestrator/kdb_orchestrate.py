@@ -619,7 +619,7 @@ def run(
                     runs_root=runs_root, run_id=ctx.run_id,
                     provider=provider, model=model,
                     force_signal=pipeline.force_signal, force_noise=pipeline.force_noise,
-                    price_in=price_in, price_out=price_out)
+                    price_in=price_in, price_out=price_out, ctx_window=ctx_window)
                 if enrich.outcome == "enrich_failed":
                     failure = _last_failure(
                         ctx=ctx,
