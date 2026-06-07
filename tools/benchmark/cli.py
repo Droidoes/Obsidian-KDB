@@ -70,8 +70,12 @@ def _render_leaderboard_md(
     )
     lines.append("")
 
+    def fmt2(v) -> str:
+        return "—" if v is None else f"{v:.2f}"
+
     # --- ranking (Borda) ---
-    head = ["rank", "model"] + [f"{k} ↓" for k in proc_kpis] + ["graph_score ↑", "composite"]
+    head = (["rank", "model"] + [f"{k} ↓" for k in proc_kpis]
+            + ["graph_score ↑", "pre-pen", "PENALTY", "score (0-100)"])
     lines.append(row(head))
     lines.append(sep(len(head)))
     for r in ranking:
@@ -79,7 +83,11 @@ def _render_leaderboard_md(
         cells = [str(r.get("rank", "")), str(r.get("model", ""))]
         cells += [fmt(pkb.get(k)) for k in proc_kpis]
         cells.append(fmt(r.get("graph_score")))
-        cells.append(fmt(r.get("composite")))
+        cells.append(fmt2(r.get("composite_pre_penalty")))
+        pen = r.get("penalty") or 0.0
+        wk = r.get("weakest_kpi")
+        cells.append(f"{fmt2(r.get('penalty'))} ({wk})" if pen > 0 and wk else fmt2(r.get("penalty")))
+        cells.append(fmt2(r.get("composite")))
         lines.append(row(cells))
     lines.append("")
 
@@ -119,10 +127,11 @@ def _render_leaderboard_md(
 def _render_score_table(ranking: list[dict], diagnostics_by_model: dict) -> str:
     """Render the leaderboard table for the score subcommand.
 
-    Main table: rank | model | <processing KPIs (Borda)> | graph_score | composite
-    — the four graph KPIs are collapsed into the combined graph_score; their
-    individual Borda values + the watched/diagnostic KPIs follow in a detail
-    section for inspection.  `ranking` rows carry model / rank / composite /
+    Main table: rank | model | <processing KPIs (Borda)> | graph_score |
+    pre-pen | PENALTY | score — the four graph KPIs are collapsed into the
+    combined graph_score; their individual Borda values + the watched/diagnostic
+    KPIs follow in a detail section for inspection.  `ranking` rows carry model /
+    rank / composite / composite_pre_penalty / penalty / weakest_kpi /
     graph_score / per_kpi_borda.
     """
     from compiler.kpi.score import GRAPH_WEIGHTS
@@ -140,28 +149,40 @@ def _render_score_table(ranking: list[dict], diagnostics_by_model: dict) -> str:
     def _cell(v) -> str:
         return f"{v:.4f}" if isinstance(v, (int, float)) else "n/a"
 
+    cols = proc_kpis + ["graph_score"]
+    header = "  ".join(f"{c:>20}" for c in cols)
+    header_line = (
+        f"{'rank':>4}  {'model':<32}  {header}  "
+        f"{'pre-pen':>9}  {'PENALTY':>14}  {'score':>9}"
+    )
+    rule = "=" * len(header_line)  # match the header width so rules span the table
+
     lines: list[str] = []
-    lines.append("=" * 100)
+    lines.append(rule)
     lines.append(
         "Model leaderboard — weighted Borda "
         "(§6 starting weights: quarantine .40 / graph .40 / recovery .10 / latency .10)"
     )
-    lines.append("=" * 100)
-
-    cols = proc_kpis + ["graph_score"]
-    header = "  ".join(f"{c:>20}" for c in cols)
-    lines.append(f"{'rank':>4}  {'model':<32}  {header}  {'composite':>9}")
-    lines.append("-" * 100)
+    lines.append(rule)
+    lines.append(header_line)
+    lines.append("-" * len(header_line))
 
     for row in ranking:
         pkb = row.get("per_kpi_borda", {})
         cells = [_cell(pkb.get(k)) for k in proc_kpis]
         cells.append(_cell(row.get("graph_score")))
         cellstr = "  ".join(f"{c:>20}" for c in cells)
+        pre = row.get("composite_pre_penalty")
+        pen = row.get("penalty")
         comp = row.get("composite")
+        wk = row.get("weakest_kpi")
+        pen_str = f"{pen:.2f}" if isinstance(pen, (int, float)) else "n/a"
+        if isinstance(pen, (int, float)) and pen > 0 and wk:
+            pen_str = f"{pen:.2f} ({wk})"
         lines.append(
             f"{row.get('rank', 0):>4}  {row.get('model', ''):<32}  {cellstr}  "
-            f"{(_cell(comp)):>9}"
+            f"{(f'{pre:.2f}' if isinstance(pre,(int,float)) else 'n/a'):>9}  "
+            f"{pen_str:>14}  {(f'{comp:.2f}' if isinstance(comp,(int,float)) else 'n/a'):>9}"
         )
 
     # Graph-KPI detail (the components behind graph_score) + diagnostics/watched.
