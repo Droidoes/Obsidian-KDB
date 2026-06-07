@@ -77,6 +77,54 @@ def test_enrich_sidecar_cost_usd_from_aggregated_tokens(tmp_path, monkeypatch):
     assert data["cost_usd"] == pytest.approx(expected)
 
 
+def test_enrich_success_carries_aggregated_tokens(tmp_path, monkeypatch):
+    # #111 display-only: the success EnrichResult exposes aggregated in/out tokens
+    # (the same totals written into the sidecar) so the orchestrator can render
+    # per-source token counts on the pass-1 ✓ console line.
+    src = tmp_path / "s.md"
+    src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
+    runs = tmp_path / "ingest_runs"
+
+    def fake_call_pass1(*, source_text, source_path, provider, model,
+                        ctx_window=None, **_kwargs):
+        return Pass1CallResult(
+            parsed=_signal_parsed(model), raw_response_text="{}",
+            request_prompt="prompt", request_model=model, request_provider=provider,
+            input_tokens=10, output_tokens=5, latency_ms=1, attempts=2,
+            total_input_tokens=6430, total_output_tokens=273,
+        )
+    monkeypatch.setattr(enrich_mod, "call_pass1", fake_call_pass1)
+
+    res = enrich_one(source_path=src, source_id="s.md", runs_root=runs,
+                     run_id="r1", provider="p", model="m")
+
+    assert res.outcome == "enriched"
+    assert res.total_input_tokens == 6430
+    assert res.total_output_tokens == 273
+
+
+def test_enrich_failed_keeps_zero_token_defaults(tmp_path, monkeypatch):
+    # #111: only the success path populates tokens; the failed path keeps the
+    # 0 defaults (the orchestrator fail-fasts on enrich failure anyway).
+    src = tmp_path / "bad.md"
+    src.write_text("# Bad\n\nA note.\n", encoding="utf-8")
+    runs = tmp_path / "ingest_runs"
+
+    monkeypatch.setattr(
+        caller_mod, "call_model",
+        lambda req: caller_mod.ModelResponse(
+            text="{not valid json", input_tokens=7, output_tokens=3,
+            latency_ms=11, model="m", provider="p"),
+    )
+
+    res = enrich_one(source_path=src, source_id="bad.md", runs_root=runs,
+                     run_id="r1", provider="p", model="m")
+
+    assert res.outcome == "enrich_failed"
+    assert res.total_input_tokens == 0
+    assert res.total_output_tokens == 0
+
+
 def test_enrich_pipeline_force_noise_param_overrides(tmp_path, monkeypatch):
     # Task #91: the orchestrator threads the pipeline's force_noise globs; a
     # signal envelope under Daily Notes/* must be deterministically routed noise.

@@ -676,7 +676,9 @@ def run(
                     severity="info",
                     message="Pass-1 enrich completed",
                     source_id=source_id,
-                    context={"outcome": enrich.outcome})
+                    context={"outcome": enrich.outcome,
+                             "in_tokens": enrich.total_input_tokens,
+                             "out_tokens": enrich.total_output_tokens})
 
                 if enrich.parsed_envelope["kdb_signal"] == "noise":
                     recorder.record(
@@ -785,12 +787,18 @@ def run(
                 # when the compile loop re-prompted (attempts>1 via Fix 3a).
                 _cm = (result.cr or {}).get("compiled_sources", [{}])[0].get("compile_meta") or {}
                 _compile_attempts = _cm.get("attempts", 1)
+                # #111 display-only: thread per-source compile tokens onto the
+                # event so the recorder renders "· in N / out N" on pass-2 ✓.
+                _ctx = {"in_tokens": _cm.get("input_tokens", 0),
+                        "out_tokens": _cm.get("output_tokens", 0)}
+                if _compile_attempts > 1:
+                    _ctx["attempts"] = _compile_attempts
                 recorder.record(
                     stage="pass2_compile", event_type="pass2_compile_completed",
                     severity="info",
                     message="Pass-2 compile completed",
                     source_id=source_id,
-                    context={"attempts": _compile_attempts} if _compile_attempts > 1 else {})
+                    context=_ctx)
 
                 commit = _commit_source(
                     cr=result.cr, source_id=source_id,
