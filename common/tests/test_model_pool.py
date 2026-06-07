@@ -118,3 +118,21 @@ def test_fits_context_false_when_over():
 def test_fits_context_exact_boundary_is_ok():
     # est_input + requested_output == ctx_window must fit (<=)
     assert fits_context(est_input=910, requested_output=90, ctx_window=1000) is True
+
+
+import json as _json
+from pathlib import Path as _Path
+
+def test_active_pool_has_no_dropped_entries():
+    # After the split, models.json holds ACTIVE entries only.
+    active = _json.loads((_Path("common/models.json")).read_text(encoding="utf-8"))
+    assert all("dropped" not in e for e in active), \
+        "models.json must not contain dropped entries after the split"
+
+def test_dropped_archive_is_valid_json_and_holds_the_moved_entries():
+    arch = _json.loads((_Path("common/models_dropped.json")).read_text(encoding="utf-8"))
+    ids = {e["id"] for e in arch}
+    assert {"gemini-3-flash-preview", "deepseek-v4-flash:cloud",
+            "qwen-flash-us", "deepseek-v4-flash:alibaba"} <= ids
+    assert all(e.get("dropped") is True and e.get("dropped_reason") for e in arch), \
+        "archive entries keep their dropped/dropped_reason record"
