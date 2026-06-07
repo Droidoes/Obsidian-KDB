@@ -1,11 +1,10 @@
 """compiler.kpi.score — Borda scoring mechanism for cross-model benchmark ranking.
 
 Provides:
-  borda_normalize(...)  — lifted verbatim from tools.benchmark.scorer (§7 spec).
-                          tools.benchmark.scorer re-exports this symbol so its
-                          existing callers/tests remain unchanged.  The lift
-                          satisfies the B.3 contract: compiler must NOT import
-                          tools; tools MAY import compiler.
+  borda_normalize(...)  — average-rank Borda normalization (§7 spec). Originally
+                          lifted from the now-retired tools.benchmark.scorer; this
+                          module is its sole home. Kept here per the B.3 contract:
+                          compiler must NOT import tools; tools MAY import compiler.
 
   borda_score(...)      — composite Borda scorer over the per-model "scored" KPI
                           dicts produced by compiler.kpi.processing / graph.
@@ -73,6 +72,16 @@ GRAPH_WEIGHTS: dict[str, float] = {
     "entity_reuse":       0.15,
 }
 
+# Weak-spot penalty (spec 2026-06-06): punish a lopsided model with a glaring
+# weak spot. Range over the four COMPOSITE axes (3 processing Borda values +
+# the combined graph_score) — NOT the 7 raw KPIs — at equal treatment.
+WEAK_SPOT_THRESHOLD = 0.5     # tau: below mid-field => "glaring". PARKED for calibration.
+WEAK_SPOT_PENALTY_CAP = 0.10  # lambda: max deduction (10 pts on the 0-100 scale). PINNED.
+
+# Headline composite is rendered 0-100; components (per_kpi_borda, graph_score)
+# stay Borda-native [0,1].
+COMPOSITE_SCALE = 100
+
 # The processing KPIs that enter the composite directly (TOP_WEIGHTS keys minus
 # the synthetic "graph" term).
 _PROCESSING_KPIS = ("quarantine_rate", "recovery_rate", "latency")
@@ -118,6 +127,37 @@ def _hierarchical_composite(per_kpi_borda: dict, graph_score: float | None) -> f
     return num / den if den > 0 else 0.0
 
 
+def weak_spot_penalty(
+    per_kpi_borda: dict, graph_score: float | None
+) -> tuple[float, str | None]:
+    """Penalty for a model's single weakest composite axis (spec 2026-06-06).
+
+    Axes = the three processing Borda values (quarantine_rate / recovery_rate /
+    latency, from ``per_kpi_borda``) plus the combined ``graph_score`` — four
+    axes, each in [0,1], equal treatment. graph counts as ONE axis (its four
+    sub-KPIs are already blended in graph_score).
+
+    ``weakest`` = min over the *present* (non-None) axes. Penalty rises linearly
+    from 0 at the deadband (weakest >= WEAK_SPOT_THRESHOLD) to WEAK_SPOT_PENALTY_CAP
+    at weakest == 0. Returns ``(penalty in [0, CAP], weakest_axis_label | None)``.
+    No present axis -> ``(0.0, None)``.
+    """
+    axes: dict[str, float | None] = {
+        "quarantine_rate": per_kpi_borda.get("quarantine_rate"),
+        "recovery_rate":   per_kpi_borda.get("recovery_rate"),
+        "latency":         per_kpi_borda.get("latency"),
+        "graph":           graph_score,
+    }
+    present = {k: v for k, v in axes.items() if v is not None}
+    if not present:
+        return 0.0, None
+    weakest_kpi = min(present, key=lambda k: present[k])
+    weakest = present[weakest_kpi]
+    tau = WEAK_SPOT_THRESHOLD
+    penalty = WEAK_SPOT_PENALTY_CAP * max(0.0, (tau - weakest) / tau)
+    return penalty, weakest_kpi
+
+
 def score_models(models: list[dict]) -> dict:
     """Hierarchical benchmark scorer (§6).
 
@@ -127,13 +167,28 @@ def score_models(models: list[dict]) -> dict:
     3. composite = top-level weighted sum of the processing Borda values +
        graph_score (TOP_WEIGHTS = quarantine 40 / graph 40 / recovery 10 /
        latency 10), pro-rata within family.
+    4. weak-spot penalty: deduct up to WEAK_SPOT_PENALTY_CAP from the composite
+       when the model's single weakest composite axis is below WEAK_SPOT_THRESHOLD.
+    5. scale headline scores (composite, composite_pre_penalty, penalty) by
+       COMPOSITE_SCALE (100) so the leaderboard renders on a 0–100 scale.
+       graph_score and per_kpi_borda stay Borda-native [0, 1].
 
     Returns::
 
         {
-          "per_model": { model: {"composite", "graph_score", "per_kpi_borda"} },
-          "top_weights":   TOP_WEIGHTS,
-          "graph_weights": GRAPH_WEIGHTS,
+          "per_model": {
+              model: {
+                  "composite":             float,   # [0,100] post-penalty headline
+                  "composite_pre_penalty": float,   # [0,100] before penalty
+                  "penalty":               float,   # [0,10]  deduction (scaled)
+                  "weakest_kpi":           str|None,# weakest composite axis (even if no penalty fired)
+                  "graph_score":           float|None,  # [0,1] Borda-native
+                  "per_kpi_borda":         dict,    # {kpi: float|None}, [0,1] each
+              }
+          },
+          "top_weights":    TOP_WEIGHTS,
+          "graph_weights":  GRAPH_WEIGHTS,
+          "penalty_params": {"threshold": WEAK_SPOT_THRESHOLD, "cap": WEAK_SPOT_PENALTY_CAP},
         }
     """
     base = borda_score(models)  # only per_kpi_borda is used (weight-independent)
@@ -142,8 +197,14 @@ def score_models(models: list[dict]) -> dict:
         slug = m["model"]
         pkb = base["per_model"][slug]["per_kpi_borda"]
         gscore = combined_graph_score(pkb)
+        pre = _hierarchical_composite(pkb, gscore)
+        penalty, weakest_kpi = weak_spot_penalty(pkb, gscore)
+        post = max(0.0, pre - penalty)
         per_model[slug] = {
-            "composite": _hierarchical_composite(pkb, gscore),
+            "composite": post * COMPOSITE_SCALE,
+            "composite_pre_penalty": pre * COMPOSITE_SCALE,
+            "penalty": penalty * COMPOSITE_SCALE,
+            "weakest_kpi": weakest_kpi,
             "graph_score": gscore,
             "per_kpi_borda": pkb,
         }
@@ -151,17 +212,21 @@ def score_models(models: list[dict]) -> dict:
         "per_model": per_model,
         "top_weights": dict(TOP_WEIGHTS),
         "graph_weights": dict(GRAPH_WEIGHTS),
+        "penalty_params": {
+            "threshold": WEAK_SPOT_THRESHOLD,
+            "cap": WEAK_SPOT_PENALTY_CAP,
+        },
     }
 
 
 # ---------------------------------------------------------------------------
-# borda_normalize — lifted verbatim from tools.benchmark.scorer (§7 spec).
+# borda_normalize — average-rank Borda normalization (§7 spec).
 #
-# Signature and behaviour are UNCHANGED.  The type annotation uses a forward-
-# reference string ("RunScore") so this module never imports RunScore from
-# tools.benchmark.scorer — that would violate the B.3 compiler→tools ban.
-# At runtime the annotation is never evaluated (from __future__ import
-# annotations ensures string-mode for all annotations in this file).
+# The type annotation uses a forward-reference string ("RunScore") so this
+# module never needs to import a concrete RunScore type from tools — that would
+# violate the B.3 compiler→tools ban. At runtime the annotation is never
+# evaluated (from __future__ import annotations ensures string-mode for all
+# annotations in this file); callers pass any duck-typed .model_id/.measures shim.
 # ---------------------------------------------------------------------------
 
 def borda_normalize(
@@ -172,7 +237,7 @@ def borda_normalize(
 ) -> dict[str, float]:
     """Average-rank (fractional rank) Borda normalization across candidates.
 
-    Identical to the original in tools.benchmark.scorer:
+    Algorithm:
 
       1. Drop items where ``item.measures[measure].rate`` is None.
       2. Sort the remaining N items by raw rate (asc if lower_is_better else
@@ -267,8 +332,8 @@ def borda_score(
         Optional mapping ``{kpi_name: float}``.  When None, every KPI present
         in any model's ``scored`` dict receives equal weight (1.0).  Weights
         are normalised by the sum of weights for the KPIs a given model
-        participated in (pro-rata redistribution — mirrors ``final_score`` in
-        tools.benchmark.scorer lines 990-999).
+        participated in (pro-rata redistribution — a missing KPI drops only its
+        own weight rather than penalising the model's whole composite).
 
     Returns
     -------

@@ -265,7 +265,7 @@ class TestReset:
 
 
 # ---------------------------------------------------------------------------
-# Legacy --models path still routes to the run command
+# Cross-tier KPI lookup
 # ---------------------------------------------------------------------------
 
 class TestCrossTierLookup:
@@ -315,16 +315,80 @@ class TestCrossTierLookup:
         assert rows["rich"]["per_kpi_borda"]["recovery_rate"] is None
 
 
-class TestScoreExistingCLIUnchanged:
-    def test_legacy_path_reached_with_models_flag(self, tmp_path, monkeypatch):
-        calls = []
+# ---------------------------------------------------------------------------
+# Penalty fields persisted in leaderboard JSON
+# ---------------------------------------------------------------------------
 
-        def fake_main_run(argv):
-            calls.append(argv)
-            return 0
-
-        monkeypatch.setattr("tools.benchmark.cli._main_run", fake_main_run)
-        rc = cli.main(["--models", "some-model"])
+class TestPenaltyFieldsPersisted:
+    def test_ranking_rows_carry_penalty_fields(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root,
+                           entity_reuse=0.9, graph_connectivity=0.9,
+                           link_density=9.0, supports_density=9.0)
+        _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root,
+                           entity_reuse=0.1, graph_connectivity=0.1,
+                           link_density=1.0, supports_density=1.0)
+        rc = cli.main(["score", "model-a-T1", "model-b-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
-        assert calls, "expected _main_run to be called"
-        assert "--models" in calls[0]
+        payload = _load(lb)
+        assert payload["penalty_params"] == {"threshold": 0.5, "cap": 0.10}
+        for row in payload["ranking"]:
+            assert set(row) >= {
+                "model", "rank", "composite", "composite_pre_penalty",
+                "penalty", "weakest_kpi", "graph_score", "per_kpi_borda",
+            }
+            assert 0.0 <= row["composite"] <= 100.0     # 0-100 scale
+            assert 0.0 <= row["penalty"] <= 10.0
+        by = {r["model"]: r for r in payload["ranking"]}
+        # model-b is lopsided on graph (graph_score Borda 0.0) -> capped penalty
+        assert by["model-b"]["weakest_kpi"] == "graph"
+        assert by["model-b"]["penalty"] == pytest.approx(10.0)
+        assert by["model-a"]["penalty"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Penalty column rendered in leaderboard.md
+# ---------------------------------------------------------------------------
+
+class TestPenaltyRendered:
+    def test_md_shows_penalty_column(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root,
+                           entity_reuse=0.9, graph_connectivity=0.9,
+                           link_density=9.0, supports_density=9.0)
+        _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root,
+                           entity_reuse=0.1, graph_connectivity=0.1,
+                           link_density=1.0, supports_density=1.0)
+        rc = cli.main(["score", "model-a-T1", "model-b-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        md = (tmp_path / "leaderboard.md").read_text()
+        assert "PENALTY" in md
+        assert "score (0-100)" in md
+
+    def test_terminal_table_annotates_penalty_only_when_nonzero(self):
+        # m1: lopsided on latency (penalty 10, weakest=latency) -> annotated.
+        # m2: penalty 0 but weakest_kpi populated (=graph) -> NO annotation leak.
+        ranking = [
+            {"model": "m1", "rank": 1, "composite": 72.22,
+             "composite_pre_penalty": 82.22, "penalty": 10.0,
+             "weakest_kpi": "latency", "graph_score": 1.0,
+             "per_kpi_borda": {"quarantine_rate": 0.5, "recovery_rate": 0.5,
+                               "latency": 0.0, "entity_reuse": 1.0,
+                               "graph_connectivity": 1.0, "link_density": 1.0,
+                               "supports_density": 1.0}},
+            {"model": "m2", "rank": 2, "composite": 30.0,
+             "composite_pre_penalty": 30.0, "penalty": 0.0,
+             "weakest_kpi": "graph", "graph_score": 0.0,
+             "per_kpi_borda": {"quarantine_rate": 0.5, "recovery_rate": 0.5,
+                               "latency": 1.0, "entity_reuse": 0.0,
+                               "graph_connectivity": 0.0, "link_density": 0.0,
+                               "supports_density": 0.0}},
+        ]
+        out = cli._render_score_table(ranking, {"m1": {}, "m2": {}})
+        assert "PENALTY" in out
+        assert "10.00 (latency)" in out          # annotated when penalty > 0
+        assert "0.00 (graph)" not in out         # no annotation leak at penalty 0

@@ -13,8 +13,3 @@ def test_data_subdirs_are_under_benchmark_dir() -> None:
     for sub in (paths.SOURCES_DIR, paths.TRUTH_DIR, paths.RUNS_DIR,
                 paths.SCORES_DIR, paths.INSPECT_DIR):
         assert sub.parent == paths.BENCHMARK_DIR
-
-
-def test_models_json_is_inside_package() -> None:
-    assert paths.MODELS_JSON.name == "models.json"
-    assert paths.MODELS_JSON.parent.name == "benchmark"
