@@ -16,7 +16,7 @@ from typing import ClassVar, Literal, Protocol, runtime_checkable
 
 import kuzu
 
-from kdb_graph.types import SyncResult
+from kdb_graph.types import IntakeResult
 
 
 SkipReason = Literal[
@@ -117,10 +117,10 @@ class ProducerAdapter(Protocol):
         scan: dict,
         run_id: str,
         conn: kuzu.Connection,
-    ) -> SyncResult:
+    ) -> IntakeResult:
         """Translate producer-flavored payload to graph mutations.
 
-        For Obsidian v1: delegates to `kdb_graph.ingestor.apply_compile_result`.
+        For Obsidian v1: delegates to `kdb_graph.intake.apply_compile_result`.
         For future producers: delegates to `apply_mutations` once the normalized
         contract refactor lands per producer-contract §5 path (a). Adapters do
         NOT call producer-specific entry points (anti-pattern path (b)).
@@ -135,7 +135,7 @@ class ProducerAdapter(Protocol):
         scan: dict,
         run_id: str,
         graph_dir: Path | None = None,
-    ) -> SyncResult:
+    ) -> IntakeResult:
         """Entry point for producer's live-sync hook (e.g., `kdb_orchestrate.py`
         graph-sync step — originally wired in #63.7-pre via the deleted kdb_compile.py).
 

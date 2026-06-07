@@ -1,4 +1,4 @@
-"""apply_compile_result + private helpers — atomic per-run graph ingestion.
+"""apply_compile_result + private helpers — atomic per-run graph intake.
 
 Algorithm per docs/task-graphdb-kdb-blueprint.md §5. Two-phase Source mutation
 (Phase 1 scan-refresh + Phase 3 compile-state — Codex v2 NEW M1); atomic
@@ -13,7 +13,7 @@ from typing import Any
 
 import kuzu
 
-from kdb_graph.types import SyncResult
+from kdb_graph.types import IntakeResult
 
 _DEFAULT_SOURCE_TYPE = "obsidian-kdb-raw"
 _DEFAULT_ROLE = "primary"
@@ -30,7 +30,7 @@ def apply_compile_result(
     now: str | None = None,
     detect_orphans: bool = True,
     wire_links: bool = True,
-) -> SyncResult:
+) -> IntakeResult:
     """Apply one compile run's deltas to the Kuzu graph (atomic per run).
 
     Args:
@@ -50,7 +50,7 @@ def apply_compile_result(
             batch/monolith path.
 
     Returns:
-        SyncResult with counts + newly-orphaned page slugs.
+        IntakeResult with counts + newly-orphaned page slugs.
 
     Raises:
         Any exception from Kuzu during execution; transaction is rolled back first.
@@ -58,7 +58,7 @@ def apply_compile_result(
     if now is None:
         now = datetime.now().astimezone().isoformat()
 
-    result = SyncResult(run_id=run_id)
+    result = IntakeResult(run_id=run_id)
 
     conn.execute("BEGIN TRANSACTION")
     try:
@@ -124,7 +124,7 @@ def _upsert_source_from_scan(
     entry: dict,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """Phase 1: scan-refresh only. Does NOT touch ingest-state fields
     (last_ingested_at, ingest_state, ingest_count, last_run_id) — those
@@ -261,7 +261,7 @@ def _upsert_entity(
     page: dict,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """Phase 3: upsert an Entity node. `created_at` and `first_run_id` set on first
     INSERT and never overwritten (per §4 design note).
@@ -311,12 +311,12 @@ def _replace_outgoing_links(
     page: dict,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """Phase 3: drop+recreate LINKS_TO edges from this page (current-state
     replacement). If a target slug doesn't yet exist as an Entity node, the
     CREATE is silently skipped — dangling outgoing_links are a validator
-    catch upstream, not the ingestor's job."""
+    catch upstream, not the intake's job."""
     slug = page.get("slug")
     if not slug:
         return
@@ -349,7 +349,7 @@ def _replace_supports_for_source(
     cs: dict,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """Phase 3: atomic per-source SUPPORTS replacement (Codex review CRITICAL #2).
     Symmetric to `_replace_outgoing_links` — pages the source no longer
@@ -489,7 +489,7 @@ def rederive_domains(
     conn: kuzu.Connection,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """D1-A: derive Domain nodes + BELONGS_TO edges from Source.domain + SUPPORTS.
 
@@ -551,7 +551,7 @@ def _upsert_alias_entities_and_edges(
     cr: dict,
     run_id: str,
     now: str,
-    result: SyncResult,
+    result: IntakeResult,
 ) -> None:
     """Phase 3.5 (#74.5): materialize alias Entity rows + ALIAS_OF edges from
     canonical_meta.aliases_emitted.
@@ -728,7 +728,7 @@ def detect_orphans(
 
 def wire_links(
     cr: dict, conn: kuzu.Connection, run_id: str, *, now: str | None = None
-) -> SyncResult:
+) -> IntakeResult:
     """Task #91 (C1): standalone end-of-run LINKS_TO batch-wiring pass.
 
     The orchestrator calls this ONCE at finalize over the accumulated batch
@@ -738,10 +738,10 @@ def wire_links(
     that per-source wiring silently skipped (target not yet present) are now
     created — restoring the monolith's complete LINKS_TO set → live≡replay by
     construction. Idempotent (drop+recreate per page). Owns its own transaction,
-    mirroring detect_orphans. Returns the SyncResult (edges_upserted populated)."""
+    mirroring detect_orphans. Returns the IntakeResult (edges_upserted populated)."""
     if now is None:
         now = datetime.now().astimezone().isoformat()
-    result = SyncResult(run_id=run_id)
+    result = IntakeResult(run_id=run_id)
     conn.execute("BEGIN TRANSACTION")
     try:
         for cs in cr.get("compiled_sources", []):
@@ -764,7 +764,7 @@ def apply_cleanup(
     run_id: str,
     *,
     conn: kuzu.Connection,
-) -> SyncResult:
+) -> IntakeResult:
     """Retract entities a `kdb-clean orphans` run removed (#68).
 
     DETACH DELETEs the Entity node — and its LINKS_TO + SUPPORTS edges — for
@@ -781,10 +781,10 @@ def apply_cleanup(
         conn: open kuzu.Connection.
 
     Returns:
-        SyncResult with `entities_deleted` set to the count of nodes actually
+        IntakeResult with `entities_deleted` set to the count of nodes actually
         removed (a retracted slug already absent from the graph is a no-op).
     """
-    result = SyncResult(run_id=run_id)
+    result = IntakeResult(run_id=run_id)
 
     conn.execute("BEGIN TRANSACTION")
     try:

@@ -1,6 +1,6 @@
 """Tests for #74.5 — alias Entity + ALIAS_OF writes in apply_compile_result.
 
-Covers the Phase 3.5 alias-write pass added to kdb_graph.ingestor and the
+Covers the Phase 3.5 alias-write pass added to kdb_graph.intake and the
 companion changes in _upsert_entity (canonical_id reset + stale ALIAS_OF
 drop) and _detect_and_mark_orphans (canonical-only scope).
 

@@ -25,7 +25,7 @@ from kdb_graph.adapters.base import (
     EligibilityResult,
     RunDescriptor,
 )
-from kdb_graph.types import SyncResult
+from kdb_graph.types import IntakeResult
 
 
 class ObsidianRunsAdapter:
@@ -182,18 +182,18 @@ class ObsidianRunsAdapter:
         scan: dict,
         run_id: str,
         conn: kuzu.Connection,
-    ) -> SyncResult:
-        """Route to the core ingestor by event_type (#68). A 'cleanup' payload
+    ) -> IntakeResult:
+        """Route to the core intake by event_type (#68). A 'cleanup' payload
         carries `event_type` + `retracted_slugs`; a compile payload has no
         `event_type` key (absent ⇒ compile). An unrecognized `event_type`
         raises ValueError — `is_eligible` screens these out on the replay path,
         but `apply` is also reachable directly (live sync), so it guards too."""
         event_type = mutation.get("event_type", "compile")
         if event_type == "cleanup":
-            from kdb_graph.ingestor import apply_cleanup
+            from kdb_graph.intake import apply_cleanup
             return apply_cleanup(mutation, run_id, conn=conn)
         if event_type == "compile":
-            from kdb_graph.ingestor import apply_compile_result
+            from kdb_graph.intake import apply_compile_result
             return apply_compile_result(mutation, scan, run_id, conn=conn)
         raise ValueError(f"unsupported event_type: {event_type!r}")
 
@@ -205,7 +205,7 @@ class ObsidianRunsAdapter:
         scan: dict,
         run_id: str,
         graph_dir: Path | None = None,
-    ) -> SyncResult:
+    ) -> IntakeResult:
         """Open a GraphDB at `graph_dir` and apply one run's payload.
 
         Single Obsidian→graph entry point per D-S0; `kdb_orchestrate.py` calls
@@ -224,7 +224,7 @@ class ObsidianRunsAdapter:
         retraction: dict,
         run_id: str,
         graph_dir: Path | None = None,
-    ) -> SyncResult:
+    ) -> IntakeResult:
         """Live-sync a cleanup run into the graph (#68).
 
         `sync_current_run`'s signature is locked by Stage 9 (D-S0) and has no

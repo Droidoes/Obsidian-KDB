@@ -17,7 +17,7 @@ from kdb_graph.schema import (
     SCHEMA_META_DDL,
     SCHEMA_VERSION,
 )
-from kdb_graph.types import Entity, Source, SyncResult
+from kdb_graph.types import Entity, Source, IntakeResult
 
 
 class GraphDBSchemaError(RuntimeError):
@@ -160,7 +160,7 @@ class GraphDB:
             "qualifies":   count("MATCH ()-[r:QUALIFIES]->() RETURN COUNT(*)"),
         }
 
-    # ---- ingestion (#63.2) ----
+    # ---- intake (#63.2) ----
 
     def apply_compile_result(
         self,
@@ -171,34 +171,34 @@ class GraphDB:
         now: str | None = None,
         detect_orphans: bool = True,
         wire_links: bool = True,
-    ) -> SyncResult:
-        """Apply one compile run's deltas. Atomic per run. Delegates to ingestor.
+    ) -> IntakeResult:
+        """Apply one compile run's deltas. Atomic per run. Delegates to intake.
 
         Task #91: detect_orphans=False skips Phase-4 orphan-marking (the
         orchestrator runs a single end-of-run detect_orphans() pass instead);
         wire_links=False skips per-source LINKS_TO wiring (the orchestrator runs
         a single finalize wire_links() pass over the accumulated batch — C1)."""
-        from kdb_graph.ingestor import apply_compile_result as _apply
+        from kdb_graph.intake import apply_compile_result as _apply
         return _apply(cr, scan_dict, run_id, conn=self.conn, now=now,
                       detect_orphans=detect_orphans, wire_links=wire_links)
 
-    def apply_cleanup(self, retraction: dict, run_id: str) -> SyncResult:
-        """Retract entities a cleanup run removed. Delegates to ingestor (#68)."""
-        from kdb_graph.ingestor import apply_cleanup as _apply
+    def apply_cleanup(self, retraction: dict, run_id: str) -> IntakeResult:
+        """Retract entities a cleanup run removed. Delegates to intake (#68)."""
+        from kdb_graph.intake import apply_cleanup as _apply
         return _apply(retraction, run_id, conn=self.conn)
 
     def detect_orphans(self, run_id: str, *, now: str | None = None) -> list[str]:
-        """End-of-run orphan-marking pass (Task #91). Delegates to ingestor."""
-        from kdb_graph.ingestor import detect_orphans as _detect
+        """End-of-run orphan-marking pass (Task #91). Delegates to intake."""
+        from kdb_graph.intake import detect_orphans as _detect
         return _detect(self.conn, run_id, now=now)
 
     def wire_links(
         self, cr: dict, run_id: str, *, now: str | None = None
-    ) -> SyncResult:
+    ) -> IntakeResult:
         """End-of-run LINKS_TO batch-wiring pass (Task #91 C1). Delegates to
-        ingestor. Call once at finalize over the accumulated batch cr after
+        intake. Call once at finalize over the accumulated batch cr after
         per-source apply_compile_result(wire_links=False) calls."""
-        from kdb_graph.ingestor import wire_links as _wire
+        from kdb_graph.intake import wire_links as _wire
         return _wire(cr, self.conn, run_id, now=now)
 
     # ---- minimal read API (full set lands in #63.3) ----

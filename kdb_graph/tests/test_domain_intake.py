@@ -1,12 +1,12 @@
 """Tests for the derived BELONGS_TO projection (0.5.0 producer rebuild).
 
 Domain membership is now derived from Source.domain + SUPPORTS edges via
-kdb_graph.ingestor.rederive_domains().  There are no longer page-level
+kdb_graph.intake.rederive_domains().  There are no longer page-level
 domain/sub_domain fields, no _normalize_domain(), and no _ingest_page_domains().
 """
 from __future__ import annotations
 
-from kdb_graph import ingestor
+from kdb_graph import intake
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.tests.conftest import (
     make_compile_result,
@@ -15,7 +15,7 @@ from kdb_graph.tests.conftest import (
     make_scan,
     make_scan_entry,
 )
-from kdb_graph.types import SyncResult
+from kdb_graph.types import IntakeResult
 
 
 # ---------- helpers ----------
@@ -147,8 +147,8 @@ def test_alias_entity_excluded_from_derived_domains(graph_dir):
         )
 
         # Re-run rederive_domains with both SUPPORTS edges in place.
-        result = SyncResult()
-        ingestor.rederive_domains(gdb.conn, "r1", "t", result)
+        result = IntakeResult()
+        intake.rederive_domains(gdb.conn, "r1", "t", result)
 
         # Canonical entity MUST have a BELONGS_TO edge.
         assert _belongs_to(gdb, "apple-inc", "value-investing") == {"support_count": 1}

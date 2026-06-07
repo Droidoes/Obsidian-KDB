@@ -1,4 +1,4 @@
-"""Tests for kdb_graph.ingestor.apply_compile_result (#63.2).
+"""Tests for kdb_graph.intake.apply_compile_result (#63.2).
 
 Covers the algorithm in docs/task-graphdb-kdb-blueprint.md §5 with explicit
 verification for the Codex-review-driven design decisions:
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from kdb_graph import ingestor
+from kdb_graph import intake
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.tests.conftest import (
     make_compile_result,
@@ -377,7 +377,7 @@ def test_orphan_revival_on_resupport(graph_dir):
 # ---------- 7. transaction rollback ----------
 
 def test_transaction_rollback_on_bad_input(graph_dir, monkeypatch):
-    """If a helper raises mid-ingestion, the transaction rolls back."""
+    """If a helper raises mid-intake, the transaction rolls back."""
     src = "KDB/raw/a.md"
     cr_seed = make_compile_result([make_compiled_source(src, [make_page("alpha")])])
     scan_seed = make_scan([make_scan_entry(src)])
@@ -387,15 +387,15 @@ def test_transaction_rollback_on_bad_input(graph_dir, monkeypatch):
 
     # Patch _upsert_entity to raise mid-Phase-3.
     def boom(*args, **kwargs):
-        raise RuntimeError("simulated mid-ingest failure")
-    monkeypatch.setattr(ingestor, "_upsert_entity", boom)
+        raise RuntimeError("simulated mid-intake failure")
+    monkeypatch.setattr(intake, "_upsert_entity", boom)
 
     src2 = "KDB/raw/b.md"
     cr_fail = make_compile_result([make_compiled_source(src2, [make_page("beta")])])
     scan_fail = make_scan([make_scan_entry(src), make_scan_entry(src2)])
 
     with GraphDB(graph_dir) as gdb:
-        with pytest.raises(RuntimeError, match="simulated mid-ingest"):
+        with pytest.raises(RuntimeError, match="simulated mid-intake"):
             gdb.apply_compile_result(cr_fail, scan_fail, "run-fail")
         post_stats = gdb.stats()
     # Phase 1 had already upserted src2 — rollback must undo that too.
@@ -554,7 +554,7 @@ def test_moved_writes_only_schema_fields(graph_dir):
 
 def test_ingest_source_writes_summary_author_domain_from_frontmatter(graph_dir):
     """When compile_result carries source_meta with Pass-1-derived fields,
-    ingestor MERGE's Source with summary/author/domain populated (D-89-17)."""
+    intake MERGE's Source with summary/author/domain populated (D-89-17)."""
     src = "KDB/raw/enriched.md"
     source_meta = {
         "summary": "A note about value investing principles. Themes: margin-of-safety, compounding.",

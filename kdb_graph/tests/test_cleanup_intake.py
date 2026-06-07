@@ -1,4 +1,4 @@
-"""Tests for kdb_graph.ingestor.apply_cleanup (#68).
+"""Tests for kdb_graph.intake.apply_cleanup (#68).
 
 apply_cleanup DETACH DELETEs Entity nodes by retraction['retracted_slugs'].
 It is the graph-side counterpart of `kdb-clean orphans`.

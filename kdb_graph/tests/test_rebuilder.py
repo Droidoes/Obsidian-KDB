@@ -131,7 +131,7 @@ class FakeAdapter:
         raise KeyError(descriptor.run_id)
 
     def apply(self, mutation, scan, run_id, conn):
-        from kdb_graph.ingestor import apply_compile_result
+        from kdb_graph.intake import apply_compile_result
         return apply_compile_result(mutation, scan, run_id, conn=conn)
 
     def sync_current_run(self, mutation, scan, run_id, graph_dir=None):
