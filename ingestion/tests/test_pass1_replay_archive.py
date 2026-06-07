@@ -35,3 +35,15 @@ def test_write_sidecar_creates_json_at_expected_path(tmp_path):
     assert data["source_id"] == "Notes/Quick-thoughts.md"
     assert data["outcome"] == "enriched"
     assert data["parsed_envelope"]["kdb_signal"] == "signal"
+
+
+def test_sidecar_carries_cost_usd():
+    # Task #110: per-call cost diagnostic threaded onto the Pass-1 sidecar.
+    p = SidecarPayload(
+        source_id="s", source_path="s.md", source_content_hash="h",
+        request={}, raw_response={}, parsed_envelope={}, override={},
+        user_overrides_detected=[], timestamp="2026-06-06T00:00:00-05:00",
+        outcome="enriched", cost_usd=0.42,
+    )
+    from dataclasses import asdict
+    assert asdict(p)["cost_usd"] == 0.42

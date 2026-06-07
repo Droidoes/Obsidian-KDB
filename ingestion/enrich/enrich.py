@@ -47,6 +47,9 @@ def enrich_one(
     provider: str, model: str,
     force_signal: list[str] | None = None,
     force_noise: list[str] | None = None,
+    price_in: float = 0.0, price_out: float = 0.0,
+    ctx_window: int | None = None,
+    use_completion_tokens: bool = False, extra_body: dict | None = None,
 ) -> EnrichResult:
     # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
     # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
@@ -77,6 +80,8 @@ def enrich_one(
         call_result = call_pass1(
             source_text=body, source_path=str(source_path),
             provider=provider, model=model,
+            ctx_window=ctx_window,
+            use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         )
     except Pass1CallError as e:
         sidecar = _write_sidecar_failed(
@@ -135,6 +140,9 @@ def enrich_one(
     outcome = ("enriched_force_overridden"
                if envelope["override"]["applied"] is not None
                else "enriched")
+    # Task #110: per-call cost from aggregated tokens (#108) × pool pricing.
+    cost_usd = (price_in / 1e6 * call_result.total_input_tokens
+                + price_out / 1e6 * call_result.total_output_tokens)
     sidecar_payload = SidecarPayload(
         source_id=source_id,
         source_path=str(source_path),
@@ -160,6 +168,7 @@ def enrich_one(
         user_overrides_detected=[],  # OQ-89-9 / §3.3 user-collision; v1.1+ feature
         timestamp=_local_iso(),
         outcome=outcome,
+        cost_usd=cost_usd,
     )
     sidecar = write_sidecar(runs_root, run_id, sidecar_payload)
     return EnrichResult(source_id, outcome, envelope, sidecar, None,
@@ -231,6 +240,12 @@ def _write_sidecar_failed(runs_root, run_id, source_id, source_path,
             # terminal status on the failure path (covers both call exhaustion
             # and Stage-2 envelope-validation failure).
             "final_status": "quarantined",
+            # Task #110 review: persist exception_type so a ctx-overrun
+            # quarantine ("TokenOverrun") is structurally distinguishable from
+            # ordinary retry-exhaustion (both carry total_input_tokens==0).
+            # getattr(..., None): only the §3.2 guard sets it; validation-wrapped
+            # and exhaustion errors leave it None.
+            "exception_type": getattr(error, "exception_type", None),
             "syntax_repaired": getattr(error, "syntax_repaired", False),
             "total_input_tokens": getattr(error, "total_input_tokens", 0),
             "total_output_tokens": getattr(error, "total_output_tokens", 0),

@@ -913,6 +913,80 @@ def test_failure_triplet_truncation_uses_synthetic_token_overrun(
     assert "max_tokens=4096" in msg
 
 
+# ---------- Task #110 §3.3: PROACTIVE input-side ctx-overrun guard ----------
+
+def test_compile_one_overrun_quarantines_without_model_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real prompt against a tiny ctx_window must skip-and-quarantine THIS
+    source with NO API spend — the model is never called, compile_one returns
+    its quarantine tuple, and the written RespStatsRecord carries the synthetic
+    exception-type 'TokenOverrun' (mirrors Pass-1 §3.2)."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda *a, **k: pytest.fail("model called despite ctx overrun"),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="deepseek",
+        model="m",
+        max_tokens=32768,
+        ctx_window=50,
+    )
+    assert cs is None
+    assert err is not None
+    # The persisted record carries the synthetic TokenOverrun stage/type, and
+    # no API spend (no model call → zeroed token counters on the record).
+    stage, etype, msg = _failure_fields(state_root, ctx.run_id)
+    assert stage == "truncation"
+    assert etype == "TokenOverrun"
+    assert "ctx_window=50" in msg
+    record = json.loads(
+        _resp_stats_files(state_root, ctx.run_id)[0].read_text(encoding="utf-8")
+    )
+    assert record["token_overrun"] is False  # output-truncation flag stays off
+    assert record["input_tokens"] == 0
+    assert record["output_tokens"] == 0
+
+
+def test_compile_one_fits_context_proceeds_to_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard must NOT false-trip: a small prompt against a large ctx_window
+    proceeds to the (monkeypatched) model and produces a CompiledSource."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
+    )
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="m",
+        max_tokens=4096,
+        ctx_window=1_000_000,
+    )
+    assert err is None
+    assert cs is not None
+
+
 def test_failure_triplet_extract_populates_valueerror(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

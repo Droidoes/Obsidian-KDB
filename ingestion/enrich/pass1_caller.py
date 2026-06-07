@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 
 from common.call_model import ModelRequest, call_model, ModelResponse
+from common.model_pool import estimate_prompt_tokens, fits_context
 from common.util.json_escape_fix import escape_stray_backslashes
 from ingestion.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
 from ingestion.enrich.pass1_schema import (
@@ -64,6 +65,11 @@ class Pass1CallError(Exception):
         output_tokens: int = 0,
         latency_ms: int = 0,
         attempts: int = 0,
+        # Task #110 §3.2: synthetic exception-type for the pre-flight ctx-overrun
+        # guard. Mirrors Pass-2's "TokenOverrun" vocabulary (common/types.py).
+        # None for ordinary retry-exhaustion failures (orchestrator records its
+        # own "Pass1EnrichError" surface).
+        exception_type: str | None = None,
         # Task #108: aggregation fields for sidecar telemetry on the quarantine path.
         final_status: str = "quarantined",
         syntax_repaired: bool = False,
@@ -82,6 +88,7 @@ class Pass1CallError(Exception):
         self.output_tokens = output_tokens
         self.latency_ms = latency_ms
         self.attempts = attempts
+        self.exception_type = exception_type
         self.final_status = final_status
         self.syntax_repaired = syntax_repaired
         self.total_input_tokens = total_input_tokens
@@ -91,9 +98,13 @@ class Pass1CallError(Exception):
         self.final_attempt_index = final_attempt_index
 
 
+_PASS1_MAX_OUTPUT_TOKENS = 4096  # reserved output room (the per-call max_tokens)
+
+
 def call_pass1(
     *, source_text: str, source_path: str, provider: str, model: str,
-    max_retries: int = 1,
+    max_retries: int = 1, ctx_window: int | None = None,
+    use_completion_tokens: bool = False, extra_body: dict | None = None,
 ) -> Pass1CallResult:
     """Fire one Pass-1 LLM call. Returns parsed + validated envelope.
 
@@ -105,8 +116,44 @@ def call_pass1(
     escape_stray_backslashes before consuming a retry. final_status /
     syntax_repaired / per-attempt aggregation are emitted on both success
     and failure paths.
+
+    Task #110 §3.2: when ctx_window is provided (from the model-pool spec), a
+    PROACTIVE pre-flight guard estimates prompt tokens and raises Pass1CallError
+    (exception_type="TokenOverrun", aggregated tokens 0) BEFORE any API call if
+    input + reserved output would overrun the window. ctx_window=None (the
+    ad-hoc --provider escape hatch) skips the guard.
     """
     prompt = build_pass1_prompt(source_text=source_text, source_path=source_path)
+
+    # Task #110 §3.2: PROACTIVE input-side ctx-overrun guard. Estimate prompt
+    # tokens BEFORE any API call; if input + reserved output would exceed the
+    # model's ctx_window, skip-and-quarantine THIS source with NO API spend —
+    # routed through the EXISTING Pass1CallError quarantine path so the
+    # orchestrator quarantines it identically (#96 quarantine-and-continue).
+    # ctx_window is None for the ad-hoc --provider escape hatch (no pool
+    # metadata): the guard is skipped (best-effort, as before).
+    if ctx_window is not None:
+        est_in = estimate_prompt_tokens(None, prompt)
+        if not fits_context(est_input=est_in,
+                            requested_output=_PASS1_MAX_OUTPUT_TOKENS,
+                            ctx_window=ctx_window):
+            raise Pass1CallError(
+                f"Pass-1 prompt would overrun ctx_window: "
+                f"est_input={est_in} + reserved_output={_PASS1_MAX_OUTPUT_TOKENS} "
+                f"> ctx_window={ctx_window}",
+                request_prompt=prompt,
+                request_model=model,
+                request_provider=provider,
+                attempts=0,
+                exception_type="TokenOverrun",
+                final_status="quarantined",
+                # No call was made → aggregated tokens are 0 (no API spend).
+                total_input_tokens=0,
+                total_output_tokens=0,
+                total_latency_ms=0,
+                call_count=0,
+                final_attempt_index=0,
+            )
 
     last_err: Exception | None = None
     raw_text = ""
@@ -121,7 +168,8 @@ def call_pass1(
     for attempt in range(1, max_retries + 2):  # initial + retries
         req = ModelRequest(
             provider=provider, model=model, prompt=prompt,
-            json_mode=True, temperature=0.0, max_tokens=4096,
+            json_mode=True, temperature=0.0, max_tokens=_PASS1_MAX_OUTPUT_TOKENS,
+            use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         )
         try:
             resp = call_model(req)

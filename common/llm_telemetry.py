@@ -95,6 +95,8 @@ def build_resp_stats(
     total_latency_ms: int | None = None,
     call_count: int = 1,
     final_attempt_index: int = 1,
+    price_in: float = 0.0,
+    price_out: float = 0.0,
 ) -> RespStatsRecord:
     """Assemble one RespStatsRecord. Hashes always computed. See module
     docstring for the always-on vs env-gated field split.
@@ -160,6 +162,12 @@ def build_resp_stats(
     agg_output_tokens = total_output_tokens if total_output_tokens is not None else output_tokens
     agg_latency_ms = total_latency_ms if total_latency_ms is not None else latency_ms
 
+    # #110 Task 2.1: per-call cost from pool pricing × AGGREGATED tokens.
+    # price_in/price_out are USD per 1,000,000 tokens; you pay for every retry
+    # attempt, so bill the aggregated totals (not the final-attempt values).
+    # Defaults to 0.0 when prices are unset (unpriced run).
+    cost_usd = price_in / 1e6 * agg_input_tokens + price_out / 1e6 * agg_output_tokens
+
     return RespStatsRecord(
         run_id=ctx.run_id,
         source_id=source_id,
@@ -186,6 +194,7 @@ def build_resp_stats(
         ),
         stop_reason=stop_reason,
         token_overrun=token_overrun,
+        cost_usd=cost_usd,
         source_words=source_words,
         failure_stage=failure.stage if failure is not None else None,
         failure_exception_type=failure.exception_type if failure is not None else None,

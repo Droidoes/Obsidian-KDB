@@ -422,6 +422,10 @@ class RespStatsRecord:
     raw_response_text: Optional[str] = None
     stop_reason: Optional[str] = None
     token_overrun: bool = False
+    # #110 Task 2.1: per-call cost diagnostic, USD. Derived from pool pricing
+    # (price_in/price_out per 1M tokens) × AGGREGATED tokens (every retry
+    # attempt is billed). 0.0 on unpriced runs (no pool pricing threaded).
+    cost_usd: float = 0.0
     source_words: int = 0
     failure_stage: Optional[str] = None
     failure_exception_type: Optional[str] = None

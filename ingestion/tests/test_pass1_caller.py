@@ -46,6 +46,28 @@ def test_caller_stamps_code_owned_and_omits_override(monkeypatch):
     assert res.attempts == 1
 
 
+def test_caller_threads_pool_knobs_to_model_request(monkeypatch):
+    """#110 final review: call_pass1 must forward use_completion_tokens +
+    extra_body (resolved from the model-pool ModelSpec) into the constructed
+    ModelRequest. Without this, deepseek's extra_body and gpt-5.4-mini's
+    use_completion_tokens are dropped before the API call.
+    """
+    captured = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return _fake_response(_content_json())
+    monkeypatch.setattr(caller_mod, "call_model", capturing)
+
+    knob_extra_body = {"thinking": {"type": "disabled"}}
+    call_pass1(source_text="body", source_path="x.md",
+               provider="deepseek", model="deepseek-v4-flash",
+               use_completion_tokens=True, extra_body=knob_extra_body)
+
+    assert captured["req"].use_completion_tokens is True
+    assert captured["req"].extra_body == knob_extra_body
+
+
 def test_caller_coerces_over_cap_keys_without_retry(monkeypatch):
     monkeypatch.setattr(
         caller_mod, "call_model",
@@ -88,6 +110,40 @@ def test_caller_recovers_on_second_attempt(monkeypatch):
     res = call_pass1(source_text="body", source_path="x.md",
                      provider="deepseek", model="deepseek-v4-flash")
     assert res.attempts == 2
+    assert res.parsed["domain"] == "ai-ml"
+
+
+def test_pass1_overrun_quarantines_without_calling_model(monkeypatch):
+    # Task #110 §3.2: PROACTIVE input-side ctx-overrun guard. A huge prompt
+    # against a tiny ctx_window must skip-and-quarantine THIS source with NO
+    # API spend — the model is never called, and the error carries the
+    # synthetic exception-type "TokenOverrun" (aggregated tokens 0).
+    monkeypatch.setattr(
+        caller_mod, "call_model",
+        lambda *a, **k: pytest.fail("model called despite ctx overrun"),
+    )
+    huge_body = "word " * 5000  # ~6500 est tokens, far over ctx_window=100
+    with pytest.raises(Pass1CallError) as exc:
+        call_pass1(source_text=huge_body, source_path="x.md",
+                   provider="deepseek", model="deepseek-v4-flash",
+                   ctx_window=100)
+    assert exc.value.exception_type == "TokenOverrun"
+    # No API spend: no call reached the model, so aggregated tokens are 0.
+    assert exc.value.total_input_tokens == 0
+    assert exc.value.total_output_tokens == 0
+    assert exc.value.call_count == 0
+    assert exc.value.final_status == "quarantined"
+
+
+def test_pass1_fits_context_proceeds_to_call_model(monkeypatch):
+    # The guard must NOT false-trip: a small prompt against a large ctx_window
+    # proceeds to the (monkeypatched) model normally.
+    monkeypatch.setattr(caller_mod, "call_model",
+                        lambda req: _fake_response(_content_json()))
+    res = call_pass1(source_text="body", source_path="x.md",
+                     provider="deepseek", model="deepseek-v4-flash",
+                     ctx_window=100_000)
+    assert res.attempts == 1
     assert res.parsed["domain"] == "ai-ml"
 
 
