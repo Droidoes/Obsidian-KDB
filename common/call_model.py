@@ -8,7 +8,7 @@ project memory).
 Providers:
     anthropic    → native anthropic SDK (client.messages.create)
     openai       → openai SDK, standard endpoint
-    gemini       → openai SDK, base_url=generativelanguage.googleapis.com/v1beta/openai/
+    gemini       → native google-genai SDK (json-mode only, minimal thinking)
     xai          → openai SDK, base_url=https://api.x.ai/v1
     alibaba      → openai SDK, base_url=https://dashscope-us.aliyuncs.com/compatible-mode/v1
     deepseek     → openai SDK, base_url=https://api.deepseek.com
@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import anthropic
+from google import genai
+from google.genai import types as genai_types
 from openai import OpenAI
 
 from common.config import settings
@@ -81,11 +83,7 @@ def call_model(req: ModelRequest) -> ModelResponse:
             req, base_url=None, api_key=settings.openai_api_key
         )
     elif req.provider == "gemini":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            api_key=settings.gemini_api_key,
-        )
+        text, input_tokens, output_tokens, stop_reason, raw = _call_gemini(req)
     elif req.provider == "xai":
         text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req, base_url="https://api.x.ai/v1", api_key=settings.xai_api_key,
@@ -148,6 +146,45 @@ def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
     return text, resp.usage.input_tokens, resp.usage.output_tokens, stop_reason, resp
 
 
+def _call_gemini(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
+    if not settings.gemini_api_key:
+        raise ModelConfigError("GEMINI_API_KEY not set")
+    client = genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=genai_types.HttpOptions(timeout=settings.llm_timeout_seconds * 1000),
+    )
+    # Gemini 3.x uses thinking_level (NOT thinking_budget). flash-lite floor is
+    # "minimal" (full-off unsupported) — the near-zero-reasoning value for our
+    # extraction workload. Overridable via extra_body["thinking_level"].
+    thinking_level = (req.extra_body or {}).get("thinking_level", "minimal")
+    cfg_kwargs: dict[str, Any] = {
+        "temperature": req.temperature,
+        "max_output_tokens": req.max_tokens,
+        "thinking_config": genai_types.ThinkingConfig(thinking_level=thinking_level),
+    }
+    if req.system is not None:
+        cfg_kwargs["system_instruction"] = req.system
+    if req.json_mode:
+        cfg_kwargs["response_mime_type"] = "application/json"
+    config = genai_types.GenerateContentConfig(**cfg_kwargs)
+
+    resp = client.models.generate_content(
+        model=req.model, contents=req.prompt, config=config,
+    )
+    text = resp.text or ""
+    usage = resp.usage_metadata
+    input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+    # thinking tokens bill as output; include them (≈0 at minimal, but correct).
+    output_tokens = (getattr(usage, "candidates_token_count", 0) or 0) + \
+                    (getattr(usage, "thoughts_token_count", 0) or 0)
+    stop_reason = None
+    cands = getattr(resp, "candidates", None) or []
+    if cands:
+        fr = getattr(cands[0], "finish_reason", None)
+        stop_reason = str(fr) if fr is not None else None
+    return text, input_tokens, output_tokens, stop_reason, resp
+
+
 def _call_openai_compat(
     req: ModelRequest, *, base_url: str | None, api_key: str
 ) -> tuple[str, int, int, str | None, Any]:
@@ -164,11 +201,7 @@ def _call_openai_compat(
         messages.append({"role": "system", "content": req.system})
     messages.append({"role": "user", "content": req.prompt})
 
-    # Gemini's OpenAI-compat endpoint requires a "models/" prefix on the model ID.
-    if req.provider == "gemini" and not req.model.startswith("models/"):
-        model = f"models/{req.model}"
-    else:
-        model = req.model
+    model = req.model
 
     max_tokens_param = "max_completion_tokens" if req.use_completion_tokens else "max_tokens"
     kwargs: dict[str, Any] = {
