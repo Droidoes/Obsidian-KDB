@@ -14,7 +14,7 @@ example per provider. **Grounded in the code** — every "what we send" row refl
 ```python
 client = OpenAI(api_key=…, base_url=<provider>, timeout=LLM_TIMEOUT_SECONDS)
 kwargs = {
-    "model": model,                       # gemini: "models/"-prefixed
+    "model": model,                       # (gemini no longer here — native SDK, see below)
     "messages": [ {system?}, {user} ],
     "temperature": req.temperature,       # 0.0
     "max_tokens" | "max_completion_tokens": req.max_tokens,   # latter iff use_completion_tokens
@@ -50,7 +50,7 @@ response_format={"type": "json_schema",
 | openai (gpt-4o-mini / -2024-08-06 & later) | ✅ `json_schema` strict | **in-compat-path** — upgrade `response_format` (verified) |
 | xai (grok-4.3, grok-4-1-fast-reasoning) | ✅ `json_schema` strict via OpenAI SDK @ api.x.ai/v1 | **in-compat-path** — upgrade `response_format` (verified) |
 | deepseek | likely ✅ (OpenAI-compat) | in-compat-path — ⚠️ verify; already clean on json_object so low urgency |
-| gemini | ✅ via **native SDK** `response_json_schema` | needs native handler — ⚠️ compat-endpoint json_schema support unverified |
+| gemini | ✅ via **native SDK** `response_json_schema` (`GenerateContentConfig`) | native `_call_gemini` handler **shipped** (#111 Phase 1, json-mode); `response_json_schema` = Phase 2 add |
 
 **Key takeaway:** the json_object→json_schema upgrade is the real JSON-reliability lever (the
 likely fix for Gemini's quarantines). For openai/xai/deepseek it's a `response_format` change
@@ -71,9 +71,11 @@ param ever fires on a paid call**.
 | alibaba (qwen3.x) | ON | `{"enable_thinking": false}` | ✅ verified (DashScope deep-thinking docs) |
 | anthropic | OFF (opt-in) | — (no param needed) | ✅ no-op |
 | ollama-local/cloud | model-dependent (gemma4: none) | — | ✅ no-op |
-| gemini (2.5+/3.x flash) | ON | `thinkingBudget: 0` — exact openai-compat shape unknown | ⚠️ **TODO verify** |
-| openai (gpt-5.x) | reasoning models reason | `reasoning_effort` — may not fully disable | ⚠️ **TODO verify** |
+| gemini (3.x flash-lite) | ON (floor `minimal`) | **native SDK** `thinking_config.thinking_level="minimal"` (NOT `extra_body`; full-off unsupported — `minimal` ≈ off) | ✅ verified (native `_call_gemini`, #111 Phase 1) |
+| openai (gpt-5.x) | reasoning models reason | `reasoning_effort` — gpt-5.4-mini uses `"low"` for structured output (not fully disabled) | ✅ verified (gpt-5.4-mini, #111 Phase 1) |
 | xai (grok reasoning) | ON | `reasoning_effort`? — may not be disableable | ⚠️ **TODO verify** |
+
+> **Gemini exception:** gemini's thinking is set in the **native `_call_gemini` handler** (google-genai SDK, Gemini 3.x uses `thinking_level` not the 2.5-era `thinking_budget`; passing both → 400), NOT via the `_THINKING_DISABLE_EXTRA_BODY` table. All other providers ride the openai-compat `extra_body` path above.
 
 ---
 
@@ -133,39 +135,21 @@ param ever fires on a paid call**.
 - **Structured outputs:** ✅ `response_format={"type":"json_schema","json_schema":{"name":…,"schema":…,"strict":true}}` ("evolution of JSON mode" — schema adherence; we use the weaker `json_object`). Supported gpt-4o-mini / gpt-4o-2024-08-06 & later (gpt-5.x family expected; not explicitly confirmed in the guide).
 - Reasoning control — `reasoning_effort` (gpt-5.5): `"none"`, `"low"`, `"medium"` (default), `"high"`, `"xhigh"` (docs: https://developers.openai.com/api/docs/guides/deployment-checklist#set-up-reasoningeffort). `"none"` = fully disabled; `"low"` = lowest *active* reasoning (no `"minimal"`). Passed nested: `reasoning={"effort": …}` → via `extra_body={"reasoning": {"effort": "none"}}`.
   - **Design note for our workload:** OpenAI recommends **`"low"` for "extraction, routing, classification, or a simple rewrite"** — i.e. our compile/extract task class. So `"none"` (fully off) vs `"low"` (OpenAI's recommended floor for extraction) is a real tuning choice — A/B it if we ever run gpt in the #109 cohort, don't assume `"none"`.
-  - ⚠️ **Still TODO / do NOT add yet:** values documented for `gpt-5.5`; our `gpt-5.4-mini` is unconfirmed. Verify before adding a pool knob.
+  - ✅ **Resolved (#111 Phase 1):** `gpt-5.4-mini` uses `extra_body={"reasoning_effort": "low"}` (flat key) for structured output — Joseph-verified. `"low"` is the recommended floor for extraction; not fully disabled.
 
-### gemini — `https://generativelanguage.googleapis.com/v1beta/openai/` · `GEMINI_API_KEY` · openai SDK
-- **API docs:** https://ai.google.dev/gemini-api/docs · openai-compat: https://ai.google.dev/gemini-api/docs/openai
-- **Model page (gemini-3.1-flash-lite):** https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite
-- Model: `gemini-3.1-flash-lite`. **Model id must be `models/`-prefixed** (handled in `_call_openai_compat`).
-- Gemini 2.5+/3.x flash think by default; native disable is `thinking_config={"thinking_budget": 0}` — ⚠️ **TODO verify** for flash-lite.
+### gemini — **native `google-genai` SDK** (`from google import genai`) · `GEMINI_API_KEY`
+- **API docs:** https://ai.google.dev/gemini-api/docs
+- **Model page (gemini-3.1-flash-lite):** https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite · **thinking:** https://ai.google.dev/gemini-api/docs/thinking
+- Model: `gemini-3.1-flash-lite` — **bare id** on the native path (the old `models/` prefix was a compat-only hack, now removed).
+- **#111 Phase 1: moved OFF the openai-compat shim onto the native handler `_call_gemini`** (sibling to `_call_anthropic`). Sends `GenerateContentConfig(response_mime_type="application/json", thinking_config=ThinkingConfig(thinking_level="minimal"), system_instruction=…, max_output_tokens=…)`. Telemetry maps `usage_metadata`: input=`prompt_token_count`, output=`candidates_token_count`+`thoughts_token_count`.
+- **Thinking:** Gemini 3.x uses `thinking_level` (`minimal`/`low`/`medium`/`high`), **NOT** the 2.5-era `thinking_budget`; passing both → 400. Flash-lite's floor is `minimal` (full thinking-off unsupported) = the near-zero-reasoning equivalent of "off". We send `minimal`.
+- **Structured output:** native JSON-mode (`response_mime_type="application/json"`) shipped Phase 1. The stronger **`response_json_schema`** (schema-constrained decode against `compiled_source_response.schema.json`) is the **Phase 2** add — the candidate fix for Gemini's #109 quarantines.
 
-> **⚠️ FINDING — we likely use a second-class Gemini path.** We route Gemini through the
-> OpenAI-compat shim with `response_format={"type":"json_object"}` (plain "emit valid JSON").
-> The **native `google-genai` SDK** supports `response_json_schema` — *schema-constrained*
-> structured output (the model is decoded against our JSON schema, not just told to be JSON):
-> ```python
-> from google import genai
-> client = genai.Client()
-> resp = client.models.generate_content(
->     model="gemini-3.1-flash-lite",
->     contents=[prompt, input_text],
->     config={
->         "response_mime_type": "application/json",
->         "response_json_schema": <our JSON schema>,   # e.g. compile_result.schema.json
->         # "thinking_config": {"thinking_budget": 0}, # disable thinking
->     },
-> )
-> ```
-> **Why this matters:** in the #109 cohort, `gemini-3.1-flash-lite` was the **worst** performer
-> (−10 quarantine, "quarantines most"), and the dropped `gemini-3-flash-preview` was cut for
-> "run-to-run variance + intermittent token-overrun." Schema-constrained decoding is exactly
-> the lever that fixes JSON-malformation quarantines — so Gemini's poor showing may be partly
-> **self-inflicted by the weak compat path**, not a model-quality gap. A native `_call_gemini`
-> path (sibling to `_call_anthropic`) with `response_json_schema` + `thinking_config` is a
-> candidate follow-up — it adds the `google-genai` dependency + schema plumbing, and would
-> require re-benchmarking Gemini (#109). **Not in #110 scope; flagged for deliberate evaluation.**
+> **Context (resolved):** in the #109 cohort `gemini-3.1-flash-lite` was the **worst** performer
+> ("quarantines most"). The reference's earlier "second-class compat path" FINDING is now being
+> tested: Phase 1 (native + json-mode) isolates the *path* effect (`@v0.5.4` compat → `@v0.5.6`
+> native); Phase 2 (`response_json_schema`) isolates the *schema* effect (→ `@v0.5.7`). Whether
+> Gemini's quarantines were path-induced or JSON-malformation will show in those baselines.
 
 ### xai (Grok) — `https://api.x.ai/v1` · `XAI_GROK_API_KEY` · openai SDK
 - **API docs:** https://docs.x.ai/ · structured outputs: https://docs.x.ai/developers/model-capabilities/text/structured-outputs
