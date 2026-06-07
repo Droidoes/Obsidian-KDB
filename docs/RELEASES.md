@@ -10,6 +10,36 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.6 — #111 Phase 1: model-pool restructure + native Gemini handler + gpt reasoning (tagged `v0.5.6`, 2026-06-07)
+
+**Theme:** baseline-1 marker — optimal per-model config *short of* `json_schema`. The
+`json_schema` variable stays isolated to Phase 2 (`v0.5.7`) for every provider.
+
+**What landed (#111 Phase 1, merged from `feat/111-phase1`):**
+- **Model-pool restructure** — `common/models.json` split into active-only + new
+  `common/models_dropped.json` (a pure human archive the code never reads). The now-dead
+  dropped-guard retired: a dropped/archived id resolves to `UnknownModelError` (the
+  `DroppedModelError` branch is gone). Roster: dropped `grok-4-1-fast-reasoning` (deprecated)
+  → archive; added `grok-4.20-0309-non-reasoning` + `gemma-4-12b-qat` (active, not in batch-1).
+- **`gpt-5.4-mini` reasoning** — `extra_body={"reasoning_effort": "low"}` for structured
+  output (verified; `"low"` is OpenAI's extraction floor).
+- **Gemini → native `google-genai` SDK** — new `_call_gemini` handler (sibling to
+  `_call_anthropic`) moves Gemini **off the second-class openai-compat shim**: JSON mode
+  (`response_mime_type="application/json"`) + `thinking_config.thinking_level="minimal"`
+  (Gemini 3.x uses `thinking_level`, not the 2.5-era `thinking_budget`; flash-lite's floor is
+  `minimal`, full thinking-off unsupported). Telemetry maps `usage_metadata`
+  (output = `candidates_token_count` + `thoughts_token_count`). New `google-genai` dependency.
+  **`response_json_schema` deferred to Phase 2.**
+
+deepseek + qwen were already optimal (#110), so they're unchanged. 1232 non-live tests green;
+Gemini native path live-smoke validated (exit 0, 0 quarantined, native `usage_metadata` tokens).
+Sets up **baseline-1** (batch-1 four models at `v0.5.6`) against the `@v0.5.4` baseline-0; for
+Gemini the `@v0.5.4 → @v0.5.6` delta isolates the native-vs-shim effect. Plans:
+`docs/superpowers/plans/2026-06-07-phase1-pool-prep-per-model-config.md` +
+`docs/superpowers/plans/2026-06-07-phase1-gemini-native-handler.md`.
+
+---
+
 ## 0.5.5 — #111 Phase 0: run provenance + release-keyed leaderboard (tagged `v0.5.5`, 2026-06-07)
 
 **Theme:** the baseline-0 marker for the #111 two-phase de-risk — make every benchmark
