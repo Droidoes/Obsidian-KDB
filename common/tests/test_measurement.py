@@ -166,10 +166,11 @@ def test_from_pass2_final_status_none():
 
 
 # ---------------------------------------------------------------------------
-# Fix 1 (#111 retry-telemetry): from_pass2 attempts = max(final_attempt_index, model-API attempts)
+# Fix 1 (#111 retry-telemetry): from_pass2 attempts = final_attempt_index ONLY
+# (compile re-prompt count; SDK transient retries deliberately excluded).
 # ---------------------------------------------------------------------------
 
-def test_from_pass2_reprompte_only_recovery_attempts_reflects_reprompte_count():
+def test_from_pass2_reprompt_only_recovery_attempts_reflects_reprompt_count():
     """A re-prompt-only recovery (schema/semantic retry, no in-place repair):
     model_response.attempts==1 (single model-API call per compile attempt),
     final_attempt_index==2 (compile loop succeeded on attempt 2).
@@ -184,12 +185,28 @@ def test_from_pass2_reprompte_only_recovery_attempts_reflects_reprompte_count():
         slug_coerced=False,
     )
     m = PassCallMeasurement.from_pass2(rec)
-    assert m.attempts == 2  # max(final_attempt_index=2, attempts=1) = 2
+    assert m.attempts == 2  # final_attempt_index=2 = two compile re-prompts
+
+
+def test_from_pass2_sdk_only_retry_excluded_from_attempts():
+    """A clean first-pass compile that merely hit an SDK transient retry
+    (429/5xx/network): model_response.attempts==2 (SDK retried the call once),
+    but final_attempt_index==1 (compile won on the first re-prompt, no content
+    recovery). PassCallMeasurement.attempts must be 1 so recovery_rate/retry_load
+    do NOT count infrastructure flakiness as a content/model recovery.
+    This is the whole point of Fix 1's correction (dropping max(...))."""
+    rec = _make_resp_stats_dict(
+        attempts=2,            # model_response.attempts = 2 (one SDK transient retry)
+        final_attempt_index=1, # compile loop won on the first attempt — no re-prompt
+        final_status="clean",
+    )
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.attempts == 1  # SDK transient retry excluded; not a content recovery
 
 
 def test_from_pass2_single_attempt_unchanged():
     """Single-attempt success: both model-API attempts and final_attempt_index are 1.
-    max(1, 1) == 1 — no change in the common case."""
+    attempts == 1 — no change in the common case."""
     rec = _make_resp_stats_dict(
         attempts=1,
         final_attempt_index=1,

@@ -345,7 +345,7 @@ class TestEdgeCaseScannedZero:
         assert result["diagnostic"]["signal_noise_ratio"] is None
 
 
-class TestReprompteOnlyRecovery:
+class TestRepromptOnlyRecovery:
     """Fix 1 + Fix 2 regression guard (#111 retry-telemetry):
     a re-prompt-only recovery (schema/semantic retry, no in-place repair)
     must be visible in recovery_rate and retry_load.
@@ -356,24 +356,24 @@ class TestReprompteOnlyRecovery:
     model_response.attempts) = max(2, 1) = 2 → both KPIs fire correctly.
     """
 
-    def test_reprompte_only_recovery_rate_positive(self):
+    def test_reprompt_only_recovery_rate_positive(self):
         """A non-quarantined call with attempts==2 (no repair flags) is recovery."""
-        reprompte = _call(
+        reprompt = _call(
             pass_="pass2", final_status="retried", attempts=2,
             total_input_tokens=400, total_output_tokens=100, total_latency_ms=50,
             semantic_ok=True,
         )
-        result = compute_processing(HEADER, [reprompte])
+        result = compute_processing(HEADER, [reprompt])
         T_single = 400 + 100  # 500
         assert result["scored"]["recovery_rate"] == pytest.approx(1 * 1e6 / T_single)
 
-    def test_reprompte_only_retry_load_positive(self):
+    def test_reprompt_only_retry_load_positive(self):
         """A call with attempts==2 contributes 1 extra attempt → retry_load>0."""
-        reprompte = _call(
+        reprompt = _call(
             pass_="pass2", final_status="retried", attempts=2,
             total_input_tokens=400, total_output_tokens=100, total_latency_ms=50,
             semantic_ok=True,
         )
-        result = compute_processing(HEADER, [reprompte])
+        result = compute_processing(HEADER, [reprompt])
         # retry_load = sum(max(0, c.attempts - 1)) / N = 1 / 1 = 1.0
         assert result["diagnostic"]["retry_load"] == pytest.approx(1.0)

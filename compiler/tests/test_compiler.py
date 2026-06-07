@@ -294,7 +294,7 @@ def test_compile_one_threads_compile_meta_from_model_response(
     assert meta.error is None
 
 
-def test_compile_meta_attempts_reflects_reprompte_count(
+def test_compile_meta_attempts_reflects_reprompt_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Fix 3a (#111 retry-telemetry): compile_meta.attempts == 2 on a re-prompt recovery.
@@ -1854,7 +1854,7 @@ def test_irreparable_json_quarantines(
 
 # ---------- Fix 2 (#111 retry-telemetry): "retried" final_status ----------
 
-def test_final_status_retried_on_reprompte_only_recovery(
+def test_final_status_retried_on_reprompt_only_recovery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Fix 2 (#111): a re-prompt-only recovery (schema/semantic retry, no in-place
