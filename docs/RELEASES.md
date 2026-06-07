@@ -10,6 +10,45 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
+## 0.5.4 — Benchmark framework + user-owned model pool (tagged `v0.5.4`, 2026-06-07)
+
+**Theme:** the infrastructure that sets up a *fair* model evaluation — the GT-free benchmark
+framework (#109), Pass-1 robustness telemetry (#108), and a user-owned model pool with cost/ctx
+diagnostics (#110). Bundles the work merged to `main` since `v0.5.3` (this release closes the
+untagged-`main` gap). On the 0.5.x line; precursor to the #111 optimal-calls + clean-slate
+re-benchmark arc.
+
+**What landed:**
+- **#110 — user-owned model pool + cost/ctx diagnostics** (merge `5d99900`; 1209 non-live tests;
+  live-smoke clean). `common/models.json` (pool + curation ledger) + `common/model_pool.py`
+  `resolve_models_json(id) → ModelSpec` (alias→provider+knobs, absolute dropped-guard, `words×1.3`
+  ctx-estimate helpers); `kdb-orchestrate --model <id>` resolves the pool (`--provider` demoted to
+  an escape hatch + conflict-check). **`cost_usd`** restored (pricing × aggregated tokens) on both
+  telemetry paths; proactive **input-side ctx-overrun guard** in both passes (skip-and-quarantine,
+  no API spend). Semantic **`thinking` field** (per-provider disable translation: verified alibaba
+  `enable_thinking:false` + deepseek `thinking:disabled`); `deepseek-v4-pro` un-dropped. New
+  reference `docs/reference/model-provider-api-calls.md` (per-provider call shapes + structured-output
+  / reasoning matrix). Follow-ups: #111 (`json_schema` upgrade + Gemini native handler).
+- **#109 — benchmark redesign framework** (merge `610e2c8`; **calibration parked**). Quality-only,
+  GT-free, two families never blended: `common/measurement.py` (`PassCallMeasurement` P1+P2 logical
+  projection), `compiler/kpi/` (processing + graph families), `kdb-orchestrate --emit-kpis` →
+  `benchmark/runs/<id>/measurements.json`, `kdb-benchmark score` Borda leaderboard + weak-spot
+  penalty. Weights/final-set/promotion **parked to post-cohort calibration** (needs live cross-model
+  spread — data-before-principle). `§7` doc-debt + weight calibration close out at #109-final.
+- **#108 — Pass-1 robustness** (with #109). `final_status` + aggregate token/latency telemetry on the
+  Pass-1 sidecar (feeds `PassCallMeasurement.from_pass1`, makes Pass-1 failures observable); shared
+  `common/util/json_escape_fix` wired before `json.loads`. Full ladder deferred (Pass-1 has zero
+  repairable failures — data-before-principle).
+
+**Process:** all subagent-driven TDD with per-task spec+quality reviews; #110 also had a final
+holistic review that caught a live-path threading must-fix. Note: `common/__init__.py` `__version__`
+is stale (`0.5.2`) — git-describe is the authoritative version; #111 Phase 0 wires release provenance.
+
+**Next:** **#111** — call each model optimally (`json_schema` structured output + per-model
+reasoning/thinking config) → clean-slate cohort re-benchmark, then close #109 weight calibration.
+
+---
+
 ## 0.5.3 — Pass-2 robustness ladder (tagged `v0.5.3`, 2026-06-02)
 
 **Theme:** make Pass-2 deterministically recover from the two confirmed recoverable
