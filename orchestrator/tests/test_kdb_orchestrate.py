@@ -876,12 +876,24 @@ def test_main_rejects_unknown_model_without_provider(tmp_path):
             ["--vault-root", str(tmp_path), "--pipeline", "p", "--model", "bogus-id"])
 
 
-def test_main_dropped_model_errors_despite_provider_override(tmp_path):
-    # The dropped-guard is ABSOLUTE: a dropped id must error even when the
-    # --provider escape hatch is supplied. The escape hatch is only for ids
-    # not in the pool at all.
+def test_main_archived_model_without_provider_raises_unknown(tmp_path):
+    # An archived (formerly-dropped) id is no longer in the active pool: with no
+    # --provider override it surfaces UnknownModelError.
     import common.model_pool
-    with pytest.raises(common.model_pool.DroppedModelError):
+    with pytest.raises(common.model_pool.UnknownModelError):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--model", "qwen-flash-us",
+        ])
+
+
+def test_main_archived_model_with_provider_uses_escape_hatch(tmp_path, monkeypatch):
+    # With --provider the escape hatch activates (raw passthrough) — assert run(...)
+    # is reached with the override provider + the raw model string.
+    def _sentinel(**kwargs):
+        raise RuntimeError("reached_run")
+    monkeypatch.setattr(kdb_orchestrate, "run", _sentinel)
+    with pytest.raises(RuntimeError, match="reached_run"):
         kdb_orchestrate.main([
             "--vault-root", str(tmp_path), "--pipeline", "p",
             "--provider", "alibaba", "--model", "qwen-flash-us",

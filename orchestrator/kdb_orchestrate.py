@@ -45,7 +45,7 @@ from orchestrator.orchestrator_events import (
     check_orchestrator_invariant,
 )
 from common.measurement import RunMeasurementHeader
-from common.model_pool import resolve_models_json, UnknownModelError, DroppedModelError, PoolError
+from common.model_pool import resolve_models_json, UnknownModelError, PoolError
 from common.run_context import RunContext, now_iso
 from common.version import release_version
 from orchestrator.emit_kpis import maybe_emit_kpis
@@ -1072,9 +1072,9 @@ def main(argv: list[str] | None = None) -> int:
         ctx_window = spec.ctx_window
         price_in, price_out = spec.price_in, spec.price_out
     except UnknownModelError:
-        # DroppedModelError is NOT caught here: the dropped-guard is absolute,
-        # so a dropped id always propagates even with --provider set. The escape
-        # hatch is only for ids not in the pool at all.
+        # A dropped id is now simply not in the active pool (archived to
+        # models_dropped.json), so it arrives here as UnknownModelError. The
+        # escape hatch is only for ids not in the pool at all.
         if args.provider is None:
             raise  # unknown id + no override → surface the UnknownModelError
         # one-off escape hatch: raw model string, no pool metadata
