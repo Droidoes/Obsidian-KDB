@@ -383,6 +383,9 @@ def _score_command(args: argparse.Namespace) -> int:
             {
                 "model": m,
                 "composite": e["composite"],
+                "composite_pre_penalty": e["composite_pre_penalty"],
+                "penalty": e["penalty"],
+                "weakest_kpi": e["weakest_kpi"],
                 "graph_score": e["graph_score"],
                 "per_kpi_borda": e["per_kpi_borda"],
             }
@@ -399,6 +402,7 @@ def _score_command(args: argparse.Namespace) -> int:
         "ranking": ranking,
         "top_weights": result["top_weights"],
         "graph_weights": result["graph_weights"],
+        "penalty_params": result["penalty_params"],
         "updated_at": now_iso(),
     }
     leaderboard_path.parent.mkdir(parents=True, exist_ok=True)

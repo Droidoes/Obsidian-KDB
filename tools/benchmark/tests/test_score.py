@@ -313,3 +313,36 @@ class TestCrossTierLookup:
         assert "intervention_burden" not in rows["rich"]["per_kpi_borda"]
         # recovery_rate was genuinely never measured here → None (dropped pro-rata)
         assert rows["rich"]["per_kpi_borda"]["recovery_rate"] is None
+
+
+# ---------------------------------------------------------------------------
+# Penalty fields persisted in leaderboard JSON
+# ---------------------------------------------------------------------------
+
+class TestPenaltyFieldsPersisted:
+    def test_ranking_rows_carry_penalty_fields(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="model-a-T1", model="model-a", runs_root=runs_root,
+                           entity_reuse=0.9, graph_connectivity=0.9,
+                           link_density=9.0, supports_density=9.0)
+        _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root,
+                           entity_reuse=0.1, graph_connectivity=0.1,
+                           link_density=1.0, supports_density=1.0)
+        rc = cli.main(["score", "model-a-T1", "model-b-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        payload = _load(lb)
+        assert payload["penalty_params"] == {"threshold": 0.5, "cap": 0.10}
+        for row in payload["ranking"]:
+            assert set(row) >= {
+                "model", "rank", "composite", "composite_pre_penalty",
+                "penalty", "weakest_kpi", "graph_score", "per_kpi_borda",
+            }
+            assert 0.0 <= row["composite"] <= 100.0     # 0-100 scale
+            assert 0.0 <= row["penalty"] <= 10.0
+        by = {r["model"]: r for r in payload["ranking"]}
+        # model-b is lopsided on graph (graph_score Borda 0.0) -> capped penalty
+        assert by["model-b"]["weakest_kpi"] == "graph"
+        assert by["model-b"]["penalty"] == pytest.approx(10.0)
+        assert by["model-a"]["penalty"] == pytest.approx(0.0)
