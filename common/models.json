@@ -28,9 +28,9 @@
     "price_out": 4.5
   },
   {
-    "id": "gemma4-obsidian-bench",
+    "id": "gemma-4-12b-qat",
     "provider": "ollama-local",
-    "model": "gemma4-obsidian-bench",
+    "model": "gemma-4-12b-qat",
     "ctx_window": 65536,
     "price_in": 0.0,
     "price_out": 0.0

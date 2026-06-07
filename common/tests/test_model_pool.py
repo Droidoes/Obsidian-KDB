@@ -89,11 +89,23 @@ def test_resolve_explicit_extra_body_merges_and_overrides(monkeypatch):
     assert spec.extra_body == {"enable_thinking": False, "foo": 1}
 
 def test_resolve_local_model_has_zero_price_and_default_knobs():
-    spec = resolve_models_json("gemma4-obsidian-bench")
+    spec = resolve_models_json("gemma-4-12b-qat")
     assert spec.provider == "ollama-local"
     assert spec.price_in == 0.0 and spec.price_out == 0.0
     assert spec.extra_body is None
     assert spec.use_completion_tokens is False
+
+
+def test_gemma_4_12b_qat_resolves_as_local_zero_price():
+    spec = resolve_models_json("gemma-4-12b-qat")
+    assert spec.provider == "ollama-local"
+    assert spec.price_in == 0.0 and spec.price_out == 0.0
+    assert spec.extra_body is None
+
+
+def test_old_gemma_bench_alias_gone():
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("gemma4-obsidian-bench")
 
 
 from common.model_pool import estimate_prompt_tokens, fits_context
