@@ -1,7 +1,8 @@
 """model_pool — user-owned model registry loaded from common/models.json.
 
 The JSON is DATA (pool + per-model knobs + curation ledger); this module is
-the LOOKUP layer (alias -> ModelSpec, dropped-guard).
+the LOOKUP layer (alias -> ModelSpec, dropped-guard) plus token-estimate
+helpers for the context-overrun pre-flight guard.
 call_model.py (the engine) is untouched and still takes explicit provider+model.
 """
 from __future__ import annotations
@@ -67,3 +68,17 @@ def resolve(model_id: str) -> ModelSpec:
         price_in=entry.get("price_in", 0.0),
         price_out=entry.get("price_out", 0.0),
     )
+
+
+def estimate_prompt_tokens(system: str | None, user: str) -> int:
+    """Rough token estimate for a prompt, words × WORDS_TO_TOKENS (deliberate
+    over-estimate; no tokenizer dependency). `system + "\n\n" + user` mirrors
+    how prompt_hash is built in llm_telemetry."""
+    text = (system or "") + "\n\n" + user
+    return round(len(text.split()) * WORDS_TO_TOKENS)
+
+
+def fits_context(*, est_input: int, requested_output: int, ctx_window: int) -> bool:
+    """The call must fit input AND the room reserved for output: a deliberate
+    over-estimate erring toward catching overruns early."""
+    return est_input + requested_output <= ctx_window
