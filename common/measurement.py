@@ -129,7 +129,19 @@ class PassCallMeasurement:
             # run-level metadata if needed.
             prompt_version="",
             final_status=rec.get("final_status") or "",
-            attempts=rec["attempts"],
+            # Fix 1 (#111 retry-telemetry): attempts reflects the compile
+            # re-prompt count ONLY.  `final_attempt_index` captures every
+            # content-driven re-prompt (schema/semantic retry, in-place
+            # repair), so a re-prompt-only recovery (final_attempt_index==2)
+            # is visible to the KPI layer.  SDK transient retries
+            # (`rec["attempts"]` = model_response.attempts: 429/5xx/network
+            # flakiness) are deliberately excluded — they are infrastructure
+            # noise, not content/model recoveries, and the KPI layer keys
+            # recovery_rate/retry_load off attempts > 1.  This matches
+            # from_pass1's `call_count` and Fix 3a's compile_meta.attempts
+            # (state["compile_attempts"]), which also exclude SDK retries.
+            # Falls back to 1 for pre-#109 records.
+            attempts=rec.get("final_attempt_index", 1),
             syntax_repaired=rec.get("syntax_repaired", False),
             slug_coerced=rec.get("slug_coerced", False),
             token_overrun=rec.get("token_overrun", False),

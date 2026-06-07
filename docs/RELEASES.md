@@ -30,8 +30,16 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
   `minimal`, full thinking-off unsupported). Telemetry maps `usage_metadata`
   (output = `candidates_token_count` + `thoughts_token_count`). New `google-genai` dependency.
   **`response_json_schema` deferred to Phase 2.**
+- **Retry-telemetry fix** — a Pass-2 compile that recovers via **re-prompt** (schema/semantic
+  re-validation loop) with no in-place repair was invisible to `recovery_rate`/`retry_load`
+  (they keyed off `model_response.attempts` = SDK transient retries, not the compile re-prompt
+  count). Now `recovery_rate`/`retry_load` count `final_attempt_index > 1` (content re-prompts
+  only; SDK 429/5xx retries deliberately excluded, matching Pass-1); a re-prompt-only recovery
+  records `final_status="retried"`; `compile_meta.attempts` carries the re-prompt count; and the
+  per-source `pass-2 ✓ (N attempts)` line + `console.log` now surface retries. Makes the
+  baseline-1 `recovery_rate` axis trustworthy.
 
-deepseek + qwen were already optimal (#110), so they're unchanged. 1232 non-live tests green;
+deepseek + qwen were already optimal (#110), so they're unchanged. 1241 non-live tests green;
 Gemini native path live-smoke validated (exit 0, 0 quarantined, native `usage_metadata` tokens).
 Sets up **baseline-1** (batch-1 four models at `v0.5.6`) against the `@v0.5.4` baseline-0; for
 Gemini the `@v0.5.4 → @v0.5.6` delta isolates the native-vs-shim effect. Plans:
