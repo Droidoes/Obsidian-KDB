@@ -56,6 +56,7 @@ def enrich_one(
     price_in: float = 0.0, price_out: float = 0.0,
     ctx_window: int | None = None,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
+    temperature: float | None = 0.0,
 ) -> EnrichResult:
     # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
     # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
@@ -88,6 +89,7 @@ def enrich_one(
             provider=provider, model=model,
             ctx_window=ctx_window,
             use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+            temperature=temperature,
         )
     except Pass1CallError as e:
         sidecar = _write_sidecar_failed(

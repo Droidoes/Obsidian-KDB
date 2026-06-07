@@ -105,6 +105,7 @@ def call_pass1(
     *, source_text: str, source_path: str, provider: str, model: str,
     max_retries: int = 1, ctx_window: int | None = None,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
+    temperature: float | None = 0.0,
 ) -> Pass1CallResult:
     """Fire one Pass-1 LLM call. Returns parsed + validated envelope.
 
@@ -168,7 +169,7 @@ def call_pass1(
     for attempt in range(1, max_retries + 2):  # initial + retries
         req = ModelRequest(
             provider=provider, model=model, prompt=prompt,
-            json_mode=True, temperature=0.0, max_tokens=_PASS1_MAX_OUTPUT_TOKENS,
+            json_mode=True, temperature=temperature, max_tokens=_PASS1_MAX_OUTPUT_TOKENS,
             use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         )
         try:

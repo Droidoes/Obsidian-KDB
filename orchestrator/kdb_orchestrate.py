@@ -496,6 +496,7 @@ def run(
     limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
     quiet: bool = False, emit_kpis: bool = False,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
+    temperature: float | None = 0.0,
     ctx_window: int | None = None, price_in: float = 0.0, price_out: float = 0.0,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
@@ -621,7 +622,8 @@ def run(
                     provider=provider, model=model,
                     force_signal=pipeline.force_signal, force_noise=pipeline.force_noise,
                     price_in=price_in, price_out=price_out, ctx_window=ctx_window,
-                    use_completion_tokens=use_completion_tokens, extra_body=extra_body)
+                    use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+                    temperature=temperature)
                 if enrich.outcome == "enrich_failed":
                     failure = _last_failure(
                         ctx=ctx,
@@ -709,7 +711,8 @@ def run(
                     conn=g.conn, vault_root=vault_root, state_root=state_root, ctx=ctx,
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens,
                     price_in=price_in, price_out=price_out, ctx_window=ctx_window,
-                    use_completion_tokens=use_completion_tokens, extra_body=extra_body)
+                    use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+                    temperature=temperature)
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
@@ -1083,6 +1086,7 @@ def main(argv: list[str] | None = None) -> int:
         provider, model = spec.provider, spec.model
         use_completion_tokens = spec.use_completion_tokens
         extra_body = spec.extra_body
+        temperature = spec.temperature
         ctx_window = spec.ctx_window
         price_in, price_out = spec.price_in, spec.price_out
     except UnknownModelError:
@@ -1094,6 +1098,7 @@ def main(argv: list[str] | None = None) -> int:
         # one-off escape hatch: raw model string, no pool metadata
         provider, model = args.provider, args.model
         use_completion_tokens, extra_body, ctx_window = False, None, None
+        temperature = 0.0
         price_in, price_out = 0.0, 0.0
 
     res = run(
@@ -1103,6 +1108,7 @@ def main(argv: list[str] | None = None) -> int:
         log_level=_resolve_log_level(args), quiet=args.quiet,
         emit_kpis=args.emit_kpis,
         use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+        temperature=temperature,
         ctx_window=ctx_window, price_in=price_in, price_out=price_out)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "

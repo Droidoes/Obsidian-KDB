@@ -89,18 +89,43 @@ def test_resolve_explicit_extra_body_merges_and_overrides(monkeypatch):
     assert spec.extra_body == {"enable_thinking": False, "foo": 1}
 
 def test_resolve_local_model_has_zero_price_and_default_knobs():
-    spec = resolve_models_json("gemma-4-12b-qat")
+    spec = resolve_models_json("gemma4-12b-qat-128k")
     assert spec.provider == "ollama-local"
+    assert spec.ctx_window == 131072
     assert spec.price_in == 0.0 and spec.price_out == 0.0
     assert spec.extra_body is None
     assert spec.use_completion_tokens is False
 
 
-def test_gemma_4_12b_qat_resolves_as_local_zero_price():
-    spec = resolve_models_json("gemma-4-12b-qat")
+def test_gemma4_12b_qat_128k_resolves_as_local_zero_price():
+    spec = resolve_models_json("gemma4-12b-qat-128k")
     assert spec.provider == "ollama-local"
+    assert spec.ctx_window == 131072
     assert spec.price_in == 0.0 and spec.price_out == 0.0
     assert spec.extra_body is None
+
+
+def test_old_gemma_4_12b_qat_id_gone():
+    # The ollama-local placeholder was renamed gemma-4-12b-qat → gemma4-12b-qat-128k
+    # (ctx 65536 → 131072) in the #111 roster swap; the old id no longer resolves.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("gemma-4-12b-qat")
+
+
+def test_temperature_null_resolves_to_none():
+    # An explicit JSON `null` (gpt-5.4-mini) → spec.temperature is None → OMIT
+    # the temperature kwarg on the call (reasoning family 400s on non-default).
+    spec = resolve_models_json("gpt-5.4-mini")
+    assert spec.temperature is None
+    # extra_body / reasoning config unchanged by the temperature swap.
+    assert spec.extra_body == {"reasoning_effort": "low"}
+    assert spec.use_completion_tokens is True
+
+
+def test_temperature_absent_defaults_to_zero():
+    # A model without the key → spec.temperature == 0.0 (deterministic default).
+    spec = resolve_models_json("haiku-4.5")
+    assert spec.temperature == 0.0
 
 
 def test_old_gemma_bench_alias_gone():

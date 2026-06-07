@@ -85,6 +85,52 @@ def test_openai_dispatch(monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
     assert resp.provider == "openai"
 
 
+def test_openai_temperature_default_sent(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    # Default temperature=0.0 → the kwarg IS present on the SDK call.
+    _use_settings(monkeypatch, openai_api_key="sk-oai-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("common.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(provider="openai", model="gpt-4.1-mini", prompt="hi"))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert kwargs["temperature"] == 0.0
+
+
+def test_openai_temperature_none_omits_kwarg(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    # temperature=None (per-model pool override, e.g. gpt-5.4-mini reasoning
+    # family that 400s on any non-default temperature) → the kwarg is OMITTED
+    # so the API applies its own default.
+    _use_settings(monkeypatch, openai_api_key="sk-oai-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("common.call_model.OpenAI", return_value=client):
+        call_model(ModelRequest(
+            provider="openai", model="gpt-5.4-mini", prompt="hi", temperature=None,
+        ))
+    kwargs = client.chat.completions.create.call_args.kwargs
+    assert "temperature" not in kwargs
+
+
+def test_anthropic_temperature_none_omits_kwarg(
+    monkeypatch: pytest.MonkeyPatch, anthropic_resp: MagicMock
+) -> None:
+    # temperature=None → omitted on the anthropic path too (symmetry).
+    _use_settings(monkeypatch, anthropic_api_key="sk-ant-test")
+    client = MagicMock()
+    client.messages.create.return_value = anthropic_resp
+    with patch("anthropic.Anthropic", return_value=client):
+        call_model(ModelRequest(
+            provider="anthropic", model="claude-opus-4-7", prompt="hi",
+            temperature=None,
+        ))
+    kwargs = client.messages.create.call_args.kwargs
+    assert "temperature" not in kwargs
+
+
 def _make_gemini_resp() -> MagicMock:
     """Build a minimal google-genai response mock.
 
