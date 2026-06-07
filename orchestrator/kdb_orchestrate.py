@@ -618,7 +618,8 @@ def run(
                     source_path=vault_root / source_id, source_id=source_id,
                     runs_root=runs_root, run_id=ctx.run_id,
                     provider=provider, model=model,
-                    force_signal=pipeline.force_signal, force_noise=pipeline.force_noise)
+                    force_signal=pipeline.force_signal, force_noise=pipeline.force_noise,
+                    price_in=price_in, price_out=price_out)
                 if enrich.outcome == "enrich_failed":
                     failure = _last_failure(
                         ctx=ctx,

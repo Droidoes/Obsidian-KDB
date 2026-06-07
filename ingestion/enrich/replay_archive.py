@@ -31,6 +31,10 @@ class SidecarPayload:
     user_overrides_detected: list
     timestamp: str  # local ISO with offset per [[feedback_local_time_everywhere]]
     outcome: str  # "enriched" | "enriched_force_overridden" | "enrich_failed" | "enrich_skipped"
+    # Task #110: per-call cost diagnostic =
+    #   price_in/1e6 * total_input_tokens + price_out/1e6 * total_output_tokens.
+    # Defaults to 0.0 for skipped/failed paths (no successful token usage to bill).
+    cost_usd: float = 0.0
 
 
 def write_sidecar(runs_root: Path, run_id: str, payload: SidecarPayload) -> Path:

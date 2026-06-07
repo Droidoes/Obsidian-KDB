@@ -49,6 +49,32 @@ def test_enrich_returns_body_and_post_embed_hash(tmp_path, monkeypatch):
     assert res.post_embed_mtime == pytest.approx(src.stat().st_mtime)
 
 
+def test_enrich_sidecar_cost_usd_from_aggregated_tokens(tmp_path, monkeypatch):
+    # Task #110: the success-path sidecar bills aggregated tokens (#108) at
+    # pool pricing: price_in/1e6*total_in + price_out/1e6*total_out.
+    src = tmp_path / "s.md"
+    src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
+    runs = tmp_path / "ingest_runs"
+
+    def fake_call_pass1(*, source_text, source_path, provider, model):
+        return Pass1CallResult(
+            parsed=_signal_parsed(model), raw_response_text="{}",
+            request_prompt="prompt", request_model=model, request_provider=provider,
+            input_tokens=10, output_tokens=5, latency_ms=1, attempts=2,
+            total_input_tokens=30, total_output_tokens=12,
+        )
+    monkeypatch.setattr(enrich_mod, "call_pass1", fake_call_pass1)
+
+    price_in, price_out = 2.0, 8.0
+    res = enrich_one(source_path=src, source_id="s.md", runs_root=runs,
+                     run_id="r1", provider="p", model="m",
+                     price_in=price_in, price_out=price_out)
+
+    expected = price_in / 1e6 * 30 + price_out / 1e6 * 12
+    data = json.loads(Path(res.sidecar_path).read_text(encoding="utf-8"))
+    assert data["cost_usd"] == pytest.approx(expected)
+
+
 def test_enrich_pipeline_force_noise_param_overrides(tmp_path, monkeypatch):
     # Task #91: the orchestrator threads the pipeline's force_noise globs; a
     # signal envelope under Daily Notes/* must be deterministically routed noise.

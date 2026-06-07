@@ -47,6 +47,7 @@ def enrich_one(
     provider: str, model: str,
     force_signal: list[str] | None = None,
     force_noise: list[str] | None = None,
+    price_in: float = 0.0, price_out: float = 0.0,
 ) -> EnrichResult:
     # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
     # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
@@ -135,6 +136,9 @@ def enrich_one(
     outcome = ("enriched_force_overridden"
                if envelope["override"]["applied"] is not None
                else "enriched")
+    # Task #110: per-call cost from aggregated tokens (#108) × pool pricing.
+    cost_usd = (price_in / 1e6 * call_result.total_input_tokens
+                + price_out / 1e6 * call_result.total_output_tokens)
     sidecar_payload = SidecarPayload(
         source_id=source_id,
         source_path=str(source_path),
@@ -160,6 +164,7 @@ def enrich_one(
         user_overrides_detected=[],  # OQ-89-9 / §3.3 user-collision; v1.1+ feature
         timestamp=_local_iso(),
         outcome=outcome,
+        cost_usd=cost_usd,
     )
     sidecar = write_sidecar(runs_root, run_id, sidecar_payload)
     return EnrichResult(source_id, outcome, envelope, sidecar, None,
