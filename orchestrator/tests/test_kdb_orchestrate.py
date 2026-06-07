@@ -891,6 +891,8 @@ def test_main_archived_model_with_provider_uses_escape_hatch(tmp_path, monkeypat
     # With --provider the escape hatch activates (raw passthrough) — assert run(...)
     # is reached with the override provider + the raw model string.
     def _sentinel(**kwargs):
+        assert kwargs["provider"] == "alibaba"
+        assert kwargs["model"] == "qwen-flash-us"
         raise RuntimeError("reached_run")
     monkeypatch.setattr(kdb_orchestrate, "run", _sentinel)
     with pytest.raises(RuntimeError, match="reached_run"):
