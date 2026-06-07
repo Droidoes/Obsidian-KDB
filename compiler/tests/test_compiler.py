@@ -250,11 +250,21 @@ def test_compile_one_quarantines_after_all_attempts_fail(
 def test_compile_one_threads_compile_meta_from_model_response(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """compile_meta fields are threaded from the model response + compile loop.
+
+    Fix 3a (#111 retry-telemetry): compile_meta.attempts now reflects the
+    compile re-prompt count (state["compile_attempts"]), NOT model_response.attempts
+    (the SDK-level transient retry counter).  On a single-pass compile,
+    compile_attempts==1 regardless of any SDK-level retries (mr.attempts).
+    """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
+    # mr.attempts=2 simulates SDK transient retries (e.g., network hiccup → retry).
+    # The compile loop succeeds on its first pass (no schema/semantic reject).
+    # compile_meta.attempts must be 1 (compile-loop count), NOT 2 (SDK count).
     mr = _good_model_response(SOURCE_A, attempts=2)
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
@@ -278,9 +288,51 @@ def test_compile_one_threads_compile_meta_from_model_response(
     assert meta.input_tokens == 100
     assert meta.output_tokens == 50
     assert meta.latency_ms == 123
-    assert meta.attempts == 2
+    # Fix 3a: compile_meta.attempts = compile re-prompt count (=1), not SDK attempts (=2).
+    assert meta.attempts == 1
     assert meta.ok is True
     assert meta.error is None
+
+
+def test_compile_meta_attempts_reflects_reprompte_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix 3a (#111 retry-telemetry): compile_meta.attempts == 2 on a re-prompt recovery.
+
+    Sequence: attempt 1 schema-rejected (extra field), attempt 2 clean.
+    compile_meta.attempts must be 2 (compile-loop count), not 1 (model-API per-attempt).
+    This lets the orchestrator recorder surface the retry count in console.log.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    bad = _good_response(SOURCE_A)
+    bad["description"] = "extra field triggers schema reject"
+    good = _good_response(SOURCE_A)
+    seq = [json.dumps(bad), json.dumps(good)]
+
+    def schema_bad_then_good(req):
+        return ModelResponse(
+            text=seq.pop(0),
+            input_tokens=100, output_tokens=50, latency_ms=123,
+            model="claude-opus-4-7", provider="anthropic", attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", schema_bad_then_good)
+
+    cs, _, _, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
+    )
+
+    assert err is None and cs is not None
+    meta = cs.compile_meta
+    assert meta is not None
+    # compile_meta.attempts reflects the compile re-prompt count (2), not SDK attempts (1).
+    assert meta.attempts == 2
 
 
 def test_compile_one_reconciles_mis_filed_slug_lists(
@@ -1339,21 +1391,23 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
     assert cs.summary_slug == bad.lower().replace("---", "-")
 
 
-def test_final_status_clean_when_attempt1_repaired_but_attempt2_is_clean(
+def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Regression (#106): repair flags must reset per attempt so a clean
-    attempt-2 is not mis-labelled 'retried-and-repaired'.
+    """Regression guard for #106 + Fix 2 (#111 retry-telemetry):
+    repair flags reset per attempt so attempt-2 winning cleanly is NOT
+    mis-labelled 'retried-and-repaired', AND Fix 2 ensures a re-prompt sequence
+    is labelled 'retried' (not 'clean' as the pre-#111 bug produced).
 
     Sequence:
       Attempt 1 — rung-2 fires (bad summary_slug coerced → slug_coerced=True),
                   but semantic still fails (coerced slug doesn't match any page)
-                  → continue.
+                  → continue.  slug_coerced is reset to False for attempt 2.
       Attempt 2 — fully clean response → succeeds.
 
-    Without the two reset lines, slug_coerced stays True from attempt 1 and
-    the finally derives final_status='retried-and-repaired'. With the fix,
-    slug_coerced is False on the winning attempt → final_status='clean'.
+    #106 guarantee: slug_coerced stays False from the per-attempt reset →
+    attempt-2 win is NOT labelled 'retried-and-repaired'.
+    Fix 2 (#111): _compile_attempts==2, no repair flags → 'retried' (was 'clean').
     """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
@@ -1400,13 +1454,15 @@ def test_final_status_clean_when_attempt1_repaired_but_attempt2_is_clean(
     assert cs is not None and err is None   # recovered on attempt 2
 
     # Read the on-disk resp-stats record and assert telemetry reflects the
-    # winning (clean) attempt, not the repaired-but-failed attempt 1.
+    # winning attempt 2, not the repaired-but-failed attempt 1.
     files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     rec = json.loads(files[0].read_text(encoding="utf-8"))
-    assert rec["final_status"] == "clean"
+    # #106: repair flags reset per attempt — winning attempt 2 is clean of repairs.
     assert rec["syntax_repaired"] is False
     assert rec["slug_coerced"] is False
+    # Fix 2 (#111): re-prompt sequence → "retried", not "clean" or "retried-and-repaired".
+    assert rec["final_status"] == "retried"
 
 
 # ---------- ladder edge cases (#106 Task 7) ----------
@@ -1794,3 +1850,79 @@ def test_irreparable_json_quarantines(
     rec = json.loads(files[0].read_text(encoding="utf-8"))
     assert rec["syntax_repaired"] is False
     assert rec["final_status"] == "quarantined"
+
+
+# ---------- Fix 2 (#111 retry-telemetry): "retried" final_status ----------
+
+def test_final_status_retried_on_reprompte_only_recovery(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fix 2 (#111): a re-prompt-only recovery (schema/semantic retry, no in-place
+    repair) must be labelled final_status='retried', NOT 'clean'.
+
+    Sequence:
+      Attempt 1 — schema invalid: response includes an unknown extra top-level
+                  field ('description') that additionalProperties:false rejects.
+                  coerce_slugs_and_propagate returns False (slugs are already
+                  valid — nothing to coerce).  No syntax repair fires (JSON is
+                  well-formed).  Loop continues to attempt 2.
+      Attempt 2 — fully clean response → succeeds.
+
+    Pre-fix: compile_attempts=2, _syntax_repaired=False, _slug_coerced=False
+    → the finally block fell through to the bare 'else: clean' branch → bug.
+    Post-fix: the elif _compile_attempts > 1 guard fires → final_status='retried'.
+    """
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A, "alpha body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    # Attempt 1: well-formed JSON with an extra top-level field 'description'
+    # (mirrors the live deepseek bug — an over-supplied field that schema rejects).
+    bad = _good_response(SOURCE_A)
+    bad["description"] = "This field is not in the schema"
+
+    good = _good_response(SOURCE_A)
+
+    seq = [json.dumps(bad), json.dumps(good)]
+    calls = {"n": 0}
+
+    def schema_bad_then_good(req):
+        calls["n"] += 1
+        return ModelResponse(
+            text=seq.pop(0),
+            input_tokens=100,
+            output_tokens=50,
+            latency_ms=123,
+            model="claude-opus-4-7",
+            provider="anthropic",
+            attempts=1,
+        )
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", schema_bad_then_good)
+
+    cs, logs, warns, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="anthropic",
+        model="claude-opus-4-7",
+        max_tokens=4096,
+    )
+
+    assert calls["n"] == 2          # attempt 1 schema-rejected, re-prompted
+    assert err is None              # attempt 2 succeeded
+    assert cs is not None
+
+    # Read the persisted resp-stats record and assert telemetry is correct.
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    # No in-place repair was applied.
+    assert rec["syntax_repaired"] is False
+    assert rec["slug_coerced"] is False
+    # Fix 2: re-prompt-only recovery → "retried" (was "clean" before the fix).
+    assert rec["final_status"] == "retried"
+    # compile_attempts records the winning attempt index.
+    assert rec["compile_attempts"] == 2

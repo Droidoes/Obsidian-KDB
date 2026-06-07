@@ -503,7 +503,14 @@ def compile_one(
                 input_tokens=mr.input_tokens,
                 output_tokens=mr.output_tokens,
                 latency_ms=mr.latency_ms,
-                attempts=mr.attempts,
+                # Fix 3a (#111 retry-telemetry): use the compile re-prompt count
+                # (state["compile_attempts"]) not the model-API transient-retry
+                # counter (mr.attempts).  compile_attempts is already set at the
+                # break point above (line 459) before we reach here, so it is
+                # always the winning attempt index (1 on a clean first pass, 2 on
+                # a re-prompt recovery).  This makes compile_meta.attempts
+                # meaningful for the orchestrator recorder (Fix 3b).
+                attempts=state["compile_attempts"],
                 ok=True,
                 error=None,
             ),
@@ -542,6 +549,12 @@ def compile_one(
             _final_status = (
                 "retried-and-repaired" if _compile_attempts == 2 else "repaired"
             )
+        elif _compile_attempts > 1:
+            # Fix 2 (#111 retry-telemetry): re-prompt-only recovery (schema or
+            # semantic rejection on attempt 1, no in-place repair applied,
+            # attempt 2 succeeded cleanly).  Was silently labelled "clean"
+            # before this fix — invisible to recovery_rate / retry_load KPIs.
+            _final_status = "retried"
         else:
             _final_status = "clean"
         # Discarded-attempt aggregation (#109 Task 2): resolve final_attempt_index.

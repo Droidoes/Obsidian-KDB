@@ -310,3 +310,49 @@ def test_console_text_empty_without_console(tmp_path: Path) -> None:
     rec.record(stage="source", event_type="source_started", severity="info",
                message="", source_id="a.md")
     assert rec.console_text() == ""
+
+
+# ---------------------------------------------------------------------------
+# Fix 3b (#111 retry-telemetry): recorder surfaces attempt count in pass-2 ✓
+# ---------------------------------------------------------------------------
+
+def test_pass2_completed_with_attempts_gt1_renders_attempt_count(tmp_path: Path) -> None:
+    """Fix 3b (#111): when pass2_compile_completed context carries attempts>1,
+    the recorder must render '(N attempts)' in the pass-2 ✓ line."""
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    clk.now = 20.0
+    rec.record(stage="pass2_compile", event_type="pass2_compile_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 31.8
+    # Thread attempts=2 in context — simulates a re-prompt recovery.
+    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
+               severity="info", message="", source_id="a.md",
+               context={"attempts": 2})
+    text = out.getvalue()
+    assert "pass-2 ✓ (2 attempts) 11.8s" in text
+
+
+def test_pass2_completed_single_attempt_renders_bare_line(tmp_path: Path) -> None:
+    """Fix 3b (#111): when attempts==1 (or context is absent), the recorder
+    renders the bare pass-2 ✓ line without an attempt annotation."""
+    clk = _Clock()
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out, clock=clk)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    clk.now = 20.0
+    rec.record(stage="pass2_compile", event_type="pass2_compile_started",
+               severity="info", message="", source_id="a.md")
+    clk.now = 31.8
+    # No context (or attempts==1) → bare line, no annotation.
+    rec.record(stage="pass2_compile", event_type="pass2_compile_completed",
+               severity="info", message="", source_id="a.md")
+    text = out.getvalue()
+    assert "pass-2 ✓ 11.8s" in text
+    assert "attempts" not in text

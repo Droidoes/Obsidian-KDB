@@ -780,11 +780,17 @@ def run(
                         ),
                     },
                 )
+                # Fix 3b (#111 retry-telemetry): thread compile_meta.attempts into
+                # the event context so the recorder can surface "(N attempts)"
+                # when the compile loop re-prompted (attempts>1 via Fix 3a).
+                _cm = (result.cr or {}).get("compiled_sources", [{}])[0].get("compile_meta") or {}
+                _compile_attempts = _cm.get("attempts", 1)
                 recorder.record(
                     stage="pass2_compile", event_type="pass2_compile_completed",
                     severity="info",
                     message="Pass-2 compile completed",
-                    source_id=source_id)
+                    source_id=source_id,
+                    context={"attempts": _compile_attempts} if _compile_attempts > 1 else {})
 
                 commit = _commit_source(
                     cr=result.cr, source_id=source_id,

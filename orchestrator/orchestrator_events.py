@@ -275,7 +275,14 @@ class EventRecorder:
         elif et == "pass2_compile_started":
             w("         pass-2 compile…\n")
         elif et == "pass2_compile_completed":
-            w(f"         pass-2 ✓ {self._elapsed(self._stage_t0)}\n")
+            # Fix 3b (#111 retry-telemetry): surface compile re-prompt count when >1.
+            # The orchestrator threads attempts into event.context when the compile
+            # loop retried (attempts==compile_meta.attempts via Fix 3a).
+            _attempts = event.context.get("attempts", 1) if event.context else 1
+            if _attempts > 1:
+                w(f"         pass-2 ✓ ({_attempts} attempts) {self._elapsed(self._stage_t0)}\n")
+            else:
+                w(f"         pass-2 ✓ {self._elapsed(self._stage_t0)}\n")
         elif et == "source_commit_completed":
             w(f"         committed ✓  · {self._counts_tail()}\n")
         elif event.severity in _ALARM_SEVERITIES:

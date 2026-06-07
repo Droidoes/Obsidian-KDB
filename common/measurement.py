@@ -129,7 +129,16 @@ class PassCallMeasurement:
             # run-level metadata if needed.
             prompt_version="",
             final_status=rec.get("final_status") or "",
-            attempts=rec["attempts"],
+            # Fix 1 (#111 retry-telemetry): use the larger of the compile
+            # re-prompt index and the model-API attempts counter so that a
+            # re-prompt-only recovery (schema/semantic retry, no in-place
+            # repair) is visible to the KPI layer.  On normal 1-attempt runs
+            # both values are 1 and max() is a no-op.  On a retried-and-
+            # repaired run both may be 2 and max() is still a no-op.  The
+            # only case where they differ is a re-prompt-only recovery where
+            # final_attempt_index==2 but model_response.attempts==1 (one SDK
+            # call per compile attempt, no transient SDK retries).
+            attempts=max(rec.get("final_attempt_index", 1), rec["attempts"]),
             syntax_repaired=rec.get("syntax_repaired", False),
             slug_coerced=rec.get("slug_coerced", False),
             token_overrun=rec.get("token_overrun", False),

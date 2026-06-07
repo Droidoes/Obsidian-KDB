@@ -166,6 +166,40 @@ def test_from_pass2_final_status_none():
 
 
 # ---------------------------------------------------------------------------
+# Fix 1 (#111 retry-telemetry): from_pass2 attempts = max(final_attempt_index, model-API attempts)
+# ---------------------------------------------------------------------------
+
+def test_from_pass2_reprompte_only_recovery_attempts_reflects_reprompte_count():
+    """A re-prompt-only recovery (schema/semantic retry, no in-place repair):
+    model_response.attempts==1 (single model-API call per compile attempt),
+    final_attempt_index==2 (compile loop succeeded on attempt 2).
+    PassCallMeasurement.attempts must be 2, not 1."""
+    # Simulate: compile loop attempt-1 fails schema, re-prompts; attempt-2 succeeds.
+    # model-API call per compile attempt = 1 (no SDK transient retries).
+    rec = _make_resp_stats_dict(
+        attempts=1,            # model_response.attempts = 1 (one SDK call per compile attempt)
+        final_attempt_index=2, # compile loop won on attempt 2
+        final_status="retried",
+        syntax_repaired=False,
+        slug_coerced=False,
+    )
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.attempts == 2  # max(final_attempt_index=2, attempts=1) = 2
+
+
+def test_from_pass2_single_attempt_unchanged():
+    """Single-attempt success: both model-API attempts and final_attempt_index are 1.
+    max(1, 1) == 1 — no change in the common case."""
+    rec = _make_resp_stats_dict(
+        attempts=1,
+        final_attempt_index=1,
+        final_status="clean",
+    )
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.attempts == 1
+
+
+# ---------------------------------------------------------------------------
 # from_pass1 adapter (Task #109 B1 §3)
 # ---------------------------------------------------------------------------
 
