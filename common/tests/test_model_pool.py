@@ -27,3 +27,10 @@ def test_load_pool_returns_all_entries_including_dropped():
     ids = {e["id"] for e in pool}
     assert "deepseek-v4-flash" in ids        # active default
     assert "deepseek-v4-flash:alibaba" in ids  # dropped ones still present (ledger)
+
+def test_resolve_local_model_has_zero_price_and_default_knobs():
+    spec = resolve("gemma4-obsidian-bench")
+    assert spec.provider == "ollama-local"
+    assert spec.price_in == 0.0 and spec.price_out == 0.0
+    assert spec.extra_body is None
+    assert spec.use_completion_tokens is False

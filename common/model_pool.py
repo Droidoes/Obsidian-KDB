@@ -1,7 +1,7 @@
 """model_pool — user-owned model registry loaded from common/models.json.
 
 The JSON is DATA (pool + per-model knobs + curation ledger); this module is
-the LOOKUP layer (alias -> ModelSpec, dropped-guard, token-estimate helpers).
+the LOOKUP layer (alias -> ModelSpec, dropped-guard).
 call_model.py (the engine) is untouched and still takes explicit provider+model.
 """
 from __future__ import annotations
