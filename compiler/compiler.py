@@ -37,6 +37,7 @@ from compiler import (
 from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
+from common.model_pool import estimate_prompt_tokens, fits_context
 from common.util.json_escape_fix import escape_stray_backslashes
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
@@ -152,6 +153,7 @@ def compile_one(
     extra_body: dict | None = None,
     price_in: float = 0.0,
     price_out: float = 0.0,
+    ctx_window: int | None = None,
     resp_stats_dir: Path | None = None,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
@@ -245,6 +247,41 @@ def compile_one(
                 f"{source_id}: prompt build failed: {type(e).__name__}: {e}"
             )
             return (None, [], [], state["error"])
+
+        # --- Task #110 §3.3: PROACTIVE input-side ctx-overrun guard ---
+        # Estimate prompt tokens BEFORE any API call; if input + reserved output
+        # (max_tokens) would exceed the model's ctx_window, skip-and-quarantine
+        # THIS source with NO API spend. Routes through the EXISTING failure-
+        # staging path (the same "truncation"/"TokenOverrun" vocabulary the
+        # OUTPUT-side truncation guard below uses, ~line 313) → the finally block
+        # records one RespStatsRecord; no model call → zeroed token counters →
+        # no spend. The message is differentiated (ctx_window, no stop_reason) so
+        # telemetry can tell input- from output-side overruns apart. ctx_window
+        # is None for the ad-hoc --provider escape hatch (no pool metadata) ⇒
+        # guard skipped, mirroring Pass-1 §3.2 (pass1_caller.py).
+        if ctx_window is not None:
+            est_in = estimate_prompt_tokens(
+                state["prompt"].system, state["prompt"].user
+            )
+            if not fits_context(
+                est_input=est_in,
+                requested_output=max_tokens,
+                ctx_window=ctx_window,
+            ):
+                _set_failure(
+                    state,
+                    "truncation",
+                    "TokenOverrun",
+                    f"Pass-2 prompt would overrun ctx_window: "
+                    f"est_input={est_in} + reserved_output={max_tokens} "
+                    f"> ctx_window={ctx_window}",
+                )
+                state["error"] = (
+                    f"{source_id}: prompt would overrun ctx_window={ctx_window} "
+                    f"(est_input={est_in} + reserved_output={max_tokens}); "
+                    f"shorten source or raise ctx_window"
+                )
+                return (None, [], [], state["error"])
 
         # --- model call + extract + parse + schema, with a retry on a
         # recoverable bad-JSON emission. Mirrors Pass-1's call_pass1 retry: the
@@ -575,6 +612,7 @@ def compile_source(
     max_tokens: int,
     price_in: float = 0.0,
     price_out: float = 0.0,
+    ctx_window: int | None = None,
     context_snapshot: ContextSnapshot | None = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
@@ -615,7 +653,7 @@ def compile_source(
     cs, logs, warns, err = compile_one(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
-        price_in=price_in, price_out=price_out,
+        price_in=price_in, price_out=price_out, ctx_window=ctx_window,
         resp_stats_dir=state_root / "runs" / ctx.run_id / "pass2",
         stats_record_sink=_capture,
     )

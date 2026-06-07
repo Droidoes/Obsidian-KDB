@@ -704,7 +704,7 @@ def run(
                     frontmatter=SourceFrontmatter.from_dict(enrich.parsed_envelope),
                     conn=g.conn, vault_root=vault_root, state_root=state_root, ctx=ctx,
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens,
-                    price_in=price_in, price_out=price_out)
+                    price_in=price_in, price_out=price_out, ctx_window=ctx_window)
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
