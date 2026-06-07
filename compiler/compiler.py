@@ -150,6 +150,8 @@ def compile_one(
     max_tokens: int,
     use_completion_tokens: bool = False,
     extra_body: dict | None = None,
+    price_in: float = 0.0,
+    price_out: float = 0.0,
     resp_stats_dir: Path | None = None,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
 ) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
@@ -545,6 +547,8 @@ def compile_one(
             total_latency_ms=state["_agg_latency_ms"] if _has_calls else None,
             call_count=_call_count if _has_calls else 1,
             final_attempt_index=_final_attempt_index,
+            price_in=price_in,
+            price_out=price_out,
         )
         resp_stats_path = write_resp_stats(
             record, state_root, artifact_dir=resp_stats_dir)
@@ -569,6 +573,8 @@ def compile_source(
     provider: str,
     model: str,
     max_tokens: int,
+    price_in: float = 0.0,
+    price_out: float = 0.0,
     context_snapshot: ContextSnapshot | None = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
@@ -609,6 +615,7 @@ def compile_source(
     cs, logs, warns, err = compile_one(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
+        price_in=price_in, price_out=price_out,
         resp_stats_dir=state_root / "runs" / ctx.run_id / "pass2",
         stats_record_sink=_capture,
     )
