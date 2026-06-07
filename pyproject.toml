@@ -11,6 +11,7 @@ dependencies = [
     "requests>=2.31",
     "anthropic>=0.40",
     "openai>=1.40",
+    "google-genai>=1.0",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "kuzu>=0.11",
