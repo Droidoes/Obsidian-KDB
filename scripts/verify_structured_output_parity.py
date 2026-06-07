@@ -28,7 +28,7 @@ CANDIDATES = [
      "extra_body": None, "use_completion_tokens": False},
     {"provider": "openai", "model": "gpt-5.4-mini",
      "extra_body": None, "use_completion_tokens": True},
-    {"provider": "xai", "model": "grok-4-1-fast-reasoning",
+    {"provider": "xai", "model": "grok-4.20-0309-non-reasoning",
      "extra_body": None, "use_completion_tokens": False},
 ]
 
