@@ -238,6 +238,12 @@ def _write_sidecar_failed(runs_root, run_id, source_id, source_path,
             # terminal status on the failure path (covers both call exhaustion
             # and Stage-2 envelope-validation failure).
             "final_status": "quarantined",
+            # Task #110 review: persist exception_type so a ctx-overrun
+            # quarantine ("TokenOverrun") is structurally distinguishable from
+            # ordinary retry-exhaustion (both carry total_input_tokens==0).
+            # getattr(..., None): only the §3.2 guard sets it; validation-wrapped
+            # and exhaustion errors leave it None.
+            "exception_type": getattr(error, "exception_type", None),
             "syntax_repaired": getattr(error, "syntax_repaired", False),
             "total_input_tokens": getattr(error, "total_input_tokens", 0),
             "total_output_tokens": getattr(error, "total_output_tokens", 0),

@@ -167,3 +167,28 @@ def test_enrich_failed_sidecar_preserves_last_raw_response(tmp_path, monkeypatch
     assert sidecar["raw_response"]["body"] == "{not valid json"
     assert sidecar["raw_response"]["input_tokens"] == 7
     assert sidecar["request"]["prompt"] != "<see error>"
+
+
+def test_enrich_ctx_overrun_persists_exception_type(tmp_path):
+    # Task #110 review: a ctx-overrun quarantine routes through the §3.2
+    # pre-flight guard, which raises Pass1CallError(exception_type="TokenOverrun").
+    # The written sidecar must persist exception_type so the overrun is
+    # structurally distinguishable from ordinary retry-exhaustion (both of which
+    # carry total_input_tokens==0). A tiny ctx_window fires the real guard with
+    # NO API call (no monkeypatch needed).
+    src = tmp_path / "big.md"
+    src.write_text("# Big\n\nA note with enough text to overrun a tiny window.\n",
+                   encoding="utf-8")
+    runs_root = tmp_path / "ingest_runs"
+
+    result = enrich_one(
+        source_path=src, source_id="big.md", runs_root=runs_root,
+        run_id="r1", provider="p", model="m", ctx_window=1,
+    )
+
+    sidecar = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    assert result.outcome == "enrich_failed"
+    assert sidecar["raw_response"]["exception_type"] == "TokenOverrun"
+    # Parity: aggregated tokens are still 0 (no API spend) — exception_type is
+    # what makes the overrun distinguishable from ordinary exhaustion.
+    assert sidecar["raw_response"]["total_input_tokens"] == 0
