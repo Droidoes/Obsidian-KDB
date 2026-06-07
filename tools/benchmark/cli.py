@@ -4,7 +4,7 @@ score subcommand:
   Incremental model leaderboard. Each invocation incorporates one or more
   run dirs (measurements.json from kdb-orchestrate --emit-kpis), one row per
   header.model (latest run per model wins), re-reads every listed run live,
-  and Borda-ranks the scored KPIs at equal weight. No corpus_fingerprint gate
+  and hierarchically Borda-ranks the scored KPIs (§6 weights). No corpus_fingerprint gate
   — cross-run corpora are assumed to differ; comparability is the user's
   judgment. The leaderboard (--leaderboard, default benchmark/scores/
   leaderboard.json) stores model→run-dir pointers + the ranking; delete it to
@@ -294,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def _score_command(args: argparse.Namespace) -> int:
     """Implement the `score` subcommand: an incremental model leaderboard.
+
+    ``args`` is a pre-parsed Namespace from ``main()`` (run_dirs / runs_root /
+    leaderboard) — call ``main(["score", ...])`` rather than passing raw argv here.
 
     The leaderboard file persists ``{models: {model_slug: run_dir}, ranking: [...]}``.
     Each invocation incorporates the given run dirs (one row per header.model;

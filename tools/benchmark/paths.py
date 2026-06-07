@@ -1,8 +1,8 @@
 """paths — layout constants for the top-level `benchmark/` data directory.
 
 The engine package (`tools/benchmark/`) holds code; `benchmark/` holds data.
-These constants are the single place that knows the physical layout so
-runner/scorer/scorecard don't hard-code paths.
+These constants are the single place that knows the physical layout —
+imported by cli.py (the score leaderboard) and any future tools.
 
 Layout (relative to repo root):
     benchmark/sources/   — curated markdown inputs fed to every model

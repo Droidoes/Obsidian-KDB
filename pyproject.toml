@@ -43,7 +43,7 @@ exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.te
 
 [tool.setuptools.package-data]
 compiler      = ["schemas/*.json"]
-tools         = ["benchmark/models.json", "diagnostics/*.json", "viewer/*.html"]
+tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]

@@ -24,6 +24,11 @@ def test_models_flag_is_rejected():
         cli.main(["--models", "anything"])
 
 
+def test_models_json_export_is_gone():
+    from tools.benchmark import paths
+    assert not hasattr(paths, "MODELS_JSON")
+
+
 def _capture_help(argv):
     import io
     import contextlib
