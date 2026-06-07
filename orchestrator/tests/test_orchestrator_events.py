@@ -287,3 +287,26 @@ def test_no_console_still_tallies(tmp_path: Path) -> None:
     rec.record(stage="commit", event_type="source_commit_completed",
                severity="info", message="", source_id="a.md")
     assert rec._tallies["committed"] == 1  # counters update without a console
+
+
+def test_console_text_accumulates_rendered_narrative(tmp_path: Path) -> None:
+    # The recorder accumulates the same text it tees to the console sink, so the
+    # run can persist the live narrative (console.log) without re-deriving it.
+    out = io.StringIO()
+    rec = _rec(tmp_path, console=out)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    text = rec.console_text()
+    assert text, "console_text() must be non-empty after rendered events"
+    assert "▸" in text, "console_text() must contain the rendered progress marker"
+    # console_text() is a verbatim copy of what reached the console sink.
+    assert text == out.getvalue()
+
+
+def test_console_text_empty_without_console(tmp_path: Path) -> None:
+    rec = _rec(tmp_path, console=None)
+    rec.set_progress_plan(total=1, skipped=0)
+    rec.record(stage="source", event_type="source_started", severity="info",
+               message="", source_id="a.md")
+    assert rec.console_text() == ""

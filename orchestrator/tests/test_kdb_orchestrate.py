@@ -1062,6 +1062,29 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert hdr["pass2_prompt_version"] == ""
 
 
+# ---------- Task #111 Phase 0 Task 2: release_version recorded in header ----------
+
+def test_run_records_release_version_in_header(tmp_path, monkeypatch):
+    """run() populates measurement_header.json["release_version"] (non-empty)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+    header_path = state_root / "runs" / res.run_id / "measurement_header.json"
+    hdr = json.loads(header_path.read_text(encoding="utf-8"))
+    assert hdr["release_version"], "release_version must be non-empty"
+
+
 # ---------- Task #109: --emit-kpis writes benchmark/runs/<id>/measurements.json ----------
 
 def _setup_single_signal_vault(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
@@ -1151,6 +1174,47 @@ def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch
     assert not any(bench_runs.rglob("measurements.json")), (
         "measurements.json must NOT be written without --emit-kpis"
     )
+
+
+# ---------- Task #111 Phase 0 Task 2: console.log saved alongside measurements ----------
+
+def test_emit_kpis_writes_console_log(tmp_path, monkeypatch):
+    """A non-quiet --emit-kpis run saves the progress narrative as console.log
+    in the benchmark run dir (alongside measurements.json)."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="testprovider", model="testmodel",
+        max_tokens=4096, emit_kpis=True, quiet=False)
+
+    assert res.ok, res.exit_reason
+    out_dir = bench_runs / f"testmodel-{res.run_id}"
+    log_path = out_dir / "console.log"
+    assert log_path.exists(), f"console.log not found at {log_path}"
+    text = log_path.read_text(encoding="utf-8")
+    assert text, "console.log must be non-empty"
+    assert "▸" in text, "console.log must contain the rendered progress narrative"
+
+
+def test_emit_kpis_quiet_skips_console_log(tmp_path, monkeypatch):
+    """A quiet --emit-kpis run writes measurements.json but NO console.log
+    (no progress narrative was captured)."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+    bench_runs = tmp_path / "benchmark" / "runs"
+    monkeypatch.setattr(_emit_kpis_mod, "get_benchmark_runs_dir", lambda: bench_runs)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="testprovider", model="testmodel",
+        max_tokens=4096, emit_kpis=True, quiet=True)
+
+    assert res.ok, res.exit_reason
+    out_dir = bench_runs / f"testmodel-{res.run_id}"
+    assert (out_dir / "measurements.json").exists(), "measurements.json must still be written"
+    assert not (out_dir / "console.log").exists(), "console.log must NOT be written in quiet mode"
 
 
 def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):
