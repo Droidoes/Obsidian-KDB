@@ -24,6 +24,7 @@ from compiler.kpi.score import (
 )
 from compiler.kpi.score import (
     weak_spot_penalty,
+    _hierarchical_composite,
     WEAK_SPOT_THRESHOLD,
     WEAK_SPOT_PENALTY_CAP,
     COMPOSITE_SCALE,
@@ -342,3 +343,29 @@ class TestWeakSpotPenalty:
         penalty, weakest = weak_spot_penalty({}, graph_score=None)
         assert penalty == 0.0
         assert weakest is None
+
+    def test_penalty_flips_ranking_lopsided_below_balanced(self):
+        # The headline behavior (spec §6): a lopsided model that leads on
+        # pre-penalty composite is demoted BELOW a balanced competitor whose
+        # pre-penalty composite was lower. Tested against the score internals
+        # directly (deterministic — no dependence on Borda field composition).
+        # A: strong on 3 axes, glaring weak spot on graph (0.05 << tau).
+        a_pkb = {"quarantine_rate": 0.9, "recovery_rate": 0.9, "latency": 0.9}
+        a_graph = 0.05
+        # B: balanced — every axis at mid (0.5 == tau, no weak spot).
+        b_pkb = {"quarantine_rate": 0.5, "recovery_rate": 0.5, "latency": 0.5}
+        b_graph = 0.5
+
+        a_pre = _hierarchical_composite(a_pkb, a_graph)   # 0.56
+        b_pre = _hierarchical_composite(b_pkb, b_graph)   # 0.50
+        a_pen, a_weak = weak_spot_penalty(a_pkb, a_graph)  # 0.09, "graph"
+        b_pen, _ = weak_spot_penalty(b_pkb, b_graph)       # 0.0
+
+        # Pre-penalty: the lopsided model leads.
+        assert a_pre > b_pre
+        # Only the lopsided model is penalized, on its weak (graph) axis.
+        assert a_weak == "graph"
+        assert a_pen > 0.0
+        assert b_pen == 0.0
+        # Post-penalty: the balanced model overtakes — the flip.
+        assert (a_pre - a_pen) < (b_pre - b_pen)

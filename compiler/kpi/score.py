@@ -1,11 +1,10 @@
 """compiler.kpi.score — Borda scoring mechanism for cross-model benchmark ranking.
 
 Provides:
-  borda_normalize(...)  — lifted verbatim from tools.benchmark.scorer (§7 spec).
-                          tools.benchmark.scorer re-exports this symbol so its
-                          existing callers/tests remain unchanged.  The lift
-                          satisfies the B.3 contract: compiler must NOT import
-                          tools; tools MAY import compiler.
+  borda_normalize(...)  — average-rank Borda normalization (§7 spec). Originally
+                          lifted from the now-retired tools.benchmark.scorer; this
+                          module is its sole home. Kept here per the B.3 contract:
+                          compiler must NOT import tools; tools MAY import compiler.
 
   borda_score(...)      — composite Borda scorer over the per-model "scored" KPI
                           dicts produced by compiler.kpi.processing / graph.
@@ -221,13 +220,13 @@ def score_models(models: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# borda_normalize — lifted verbatim from tools.benchmark.scorer (§7 spec).
+# borda_normalize — average-rank Borda normalization (§7 spec).
 #
-# Signature and behaviour are UNCHANGED.  The type annotation uses a forward-
-# reference string ("RunScore") so this module never imports RunScore from
-# tools.benchmark.scorer — that would violate the B.3 compiler→tools ban.
-# At runtime the annotation is never evaluated (from __future__ import
-# annotations ensures string-mode for all annotations in this file).
+# The type annotation uses a forward-reference string ("RunScore") so this
+# module never needs to import a concrete RunScore type from tools — that would
+# violate the B.3 compiler→tools ban. At runtime the annotation is never
+# evaluated (from __future__ import annotations ensures string-mode for all
+# annotations in this file); callers pass any duck-typed .model_id/.measures shim.
 # ---------------------------------------------------------------------------
 
 def borda_normalize(
@@ -238,7 +237,7 @@ def borda_normalize(
 ) -> dict[str, float]:
     """Average-rank (fractional rank) Borda normalization across candidates.
 
-    Identical to the original in tools.benchmark.scorer:
+    Algorithm:
 
       1. Drop items where ``item.measures[measure].rate`` is None.
       2. Sort the remaining N items by raw rate (asc if lower_is_better else
@@ -333,8 +332,8 @@ def borda_score(
         Optional mapping ``{kpi_name: float}``.  When None, every KPI present
         in any model's ``scored`` dict receives equal weight (1.0).  Weights
         are normalised by the sum of weights for the KPIs a given model
-        participated in (pro-rata redistribution — mirrors ``final_score`` in
-        tools.benchmark.scorer lines 990-999).
+        participated in (pro-rata redistribution — a missing KPI drops only its
+        own weight rather than penalising the model's whole composite).
 
     Returns
     -------
