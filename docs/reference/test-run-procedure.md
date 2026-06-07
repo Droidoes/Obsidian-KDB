@@ -4,6 +4,11 @@ Operational runbook for a clean orchestrator test run (e.g. run-4) against the
 disposable in-place test vault. Pipeline `vault-test`, root
 `~/Obsidian/Vault-in-place-test-run`.
 
+> Running a **multi-model benchmark cohort** (per-model `--emit-kpis` runs →
+> `kdb-benchmark score` leaderboard)? See
+> **`docs/reference/benchmark-cohort-procedure.md`** — it reuses the §0 OneDrive
+> pause and §1 reset below.
+
 > **These are API-cost steps — Joseph fires them himself** (see
 > [[feedback_user_fires_api_cost_runs]]).
 
