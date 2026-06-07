@@ -45,6 +45,7 @@ from orchestrator.orchestrator_events import (
     check_orchestrator_invariant,
 )
 from common.measurement import RunMeasurementHeader
+from common.model_pool import resolve, UnknownModelError, DroppedModelError
 from common.run_context import RunContext, now_iso
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
@@ -1048,7 +1049,6 @@ def main(argv: list[str] | None = None) -> int:
         print("available pipelines: " + (", ".join(ids) if ids else "(none)"))
         return 0
 
-    from common.model_pool import resolve, PoolError
     try:
         spec = resolve(args.model)
         provider, model = spec.provider, spec.model
@@ -1056,9 +1056,12 @@ def main(argv: list[str] | None = None) -> int:
         extra_body = spec.extra_body
         ctx_window = spec.ctx_window
         price_in, price_out = spec.price_in, spec.price_out
-    except PoolError:
+    except UnknownModelError:
+        # DroppedModelError is NOT caught here: the dropped-guard is absolute,
+        # so a dropped id always propagates even with --provider set. The escape
+        # hatch is only for ids not in the pool at all.
         if args.provider is None:
-            raise  # unknown id + no override → surface the PoolError
+            raise  # unknown id + no override → surface the UnknownModelError
         # one-off escape hatch: raw model string, no pool metadata
         provider, model = args.provider, args.model
         use_completion_tokens, extra_body, ctx_window = False, None, None

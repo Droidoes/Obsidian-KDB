@@ -16,7 +16,15 @@ WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
 
 
 class PoolError(ValueError):
-    """Unknown id, or selection of a dropped (documented-rejected) model."""
+    """Base: unknown id, or selection of a dropped (documented-rejected) model."""
+
+
+class UnknownModelError(PoolError):
+    """Model id not found in the pool."""
+
+
+class DroppedModelError(PoolError):
+    """Model id is in the pool but marked dropped (documented-rejected)."""
 
 
 @dataclass(frozen=True)
@@ -44,10 +52,10 @@ def resolve(model_id: str) -> ModelSpec:
     entry = by_id.get(model_id)
     if entry is None:
         avail = ", ".join(sorted(e["id"] for e in load_pool() if not e.get("dropped")))
-        raise PoolError(f"Unknown model id {model_id!r}. Available: {avail}")
+        raise UnknownModelError(f"Unknown model id {model_id!r}. Available: {avail}")
     if entry.get("dropped"):
         reason = entry.get("dropped_reason", "(no reason recorded)")
-        raise PoolError(f"Model {model_id!r} is dropped: {reason}")
+        raise DroppedModelError(f"Model {model_id!r} is dropped: {reason}")
     return ModelSpec(
         id=entry["id"],
         provider=entry["provider"],

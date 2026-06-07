@@ -1,5 +1,25 @@
 import pytest
-from common.model_pool import ModelSpec, resolve, PoolError, load_pool
+from common.model_pool import (
+    ModelSpec,
+    resolve,
+    PoolError,
+    UnknownModelError,
+    DroppedModelError,
+    load_pool,
+)
+
+
+def test_dropped_id_raises_dropped_model_error():
+    # The dropped-guard must be distinguishable from "unknown id".
+    with pytest.raises(DroppedModelError):
+        resolve("deepseek-v4-pro")  # in pool, marked dropped
+    assert issubclass(DroppedModelError, PoolError)
+
+
+def test_unknown_id_raises_unknown_model_error():
+    with pytest.raises(UnknownModelError):
+        resolve("no-such-model")
+    assert issubclass(UnknownModelError, PoolError)
 
 def test_resolve_active_entry_returns_modelspec():
     spec = resolve("deepseek-v4-flash")   # active, direct route, the default

@@ -869,13 +869,23 @@ def test_default_model_resolves_to_active_deepseek():
     assert spec.model == "deepseek-v4-flash"
 
 
-def test_unknown_model_id_rejected_when_no_provider_override():
-    from common.model_pool import PoolError, resolve
-    parser = kdb_orchestrate._build_parser()
-    args = parser.parse_args(["--vault-root", "/tmp/x", "--pipeline", "p", "--model", "bogus-id"])
-    assert args.provider is None
-    with pytest.raises(PoolError):
-        resolve(args.model)
+def test_main_rejects_unknown_model_without_provider(tmp_path):
+    import common.model_pool
+    with pytest.raises(common.model_pool.PoolError):  # UnknownModelError is fine too
+        kdb_orchestrate.main(
+            ["--vault-root", str(tmp_path), "--pipeline", "p", "--model", "bogus-id"])
+
+
+def test_main_dropped_model_errors_despite_provider_override(tmp_path):
+    # The dropped-guard is ABSOLUTE: a dropped id must error even when the
+    # --provider escape hatch is supplied. The escape hatch is only for ids
+    # not in the pool at all.
+    import common.model_pool
+    with pytest.raises(common.model_pool.DroppedModelError):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--provider", "deepseek", "--model", "deepseek-v4-pro",
+        ])
 
 
 def test_run_writes_event_log_path_to_summary(tmp_path):
