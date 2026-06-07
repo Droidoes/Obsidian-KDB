@@ -35,6 +35,7 @@ def _make_measurements(
     supports_density: float | None = 5.0,
     corpus_fingerprint: str = "fp",
     provider: str = "prov",
+    release_version: str = "",
 ) -> None:
     """Write <runs_root>/<run_dir>/measurements.json with header.model = model.
 
@@ -47,6 +48,7 @@ def _make_measurements(
             "run_id": run_dir,
             "provider": provider,
             "model": model,
+            "release_version": release_version,
             "corpus_fingerprint": corpus_fingerprint,
             "pass1_prompt_version": "1.0",
             "pass2_prompt_version": "",
@@ -100,17 +102,21 @@ class TestFreshLeaderboard:
         assert lb.exists()
 
         data = _load(lb)
-        assert set(data["models"].keys()) == {"model-a", "model-b", "model-c"}
+        # rows keyed on provider/model@release_version (#111 Phase 0)
+        assert set(data["models"].keys()) == {
+            "prov/model-a@unversioned", "prov/model-b@unversioned",
+            "prov/model-c@unversioned",
+        }
         # leaderboard stores POINTERS (run-dir strings), not KPI values
-        assert data["models"]["model-b"] == "model-b-T1"
+        assert data["models"]["prov/model-b@unversioned"] == "model-b-T1"
         assert all(isinstance(v, str) for v in data["models"].values())
 
         ranking = data["ranking"]
         assert len(ranking) == 3
         assert [r["rank"] for r in ranking] == [1, 2, 3]
         # entity_reuse is ↑ → highest reuse (model-b) ranks #1
-        assert ranking[0]["model"] == "model-b"
-        assert ranking[-1]["model"] == "model-a"
+        assert ranking[0]["model"] == "prov/model-b@unversioned"
+        assert ranking[-1]["model"] == "prov/model-a@unversioned"
 
     def test_missing_run_dir_errors(self, tmp_path):
         runs_root = tmp_path / "runs"
@@ -160,12 +166,13 @@ class TestCombinedGraphScore:
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
         rows = {r["model"]: r for r in _load(lb)["ranking"]}
+        rich, lean = "prov/rich@unversioned", "prov/lean@unversioned"
         # graph_score is reported, and the richer graph wins it despite lower reuse
-        assert "graph_score" in rows["rich"]
-        assert rows["rich"]["graph_score"] == pytest.approx(0.85)   # 0.35+0.30+0.20
-        assert rows["lean"]["graph_score"] == pytest.approx(0.15)   # reuse only
+        assert "graph_score" in rows[rich]
+        assert rows[rich]["graph_score"] == pytest.approx(0.85)   # 0.35+0.30+0.20
+        assert rows[lean]["graph_score"] == pytest.approx(0.15)   # reuse only
         # and 'rich' wins the overall composite (graph is 40%; processing tied)
-        assert rows["rich"]["rank"] == 1
+        assert rows[rich]["rank"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +187,8 @@ class TestIncremental:
         _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root)
         cli.main(["score", "model-a-T1", "model-b-T1",
                   "--runs-root", str(runs_root), "--leaderboard", str(lb)])
-        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
+        assert set(_load(lb)["models"].keys()) == {
+            "prov/model-a@unversioned", "prov/model-b@unversioned"}
 
         # incorporate a third model with just its run dir
         _make_measurements(run_dir="model-c-T1", model="model-c", runs_root=runs_root)
@@ -188,7 +196,9 @@ class TestIncremental:
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
         data = _load(lb)
-        assert set(data["models"].keys()) == {"model-a", "model-b", "model-c"}
+        assert set(data["models"].keys()) == {
+            "prov/model-a@unversioned", "prov/model-b@unversioned",
+            "prov/model-c@unversioned"}
         assert len(data["ranking"]) == 3
 
     def test_rerun_existing_model_replaces_its_run_dir(self, tmp_path):
@@ -197,16 +207,16 @@ class TestIncremental:
         _make_measurements(run_dir="model-x-T1", model="model-x", entity_reuse=0.10, runs_root=runs_root)
         cli.main(["score", "model-x-T1",
                   "--runs-root", str(runs_root), "--leaderboard", str(lb)])
-        assert _load(lb)["models"]["model-x"] == "model-x-T1"
+        assert _load(lb)["models"]["prov/model-x@unversioned"] == "model-x-T1"
 
-        # a newer run of the SAME model slug → replaces the pointer, still one row
+        # a newer run of the SAME triple → replaces the pointer, still one row
         _make_measurements(run_dir="model-x-T2", model="model-x", entity_reuse=0.50, runs_root=runs_root)
         rc = cli.main(["score", "model-x-T2",
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
         data = _load(lb)
-        assert list(data["models"].keys()) == ["model-x"]
-        assert data["models"]["model-x"] == "model-x-T2"
+        assert list(data["models"].keys()) == ["prov/model-x@unversioned"]
+        assert data["models"]["prov/model-x@unversioned"] == "model-x-T2"
 
     def test_two_runs_same_model_one_invocation_latest_wins(self, tmp_path):
         runs_root = tmp_path / "runs"
@@ -217,9 +227,9 @@ class TestIncremental:
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
         data = _load(lb)
-        assert list(data["models"].keys()) == ["model-y"]
+        assert list(data["models"].keys()) == ["prov/model-y@unversioned"]
         # lexically-greater run dir (T2) wins
-        assert data["models"]["model-y"] == "model-y-T2"
+        assert data["models"]["prov/model-y@unversioned"] == "model-y-T2"
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +248,8 @@ class TestNoFingerprintGate:
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         # No gate → ranks both despite mismatched fingerprints
         assert rc == 0
-        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
+        assert set(_load(lb)["models"].keys()) == {
+            "prov/model-a@unversioned", "prov/model-b@unversioned"}
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +264,8 @@ class TestReset:
         _make_measurements(run_dir="model-b-T1", model="model-b", runs_root=runs_root)
         cli.main(["score", "model-a-T1", "model-b-T1",
                   "--runs-root", str(runs_root), "--leaderboard", str(lb)])
-        assert set(_load(lb)["models"].keys()) == {"model-a", "model-b"}
+        assert set(_load(lb)["models"].keys()) == {
+            "prov/model-a@unversioned", "prov/model-b@unversioned"}
 
         lb.unlink()  # reset
 
@@ -261,7 +273,7 @@ class TestReset:
         cli.main(["score", "model-c-T1",
                   "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         # fresh — only the newly-incorporated model
-        assert set(_load(lb)["models"].keys()) == {"model-c"}
+        assert set(_load(lb)["models"].keys()) == {"prov/model-c@unversioned"}
 
 
 # ---------------------------------------------------------------------------
@@ -303,16 +315,17 @@ class TestCrossTierLookup:
                        "--runs-root", str(runs_root), "--leaderboard", str(lb)])
         assert rc == 0
         rows = {r["model"]: r for r in _load(lb)["ranking"]}
+        rich, lean = "p/rich@unversioned", "p/lean@unversioned"
         # graph_score combines all 4 graph KPIs even though 3 were in watched/diagnostic
-        assert rows["rich"]["graph_score"] == pytest.approx(0.85)
-        assert rows["lean"]["graph_score"] == pytest.approx(0.15)
+        assert rows[rich]["graph_score"] == pytest.approx(0.85)
+        assert rows[lean]["graph_score"] == pytest.approx(0.15)
         # the cross-tier values made it into the scored set...
-        assert rows["rich"]["per_kpi_borda"]["link_density"] is not None
-        assert rows["rich"]["per_kpi_borda"]["graph_connectivity"] is not None
+        assert rows[rich]["per_kpi_borda"]["link_density"] is not None
+        assert rows[rich]["per_kpi_borda"]["graph_connectivity"] is not None
         # ...and the unknown pre-rename key is NOT scored (it's a diagnostic)
-        assert "intervention_burden" not in rows["rich"]["per_kpi_borda"]
+        assert "intervention_burden" not in rows[rich]["per_kpi_borda"]
         # recovery_rate was genuinely never measured here → None (dropped pro-rata)
-        assert rows["rich"]["per_kpi_borda"]["recovery_rate"] is None
+        assert rows[rich]["per_kpi_borda"]["recovery_rate"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -343,9 +356,9 @@ class TestPenaltyFieldsPersisted:
             assert 0.0 <= row["penalty"] <= 10.0
         by = {r["model"]: r for r in payload["ranking"]}
         # model-b is lopsided on graph (graph_score Borda 0.0) -> capped penalty
-        assert by["model-b"]["weakest_kpi"] == "graph"
-        assert by["model-b"]["penalty"] == pytest.approx(10.0)
-        assert by["model-a"]["penalty"] == pytest.approx(0.0)
+        assert by["prov/model-b@unversioned"]["weakest_kpi"] == "graph"
+        assert by["prov/model-b@unversioned"]["penalty"] == pytest.approx(10.0)
+        assert by["prov/model-a@unversioned"]["penalty"] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -392,3 +405,45 @@ class TestPenaltyRendered:
         assert "PENALTY" in out
         assert "10.00 (latency)" in out          # annotated when penalty > 0
         assert "0.00 (graph)" not in out         # no annotation leak at penalty 0
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard keyed on (provider, model, release_version) — #111 Phase 0
+# ---------------------------------------------------------------------------
+
+class TestReleaseVersionKeying:
+    """The leaderboard row key is (provider, model, release_version), so the same
+    model at different release versions becomes distinct rows (baseline-to-baseline
+    deltas), while a re-run at the same triple replaces (latest run dir wins)."""
+
+    def test_leaderboard_keys_on_model_and_release_version(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "lb.json"
+        # Same model+provider, two release_versions → TWO distinct rows.
+        _make_measurements(run_dir="runA", model="deepseek-v4-flash",
+                           provider="deepseek", release_version="v0.5.5",
+                           runs_root=runs_root)
+        _make_measurements(run_dir="runB", model="deepseek-v4-flash",
+                           provider="deepseek", release_version="v0.5.6",
+                           runs_root=runs_root)
+        rc = cli.main(["score", "runA", "runB",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        keys = set(_load(lb)["models"].keys())
+        assert len(keys) == 2
+        assert any("v0.5.5" in k for k in keys) and any("v0.5.6" in k for k in keys)
+
+    def test_leaderboard_same_triple_replaces(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "lb.json"
+        # Same model+provider+release re-run → ONE row, latest run dir wins.
+        _make_measurements(run_dir="run1", model="m", provider="p",
+                           release_version="v0.5.5", runs_root=runs_root)
+        _make_measurements(run_dir="run2", model="m", provider="p",
+                           release_version="v0.5.5", runs_root=runs_root)
+        rc = cli.main(["score", "run1", "run2",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        lb_data = _load(lb)
+        assert len(lb_data["models"]) == 1
+        assert list(lb_data["models"].values())[0] == "run2"

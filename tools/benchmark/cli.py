@@ -319,9 +319,11 @@ def _score_command(args: argparse.Namespace) -> int:
     ``args`` is a pre-parsed Namespace from ``main()`` (run_dirs / runs_root /
     leaderboard) — call ``main(["score", ...])`` rather than passing raw argv here.
 
-    The leaderboard file persists ``{models: {model_slug: run_dir}, ranking: [...]}``.
-    Each invocation incorporates the given run dirs (one row per header.model;
-    latest run per model wins), re-reads every listed run's measurements.json
+    The leaderboard file persists ``{models: {key: run_dir}, ranking: [...]}``
+    where ``key`` is ``provider/model@release_version`` (so the same model at
+    different release versions becomes distinct rows). Each invocation incorporates
+    the given run dirs (one row per (provider, model, release_version) triple;
+    latest run per key wins), re-reads every listed run's measurements.json
     LIVE, hierarchically scores them (§6 score_models: per-KPI Borda → combined
     graph_score → top-level composite), and rewrites the leaderboard. The
     leaderboard stores only model→run-dir pointers + the ranking — KPI values live
@@ -334,7 +336,19 @@ def _score_command(args: argparse.Namespace) -> int:
     runs_root: Path = args.runs_root
     leaderboard_path: Path = args.leaderboard
 
-    # --- Load the existing leaderboard (model_slug -> run_dir), or start empty ---
+    def _row_key(header: dict) -> str:
+        """Leaderboard row key: (provider, model, release_version).
+
+        The same model at different release versions becomes distinct rows
+        (baseline-to-baseline deltas); a re-run at the same triple replaces.
+        Missing release_version → "unversioned" so pre-#111 runs still rank.
+        """
+        prov = header.get("provider", "")
+        model = header.get("model", "")
+        rel = header.get("release_version", "") or "unversioned"
+        return f"{prov}/{model}@{rel}"
+
+    # --- Load the existing leaderboard (key -> run_dir), or start empty ---
     models_to_rundir: dict[str, str] = {}
     if leaderboard_path.exists():
         try:
@@ -347,9 +361,9 @@ def _score_command(args: argparse.Namespace) -> int:
             )
             return 1
 
-    # --- Incorporate the incoming run dirs (latest run per model_slug wins) ---
+    # --- Incorporate the incoming run dirs (latest run per row key wins) ---
     # Process in sorted order so that within one invocation, a lexically-greater
-    # run dir (timestamp-suffixed) overwrites an earlier one for the same model.
+    # run dir (timestamp-suffixed) overwrites an earlier one for the same key.
     for run_dir in sorted(args.run_dirs):
         data = _read_measurements(runs_root / run_dir / "measurements.json")
         if data is None:
@@ -359,14 +373,15 @@ def _score_command(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
-        model_slug = (data.get("header", {}) or {}).get("model")
-        if not model_slug:
+        header = data.get("header", {}) or {}
+        if not header.get("model"):
             print(
                 f"error: run dir '{run_dir}': measurements.json missing header.model",
                 file=sys.stderr,
             )
             return 1
-        models_to_rundir[model_slug] = run_dir  # latest replaces
+        key = _row_key(header)
+        models_to_rundir[key] = run_dir  # latest replaces
 
     if not models_to_rundir:
         print(
@@ -378,12 +393,12 @@ def _score_command(args: argparse.Namespace) -> int:
     # --- Re-read every listed run LIVE and build the Borda input ---
     models: list[dict] = []
     diagnostics_by_model: dict[str, dict] = {}
-    for model_slug, run_dir in models_to_rundir.items():
+    for key, run_dir in models_to_rundir.items():
         data = _read_measurements(runs_root / run_dir / "measurements.json")
         if data is None:
             print(
                 f"error: leaderboard references missing/invalid run dir '{run_dir}' "
-                f"for model '{model_slug}'. Re-incorporate a current run or reset "
+                f"for '{key}'. Re-incorporate a current run or reset "
                 f"the leaderboard ({leaderboard_path}).",
                 file=sys.stderr,
             )
@@ -392,8 +407,8 @@ def _score_command(args: argparse.Namespace) -> int:
         # so a KPI promoted between tiers needs no re-run; a genuinely-unmeasured
         # scored KPI comes back None and borda drops it pro-rata.
         scored, diag = _scored_and_diag(data)
-        models.append({"model": model_slug, "scored": scored})
-        diagnostics_by_model[model_slug] = diag
+        models.append({"model": key, "scored": scored})
+        diagnostics_by_model[key] = diag
 
     # --- Hierarchical score (§6: per-KPI Borda → graph_score → composite) ---
     result = score_models(models)
