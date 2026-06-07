@@ -849,6 +849,35 @@ def test_cli_explicit_log_level_wins_over_alias(tmp_path):
     assert kdb_orchestrate._resolve_log_level(args) == "warning"
 
 
+def test_provider_default_is_none_escape_hatch():
+    # --provider demoted to an escape hatch; default must be None so the pool
+    # supplies the provider for known ids. (Fail-first driver: current default is "deepseek".)
+    # The --model default STRING is unchanged ("deepseek-v4-flash") — Task 1.1's rename
+    # makes that same string resolve to the ACTIVE direct entry.
+    parser = kdb_orchestrate._build_parser()
+    args = parser.parse_args(["--vault-root", "/tmp/x", "--pipeline", "p"])
+    assert args.provider is None
+    assert args.model == "deepseek-v4-flash"
+
+
+def test_default_model_resolves_to_active_deepseek():
+    from common.model_pool import resolve
+    parser = kdb_orchestrate._build_parser()
+    args = parser.parse_args(["--vault-root", "/tmp/x", "--pipeline", "p"])
+    spec = resolve(args.model)
+    assert spec.provider == "deepseek"
+    assert spec.model == "deepseek-v4-flash"
+
+
+def test_unknown_model_id_rejected_when_no_provider_override():
+    from common.model_pool import PoolError, resolve
+    parser = kdb_orchestrate._build_parser()
+    args = parser.parse_args(["--vault-root", "/tmp/x", "--pipeline", "p", "--model", "bogus-id"])
+    assert args.provider is None
+    with pytest.raises(PoolError):
+        resolve(args.model)
+
+
 def test_run_writes_event_log_path_to_summary(tmp_path):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"

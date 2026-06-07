@@ -493,6 +493,8 @@ def run(
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
     limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
     quiet: bool = False, emit_kpis: bool = False,
+    use_completion_tokens: bool = False, extra_body: dict | None = None,
+    ctx_window: int | None = None, price_in: float = 0.0, price_out: float = 0.0,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Source-local failures are quarantined
@@ -994,8 +996,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--state-root", help="defaults to <vault-root>/KDB/state")
     p.add_argument("--graph-path", help="defaults to <vault-root>/KDB/graph "
                                         "(KDB_GRAPH_PATH env also honored by callers)")
-    p.add_argument("--provider", default="deepseek")
-    p.add_argument("--model", default="deepseek-v4-flash")
+    p.add_argument("--model", default="deepseek-v4-flash",
+                   help="model id from common/models.json (resolves provider + knobs)")
+    p.add_argument("--provider", default=None,
+                   help="escape hatch: required only when --model is NOT a pool id "
+                        "(then --model is treated as a raw SDK model string)")
     p.add_argument("--max-tokens", type=int, default=32768)
     p.add_argument("--dry-run", action="store_true",
                    help="scan + print the plan; no enrich/compile/graph writes, no API")
@@ -1043,12 +1048,30 @@ def main(argv: list[str] | None = None) -> int:
         print("available pipelines: " + (", ".join(ids) if ids else "(none)"))
         return 0
 
+    from common.model_pool import resolve, PoolError
+    try:
+        spec = resolve(args.model)
+        provider, model = spec.provider, spec.model
+        use_completion_tokens = spec.use_completion_tokens
+        extra_body = spec.extra_body
+        ctx_window = spec.ctx_window
+        price_in, price_out = spec.price_in, spec.price_out
+    except PoolError:
+        if args.provider is None:
+            raise  # unknown id + no override → surface the PoolError
+        # one-off escape hatch: raw model string, no pool metadata
+        provider, model = args.provider, args.model
+        use_completion_tokens, extra_body, ctx_window = False, None, None
+        price_in, price_out = 0.0, 0.0
+
     res = run(
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
-        graph_path=graph_path, provider=args.provider, model=args.model,
+        graph_path=graph_path, provider=provider, model=model,
         max_tokens=args.max_tokens, dry_run=args.dry_run, limit=args.limit,
         log_level=_resolve_log_level(args), quiet=args.quiet,
-        emit_kpis=args.emit_kpis)
+        emit_kpis=args.emit_kpis,
+        use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+        ctx_window=ctx_window, price_in=price_in, price_out=price_out)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")
