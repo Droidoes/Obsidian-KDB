@@ -24,6 +24,7 @@
     "ctx_window": 400000,
     "max_output_tokens": 128000,
     "use_completion_tokens": true,
+    "extra_body": { "reasoning_effort": "low" },
     "price_in": 0.75,
     "price_out": 4.5
   },

@@ -156,3 +156,9 @@ def test_dropped_archive_is_valid_json_and_holds_the_moved_entries():
             "qwen-flash-us", "deepseek-v4-flash:alibaba"} <= ids
     assert all(e.get("dropped") is True and e.get("dropped_reason") for e in arch), \
         "archive entries keep their dropped/dropped_reason record"
+
+
+def test_gpt_5_4_mini_carries_reasoning_config():
+    spec = resolve_models_json("gpt-5.4-mini")
+    assert spec.provider == "openai"
+    assert spec.extra_body == {"reasoning_effort": "low"}
