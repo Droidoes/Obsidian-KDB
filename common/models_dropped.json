@@ -52,5 +52,15 @@
     "price_out": 0.5,
     "dropped": true,
     "dropped_reason": "deprecated 2026-06; replaced by grok-4.20-0309-non-reasoning."
+  },
+  {
+    "id": "gemma4-12b-qat-128k",
+    "provider": "ollama-local",
+    "model": "gemma4-12b-qat-128k",
+    "ctx_window": 131072,
+    "price_in": 0.0,
+    "price_out": 0.0,
+    "dropped": true,
+    "dropped_reason": "local 12B-QAT too slow + majority of sources quarantined + could not complete a 36-source run (2026-06-07); local-model capability/hardware limit, not transient. No active ollama-local model remains. Un-archive only if a faster local model or a viable config emerges."
   }
 ]

@@ -88,21 +88,12 @@ def test_resolve_explicit_extra_body_merges_and_overrides(monkeypatch):
     spec = mp.resolve_models_json("crafted")
     assert spec.extra_body == {"enable_thinking": False, "foo": 1}
 
-def test_resolve_local_model_has_zero_price_and_default_knobs():
-    spec = resolve_models_json("gemma4-12b-qat-128k")
-    assert spec.provider == "ollama-local"
-    assert spec.ctx_window == 131072
-    assert spec.price_in == 0.0 and spec.price_out == 0.0
-    assert spec.extra_body is None
-    assert spec.use_completion_tokens is False
-
-
-def test_gemma4_12b_qat_128k_resolves_as_local_zero_price():
-    spec = resolve_models_json("gemma4-12b-qat-128k")
-    assert spec.provider == "ollama-local"
-    assert spec.ctx_window == 131072
-    assert spec.price_in == 0.0 and spec.price_out == 0.0
-    assert spec.extra_body is None
+def test_gemma4_12b_qat_128k_archived():
+    # Archived 2026-06-07: local 12B-QAT too slow + majority of sources
+    # quarantined + couldn't finish a 36-source run → moved to
+    # models_dropped.json. No active ollama-local model remains.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("gemma4-12b-qat-128k")
 
 
 def test_old_gemma_4_12b_qat_id_gone():

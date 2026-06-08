@@ -54,6 +54,7 @@ Prerequisite infrastructure for *every* baseline benchmark. Touches the #109 ben
   - **Drop** `grok-4-1-fast-reasoning` (deprecated) → into `models_dropped.json` with reason "deprecated 2026-06; replaced by grok-4.20-0309-non-reasoning."
   - **Add** `grok-4.20-0309-non-reasoning` (provider `xai`, ctx_window 1_000_000, price_in 1.25, price_out 2.50). Non-reasoning ⇒ no thinking to disable. *Active, not in batch 1.*
   - **Add/replace** ollama-local model with `gemma-4-12b-qat` (provider `ollama-local`). *Active, not in batch 1; requires the model pulled on Joseph's machine.*
+    - **UPDATE 2026-06-07:** shipped as `gemma4-12b-qat-128k` (128k ctx), then **ARCHIVED** after a live run — extremely slow, majority of sources quarantined, couldn't finish 36 sources (local 12B-QAT capability/hardware limit, not transient). **No active `ollama-local` model remains** → the Phase-2 "ollama-local native handler" candidate is **deprioritized** (nothing to serve it); Gemini is the sole Phase-2 native case. A local model's failure is capability/speed, not call-shape — `json_schema` would not rescue it.
 
 ### 4b. Per-model reasoning/thinking config (batch-1)
 

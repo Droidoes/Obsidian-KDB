@@ -30,14 +30,6 @@
     "price_out": 4.5
   },
   {
-    "id": "gemma4-12b-qat-128k",
-    "provider": "ollama-local",
-    "model": "gemma4-12b-qat-128k",
-    "ctx_window": 131072,
-    "price_in": 0.0,
-    "price_out": 0.0
-  },
-  {
     "id": "qwen3.5-flash",
     "provider": "alibaba",
     "model": "qwen3.5-flash",
