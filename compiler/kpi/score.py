@@ -75,7 +75,7 @@ GRAPH_WEIGHTS: dict[str, float] = {
 # Weak-spot penalty (spec 2026-06-06): punish a lopsided model with a glaring
 # weak spot. Range over the four COMPOSITE axes (3 processing Borda values +
 # the combined graph_score) — NOT the 7 raw KPIs — at equal treatment.
-WEAK_SPOT_THRESHOLD = 0.5     # tau: below mid-field => "glaring". PARKED for calibration.
+WEAK_SPOT_THRESHOLD = 0.5     # tau: below mid-field => "glaring". PINNED — baseline-1 (4-model) confirmed all penalized models hit the cap.
 WEAK_SPOT_PENALTY_CAP = 0.10  # lambda: max deduction (10 pts on the 0-100 scale). PINNED.
 
 # Headline composite is rendered 0-100; components (per_kpi_borda, graph_score)

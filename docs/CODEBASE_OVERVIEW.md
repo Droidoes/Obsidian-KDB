@@ -12,6 +12,7 @@ This is the **single source of truth** for the Obsidian-KDB project. All design 
 
 Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
 
+- **2026-06-07** — **🏁 Task #109 CLOSED — benchmark calibration complete.** Baseline-1 (4-model cohort at `v0.5.6`) provided the cross-model spread needed for calibration. Existing rationale-based weights validated unchanged (`TOP_WEIGHTS`: quarantine 40 / graph 40 / recovery 10 / latency 10; `GRAPH_WEIGHTS`: connectivity 35 / link 30 / supports 20 / reuse 15). **τ=0.5 PINNED** (all three penalized models hit the max cap — threshold confirmed correctly calibrated); λ=0.10 remains PINNED. Promotion rule (`tools/benchmark/promotion.py`) available for the next multi-model cohort. §7 North Star doc rewritten to reflect the new orchestrate-emit → score-only architecture (the legacy `runner`/`scorer`/`scorecard`/`registry` + M0–M7 KPI system + D26–D31 weights were retired with Task #109's framework merge). [[project_benchmark_redesign_architecture]].
 - **2026-06-07** — **🏁 Task #111 CLOSED — optimal per-model calls → clean-slate re-benchmark.** Two-phase tagged de-risk. **Phase 0 (`v0.5.5`):** run-provenance (`release_version` via `git describe` → header + `measurements.json`) + per-run `console.log` + leaderboard keyed on `(provider, model, release_version)`. **Phase 1 (`v0.5.6`):** pool restructure (`models.json` active / `models_dropped.json` human archive; dead dropped-guard retired → dropped id = `UnknownModelError`); **native `google-genai` Gemini handler** (`_call_gemini`, off the second-class openai-compat shim; `thinking_level:"minimal"`); `gpt-5.4-mini` `reasoning_effort:"low"` (flat, live-confirmed) + **`temperature` omitted** (GPT-5 reasoning rejects non-default temp; nullable per-model pool field); a **retry-telemetry fix** (re-prompt recoveries now counted in `recovery_rate`/`retry_load` — SDK transient retries excluded, matching Pass-1); and **per-source token in/out on the `pass-1 ✓`/`pass-2 ✓` console lines → `console.log`**. **baseline-1 (4-model cohort):** **gpt-5.4-mini #1 on graph quality** (84.67, 0 quarantine) once called correctly — overturning #109's handicapped "deepseek best" and validating the thesis (bad calls, not model quality, skewed #109) — **but `deepseek-v4-flash` stays the default on cost** (7.2× cheaper, also 0 quarantine, 2nd-best graph). `gemma4-12b-qat-128k` tried then **archived** (local 12B too slow / majority-quarantined / couldn't finish). **Phase 2 (`json_schema`, `v0.5.7`) SHELVED — data-mooted:** the default was already 0-quarantine under `json_object` + the coerce ladder; the real win was the **per-provider thinking/reasoning-disable latency cut (~30–70%)**, not structured output. Strict json_schema would grammar-mask our generative `body` (quality risk), can't express our semantic contracts (slug-format / body↔links — owned by the reconciler+coerce layer), and contradicts coerce-don't-reject ([[feedback_coerce_dont_reject]]). The `v0.5.6` tag was moved in-place 3× across Phase 1 to fold mid-cohort fixes (roadmap unchanged). Spec `docs/superpowers/specs/2026-06-07-optimal-model-calls-design.md`. [[project_111_optimal_model_calls]].
 - **2026-06-07** — **Task #110 — user-owned model pool + cost/ctx diagnostics.** Merged to `main` via `feat/110-models-json-pool` (16 commits, subagent-driven TDD, per-task spec+quality reviews + a final holistic review; 1209 non-live tests; live-smoke clean on default `deepseek-v4-flash`). Reinstates the user-owned model pool retired with the #5 engine, re-homed to **`common/models.json`** (pool + curation ledger) + **`common/model_pool.py`** `resolve_models_json(id) → ModelSpec` (the lookup layer; `call_model.py` engine untouched): alias→provider+knobs, an **absolute dropped-guard** (`UnknownModelError`/`DroppedModelError` — dropped ids always error, even with `--provider`), and `words×1.3` ctx-estimate helpers. `kdb-orchestrate --model <id>` now resolves the pool; `--provider` demoted to an escape hatch with a conflict-check. **`cost_usd`** restored (pricing × **aggregated** tokens — the diagnostic lost with the #5 scorer) on BOTH telemetry paths (Pass-2 `RespStatsRecord` + Pass-1 sidecar `SidecarPayload`). A proactive **input-side ctx-overrun guard** (`est_input+requested_output ≤ ctx_window`) runs before the model call in both passes → skip-and-quarantine, **no API spend**, routed through the existing per-source quarantine (synthetic `TokenOverrun`, persisted structurally in the sidecar). The holistic review caught a **must-fix**: `use_completion_tokens`/`extra_body` were resolved but not threaded to the passes — now fixed, which makes thinking-disable actually apply and unbreaks `gpt-5.4-mini`. Plus a semantic **`thinking` field** (per-provider translation to the disable-param; verified alibaba `enable_thinking:false` + deepseek `thinking:disabled`, gemini/openai/xai no-op+TODO per "no guessed param on a paid call"), and **`deepseek-v4-pro` un-dropped** (permanent discount). New reference: **`docs/reference/model-provider-api-calls.md`** (per-provider call shapes, structured-output + reasoning-disable matrix). Follow-up #111 (structured-output `json_schema` upgrade + Gemini native handler). Deferred-and-documented: `max_output_tokens` clamp (untriggered), Pass-1 failed-source `cost_usd=0.0`. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-06-models-json-pool*`.
 - **2026-06-06** — **Benchmark redesign framework landed + Pass-1 robustness closed (Tasks #109 + #108).** Merged to `main` `610e2c8` (subagent-driven, 13-task TDD plan, two-stage review per task; 1338 non-live tests). **#109 — benchmark redesign framework** (quality-only, GT-free, two families never blended): `common/measurement.py` projects existing telemetry into a unified `PassCallMeasurement` (P1+P2) + `RunMeasurementHeader` — a **logical view, not a new store** ([[feedback_no_parallel_storage_to_authority]]); `compiler/kpi/` computes the **processing** family (`quarantine_rate` · `intervention_burden` · `latency`, per-1M-token normalized) and the **graph** family (scored `dangling_link_rate` alias-aware + 4 watched diagnostics: entity-reuse · connectivity · orphan · search-key-resolution + 5 read-only diagnostics); `kdb-orchestrate --emit-kpis` writes repo `benchmark/runs/<id>/measurements.json` (reset-surviving — must emit *inside* the run since the sandbox graph is wiped before the next model); `kdb-benchmark score <run-id…>` Borda-ranks the latest run per `group_key` within a `corpus_fingerprint` cohort; watched→scored **promotion rule** (CoV>0.2 ∧ IQR-floor ∧ Spearman<0.7). **Weights, final scored-set selection, and promotion are PARKED to post-run-1 calibration** — the one step needing live cross-model spread (data-before-principle; setting them now would be the blind-anchoring the promote-on-data mechanism exists to avoid). **#108 — Pass-1 robustness** (NOT a port of #106's multi-rung ladder — that would be premature abstraction): Pass-1 `final_status` + aggregate token/latency telemetry persisted into the sidecar on every write path (feeds `PassCallMeasurement.from_pass1`, makes Pass-1 failures observable), and the shared `common/util/json_escape_fix` wired in before `json.loads` (one preventive, re-validation-gated rung); full ladder deferred until a real Pass-1 repairable class appears. **Validated by run-9** (`--emit-kpis`, `deepseek-v4-flash`): clean `measurements.json`, every header/scored/watched/diagnostic field populated. **Calibration watch surfaced by run-9:** `dangling_link_rate=0.0` looks perfect, but `entity_reuse 2.6%` / `graph_connectivity 14.5%` / `search-key-resolution 24.6%` expose a sparse, fragmented graph — confirming the design's caveat that dangling-rate must never stand alone (density/reuse are prime promotion candidates). **Open to close #109:** Joseph fires the ≥3-model cohort → `score` → set weights + run promotion. Specs: B1/B2/B3 under `docs/superpowers/specs/2026-06-05-*`; plan `docs/superpowers/plans/2026-06-05-benchmark-implementation.md`. [[project_benchmark_redesign_architecture]] · [[project_json_repair_coerce_ladder]]
@@ -207,147 +208,118 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 
 ---
 
-## 7. Benchmark Architecture (`kdb_benchmark/`)
+## 7. Benchmark Architecture
 
-The benchmark engine is the cross-model quality + cost + latency comparison layer that sits *next to* the compiler, not inside it. It consumes the per-call telemetry the compiler already emits (`RespStatsRecord` written by `compile_one`'s `finally` block) and produces a Borda-normalized scorecard ranking the participating models on a curated source corpus.
-
-The full spec lives in [`docs/archive/tasks/task19-kpi-design.md`](archive/tasks/task19-kpi-design.md) (Phase 3 + Round 4 corrections, ~1000 lines). This section is the architectural summary — what someone needs to know to navigate the engine and modify it without re-reading the spec.
+The benchmark is a **two-step** quality measurement layer: `kdb-orchestrate --emit-kpis` (the run vehicle) **emits** per-run measurement data from real pipeline runs; `kdb-benchmark score` (the scoring tool) **ranks** models via hierarchical weighted Borda. The two roles are permanently separated — the scorer never re-runs the passes, and the production pipeline never imports from `tools/benchmark`.
 
 ### 7.1 Package layout & boundary
 
 ```
 tools/benchmark/
-├── runner.py     # invokes compile_one per source, isolated state_root
-├── scorer.py     # per-measure functions, Borda, final_score
-├── scorecard.py  # JSON + render_terminal artifact
-├── registry.py   # models.json (provider, model, prices)
-├── cli.py        # `kdb-benchmark --models a,b --sources <dir>`
+├── cli.py          # `kdb-benchmark score <run-id…>`
+├── promotion.py    # watched-KPI promotion evaluator
+├── paths.py        # benchmark dir conventions
 └── tests/
+
+compiler/kpi/
+├── processing.py   # processing-family KPI computation
+├── graph.py        # graph-family KPI computation (reads via kdb_graph.queries)
+├── score.py        # Borda engine + hierarchical composite scorer + penalty
+└── report.py       # per-run report.md renderer
+
+common/
+└── measurement.py  # PassCallMeasurement + RunMeasurementHeader (logical view over telemetry — not a new store)
+
 benchmark/
-├── sources/      # canonical 5-source corpus (CC-BY etc., tracked in git)
-├── runs/         # per-model resp_stats records (gitignored)
-├── inspect/      # ad-hoc inspection scratchpad (gitignored)
-└── scores/       # JSON + .txt scorecards (tracked)
+├── sources/        # canonical 36-source sandbox corpus (tracked in git)
+├── runs/           # per-model measurements.json + report.md (gitignored)
+└── scores/         # leaderboard.json + leaderboard.md (tracked)
 ```
 
-**One-way import boundary** (D25): `tools/benchmark` imports from `compiler` and `common` (via validators and types); the production packages never import from `tools`. The benchmark depends on the compiler's contract, not the reverse — keeps the production pipeline unaware of measurement concerns.
+**One-way import boundary** (D25, preserved): `tools/benchmark` and `compiler/kpi` import from `compiler` and `common`; production pipeline packages never import from `tools`. `compiler/kpi` is used by both the orchestrator (emit path) and the scorer (load-and-rank path).
 
-### 7.2 Input contract
+### 7.2 How to run a cohort
 
-The scorer reads dict-shaped `RespStatsRecord` JSONs the compiler writes during a benchmark run. **Capture-full mode (`KDB_RESP_STATS_CAPTURE_FULL=1`) is mandatory for scoring** (D26): without it, `parsed_json` is None on parse-pass records and measures M1/M2/M3/M4/M5/S3 cannot be computed. The runner sets the env var; the scorer raises `RuntimeError` if a benchmark record violates the contract.
+1. **Reset the sandbox** (`~/Obsidian/Vault-in-place-test-run`) and run `kdb-orchestrate --emit-kpis --model <model-id>` once per candidate model. Each run writes `benchmark/runs/<run-id>/measurements.json` (reset-surviving — the sandbox graph is wiped before the next model; measurements must be emitted inside the run). See the cohort runbook: `docs/reference/benchmark-cohort-procedure.md`.
+2. **Score** with `kdb-benchmark score <run-id> [<run-id>…]` (one run-id per model). Writes/updates `benchmark/scores/leaderboard.json` + `leaderboard.md`.
 
-`RespStatsRecord` is corpus-coverage authoritative — it has one record per attempted compile, including failed ones. `compile_result.compiled_sources[]` only contains successful compiles, so it is *not* the scorer's denominator authority for stage-success rates.
+### 7.3 KPI families
 
-### 7.3 KPI structure (locked Round 3 + Round 4)
+Two families, kept structurally separate — never blended at scoring time.
 
-**Tier 1 — Stage Success Rates (S0 weighted; S1/S2/S3 diagnostic)**
+**Processing family** (from per-run telemetry, per-1M-token normalized):
 
-| ID | Name | What it measures |
+| KPI | Direction | What it measures |
 |---|---|---|
-| **S0** | `pipeline_success_rate` | parse_ok ∧ schema_ok ∧ no hard-zero validator findings — the per-source binary "did this attempt produce a usable artifact" gate |
-| S1 | `llm_resp_success_rate` | parse_ok rate (diagnostic only) |
-| S2 | `validator_schema_pass_rate` | schema_ok rate over parse-pass set (diagnostic only) |
-| S3 | `validator_hard_zero_pass_rate` | no-hard-zero rate over schema-pass set (diagnostic only) |
+| `quarantine_rate` | ↓ | fraction of sources that failed to produce a usable compile result |
+| `recovery_rate` | ↓ | fraction of sources requiring compile re-prompts (SDK transient retries excluded) |
+| `latency` | ↓ | median end-to-end latency per source (ms) |
 
-**Tier 2 — Measures (all weighted)**
+**Graph family** (from the Kuzu knowledge graph after the run, combined into one `graph_score`):
 
-| ID | Name | Formula | Domain |
-|---|---|---|---|
-| **M1** | `link_target_resolution` | (outgoing_links pointing to slugs in own emit-set) ÷ total | Graph integrity |
-| **M2** | `concept_slugs_jaccard` | symmetric Jaccard of declared concept_slugs vs concept-typed pages | Slug-page pairing |
-| **M3** | `article_slugs_jaccard` | same for article_slugs | Slug-page pairing |
-| **M4** | `semantic_pass_rate` | post-schema semantic_check pass rate | Output integrity |
-| **M5** | `body_emit_set_coverage` | fraction of declared `concept_slugs ∪ article_slugs` appearing as `[[slug]]` wikilinks in *other* pages' bodies (self-links excluded) | Output integrity |
-| **M6** | `cost_per_1k_source_words` | (Σ input × price_in + Σ output × price_out) ÷ (source_words/1000) | Production cost |
-| **M7** | `latency_per_1k_source_words` | Σ latency_ms ÷ (source_words/1000) | Production latency |
-
-**Diagnostic-only telemetry (no weight, tracked for inspection):** `retry_load`, `token_overrun_rate`, `pages_per_1k_source_words`.
-
-### 7.4 Locked weights (D30, supersedes D27 for M5/M6/M7)
-
-| Bucket | Weight | Members |
+| KPI | Direction | What it measures |
 |---|---|---|
-| Pipeline gate | **20%** | S0 |
-| Quality core | **50%** | M1 (20%) + M4 (15%) + M5 (15%) |
-| Slug-page pairing | **10%** | M2 (5%) + M3 (5%) |
-| Cost | **10%** | M6 |
-| Latency | **10%** | M7 |
-| **Total** | **100%** | (S0 20 + M1 20 + M2 5 + M3 5 + M4 15 + M5 15 + M6 10 + M7 10) |
+| `graph_connectivity` | ↑ | largest-connected-component fraction of canonical entities |
+| `link_density` | ↑ | LINKS_TO edges per entity |
+| `supports_density` | ↑ | SUPPORTS edges per entity |
+| `entity_reuse` | ↑ | fraction of entities referenced by ≥2 sources |
 
-D30 (2026-05-10) supersedes D27's M5/M6/M7 weights. M5 was 5% under D27 when it measured body_link_jaccard (tautological-by-construction post-#57 reconciler); after Task #59 swapped M5 to body_emit_set_coverage (a real body-content measure), the 5% weight was too low — qwen-flash-us topped the post-#60 regression scorecard despite M5=0.111. M5 now equals M4 in weight; M6/M7 each lose 5% to fund the bump. Quality core grows 30% → 50% of FINAL.
+**Watched diagnostics** (emitted each run, not scored; evaluated for promotion after each cohort via `tools/benchmark/promotion.py`):
+`entity_search_key_resolution` · `orphan_rate` · `semantic_pass_rate` · `signal_noise_ratio` · `retry_load` · `token_overrun_rate` · `repair_rung_rate` · `domain_breadth` · `domain_null_rate` · `belongs_to_coverage` · per-pass breakdowns (`quarantine_rate_pass1/2`, `latency_pass1/2`)
 
-Source-words denominator on M6/M7 (vs. per-page or per-token): closes the page-spam exploit Codex review surfaced; corpus-controlled, model-independent, tokenizer-independent.
+### 7.4 Weights & penalty (all PINNED)
 
-### 7.5 Cross-model normalization
+**Top-level composite** (`compiler.kpi.score.TOP_WEIGHTS`):
 
-Cost/latency raw rates differ in magnitude across models by 3× or more. Direct weighted summation would let cost dominate everything. Instead:
+| Axis | Weight |
+|---|---|
+| `quarantine_rate` | 40% |
+| `graph_score` (combined) | 40% |
+| `recovery_rate` | 10% |
+| `latency` | 10% |
 
-- **M6 / M7 are Borda-normalized within the candidate set** (D28). Average-rank algorithm: best raw rate → 1.0, worst → 0.0, ties get the average rank, all-equal candidates each get 0.5.
-- **The other measures stay as raw rates** in [0,1]. They're already in a comparable scale (Jaccard, pass rates, etc.).
-- **`final_score`** is the weighted sum, with pro-rata redistribution if any measure has rate=None (model-controlled zero-denom on M1/M2/M3/M5 scores 0.0 not None, per Round 4 MF6).
-- **Outlier penalty** (D31, Task #62). After the weighted sum + pro-rata redistribution, an outlier penalty is applied: for each in-scope measure (S0 + M1–M5), models more than 10% below the candidate-set norm receive `−0.05` per 10%-band of deviation. Penalty units accumulate across measures; FINAL is floored at 0. Surfaces single-axis outliers that the weighted sum would otherwise average away. M6/M7 are excluded (already Borda-relative). See §7.6 below.
+**Within-graph** (`compiler.kpi.score.GRAPH_WEIGHTS`):
 
-Borda is candidate-set-dependent — `final_score` is comparable **only within the same scorecard's candidate set**. The user's workflow is "rank latest, pick best" (D28); cross-version comparison is not a designed-for use case. Raw rates are exposed in the scorecard footer for cross-run magnitude inspection.
+| KPI | Weight |
+|---|---|
+| `graph_connectivity` | 35% |
+| `link_density` | 30% |
+| `supports_density` | 20% |
+| `entity_reuse` | 15% |
 
-### 7.6 Outlier penalty (D31)
+Weighting is hierarchical: the four graph KPIs first combine into one `graph_score`, then `graph_score` enters the composite as the single 40% term. This preserves the 40/40/10/10 split exactly even when a model is missing a graph KPI (pro-rata renormalization happens within each family, not across the flat composite).
 
-The weighted sum + pro-rata redistribution produces a "balanced average" FINAL that
-treats each measure equally up to its weight. This dilutes single-axis outliers — a
-model with one catastrophic measure but five healthy ones still ranks high. The
-outlier penalty addresses this directly.
+**Weak-spot penalty** (leaderboard-only): **τ=0.5 PINNED**, **λ=0.10 PINNED**. Operates on the four composite axes (`quarantine_rate` / `recovery_rate` / `latency` / `graph_score` Borda values — equal treatment). A model with a glaring weak composite axis (weakest < τ) loses up to 10 pts on the 0–100 headline score: `penalty = λ · max(0, (τ − weakest) / τ)`. Baseline-1 validated the parameters: deepseek penalized on latency, gemini on quarantine, qwen on recovery — each hitting the cap.
 
-**Formula.** For each model and each in-scope measure (S0, M1, M2, M3, M4, M5):
-
-  norm           = mean(measure.rate across active models, excluding rate=None)
-  deviation_pct  = max(0, (norm − value) / norm × 100)
-  penalty_units  = floor(deviation_pct / 10)
-
-Per-model total: Σ penalty_units across in-scope measures × 0.05 → penalty deduction.
-FINAL_with_penalty = max(0.0, FINAL_pre_penalty − total_penalty).
-
-**Properties.**
-- One-sided: only below-norm penalized.
-- M6/M7 excluded: already Borda-normalized; penalizing them again would double-count.
-- Cumulative, no cap: multi-axis underperformance compounds.
-- Floor at 0: FINAL ∈ [0, 1] preserved.
-
-**Visibility.** A `PENALTY` column in the rendered scorecard sits between M7_b and
-FINAL, showing the deduction (e.g. `-0.40` or `-` for zero). The pre-penalty value
-is preserved on `RunScore.final_score_pre_penalty` for audit.
-
-See `docs/archive/tasks/task62-outlier-penalty-design.md` for the worked example and full
-locked-decision set (D31.1–D31.12).
-
-### 7.7 Data flow
+### 7.5 Data flow
 
 ```
-benchmark/sources/*.md
-        │ (corpus, manifest gitignored)
-        ▼
-kdb_benchmark.runner.run_benchmark
-        │  compile_one(source, isolated state_root, capture-full)
-        ▼
-benchmark/runs/<run_id>/state/llm_resp/*.json   (one RespStatsRecord per source)
+~/Obsidian/Vault-in-place-test-run   (36-source sandbox)
         │
         ▼
-kdb_benchmark.scorer.score_run → RunScore (raw rates per measure)
-        │
-        ▼  (collect across candidate models)
-kdb_benchmark.scorer.score_runs → enriched RunScores with m6_borda, m7_borda, final_score
-        │
+kdb-orchestrate --emit-kpis --model <id>   (one per candidate; reset sandbox between runs)
+        │  Pass-1 + Pass-2 + graph build + graph-KPI computation
         ▼
-kdb_benchmark.scorecard.write_scorecard
-        │  → benchmark/scores/<scorecard_id>.json   (machine)
-        │  → benchmark/scores/<scorecard_id>.txt    (human, byte-equal to render_terminal)
+benchmark/runs/<run-id>/measurements.json   (header + processing.scored/watched + graph.scored/watched/diagnostic)
+benchmark/runs/<run-id>/report.md           (per-run human summary)
+        │
+        ▼ (collect one run-id per candidate model)
+kdb-benchmark score <run-id…>
+        │  Borda rank → hierarchical composite → penalty → leaderboard
         ▼
-benchmark/runs/<run_id>/score_trace.txt  (always-on per-run + cross-run trace, --verbose mirrors to stdout)
+benchmark/scores/leaderboard.json
+benchmark/scores/leaderboard.md
 ```
 
-CLI: `kdb-benchmark --models <a,b,...> --sources <dir> [--verbose]`.
+### 7.6 Promotion rule
 
-### 7.8 Pointer to spec
+`tools/benchmark/promotion.py` evaluates watched diagnostics for promotion to the scored set after each multi-model cohort. A watched KPI promotes when **all three** hold:
 
-For Phase 3 mechanics (per-measure pseudocode, edge-case policies, Borda algorithm details, Round 4 corrections), see [`docs/archive/tasks/task19-kpi-design.md`](archive/tasks/task19-kpi-design.md). That doc is the historical record of design rounds 1–4 and the locked spec; this section in the North Star doc is the durable summary.
+1. **CoV > 0.2** — varies meaningfully across models
+2. **Q1 > ε** — the bulk of values are non-trivially non-zero
+3. **max |Spearman| vs scored < 0.7** — not redundant with any already-scored KPI
+
+Promotion is advisory (human decision, not automatic). Prime candidates from baseline-1: `entity_search_key_resolution`, `orphan_rate`.
 
 ---
 
