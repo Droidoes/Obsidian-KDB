@@ -132,10 +132,11 @@ param ever fires on a paid call**.
 ### openai — default base_url (`api.openai.com`) · `OPENAI_API_KEY` · openai SDK
 - **API docs:** https://platform.openai.com/docs/ · structured outputs: https://developers.openai.com/api/docs/guides/structured-outputs
 - Model: `gpt-5.4-mini`. Uses `max_completion_tokens` (`use_completion_tokens: true`) — GPT-5 family requirement.
+- **⚠️ Temperature (#111, live-confirmed):** GPT-5 reasoning models **reject any non-default `temperature`** — `temperature=0.0` 400s with *"Only the default (1) value is supported."* We OMIT the `temperature` kwarg for gpt-5.4-mini (nullable per-model pool field `"temperature": null`). Non-reasoning GPT-5 (e.g. gpt-5-chat) may still accept `0.0` — hence per-model, not coupled to `use_completion_tokens`.
 - **Structured outputs:** ✅ `response_format={"type":"json_schema","json_schema":{"name":…,"schema":…,"strict":true}}` ("evolution of JSON mode" — schema adherence; we use the weaker `json_object`). Supported gpt-4o-mini / gpt-4o-2024-08-06 & later (gpt-5.x family expected; not explicitly confirmed in the guide).
 - Reasoning control — `reasoning_effort` (gpt-5.5): `"none"`, `"low"`, `"medium"` (default), `"high"`, `"xhigh"` (docs: https://developers.openai.com/api/docs/guides/deployment-checklist#set-up-reasoningeffort). `"none"` = fully disabled; `"low"` = lowest *active* reasoning (no `"minimal"`). Passed nested: `reasoning={"effort": …}` → via `extra_body={"reasoning": {"effort": "none"}}`.
   - **Design note for our workload:** OpenAI recommends **`"low"` for "extraction, routing, classification, or a simple rewrite"** — i.e. our compile/extract task class. So `"none"` (fully off) vs `"low"` (OpenAI's recommended floor for extraction) is a real tuning choice — A/B it if we ever run gpt in the #109 cohort, don't assume `"none"`.
-  - ✅ **Resolved (#111 Phase 1):** `gpt-5.4-mini` uses `extra_body={"reasoning_effort": "low"}` (flat key) for structured output — Joseph-verified. `"low"` is the recommended floor for extraction; not fully disabled.
+  - ✅ **Resolved (#111 Phase 1, baseline-1 live-confirmed):** `gpt-5.4-mini` uses `extra_body={"reasoning_effort": "low"}` (**flat** key — the chat.completions param; the nested `reasoning={"effort":…}` is Responses-API). The baseline-1 run completed cleanly with the flat form, so flat `reasoning_effort` is the correct shape for our chat.completions path. **Outcome:** gpt-5.4-mini was the #1 graph-builder in baseline-1 (but 7.2× deepseek's cost → deepseek stays default).
 
 ### gemini — **native `google-genai` SDK** (`from google import genai`) · `GEMINI_API_KEY`
 - **API docs:** https://ai.google.dev/gemini-api/docs
@@ -162,7 +163,9 @@ param ever fires on a paid call**.
 ### ollama-local / ollama-cloud — `http://localhost:11434/v1` (or `OLLAMA_BASE_URL`) / `https://ollama.com/v1`
 - **API docs:** https://docs.ollama.com/ (API reference: https://docs.ollama.com/api)
 - `ollama-local` api_key is the literal `"ollama"`; `ollama-cloud` uses `OLLAMA_API_KEY`.
-- Model: `gemma4-obsidian-bench` (local). No thinking mode → no-op.
+- Model: `gemma4-12b-qat-128k` (local, ollama-local, 128k ctx). No thinking mode → no-op.
+- **Structured output (#111):** Phase 1 uses the openai-compat `/v1` with `response_format={"type":"json_object"}` (plain JSON mode) — works for `ollama-local`. The **strong** lever is ollama's *native* `chat(model, messages, format=<JSON schema>)` (`model_json_schema()`) — schema-constrained, parallel to Gemini's `response_json_schema`. So for **Phase 2**, `ollama-local` is a **native-handler candidate** alongside Gemini (or verify whether `/v1` accepts `json_schema`). Docs also recommend embedding the schema in the prompt to ground the model.
+- **⚠️ Ollama Cloud:** the docs state it does **NOT support structured outputs**. We have **no active `ollama-cloud` model** (the only one, `deepseek-v4-flash:cloud`, is archived) and **won't use it** (Joseph 2026-06-07) — the dead `ollama-cloud` dispatch path is left in place but unused; do not adopt a cloud model without revisiting this.
 
 ---
 

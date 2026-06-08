@@ -27,7 +27,7 @@ CANDIDATES = [
     {"provider": "anthropic", "model": "claude-haiku-4-5-20251001",
      "extra_body": None, "use_completion_tokens": False},
     {"provider": "openai", "model": "gpt-5.4-mini",
-     "extra_body": None, "use_completion_tokens": True},
+     "extra_body": None, "use_completion_tokens": True, "temperature": None},
     {"provider": "xai", "model": "grok-4.20-0309-non-reasoning",
      "extra_body": None, "use_completion_tokens": False},
 ]
@@ -58,13 +58,14 @@ def smoke(
     model: str,
     extra_body: dict | None,
     use_completion_tokens: bool,
+    temperature: float | None = 0.0,
 ) -> tuple[bool, str]:
     req = ModelRequest(
         provider=provider,
         model=model,
         prompt=PROMPT,
         json_mode=True,
-        temperature=0.0,
+        temperature=temperature,
         max_tokens=1024,
         extra_body=extra_body,
         use_completion_tokens=use_completion_tokens,
