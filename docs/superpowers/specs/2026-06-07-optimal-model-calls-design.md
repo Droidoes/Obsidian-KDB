@@ -82,6 +82,8 @@ Tag `baseline-1`. Joseph fires the clean-slate batch-1 benchmark (reset sandbox 
 
 ## 6. Phase 2 — `json_schema` structured output
 
+> **⛔ SHELVED 2026-06-07 (data-mooted) — #111 closed at Phase 1.** baseline-1 showed the default model (deepseek) already at **0 quarantine** under `json_object` + the coerce ladder, so structured-output was solving a problem we don't have. The real #111 win was the **thinking/reasoning-disable latency cut (~30–70%)**, not schema-constrained decoding. Strict `json_schema` was judged a **poor fit for our generative use case**: (1) it would grammar-mask the rich free-form `body` field (quality risk); (2) our *hard* failures are **semantic** (slug-format, body↔`outgoing_links` invariant, slug-list consistency) which no `json_schema` can express — the reconciler+coerce+semantic layer owns them regardless; (3) its supported-keyword subset varies per provider and drops our value-constraints (`pattern`/`minLength`/`minItems`); (4) it contradicts the ratified coerce-don't-reject philosophy. Non-strict (schema-as-hint) was considered but deemed not worth the work given the default is already clean. **Un-shelve only if a future model genuinely needs schema-constrained decoding.** The design below is retained as the record of the not-taken path.
+
 ### 6a. Mechanism
 - **`ModelRequest` gains `json_schema: dict | None = None`** (the engine's input contract; sits alongside `json_mode`).
 - **Callers thread it:** `pass1_caller` → the Pass-1 content schema (from `pass1_schema.py`); `compile_one` → `compiler/schemas/compiled_source_response.schema.json` (the LLM-emitted Pass-2 shape).
