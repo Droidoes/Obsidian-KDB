@@ -840,6 +840,48 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
             entities point into this one?"
           </div>
 
+          <h3>What a node stores (and what it doesn't)</h3>
+          <p>
+            The graph is a <strong>topology + metadata projection</strong> — it records <em>what exists
+            and how it connects</em>, not the prose. The full page <code>body</code> is <strong>not</strong>
+            stored on the node. It lives in two canonical homes, reached by <code>slug</code>:
+          </p>
+          <ul>
+            <li><code>KDB/wiki/</code> — rendered Markdown pages (human-readable)</li>
+            <li><code>KDB/state/compile_result.json</code> — full page output: <code>body</code>,
+              <code>outgoing_links</code>, <code>title</code>, <code>confidence</code> (machine-readable)</li>
+          </ul>
+          <table>
+            <thead>
+              <tr><th>Node</th><th>Stored on the node</th><th>Externalized</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Entity</code></td>
+                <td><code>slug</code>, <code>title</code>, <code>page_type</code>, <code>status</code>, <code>confidence</code>, run-tracking timestamps</td>
+                <td><code>body</code> (→ wiki / compile_result); <code>outgoing_links</code> (→ <code>LINKS_TO</code> edges)</td>
+              </tr>
+              <tr>
+                <td><code>Source</code></td>
+                <td><code>source_id</code>, <code>hash</code>, <code>source_type</code>, <code>summary</code>, <code>author</code>, <code>domain</code>, lifecycle fields</td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td><code>Domain</code></td>
+                <td><code>name</code>, <code>created_at</code></td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            The rule is a gradient, not a binary: <strong>titles and short summaries in, full bodies out</strong>.
+            <code>Source.summary</code> is a short summary kept on the node on purpose. Bodies stay external because
+            graph engines are tuned for pointer-chasing across relationships (not blob storage), and the body should
+            have one canonical home so no copy can drift. A consumer needing body-at-the-node does a second lookup by
+            <code>slug</code> — cheap at this scale. See <code>docs/reference/graph-nodes-edges-logic.md</code> for the
+            full rationale and the per-node property lists.
+          </div>
+
           <h3>2.0 Claim layer (not yet implemented)</h3>
           <p>
             The 1.0 graph records structural topology: entities exist, sources reference them, concepts
