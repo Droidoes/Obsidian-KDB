@@ -2,7 +2,7 @@
 """Dump Pass-1 and Pass-2 results for one orchestrate run into two readable
 markdown files, for domain-coverage diagnosis.
 
-Pass-1 source: per-source sidecars under <vault>/KDB/state/runs/<run_id>/*.md.json
+Pass-1 source: per-source sidecars under <vault>/KDB/state/runs/<run_id>/pass1/*.md.json
                (covers ALL scanned sources incl. noise — 36 for run-3).
 Pass-2 source: <vault>/KDB/state/compile_result.json compiled_sources[] (the
                SIGNAL sources that reached compile — 29 for run-3). Each page
@@ -23,9 +23,9 @@ from pathlib import Path
 
 
 def load_pass1(run_dir: Path) -> list[dict]:
-    """One record per scanned source from the run-dir sidecars."""
+    """One record per scanned source from the pass1/ sidecars."""
     recs = []
-    for f in sorted(run_dir.glob("*.md.json")):
+    for f in sorted((run_dir / "pass1").glob("*.md.json")):
         d = json.loads(f.read_text())
         env = d.get("parsed_envelope") or {}
         recs.append(

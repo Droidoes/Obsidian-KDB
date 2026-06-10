@@ -385,10 +385,10 @@ def test_load_run_measurements_returns_header_and_both_passes(tmp_path):
     # Write measurement_header.json
     _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
 
-    # Write one Pass-1 sidecar (flat in run_dir)
+    # Write one Pass-1 sidecar under pass1/
     sidecar = _make_sidecar_dict()
     sidecar["source_id"] = "KDB/raw/alpha.md"
-    _write_json(run_dir / "KDB__raw__alpha.json", sidecar)
+    _write_json(run_dir / "pass1" / "KDB__raw__alpha.json", sidecar)
 
     # Write one Pass-2 RespStatsRecord under pass2/
     p2_rec = _make_resp_stats_dict()
@@ -423,17 +423,17 @@ def test_load_run_measurements_skips_enrich_skipped(tmp_path):
     run_dir = tmp_path / run_id
     _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
 
-    # Write a normal sidecar
+    # Write a normal sidecar under pass1/
     normal = _make_sidecar_dict()
     normal["source_id"] = "KDB/raw/normal.md"
-    _write_json(run_dir / "KDB__raw__normal.json", normal)
+    _write_json(run_dir / "pass1" / "KDB__raw__normal.json", normal)
 
     # Write a skipped sidecar (empty source, no real LLM call)
     skipped = _make_sidecar_dict()
     skipped["source_id"] = "KDB/raw/empty.md"
     skipped["outcome"] = "enrich_skipped"
     skipped["raw_response"]["call_count"] = 0
-    _write_json(run_dir / "KDB__raw__empty.json", skipped)
+    _write_json(run_dir / "pass1" / "KDB__raw__empty.json", skipped)
 
     _, measurements = load_run_measurements(run_dir)
 
@@ -444,17 +444,20 @@ def test_load_run_measurements_skips_enrich_skipped(tmp_path):
 
 
 def test_load_run_measurements_excludes_non_sidecar_json(tmp_path):
-    """Files in run_dir that aren't sidecars (no source_id/raw_response) are ignored."""
+    """Non-sidecar JSON files in pass1/ (no source_id/raw_response) are ignored."""
     run_id = "run-admin"
     run_dir = tmp_path / run_id
     _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
 
-    # Write retraction.json (an admin file without sidecar keys)
+    # Admin files in run root are not scanned at all (pass1/ only).
     _write_json(run_dir / "retraction.json", {"retracted": ["KDB/raw/foo.md"]})
 
-    # Write a real sidecar
+    # A non-sidecar file that lands in pass1/ is filtered by predicate.
+    _write_json(run_dir / "pass1" / "admin.json", {"some": "metadata"})
+
+    # Write a real sidecar alongside the admin file.
     sidecar = _make_sidecar_dict()
-    _write_json(run_dir / "KDB__raw__concepts__test-concept.json", sidecar)
+    _write_json(run_dir / "pass1" / "KDB__raw__concepts__test-concept.json", sidecar)
 
     _, measurements = load_run_measurements(run_dir)
 
@@ -469,7 +472,7 @@ def test_load_run_measurements_no_pass2_dir(tmp_path):
     _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
 
     sidecar = _make_sidecar_dict()
-    _write_json(run_dir / "KDB__raw__x.json", sidecar)
+    _write_json(run_dir / "pass1" / "KDB__raw__x.json", sidecar)
 
     _, measurements = load_run_measurements(run_dir)
 
@@ -487,7 +490,7 @@ def test_load_run_measurements_quarantined_included(tmp_path):
     quarantined["parsed_envelope"] = None
     quarantined["outcome"] = "enrich_failed"
     quarantined["raw_response"]["final_status"] = "quarantined"
-    _write_json(run_dir / "KDB__raw__bad.json", quarantined)
+    _write_json(run_dir / "pass1" / "KDB__raw__bad.json", quarantined)
 
     _, measurements = load_run_measurements(run_dir)
 

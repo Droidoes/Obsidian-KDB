@@ -29,7 +29,7 @@ def test_write_sidecar_creates_json_at_expected_path(tmp_path):
         outcome="enriched",
     )
     written = write_sidecar(runs_root, "ingest-2026-05-26", payload)
-    expected = runs_root / "ingest-2026-05-26" / "Notes__Quick-thoughts.md.json"
+    expected = runs_root / "ingest-2026-05-26" / "pass1" / "Notes__Quick-thoughts.md.json"
     assert written == expected
     data = json.loads(written.read_text(encoding="utf-8"))
     assert data["source_id"] == "Notes/Quick-thoughts.md"

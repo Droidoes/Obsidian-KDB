@@ -1169,6 +1169,13 @@ def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
     assert "entity_reuse" in m["graph"]["scored"]
     assert "dangling_link_rate" not in m["graph"]["scored"]
 
+    # run_state/ is a self-contained copy of state/runs/<run_id>/.
+    run_state_dir = out_dir / "run_state"
+    assert run_state_dir.is_dir(), f"run_state/ not found at {run_state_dir}"
+    assert (run_state_dir / "measurement_header.json").exists()
+    assert (run_state_dir / "pass1").is_dir()
+    assert (run_state_dir / "pass2").is_dir()
+
 
 def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):
     """Without --emit-kpis, no measurements.json is written anywhere."""

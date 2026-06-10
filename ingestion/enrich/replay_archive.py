@@ -2,7 +2,7 @@
 """Pass-1 replay archive sidecar (Task #89 §5.3 + D-89-13).
 
 One JSON sidecar per Pass-1 call (success or fail) at
-~/Obsidian/KDB/state/ingest_runs/<run_id>/<encoded_source_id>.json.
+<state_root>/runs/<run_id>/pass1/<encoded_source_id>.json.
 
 Encoded source ID replaces `/` with `__` (Codex F-4 + Gemini F-3).
 """
@@ -39,10 +39,10 @@ class SidecarPayload:
 
 def write_sidecar(runs_root: Path, run_id: str, payload: SidecarPayload) -> Path:
     """Write the sidecar JSON. Returns the path written."""
-    run_dir = runs_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    pass1_dir = runs_root / run_id / "pass1"
+    pass1_dir.mkdir(parents=True, exist_ok=True)
     filename = encode_source_id(payload.source_id) + ".json"
-    out_path = run_dir / filename
+    out_path = pass1_dir / filename
     out_path.write_text(json.dumps(asdict(payload), indent=2, ensure_ascii=False),
                         encoding="utf-8")
     return out_path

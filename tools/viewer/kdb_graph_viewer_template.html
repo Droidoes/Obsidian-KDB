@@ -19,14 +19,19 @@
       --font-mono: 'Fira Code', monospace;
       
       /* Tailored HSL Colors for Nodes */
-      --color-source: hsl(158, 64%, 52%);
+      --color-source: hsl(258, 75%, 70%);
+      --color-entity-concept: hsl(199, 89%, 60%);
+      --color-entity-summary: hsl(158, 64%, 52%);
+      --color-entity-article: hsl(217, 70%, 50%);
       --color-entity: hsl(199, 89%, 60%);
       --color-domain: hsl(43, 96%, 56%);
       --color-claim: hsl(0, 93%, 68%);
       --color-fallback: hsl(265, 80%, 70%);
 
-      --color-source-trans: rgba(52, 211, 153, 0.15);
+      --color-source-trans: rgba(149, 117, 205, 0.15);
       --color-entity-trans: rgba(56, 189, 248, 0.15);
+      --color-entity-summary-trans: rgba(52, 211, 153, 0.15);
+      --color-entity-article-trans: rgba(59, 130, 210, 0.15);
       --color-domain-trans: rgba(251, 191, 36, 0.15);
       --color-claim-trans: rgba(248, 113, 113, 0.15);
     }
@@ -941,7 +946,10 @@
     // ==========================================
     function getNodeColor(type) {
       if (type === 'Source') return 'var(--color-source)';
-      if (type === 'Entity') return 'var(--color-entity)';
+      if (type === 'Entity:concept') return 'var(--color-entity-concept)';
+      if (type === 'Entity:summary') return 'var(--color-entity-summary)';
+      if (type === 'Entity:article') return 'var(--color-entity-article)';
+      if (type === 'Entity') return 'var(--color-entity)'; // fallback for untyped
       if (type === 'Domain') return 'var(--color-domain)';
       if (type === 'Claim') return 'var(--color-claim)';
       return 'var(--color-fallback)';

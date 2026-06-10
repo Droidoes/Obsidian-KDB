@@ -71,13 +71,16 @@ def export(graph_path: str) -> dict:
                 nid = node.get("_id")
                 lbl = node.get("_label", tbl)
                 props = {k: v for k, v in node.items() if not k.startswith("_")}
+                node_type = lbl
+                if lbl == "Entity" and props.get("page_type"):
+                    node_type = f"Entity:{props['page_type']}"
                 nodes.append({
                     "id": _node_key(nid),
-                    "type": lbl,
+                    "type": node_type,
                     "name": _display_name(props, lbl),
                     "props": props,
                 })
-                label_counts[lbl] = label_counts.get(lbl, 0) + 1
+                label_counts[node_type] = label_counts.get(node_type, 0) + 1
 
         for tbl in rel_tables:
             try:

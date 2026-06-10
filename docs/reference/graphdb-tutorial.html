@@ -270,27 +270,40 @@
     }
 
     .node-source {
-      fill: #e6f4ea;
-      stroke: #137333;
+      fill: #f3e8ff;
+      stroke: #7c3aed;
       stroke-width: 2;
     }
 
-    .node-entity {
-      fill: #e8f0fe;
-      stroke: #1a73e8;
+    .node-entity-summary {
+      fill: #dcfce7;
+      stroke: #16a34a;
+      stroke-width: 2;
+    }
+
+    .node-entity-article {
+      fill: #dbeafe;
+      stroke: #2563eb;
+      stroke-width: 2;
+    }
+
+    .node-entity-concept {
+      fill: #e0f2fe;
+      stroke: #0284c7;
       stroke-width: 2;
     }
 
     .node-domain {
-      fill: #fce8e6;
-      stroke: #c5221f;
+      fill: #fed7aa;
+      stroke: #c2410c;
       stroke-width: 2;
     }
 
-    .node-claim {
-      fill: #fef7e0;
-      stroke: #b06000;
+    .node-claim-future {
+      fill: #f1f5f9;
+      stroke: #94a3b8;
       stroke-width: 2;
+      stroke-dasharray: 5 4;
     }
 
     .edge-line {
@@ -341,30 +354,33 @@
 
     .swatch.source {
       border-radius: 4px;
-      color: #137333;
-      background: #e6f4ea;
+      color: #7c3aed;
+      background: #f3e8ff;
     }
 
-    .swatch.entity {
+    .swatch.entity-summary {
       border-radius: 50%;
-      color: #1a73e8;
-      background: #e8f0fe;
+      color: #16a34a;
+      background: #dcfce7;
+    }
+
+    .swatch.entity-article {
+      border-radius: 50%;
+      color: #2563eb;
+      background: #dbeafe;
+    }
+
+    .swatch.entity-concept {
+      border-radius: 50%;
+      color: #0284c7;
+      background: #e0f2fe;
     }
 
     .swatch.domain {
-      width: 0;
-      height: 0;
-      border-left: 10px solid transparent;
-      border-right: 10px solid transparent;
-      border-bottom: 18px solid #c5221f;
-      background: transparent;
-      color: #c5221f;
-    }
-
-    .swatch.claim {
-      color: #b06000;
-      background: #fef7e0;
-      transform: skew(-10deg);
+      border-radius: 3px;
+      color: #c2410c;
+      background: #fed7aa;
+      transform: rotate(45deg);
     }
 
     .kicker {
@@ -467,7 +483,7 @@
             <tbody>
               <tr>
                 <td>GraphDB code</td>
-                <td><code>~/Droidoes/Obsidian-KDB/graphdb_kdb/</code></td>
+                <td><code>~/Droidoes/Obsidian-KDB/kdb_graph/</code></td>
                 <td>Python package for schema, graph-write application, queries, analytics, verification, and rebuild.</td>
               </tr>
               <tr>
@@ -503,9 +519,9 @@
             <div class="card">
               <h3>Graph write engine</h3>
               <p>
-                <code>ingestor.py</code> is named from the graph's point of view: it applies one
-                compiler result into Kuzu. This is different from the upstream ingestion pipelines
-                that prepare enriched raw text before the compiler sees it.
+                <code>intake.py</code> applies one compiler result into Kuzu. This is the graph
+                write engine — different from the upstream ingestion pipelines that prepare enriched
+                raw text before the compiler sees it.
               </p>
             </div>
             <div class="card">
@@ -556,63 +572,77 @@
             Nodes are the circles, squares, triangles, or other objects. Edges are the labeled
             lines between them. Properties are the data attached to either nodes or edges.
           </p>
-          <div class="graph-figure" role="img" aria-label="Typed Kuzu graph diagram showing Source, Entity, Domain, and Claim nodes connected by labeled edges.">
-            <svg class="graph-svg" viewBox="0 0 900 430" xmlns="http://www.w3.org/2000/svg">
+          <div class="graph-figure" role="img" aria-label="Typed Kuzu graph diagram showing Source, Entity subtypes, and Domain nodes connected by labeled edges (1.0 schema).">
+            <svg class="graph-svg" viewBox="0 0 900 440" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
                   <path d="M0,0 L0,6 L9,3 z" fill="#4d5b57"></path>
                 </marker>
               </defs>
 
-              <rect class="node-source" x="35" y="148" width="150" height="82" rx="8"></rect>
-              <text class="node-label" x="110" y="180" text-anchor="middle">Source</text>
-              <text class="node-sub" x="110" y="202" text-anchor="middle">raw file</text>
+              <!-- Source node (purple rectangle) -->
+              <rect class="node-source" x="20" y="178" width="148" height="88" rx="8"></rect>
+              <text class="node-label" x="94" y="212" text-anchor="middle">Source</text>
+              <text class="node-sub" x="94" y="232" text-anchor="middle">raw file</text>
 
-              <circle class="node-entity" cx="345" cy="115" r="55"></circle>
-              <text class="node-label" x="345" y="108" text-anchor="middle">Entity</text>
-              <text class="node-sub" x="345" y="129" text-anchor="middle">summary page</text>
+              <!-- Entity:summary (green circle, top) -->
+              <circle class="node-entity-summary" cx="318" cy="88" r="52"></circle>
+              <text class="node-label" x="318" y="82" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="318" y="100" text-anchor="middle">:summary</text>
 
-              <circle class="node-entity" cx="345" cy="275" r="55"></circle>
-              <text class="node-label" x="345" y="268" text-anchor="middle">Entity</text>
-              <text class="node-sub" x="345" y="289" text-anchor="middle">concept page</text>
+              <!-- Entity:article (medium blue circle, middle) -->
+              <circle class="node-entity-article" cx="488" cy="222" r="52"></circle>
+              <text class="node-label" x="488" y="216" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="488" y="234" text-anchor="middle">:article</text>
 
-              <circle class="node-entity" cx="585" cy="195" r="58"></circle>
-              <text class="node-label" x="585" y="188" text-anchor="middle">Entity</text>
-              <text class="node-sub" x="585" y="209" text-anchor="middle">article page</text>
+              <!-- Entity:concept (sky blue circle, bottom) -->
+              <circle class="node-entity-concept" cx="318" cy="356" r="52"></circle>
+              <text class="node-label" x="318" y="350" text-anchor="middle">Entity</text>
+              <text class="node-sub" x="318" y="368" text-anchor="middle">:concept</text>
 
-              <polygon class="node-domain" points="745,70 820,190 670,190"></polygon>
-              <text class="node-label" x="745" y="145" text-anchor="middle">Domain</text>
+              <!-- Domain node (orange diamond) -->
+              <polygon class="node-domain" points="740,162 800,222 740,282 680,222"></polygon>
+              <text class="node-label" x="740" y="216" text-anchor="middle">Domain</text>
+              <text class="node-sub" x="740" y="234" text-anchor="middle">classification</text>
 
-              <polygon class="node-claim" points="690,280 810,280 850,330 810,380 690,380 650,330"></polygon>
-              <text class="node-label" x="750" y="323" text-anchor="middle">Claim</text>
-              <text class="node-sub" x="750" y="344" text-anchor="middle">belief/assertion</text>
+              <!-- SUPPORTS: Source → Entity:summary -->
+              <path class="edge-line" d="M168,196 C220,170 255,140 268,106"></path>
+              <text class="edge-label" x="185" y="148" font-size="12">SUPPORTS</text>
 
-              <path class="edge-line" d="M185,170 C230,150 255,130 292,120"></path>
-              <text class="edge-label" x="218" y="137">SUPPORTS</text>
+              <!-- SUPPORTS: Source → Entity:article -->
+              <path class="edge-line" d="M168,222 L436,222"></path>
+              <text class="edge-label" x="260" y="214" font-size="12">SUPPORTS</text>
 
-              <path class="edge-line" d="M185,210 C230,235 255,260 292,272"></path>
-              <text class="edge-label" x="220" y="258">SUPPORTS</text>
+              <!-- SUPPORTS: Source → Entity:concept -->
+              <path class="edge-line" d="M168,248 C220,278 255,318 268,338"></path>
+              <text class="edge-label" x="185" y="310" font-size="12">SUPPORTS</text>
 
-              <path class="edge-line" d="M397,130 C450,145 495,165 531,184"></path>
-              <text class="edge-label" x="445" y="151">LINKS_TO</text>
+              <!-- LINKS_TO: Entity:summary → Entity:concept (vertical) -->
+              <path class="edge-line" d="M318,140 L318,304"></path>
+              <text class="edge-label" x="322" y="228" font-size="12">LINKS_TO</text>
 
-              <path class="edge-line" d="M398,260 C450,245 492,225 531,205"></path>
-              <text class="edge-label" x="445" y="254">LINKS_TO</text>
+              <!-- LINKS_TO: Entity:article → Entity:concept -->
+              <path class="edge-line" d="M450,260 C418,290 385,318 368,342"></path>
+              <text class="edge-label" x="418" y="322" font-size="12">LINKS_TO</text>
 
-              <path class="edge-line" d="M632,168 C655,150 670,142 696,134"></path>
-              <text class="edge-label" x="635" y="127">BELONGS_TO</text>
+              <!-- BELONGS_TO: Entity:summary → Domain -->
+              <path class="edge-line" d="M368,76 C490,52 600,120 682,192"></path>
+              <text class="edge-label" x="490" y="62" font-size="12">BELONGS_TO</text>
 
-              <path class="edge-line" d="M650,318 C620,290 605,260 594,252"></path>
-              <text class="edge-label" x="604" y="306">ABOUT</text>
+              <!-- BELONGS_TO: Entity:article → Domain -->
+              <path class="edge-line" d="M540,222 L680,222"></path>
+              <text class="edge-label" x="584" y="214" font-size="12">BELONGS_TO</text>
 
-              <path class="edge-line" d="M185,225 C350,380 510,390 650,342"></path>
-              <text class="edge-label" x="370" y="382">EVIDENCES</text>
+              <!-- BELONGS_TO: Entity:concept → Domain -->
+              <path class="edge-line" d="M368,344 C490,380 600,320 682,258"></path>
+              <text class="edge-label" x="490" y="382" font-size="12">BELONGS_TO</text>
             </svg>
             <div class="legend">
-              <span><i class="swatch source"></i>Source node: one raw source file</span>
-              <span><i class="swatch entity"></i>Entity node: one summary, concept, article, or alias page</span>
-              <span><i class="swatch domain"></i>Domain node: classification bucket</span>
-              <span><i class="swatch claim"></i>Claim node: belief/assertion</span>
+              <span><i class="swatch source"></i>Source: raw input file</span>
+              <span><i class="swatch entity-summary"></i>Entity:summary — top-level distillation (1 per source)</span>
+              <span><i class="swatch entity-article"></i>Entity:article — synthesized long-form piece</span>
+              <span><i class="swatch entity-concept"></i>Entity:concept — individual idea or concept</span>
+              <span><i class="swatch domain"></i>Domain: classification bucket</span>
             </div>
           </div>
           <h3>Node</h3>
@@ -661,7 +691,7 @@
         </section>
 
         <section id="schema">
-          <h2>5. Current Schema</h2>
+          <h2>5. Current Schema (v1.0)</h2>
           <p>
             Obsidian's graph view can feel like one kind of node connected by one kind of line.
             Kuzu is a typed graph: nodes have different types, and only schema-declared edge types
@@ -669,78 +699,157 @@
             classes and labeled relationship classes.
           </p>
           <p>
-            Yes: each generated summary, concept, article, and alias page is one
-            <code>Entity</code> node. Each raw source is one <code>Source</code> node. A source connects
-            to every generated page it supports through <code>SUPPORTS</code> edges. The generated
-            pages then connect to each other through <code>LINKS_TO</code> edges, which are the graph
-            form of wikilinks.
+            Each generated page is one <code>Entity</code> node with a <code>page_type</code> field
+            that distinguishes its role. Each raw source is one <code>Source</code> node. A source
+            connects to every page it produced through <code>SUPPORTS</code> edges. Pages connect to
+            each other through <code>LINKS_TO</code> edges — the graph form of Markdown wikilinks.
           </p>
-          <pre><code>Source --SUPPORTS--> Entity --LINKS_TO--> Entity
-Entity --BELONGS_TO--> Domain
-Entity --ALIAS_OF--> Entity
-Source --EVIDENCES--> Claim --ABOUT--> Entity
-Claim --SUPERSEDES / CONTRADICTS / QUALIFIES--> Claim</code></pre>
-          <p>
-            The important shift: an edge is not a property of a node. It is its own typed record.
-            That is what lets queries ask relationship questions directly, such as "which sources
-            support this entity?" or "what entities point into this entity?"
-          </p>
+          <pre><code>-- 1.0 schema (current) --
+Source  --SUPPORTS-->  Entity  --LINKS_TO-->  Entity
+Entity  --BELONGS_TO-->  Domain
+Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
+
+          <h3>Node types</h3>
+          <table>
+            <thead>
+              <tr><th>Node</th><th><code>page_type</code></th><th>Created by</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Entity:summary</code></td>
+                <td><code>summary</code></td>
+                <td>LLM + ingestor</td>
+                <td>One per source — top-level distillation of the source content.</td>
+              </tr>
+              <tr>
+                <td><code>Entity:concept</code></td>
+                <td><code>concept</code></td>
+                <td>LLM + ingestor</td>
+                <td>Individual idea or concept extracted from the source.</td>
+              </tr>
+              <tr>
+                <td><code>Entity:article</code></td>
+                <td><code>article</code></td>
+                <td>LLM + ingestor</td>
+                <td>Synthesized long-form piece that references multiple concepts.</td>
+              </tr>
+              <tr>
+                <td><code>Source</code></td>
+                <td>—</td>
+                <td>Ingestor (code)</td>
+                <td>Raw input file: path, hash, domain, author, status.</td>
+              </tr>
+              <tr>
+                <td><code>Domain</code></td>
+                <td>—</td>
+                <td>Ingestor (code)</td>
+                <td>Classification bucket derived from the source's Pass-1 domain field.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>Edge types</h3>
+          <table>
+            <thead>
+              <tr><th>Edge</th><th>Direction</th><th>Created by</th><th>Logic</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>LINKS_TO</code></td>
+                <td>Entity → Entity</td>
+                <td>Ingestor (code)</td>
+                <td>LLM writes <code>[[slug]]</code> in page body; code materializes each wikilink as an edge.</td>
+              </tr>
+              <tr>
+                <td><code>SUPPORTS</code></td>
+                <td>Source → Entity</td>
+                <td>Ingestor (code)</td>
+                <td>Every entity in a source's compile result gets a <code>SUPPORTS</code> edge from that source.</td>
+              </tr>
+              <tr>
+                <td><code>BELONGS_TO</code></td>
+                <td>Entity → Domain</td>
+                <td>Ingestor (code)</td>
+                <td>Derived: Entity belongs to Domain D if any Source with <code>domain=D</code> supports it.</td>
+              </tr>
+              <tr>
+                <td><code>ALIAS_OF</code></td>
+                <td>alias Entity → canonical Entity</td>
+                <td>Canonicalization stage</td>
+                <td>Code reads <code>aliases.json</code>; alias slug points to canonical slug.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3>Connection matrix</h3>
+          <p>Read row (FROM) → column (TO). Cells show the edge type or — for connections that never exist.</p>
           <table>
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Name</th>
-                <th>Meaning</th>
+                <th>FROM ↓ \ TO →</th>
+                <th>Source</th>
+                <th>Domain</th>
+                <th>Entity:summary</th>
+                <th>Entity:concept</th>
+                <th>Entity:article</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Node</td>
-                <td><code>Entity</code></td>
-                <td>Compiled knowledge object: summary, concept, article, or alias.</td>
-              </tr>
-              <tr>
-                <td>Node</td>
-                <td><code>Source</code></td>
-                <td>Raw input source with hash, path, status, source type, summary, author, and domain fields.</td>
-              </tr>
-              <tr>
-                <td>Node</td>
-                <td><code>Domain</code></td>
-                <td>Normalized classification bucket.</td>
-              </tr>
-              <tr>
-                <td>Node</td>
-                <td><code>Claim</code></td>
-                <td>Versioned belief/assertion used by the promotion and belief-revision layer.</td>
-              </tr>
-              <tr>
-                <td>Edge</td>
-                <td><code>LINKS_TO</code></td>
-                <td>Entity-to-entity wikilink relationship.</td>
-              </tr>
-              <tr>
-                <td>Edge</td>
+                <td><strong>Source</strong></td>
+                <td>—</td><td>—</td>
                 <td><code>SUPPORTS</code></td>
-                <td>Source-to-entity provenance relationship.</td>
+                <td><code>SUPPORTS</code></td>
+                <td><code>SUPPORTS</code></td>
               </tr>
               <tr>
-                <td>Edge</td>
-                <td><code>ALIAS_OF</code></td>
-                <td>Alias entity to canonical entity.</td>
+                <td><strong>Domain</strong></td>
+                <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
               </tr>
               <tr>
-                <td>Edge</td>
+                <td><strong>Entity:summary</strong></td>
+                <td>—</td>
                 <td><code>BELONGS_TO</code></td>
-                <td>Entity-to-domain classification.</td>
+                <td>—</td>
+                <td><code>LINKS_TO</code></td>
+                <td><code>LINKS_TO</code></td>
               </tr>
               <tr>
-                <td>Edge</td>
-                <td><code>EVIDENCES</code>, <code>ABOUT</code>, <code>SUPERSEDES</code>, <code>CONTRADICTS</code>, <code>QUALIFIES</code></td>
-                <td>Claim-layer relationships for belief revision.</td>
+                <td><strong>Entity:concept</strong></td>
+                <td>—</td>
+                <td><code>BELONGS_TO</code></td>
+                <td>—</td>
+                <td><code>LINKS_TO</code></td>
+                <td><code>LINKS_TO</code>†</td>
+              </tr>
+              <tr>
+                <td><strong>Entity:article</strong></td>
+                <td>—</td>
+                <td><code>BELONGS_TO</code></td>
+                <td><code>LINKS_TO</code>†</td>
+                <td><code>LINKS_TO</code></td>
+                <td><code>LINKS_TO</code>†</td>
               </tr>
             </tbody>
           </table>
+          <p style="color:var(--muted);font-size:0.9rem">† Allowed by schema; rarely observed — the LLM seldom links concept→article or article→article/summary. Source never receives incoming edges. Domain never has outgoing edges.</p>
+
+          <div class="callout">
+            The important shift: an edge is not a property of a node. It is its own typed record.
+            That is what lets queries ask directly: "which sources support this entity?" or "which
+            entities point into this one?"
+          </div>
+
+          <h3>2.0 Claim layer (not yet implemented)</h3>
+          <p>
+            The 1.0 graph records structural topology: entities exist, sources reference them, concepts
+            link to concepts. It does not record <em>what</em> a source asserts about an entity — only
+            that the entity appears in it. The 2.0 Claim layer adds propositional knowledge:
+          </p>
+          <pre><code>-- 2.0 schema (future) --
+Source  --EVIDENCED_BY--  Claim  --ABOUT-->  Entity
+Claim  --CONTRADICTS-->  Claim</code></pre>
+          <p>Prompt design, Claim schema (granularity, confidence, claim type), and pipeline wiring are TBD. See <code>docs/reference/graph-nodes-edges-logic.md</code>.</p>
         </section>
 
         <section id="pipeline">
@@ -922,7 +1031,7 @@ market-psychology</code></pre>
             surface. The value is not the graph visualization; the value is queryable structure,
             provenance, verification, and adaptive learning workflows on top of that structure.
           </p>
-          <p class="footer">Generated as a static tutorial page under <code>docs/tutorial/</code>.</p>
+          <p class="footer">Moved to <code>docs/reference/</code> 2026-06-09. Schema section reflects v1.0; Claim layer (§5 bottom) is 2.0/TBD.</p>
         </section>
       </main>
     </div>

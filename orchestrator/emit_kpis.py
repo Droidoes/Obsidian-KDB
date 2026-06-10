@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import shutil
 import warnings
 from pathlib import Path
 
@@ -40,17 +41,18 @@ def get_benchmark_runs_dir() -> Path:
 
 
 def _gather_pass1_search_keys(run_dir: Path) -> list[str]:
-    """Gather entity_search_keys from all Pass-1 sidecars in run_dir.
+    """Gather entity_search_keys from all Pass-1 sidecars in run_dir/pass1/.
 
-    Sidecar identification: flat *.json files in run_dir with both
+    Sidecar identification: *.json files in run_dir/pass1/ with both
     "source_id" and "raw_response" keys (same predicate as load_run_measurements).
     Returns the concatenated list (not deduplicated, order-preserving).
     None parsed_envelope on failure sidecars is guarded.
     """
     keys: list[str] = []
-    for p in sorted(run_dir.glob("*.json")):
-        if p.name == "measurement_header.json":
-            continue
+    pass1_dir = run_dir / "pass1"
+    if not pass1_dir.is_dir():
+        return keys
+    for p in sorted(pass1_dir.glob("*.json")):
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
@@ -145,6 +147,12 @@ def emit_run_kpis(
             (out_dir / "console.log").write_text(console_text, encoding="utf-8")
         except OSError:
             log.warning("emit-kpis: could not write console.log for run %s", run_id)
+    # Copy operational run state (pass1/, pass2/, measurement_header.json) so
+    # each benchmark record is self-contained without the live state/ tree.
+    try:
+        shutil.copytree(run_dir, out_dir / "run_state")
+    except OSError:
+        log.warning("emit-kpis: could not copy run_state for run %s", run_id)
     return out_path
 
 

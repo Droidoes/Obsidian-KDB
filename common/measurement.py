@@ -187,13 +187,13 @@ def load_run_measurements(
 
     Actual on-disk layout (verified from orchestrator + compiler source):
       <run_dir>/measurement_header.json        — RunMeasurementHeader JSON
-      <run_dir>/*.json                          — Pass-1 sidecars (flat alongside header)
+      <run_dir>/pass1/*.json                   — Pass-1 sidecars
       <run_dir>/pass2/*.json                   — Pass-2 RespStatsRecord JSONs
 
-    Pass-1 sidecar identification: a file in <run_dir>/ is a sidecar iff it
-    contains both "source_id" and "raw_response" keys.  This positively
-    identifies sidecars and naturally excludes measurement_header.json,
-    retraction.json, and any future administrative files that land here.
+    Pass-1 sidecar identification: a file in <run_dir>/pass1/ is a sidecar iff
+    it contains both "source_id" and "raw_response" keys.  This positively
+    identifies sidecars and naturally excludes any future administrative files
+    that might land in pass1/.
 
     Skip predicate: sidecars with outcome == "enrich_skipped" are excluded.
     These represent empty sources where no LLM call was made (call_count=0)
@@ -208,20 +208,19 @@ def load_run_measurements(
     header = RunMeasurementHeader(**header_data)
     run_id = header.run_id
 
-    # Pass-1: flat *.json files in run_dir that look like sidecars.
+    # Pass-1: sidecars under pass1/ sub-directory.
     pass1: list[PassCallMeasurement] = []
-    for p in sorted(run_dir.glob("*.json")):
-        if p.name == "measurement_header.json":
-            continue  # explicit guard for the header itself
-        data = json.loads(p.read_text(encoding="utf-8"))
-        # Positive sidecar identification: must have source_id + raw_response.
-        # Excludes retraction.json and any other admin files.
-        if "source_id" not in data or "raw_response" not in data:
-            continue
-        # Skip empty-source records — no LLM call was made.
-        if data.get("outcome") == "enrich_skipped":
-            continue
-        pass1.append(PassCallMeasurement.from_pass1(data, run_id=run_id))
+    pass1_dir = run_dir / "pass1"
+    if pass1_dir.is_dir():
+        for p in sorted(pass1_dir.glob("*.json")):
+            data = json.loads(p.read_text(encoding="utf-8"))
+            # Positive sidecar identification: must have source_id + raw_response.
+            if "source_id" not in data or "raw_response" not in data:
+                continue
+            # Skip empty-source records — no LLM call was made.
+            if data.get("outcome") == "enrich_skipped":
+                continue
+            pass1.append(PassCallMeasurement.from_pass1(data, run_id=run_id))
 
     # Pass-2: RespStatsRecord JSONs under pass2/ sub-directory.
     pass2: list[PassCallMeasurement] = []
