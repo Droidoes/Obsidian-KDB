@@ -200,6 +200,14 @@ The loop-closure on 2026-05-17 was documented in three separate decision-log ent
 
 **Application:** when a multi-iteration objective closes, the *next* session-handoff doc should open with a one-line milestone callout ("LOOP CLOSED 2026-05-17 — manifest → graph substitution complete"), and `CODEBASE_OVERVIEW.md` should carry a dated milestone list in §1 so the architecture doc itself surfaces the inflection point.
 
+### §6. The durable asset is the data contract, not the producer that fills it (2026-06-10)
+
+Designing the read-only MCP server, I anchored on "the server should sit with `queries.py`" and defended "keep it in the compiler repo" — optimizing *within* a premise (`kdb_graph` belongs to the compiler) I never interrogated. It took Joseph asking the same question three ways ("the GraphDB is outside the repo — why is its access code inside?") before the real frame surfaced: **the GraphDB is a durable asset; the compiler is one producer; the MCP server / viewer / KPI / O1-promotion are consumers; the access contract is owned by none of them.** The producer/consumer/durable-asset lens was already written in our own `kdb-storage-architecture.md` — I had the tool and didn't turn it on the question.
+
+A parallel miss the same session: asked to name the MCP's "Gate" query, I offered *"what have I captured about X, and what connects to it?"* — pure retrieval, the floor. A 6-model challenge then converged (4/6) on the genuinely graph-native answer: the **Epistemic Load-Bearing Stress Test** (influence × bridge-position × thin grounding) — metacognition over retrieval. My proposal graded a D against their A.
+
+**Application:** on any placement/boundary/value call, before settling ask *"what premise am I treating as fixed, and should it be?"* and run the producer/consumer/durable-asset lens. The second concrete consumer is the natural extract-the-shared-core trigger — catch it proactively, not after three prompts. Reach for what the asset *uniquely* makes possible, not the first plausible thing. Memory: `feedback_interrogate_anchored_premise`.
+
 ---
 
 ## What the next iteration looks like
