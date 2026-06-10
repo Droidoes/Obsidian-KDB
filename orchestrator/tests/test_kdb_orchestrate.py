@@ -1176,6 +1176,10 @@ def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
     assert (run_state_dir / "pass1").is_dir()
     assert (run_state_dir / "pass2").is_dir()
 
+    # compile_result.json and wiki/ are copied for full self-contained record.
+    assert (out_dir / "compile_result.json").exists()
+    assert (out_dir / "wiki").is_dir()
+
 
 def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):
     """Without --emit-kpis, no measurements.json is written anywhere."""

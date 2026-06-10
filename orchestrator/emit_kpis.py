@@ -90,6 +90,7 @@ def emit_run_kpis(
     run_dir: Path,
     graph_path: Path,
     state_root: Path,
+    vault_root: Path,
     provider: str,
     model: str,
     header: RunMeasurementHeader,
@@ -153,6 +154,16 @@ def emit_run_kpis(
         shutil.copytree(run_dir, out_dir / "run_state")
     except OSError:
         log.warning("emit-kpis: could not copy run_state for run %s", run_id)
+    # compile_result.json — full page-level compile output (bodies, slugs, links).
+    try:
+        shutil.copy2(state_root / "compile_result.json", out_dir / "compile_result.json")
+    except OSError:
+        log.warning("emit-kpis: could not copy compile_result.json for run %s", run_id)
+    # wiki/ — rendered Markdown pages (same data as compile_result, human-browsable).
+    try:
+        shutil.copytree(vault_root / "KDB" / "wiki", out_dir / "wiki")
+    except OSError:
+        log.warning("emit-kpis: could not copy wiki/ for run %s", run_id)
     return out_path
 
 
@@ -163,6 +174,7 @@ def maybe_emit_kpis(
     run_dir: Path,
     graph_path: Path,
     state_root: Path,
+    vault_root: Path,
     provider: str,
     model: str,
     header: RunMeasurementHeader,
@@ -189,6 +201,7 @@ def maybe_emit_kpis(
             run_dir=run_dir,
             graph_path=graph_path,
             state_root=state_root,
+            vault_root=vault_root,
             provider=provider,
             model=model,
             header=header,

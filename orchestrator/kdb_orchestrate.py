@@ -991,6 +991,7 @@ def run(
             run_dir=run_dir,
             graph_path=graph_path,
             state_root=state_root,
+            vault_root=vault_root,
             provider=provider,
             model=model,
             header=header,
