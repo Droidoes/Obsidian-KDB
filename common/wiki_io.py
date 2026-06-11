@@ -27,7 +27,7 @@ class ContentNotFoundError(Exception):
     is a state/drift error, not a validation error.
     """
 
-    def __init__(self, slug: str, page_type: str, path: Path) -> None:
+    def __init__(self, slug: str, page_type: PageType, path: Path) -> None:
         self.slug = slug
         self.page_type = page_type
         self.path = path
@@ -41,6 +41,7 @@ def get_body(slug: str, page_type: PageType, *, root: Path | None = None) -> str
 
     Raises PathError for an invalid slug or unknown page_type (delegated to
     paths.slug_to_abspath).
+    Raises ContentNotFoundError if the wiki file is absent (graph/disk drift).
 
     Leading newlines (the blank line between the frontmatter fence and the prose)
     are stripped; if the page has no frontmatter, the raw text is returned with

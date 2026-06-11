@@ -52,8 +52,6 @@ def test_get_body_missing_file_raises_content_not_found(tmp_path: Path) -> None:
     assert "concept" in msg
 
 
-def test_content_not_found_is_not_value_error(tmp_path: Path) -> None:
-    # Distinct from PathError/ValueError: the inputs were valid; the file is absent.
-    with pytest.raises(ContentNotFoundError):
-        get_body("never-written", "concept", root=tmp_path)
+def test_content_not_found_is_not_value_error() -> None:
+    # Static fact: a missing file is a drift/state error, not input validation.
     assert not issubclass(ContentNotFoundError, ValueError)
