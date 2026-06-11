@@ -65,3 +65,19 @@ def test_get_body_invalid_slug_raises_path_error(tmp_path: Path) -> None:
 def test_get_body_unknown_page_type_raises_path_error(tmp_path: Path) -> None:
     with pytest.raises(PathError):
         get_body("valid-slug", "nonsense", root=tmp_path)  # type: ignore[arg-type]
+
+
+def test_get_body_uses_explicit_root_over_env_default(tmp_path: Path, monkeypatch) -> None:
+    # Spec test #5: the explicit `root` is honored over the env/default vault.
+    # Point the env default at an EMPTY vault; write the real file under a different root.
+    env_vault = tmp_path / "env_vault"
+    env_vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(env_vault))
+    explicit_root = tmp_path / "explicit_root"
+    _write_page(explicit_root, "root-probe", "concept", "\nBody under explicit root.\n")
+
+    # Explicit root -> reads the file under explicit_root.
+    assert get_body("root-probe", "concept", root=explicit_root) == "Body under explicit root.\n"
+    # No root -> falls back to vault_root() (the env vault, which lacks the file) -> drift.
+    with pytest.raises(ContentNotFoundError):
+        get_body("root-probe", "concept")
