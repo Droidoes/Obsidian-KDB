@@ -6,10 +6,11 @@ from pathlib import Path
 import pytest
 
 from common import paths
+from common.paths import PageType
 from common.wiki_io import get_body
 
 
-def _write_page(root: Path, slug: str, page_type: str, body: str) -> Path:
+def _write_page(root: Path, slug: str, page_type: PageType, body: str) -> Path:
     """Write a wiki page (fixed frontmatter block + body) at the resolved path."""
     fm = (
         "---\n"
