@@ -24,6 +24,10 @@ class GraphDBSchemaError(RuntimeError):
     """Raised when on-disk schema version is incompatible with this code."""
 
 
+class GraphDBReadOnlyError(RuntimeError):
+    """Raised when a write operation is attempted on a read-only GraphDB."""
+
+
 class GraphDB:
     """Kuzu wrapper for the GraphDB-KDB store.
 
@@ -51,9 +55,24 @@ class GraphDB:
         self.close()
 
     def _open(self) -> None:
-        self._db = kuzu.Database(str(self._graph_dir))
-        self._conn = kuzu.Connection(self._db)
-        self._ensure_schema()
+        if self._read_only:
+            # Read-only consumers (MCP server, viewer, KPI) attach without write
+            # access and MUST NOT migrate (Task #112). Open Kuzu read-only and
+            # verify the schema instead of running DDL/migrations.
+            self._db = kuzu.Database(str(self._graph_dir), read_only=True)
+            self._conn = kuzu.Connection(self._db)
+            self._verify_schema_read_only()
+        else:
+            self._db = kuzu.Database(str(self._graph_dir))
+            self._conn = kuzu.Connection(self._db)
+            self._ensure_schema()
+
+    def _require_writable(self) -> None:
+        """Guard write operations against a read-only handle (Task #112)."""
+        if self._read_only:
+            raise GraphDBReadOnlyError(
+                "GraphDB is open read-only; write operations are not permitted."
+            )
 
     def close(self) -> None:
         # Kuzu bindings clean up on GC; dropping refs is sufficient.
@@ -119,6 +138,25 @@ class GraphDB:
             f"CREATE (m:_SchemaMeta {{key: 'schema_version', value: '{SCHEMA_VERSION}'}})"
         )
 
+    def _verify_schema_read_only(self) -> None:
+        """Read-only schema check (Task #112): verify the stored version matches
+        this code's SCHEMA_VERSION. NEVER migrates — read-only clients must not
+        mutate the store. Raises GraphDBSchemaError (with an actionable message)
+        on an uninitialized or mismatched store."""
+        if not self._table_exists("_SchemaMeta"):
+            raise GraphDBSchemaError(
+                f"Cannot read-only open an uninitialized graph at "
+                f"{self._graph_dir}: no _SchemaMeta table. Initialize it with a "
+                "writable open or `graphdb-kdb rebuild` first."
+            )
+        stored = self._read_schema_version()
+        if stored != SCHEMA_VERSION:
+            raise GraphDBSchemaError(
+                f"Schema version mismatch (read-only): stored={stored!r} "
+                f"expected={SCHEMA_VERSION!r}. Read-only clients never migrate. "
+                "Run `graphdb-kdb rebuild` or align the package version."
+            )
+
     def _read_schema_version(self) -> str | None:
         result = self.conn.execute(
             "MATCH (m:_SchemaMeta {key: 'schema_version'}) RETURN m.value"
@@ -178,17 +216,20 @@ class GraphDB:
         orchestrator runs a single end-of-run detect_orphans() pass instead);
         wire_links=False skips per-source LINKS_TO wiring (the orchestrator runs
         a single finalize wire_links() pass over the accumulated batch — C1)."""
+        self._require_writable()
         from kdb_graph.intake import apply_compile_result as _apply
         return _apply(cr, scan_dict, run_id, conn=self.conn, now=now,
                       detect_orphans=detect_orphans, wire_links=wire_links)
 
     def apply_cleanup(self, retraction: dict, run_id: str) -> IntakeResult:
         """Retract entities a cleanup run removed. Delegates to intake (#68)."""
+        self._require_writable()
         from kdb_graph.intake import apply_cleanup as _apply
         return _apply(retraction, run_id, conn=self.conn)
 
     def detect_orphans(self, run_id: str, *, now: str | None = None) -> list[str]:
         """End-of-run orphan-marking pass (Task #91). Delegates to intake."""
+        self._require_writable()
         from kdb_graph.intake import detect_orphans as _detect
         return _detect(self.conn, run_id, now=now)
 
@@ -198,6 +239,7 @@ class GraphDB:
         """End-of-run LINKS_TO batch-wiring pass (Task #91 C1). Delegates to
         intake. Call once at finalize over the accumulated batch cr after
         per-source apply_compile_result(wire_links=False) calls."""
+        self._require_writable()
         from kdb_graph.intake import wire_links as _wire
         return _wire(cr, self.conn, run_id, now=now)
 
