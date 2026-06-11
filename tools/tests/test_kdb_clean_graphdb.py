@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from kdb_graph.graphdb import GraphDB
-from kdb_graph.tests.conftest import (
+from kdb_graph.testing import (
     make_compile_result,
     make_compiled_source,
     make_page,
