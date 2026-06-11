@@ -40,7 +40,7 @@ def _stub_sync(monkeypatch):
 def _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone"):
     """Create an in-memory GraphDB with one orphan_candidate entity."""
     from kdb_graph.graphdb import GraphDB
-    from kdb_graph.tests.conftest import (
+    from kdb_graph.testing import (
         make_compile_result, make_compiled_source, make_page,
         make_scan, make_scan_entry,
     )
