@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from common import paths
-from common.paths import PageType
+from common.paths import PageType, PathError
 from common.wiki_io import get_body, ContentNotFoundError
 
 
@@ -55,3 +55,13 @@ def test_get_body_missing_file_raises_content_not_found(tmp_path: Path) -> None:
 def test_content_not_found_is_not_value_error() -> None:
     # Static fact: a missing file is a drift/state error, not input validation.
     assert not issubclass(ContentNotFoundError, ValueError)
+
+
+def test_get_body_invalid_slug_raises_path_error(tmp_path: Path) -> None:
+    with pytest.raises(PathError):
+        get_body("Not A Slug", "concept", root=tmp_path)  # spaces/caps invalid
+
+
+def test_get_body_unknown_page_type_raises_path_error(tmp_path: Path) -> None:
+    with pytest.raises(PathError):
+        get_body("valid-slug", "nonsense", root=tmp_path)  # type: ignore[arg-type]
