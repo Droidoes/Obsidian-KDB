@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from kdb_graph.graphdb import GraphDB, GraphDBSchemaError
+from kdb_graph.graphdb import GraphDB, GraphDBReadOnlyError, GraphDBSchemaError
 from kdb_graph.intake import apply_compile_result
 from kdb_graph.rebuilder import RebuildResult, RunOutcome, rebuild
 from kdb_graph.schema import SCHEMA_VERSION
@@ -20,6 +20,7 @@ from kdb_graph.verifier import Divergence, VerifyResult
 __all__ = [
     "GraphDB",
     "GraphDBSchemaError",
+    "GraphDBReadOnlyError",
     "Entity",
     "Source",
     "IntakeResult",
