@@ -7,7 +7,7 @@ import pytest
 
 from common import paths
 from common.paths import PageType
-from common.wiki_io import get_body
+from common.wiki_io import get_body, ContentNotFoundError
 
 
 def _write_page(root: Path, slug: str, page_type: PageType, body: str) -> Path:
@@ -41,3 +41,19 @@ def test_get_body_preserves_horizontal_rule_in_body(tmp_path: Path) -> None:
     result = get_body("has-rule", "concept", root=tmp_path)
     assert result == body
     assert "---" in result  # body's own --- must not be truncated
+
+
+def test_get_body_missing_file_raises_content_not_found(tmp_path: Path) -> None:
+    # Valid slug + page_type, but no file written -> drift, not a validation error.
+    with pytest.raises(ContentNotFoundError) as exc:
+        get_body("never-written", "concept", root=tmp_path)
+    msg = str(exc.value)
+    assert "never-written" in msg
+    assert "concept" in msg
+
+
+def test_content_not_found_is_not_value_error(tmp_path: Path) -> None:
+    # Distinct from PathError/ValueError: the inputs were valid; the file is absent.
+    with pytest.raises(ContentNotFoundError):
+        get_body("never-written", "concept", root=tmp_path)
+    assert not issubclass(ContentNotFoundError, ValueError)
