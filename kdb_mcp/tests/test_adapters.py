@@ -34,3 +34,20 @@ def test_get_entity_missing_raises(tmp_path):
     _seed_chain(gdir)
     with pytest.raises(EntityNotFoundError):
         adapters.get_entity(gdir, "nope")
+
+
+def test_graph_neighborhood_out_depth1(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    nb = adapters.graph_neighborhood(gdir, "a", direction="out", depth=1)
+    assert nb.center == "a"
+    assert nb.direction == "out"
+    assert nb.depth == 1
+    assert [c.slug for c in nb.neighbors] == ["b"]
+
+
+def test_graph_neighborhood_empty(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    nb = adapters.graph_neighborhood(gdir, "b", direction="out", depth=1)
+    assert nb.neighbors == []

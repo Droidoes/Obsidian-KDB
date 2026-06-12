@@ -12,3 +12,11 @@ class EntityCard(BaseModel):
     status: str
     confidence: str
     canonical_id: str | None = Field(default=None, description="non-null => this is an alias")
+
+
+class Neighborhood(BaseModel):
+    """Entities reachable from a center slug within `depth` LINKS_TO hops."""
+    center: str
+    direction: str
+    depth: int
+    neighbors: list[EntityCard]

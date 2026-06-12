@@ -7,7 +7,7 @@ from pathlib import Path
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.types import Entity
 
-from kdb_mcp.models import EntityCard
+from kdb_mcp.models import EntityCard, Neighborhood
 
 
 class EntityNotFoundError(Exception):
@@ -32,3 +32,15 @@ def get_entity(graph_path: Path, slug: str) -> EntityCard:
     if e is None:
         raise EntityNotFoundError(slug)
     return _entity_card(e)
+
+
+def graph_neighborhood(
+    graph_path: Path, slug: str, *, direction: str = "both", depth: int = 1
+) -> Neighborhood:
+    """BFS expansion from slug. direction: out|in|both; depth >= 1."""
+    with GraphDB(graph_path, read_only=True) as g:
+        ents = g.neighbors(slug, direction=direction, depth=depth)
+    return Neighborhood(
+        center=slug, direction=direction, depth=depth,
+        neighbors=[_entity_card(e) for e in ents],
+    )
