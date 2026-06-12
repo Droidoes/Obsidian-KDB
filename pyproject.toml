@@ -49,7 +49,7 @@ tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
+testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [
