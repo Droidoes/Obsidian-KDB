@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "kuzu>=0.11",
+    "mcp>=1.12,<2",
     "networkx>=3.0",
     "python-louvain>=0.16",
     "scipy>=1.10",
@@ -39,7 +40,7 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_graph*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+include = ["kdb_graph*", "kdb_mcp*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
