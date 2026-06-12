@@ -40,7 +40,7 @@ def get_entity(graph_path: Path, slug: str) -> EntityCard:
 def graph_neighborhood(
     graph_path: Path, slug: str, *, direction: str = "both", depth: int = 1
 ) -> Neighborhood:
-    """BFS expansion from slug. direction: out|in|both; depth >= 1."""
+    """BFS expansion from slug. direction: out|in|both; depth >= 1. An unknown/absent center slug returns an empty neighborhood (does not raise — unlike get_entity)."""
     with GraphDB(graph_path, read_only=True) as g:
         ents = g.neighbors(slug, direction=direction, depth=depth)
     return Neighborhood(

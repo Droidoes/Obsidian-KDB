@@ -71,3 +71,15 @@ async def test_missing_entity_is_error_envelope(seeded_graph):
     async with create_connected_server_and_client_session(app._mcp_server) as session:
         result = await session.call_tool("get_entity", {"slug": "ghost"})
     assert result.isError is True
+
+
+@pytest.mark.anyio
+async def test_get_body_missing_is_error_envelope(tmp_path, monkeypatch):
+    # get_body reads the vault (OBSIDIAN_VAULT_PATH), not the graph; point it at
+    # an empty vault so the wiki file is absent -> ContentNotFoundError -> isError.
+    empty_vault = tmp_path / "empty_vault"
+    empty_vault.mkdir()
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(empty_vault))
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        result = await session.call_tool("get_body", {"slug": "ghost", "page_type": "concept"})
+    assert result.isError is True

@@ -33,6 +33,7 @@ kdb-clean             = "tools.cleanup:main"
 kdb-replay            = "tools.replay:main"
 kdb-benchmark         = "tools.benchmark.cli:main"
 kdb-orchestrate       = "orchestrator.kdb_orchestrate:main"
+kdb-mcp-server        = "kdb_mcp.server:main"
 graphdb-kdb           = "kdb_graph.cli:main"
 
 [build-system]
@@ -56,4 +57,5 @@ markers      = [
     "uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)",
     "bench: latency / runtime regression test — opt-in via `pytest -m bench`; not run by default",
     "live: live LLM integration test — requires API key in env; skipped by default in CI",
+    "anyio: async test driven by the anyio pytest plugin",
 ]

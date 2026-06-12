@@ -47,10 +47,10 @@ def _seed(graph_dir):
         gdb.apply_compile_result(cr, scan, "run-1")
 ```
 
-MCP in-memory test idiom (no subprocess; `anyio` ships with `mcp`):
+MCP in-memory test idiom — **verified against the installed `mcp` 1.27.2** (NOT `from mcp import Client`, which does not exist in this version; `anyio` ships with `mcp`):
 ```python
 import pytest
-from mcp import Client
+from mcp.shared.memory import create_connected_server_and_client_session
 from kdb_mcp.server import mcp as app
 
 @pytest.fixture
@@ -58,9 +58,12 @@ def anyio_backend(): return "asyncio"
 
 @pytest.mark.anyio
 async def test_tool(...):
-    async with Client(app, raise_exceptions=True) as c:
-        result = await c.call_tool("get_entity", {"slug": "a"})
-        # result.structuredContent -> dict ; result.isError -> bool
+    # app._mcp_server is FastMCP's low-level server; the helper wires a
+    # ClientSession <-> server over in-memory streams and initializes it.
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        result = await session.call_tool("get_entity", {"slug": "a"})
+        # result.isError -> bool ; result.structuredContent -> dict ; result.content -> list
+        tools = await session.list_tools()           # tools.tools -> [Tool(name=...), ...]
 ```
 
 ---
@@ -775,12 +778,12 @@ git commit -m "feat(kdb_mcp): FastMCP server — 7 read tools + stdio entry poin
 
 - [ ] **Step 1: Write the integration tests**
 
-Create `kdb_mcp/tests/test_server.py`. These point the server's config at a seeded tmp graph via `KDB_GRAPH_PATH`, drive it through the in-memory `mcp.Client`, and assert structured content + the error envelope:
+Create `kdb_mcp/tests/test_server.py`. These point the server's config at a seeded tmp graph via `KDB_GRAPH_PATH`, drive it through the **verified** in-memory helper `create_connected_server_and_client_session(app._mcp_server)` (NOT `mcp.Client` — absent in 1.27.2), and assert structured content + the error envelope:
 ```python
 from __future__ import annotations
 
 import pytest
-from mcp import Client
+from mcp.shared.memory import create_connected_server_and_client_session
 
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.testing import (
@@ -808,8 +811,8 @@ def seeded_graph(tmp_path, monkeypatch):
 
 @pytest.mark.anyio
 async def test_server_lists_seven_read_tools(seeded_graph):
-    async with Client(app, raise_exceptions=True) as c:
-        tools = await c.list_tools()
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        tools = await session.list_tools()
     names = {t.name for t in tools.tools}
     assert names == {
         "get_entity", "graph_neighborhood", "find_path", "sources_for_entity",
@@ -819,8 +822,8 @@ async def test_server_lists_seven_read_tools(seeded_graph):
 
 @pytest.mark.anyio
 async def test_get_entity_round_trip(seeded_graph):
-    async with Client(app, raise_exceptions=True) as c:
-        result = await c.call_tool("get_entity", {"slug": "a"})
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        result = await session.call_tool("get_entity", {"slug": "a"})
     assert result.isError is False
     assert result.structuredContent["slug"] == "a"
     assert result.structuredContent["title"] == "Alpha"
@@ -828,24 +831,27 @@ async def test_get_entity_round_trip(seeded_graph):
 
 @pytest.mark.anyio
 async def test_graph_neighborhood_round_trip(seeded_graph):
-    async with Client(app, raise_exceptions=True) as c:
-        result = await c.call_tool("graph_neighborhood", {"slug": "a", "direction": "out", "depth": 1})
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        result = await session.call_tool(
+            "graph_neighborhood", {"slug": "a", "direction": "out", "depth": 1}
+        )
     nbrs = result.structuredContent["neighbors"]
     assert [n["slug"] for n in nbrs] == ["b"]
 
 
 @pytest.mark.anyio
 async def test_missing_entity_is_error_envelope(seeded_graph):
-    # raise_exceptions=False so the error surfaces as an isError result, not a raise.
-    async with Client(app) as c:
-        result = await c.call_tool("get_entity", {"slug": "ghost"})
+    # The server catches the adapter's EntityNotFoundError and returns it as an
+    # isError result (the protocol error envelope), not a raised exception.
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        result = await session.call_tool("get_entity", {"slug": "ghost"})
     assert result.isError is True
 ```
 
 - [ ] **Step 2: Run the integration tests**
 
 Run: `.venv/bin/python -m pytest kdb_mcp/tests/test_server.py -v`
-Expected: PASS (4 tests). If `@pytest.mark.anyio` is unrecognized, confirm `anyio` is installed (it ships with `mcp`); no extra config needed — anyio registers its own pytest plugin.
+Expected: PASS (4 tests). If `@pytest.mark.anyio` is unrecognized, `anyio` registers its own pytest plugin on install (it ships with `mcp`) — no extra config. If a test asserts on a result attribute that differs in this SDK build (e.g. `structuredContent` vs `structured_content`), inspect the actual `CallToolResult` and adjust the attribute access — do NOT change the server.
 
 - [ ] **Step 3: Commit**
 

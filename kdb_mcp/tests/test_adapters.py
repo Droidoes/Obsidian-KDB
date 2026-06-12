@@ -99,8 +99,6 @@ def test_resolve_search_keys_by_human_name(tmp_path):
     assert res.unresolved == ["ghost"]                       # absent after slugify
 
 
-from pathlib import Path as _P
-
 from common import paths as _paths
 
 
