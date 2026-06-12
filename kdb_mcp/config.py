@@ -6,15 +6,20 @@ from pathlib import Path
 
 from common import paths
 
-_DEFAULT_GRAPH_DIR = Path.home() / "Droidoes" / "GraphDB-KDB"
+
+def default_vault_root() -> Path:
+    """Vault root (contains KDB/). Delegates to common.paths
+    (OBSIDIAN_VAULT_PATH env, else ~/Obsidian)."""
+    return paths.vault_root()
 
 
 def default_graph_path() -> Path:
-    """GraphDB directory: KDB_GRAPH_PATH env, else ~/Droidoes/GraphDB-KDB."""
+    """GraphDB path: KDB_GRAPH_PATH env, else `<vault_root>/KDB/graph`.
+
+    Deriving the graph from the vault root keeps the graph and the wiki content
+    on the SAME KDB instance by default — official is ~/Obsidian/KDB/graph, the
+    sandbox is ~/Obsidian/Vault-in-place-test-run/KDB/graph. Set OBSIDIAN_VAULT_PATH
+    to switch both at once; KDB_GRAPH_PATH overrides the graph alone.
+    """
     env = os.environ.get("KDB_GRAPH_PATH")
-    return Path(env) if env else _DEFAULT_GRAPH_DIR
-
-
-def default_vault_root() -> Path:
-    """Vault root (contains KDB/wiki/). Delegates to common.paths."""
-    return paths.vault_root()
+    return Path(env) if env else default_vault_root() / "KDB" / "graph"
