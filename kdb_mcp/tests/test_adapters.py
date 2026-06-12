@@ -51,3 +51,21 @@ def test_graph_neighborhood_empty(tmp_path):
     _seed_chain(gdir)
     nb = adapters.graph_neighborhood(gdir, "b", direction="out", depth=1)
     assert nb.neighbors == []
+
+
+def test_find_path_found(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    pr = adapters.find_path(gdir, "a", "b")
+    assert pr.found is True
+    assert pr.path == ["a", "b"]
+    assert pr.hops == 1
+
+
+def test_find_path_unreachable(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    pr = adapters.find_path(gdir, "b", "a")  # chain is a->b, no reverse edge
+    assert pr.found is False
+    assert pr.path is None
+    assert pr.hops is None

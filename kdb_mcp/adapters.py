@@ -7,7 +7,7 @@ from pathlib import Path
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.types import Entity
 
-from kdb_mcp.models import EntityCard, Neighborhood
+from kdb_mcp.models import EntityCard, Neighborhood, PathResult
 
 
 class EntityNotFoundError(Exception):
@@ -43,4 +43,18 @@ def graph_neighborhood(
     return Neighborhood(
         center=slug, direction=direction, depth=depth,
         neighbors=[_entity_card(e) for e in ents],
+    )
+
+
+def find_path(
+    graph_path: Path, from_slug: str, to_slug: str, *, max_hops: int = 10
+) -> PathResult:
+    """Shortest directed path of slugs; found=False when unreachable."""
+    with GraphDB(graph_path, read_only=True) as g:
+        path = g.shortest_path(from_slug, to_slug, max_hops=max_hops)
+    if path is None:
+        return PathResult(from_slug=from_slug, to_slug=to_slug, found=False)
+    return PathResult(
+        from_slug=from_slug, to_slug=to_slug, found=True,
+        path=path, hops=len(path) - 1,
     )

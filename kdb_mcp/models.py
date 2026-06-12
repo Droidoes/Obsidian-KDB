@@ -20,3 +20,12 @@ class Neighborhood(BaseModel):
     direction: str
     depth: int
     neighbors: list[EntityCard]
+
+
+class PathResult(BaseModel):
+    """Shortest directed LINKS_TO path between two slugs."""
+    from_slug: str
+    to_slug: str
+    found: bool
+    path: list[str] | None = None
+    hops: int | None = None
