@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kdb_graph import queries
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.types import Entity, Source
+from common import paths
 
-from kdb_mcp.models import EntityCard, EntityProvenance, Neighborhood, PathResult, SourceCard, SourceProvenance
+from kdb_mcp.models import EntityCard, EntityProvenance, Neighborhood, PathResult, SearchKeyResolution, SourceCard, SourceProvenance
 
 
 class EntityNotFoundError(Exception):
@@ -79,3 +81,23 @@ def entities_for_source(graph_path: Path, source_id: str) -> SourceProvenance:
     with GraphDB(graph_path, read_only=True) as g:
         ents = g.entities_for_source(source_id)
     return SourceProvenance(source_id=source_id, entities=[_entity_card(e) for e in ents])
+
+
+def resolve_search_keys(graph_path: Path, keys: list[str]) -> SearchKeyResolution:
+    """Resolve human names/aliases to active canonical slugs. Each key is
+    slugified first (so 'Amortization' -> 'amortization'), then alias-resolved.
+    Keys that cannot be slugified or do not resolve land in `unresolved`
+    (input order preserved). Returns the ORIGINAL key mapped to its canonical slug."""
+    key_to_slug: dict[str, str] = {}
+    for k in keys:
+        try:
+            key_to_slug[k] = paths.slugify(k)
+        except paths.PathError:
+            continue  # unslugifiable (empty / no ASCII) -> stays unresolved
+    with GraphDB(graph_path, read_only=True) as g:
+        slug_to_canon = queries.resolve_to_canonical_slugs(
+            g.conn, sorted(set(key_to_slug.values()))
+        )
+    resolved = {k: slug_to_canon[s] for k, s in key_to_slug.items() if s in slug_to_canon}
+    unresolved = [k for k in keys if k not in resolved]
+    return SearchKeyResolution(resolved=resolved, unresolved=unresolved)

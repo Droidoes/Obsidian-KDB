@@ -49,3 +49,9 @@ class SourceProvenance(BaseModel):
     """Entities a source currently supports."""
     source_id: str
     entities: list[EntityCard]
+
+
+class SearchKeyResolution(BaseModel):
+    """Alias-aware mapping of input keys (human names) to canonical slugs."""
+    resolved: dict[str, str]
+    unresolved: list[str]

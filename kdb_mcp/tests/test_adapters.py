@@ -85,3 +85,15 @@ def test_entities_for_source(tmp_path):
     prov = adapters.entities_for_source(gdir, "KDB/raw/s.md")
     assert prov.source_id == "KDB/raw/s.md"
     assert sorted(c.slug for c in prov.entities) == ["a", "b"]
+
+
+def test_resolve_search_keys_by_human_name(tmp_path):
+    gdir = tmp_path / "g"
+    pages = [make_page("amortization", title="Amortization")]
+    cr = make_compile_result([make_compiled_source("KDB/raw/s.md", pages)])
+    scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+    with GraphDB(gdir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+    res = adapters.resolve_search_keys(gdir, ["Amortization", "ghost"])
+    assert res.resolved == {"Amortization": "amortization"}  # name -> slugified -> resolved
+    assert res.unresolved == ["ghost"]                       # absent after slugify
