@@ -8,8 +8,9 @@ from kdb_graph import queries
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.types import Entity, Source
 from common import paths
+from common.wiki_io import get_body as _read_body
 
-from kdb_mcp.models import EntityCard, EntityProvenance, Neighborhood, PathResult, SearchKeyResolution, SourceCard, SourceProvenance
+from kdb_mcp.models import BodyResult, EntityCard, EntityProvenance, Neighborhood, PathResult, SearchKeyResolution, SourceCard, SourceProvenance
 
 
 class EntityNotFoundError(Exception):
@@ -101,3 +102,10 @@ def resolve_search_keys(graph_path: Path, keys: list[str]) -> SearchKeyResolutio
     resolved = {k: slug_to_canon[s] for k, s in key_to_slug.items() if s in slug_to_canon}
     unresolved = [k for k in keys if k not in resolved]
     return SearchKeyResolution(resolved=resolved, unresolved=unresolved)
+
+
+def get_body(vault_root: Path, slug: str, page_type: str) -> BodyResult:
+    """Return the wiki page body (frontmatter stripped). Reads files, not the
+    graph. Raises ContentNotFoundError (absent file) / PathError (bad input)."""
+    body = _read_body(slug, page_type, root=vault_root)  # type: ignore[arg-type]
+    return BodyResult(slug=slug, page_type=page_type, body=body)

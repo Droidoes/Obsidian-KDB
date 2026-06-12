@@ -55,3 +55,10 @@ class SearchKeyResolution(BaseModel):
     """Alias-aware mapping of input keys (human names) to canonical slugs."""
     resolved: dict[str, str]
     unresolved: list[str]
+
+
+class BodyResult(BaseModel):
+    """The prose body of one wiki page."""
+    slug: str
+    page_type: str
+    body: str

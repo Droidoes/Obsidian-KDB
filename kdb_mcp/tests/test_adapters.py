@@ -97,3 +97,31 @@ def test_resolve_search_keys_by_human_name(tmp_path):
     res = adapters.resolve_search_keys(gdir, ["Amortization", "ghost"])
     assert res.resolved == {"Amortization": "amortization"}  # name -> slugified -> resolved
     assert res.unresolved == ["ghost"]                       # absent after slugify
+
+
+from pathlib import Path as _P
+
+from common import paths as _paths
+
+
+def _write_wiki_page(vault_root, slug, page_type, body):
+    p = _paths.slug_to_abspath(slug, page_type, root=vault_root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(f"---\nslug: {slug}\npage_type: {page_type}\n---\n\n{body}", encoding="utf-8")
+
+
+def test_get_body_returns_prose(tmp_path):
+    vault = tmp_path / "vault"
+    _write_wiki_page(vault, "a", "concept", "Alpha body text.\n")
+    res = adapters.get_body(vault, "a", "concept")
+    assert res.slug == "a"
+    assert res.page_type == "concept"
+    assert res.body == "Alpha body text.\n"
+
+
+def test_get_body_missing_raises(tmp_path):
+    from common.wiki_io import ContentNotFoundError
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    with pytest.raises(ContentNotFoundError):
+        adapters.get_body(vault, "ghost", "concept")
