@@ -15,6 +15,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "kuzu>=0.11",
+    "mcp>=1.12,<2",
     "networkx>=3.0",
     "python-louvain>=0.16",
     "scipy>=1.10",
@@ -32,6 +33,7 @@ kdb-clean             = "tools.cleanup:main"
 kdb-replay            = "tools.replay:main"
 kdb-benchmark         = "tools.benchmark.cli:main"
 kdb-orchestrate       = "orchestrator.kdb_orchestrate:main"
+kdb-mcp-server        = "kdb_mcp.server:main"
 graphdb-kdb           = "kdb_graph.cli:main"
 
 [build-system]
@@ -39,7 +41,7 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_graph*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+include = ["kdb_graph*", "kdb_mcp*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
@@ -48,11 +50,12 @@ tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 
 [tool.pytest.ini_options]
-testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
+testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [
     "uses_real_graph_context: test manages its own GraphDB fixture (opts out of planner stub)",
     "bench: latency / runtime regression test — opt-in via `pytest -m bench`; not run by default",
     "live: live LLM integration test — requires API key in env; skipped by default in CI",
+    "anyio: async test driven by the anyio pytest plugin",
 ]
