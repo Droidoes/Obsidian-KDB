@@ -29,3 +29,23 @@ class PathResult(BaseModel):
     found: bool
     path: list[str] | None = None
     hops: int | None = None
+
+
+class SourceCard(BaseModel):
+    """Public metadata for one source note."""
+    source_id: str
+    source_type: str
+    status: str
+    domain: str | None = None
+
+
+class EntityProvenance(BaseModel):
+    """Sources that currently support an entity."""
+    slug: str
+    sources: list[SourceCard]
+
+
+class SourceProvenance(BaseModel):
+    """Entities a source currently supports."""
+    source_id: str
+    entities: list[EntityCard]

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from kdb_graph.graphdb import GraphDB
-from kdb_graph.types import Entity
+from kdb_graph.types import Entity, Source
 
-from kdb_mcp.models import EntityCard, Neighborhood, PathResult
+from kdb_mcp.models import EntityCard, EntityProvenance, Neighborhood, PathResult, SourceCard, SourceProvenance
 
 
 class EntityNotFoundError(Exception):
@@ -58,3 +58,24 @@ def find_path(
         from_slug=from_slug, to_slug=to_slug, found=True,
         path=path, hops=len(path) - 1,
     )
+
+
+def _source_card(s: Source) -> SourceCard:
+    return SourceCard(
+        source_id=s.source_id, source_type=s.source_type, status=s.status,
+        domain=s.domain,
+    )
+
+
+def sources_for_entity(graph_path: Path, slug: str) -> EntityProvenance:
+    """Sources currently supporting an entity (empty list if none)."""
+    with GraphDB(graph_path, read_only=True) as g:
+        srcs = g.sources_for_entity(slug)
+    return EntityProvenance(slug=slug, sources=[_source_card(s) for s in srcs])
+
+
+def entities_for_source(graph_path: Path, source_id: str) -> SourceProvenance:
+    """Entities a source currently supports (empty list if none)."""
+    with GraphDB(graph_path, read_only=True) as g:
+        ents = g.entities_for_source(source_id)
+    return SourceProvenance(source_id=source_id, entities=[_entity_card(e) for e in ents])

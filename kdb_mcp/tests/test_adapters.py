@@ -69,3 +69,19 @@ def test_find_path_unreachable(tmp_path):
     assert pr.found is False
     assert pr.path is None
     assert pr.hops is None
+
+
+def test_sources_for_entity(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    prov = adapters.sources_for_entity(gdir, "a")
+    assert prov.slug == "a"
+    assert [s.source_id for s in prov.sources] == ["KDB/raw/s.md"]
+
+
+def test_entities_for_source(tmp_path):
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    prov = adapters.entities_for_source(gdir, "KDB/raw/s.md")
+    assert prov.source_id == "KDB/raw/s.md"
+    assert sorted(c.slug for c in prov.entities) == ["a", "b"]
