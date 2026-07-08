@@ -1,5 +1,19 @@
 # Graph-Access Package + Read-Only MCP Server — Architecture Brief (v0.3)
 
+> **⏸ STATUS UPDATE 2026-07-07 — Phase 3b (`stress_test`, the Named Gate) ABANDONED.**
+> A precondition check on the live 248-entity sandbox graph showed the metacognitive
+> analytics are **degenerate at personal scale**: grounding has no variance (214/218
+> canonical entities have exactly 1 source) and only 2 of 486 LINKS_TO edges cross a
+> community boundary (4 bridge entities). The stress test needs grounding-variance +
+> real bridges to yield non-trivial output — the ratified *scale hedge* firing — and
+> with no ground truth it would be correct-but-unvalidatable code against an untunable
+> formula. **§1.5 (the Named Gate) and §3.5(c) (the analytics/composite tool) are
+> superseded on that basis.** The rest of the brief STANDS: the `kdb_graph` package
+> boundary + the 7-tool read-only MCP server (Phases 1/2/3a) shipped and are a
+> **retained asset** — the intended front door for querying the graph — parked, to be
+> re-prioritized after the vault-in-place ingestion produces a comprehensive graph.
+> See `docs/2026-07-07-state-of-the-system.md` and `docs/TASKS.md` #113.
+
 **Date:** 2026-06-10
 **Status:** RATIFIED (Joseph, 2026-06-10) — design review 5/5 GO-WITH-FIXES folded; Named Gate chosen
 **Author:** Joseph + Claude (brainstorm session 2026-06-10)
