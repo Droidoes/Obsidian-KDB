@@ -10,7 +10,43 @@ Versioning + tag policy: see `docs/ROADMAP.md` § Versioning policy. Tags are cu
 
 ---
 
-## 0.5.6 — #111 Phase 1: model-pool restructure + native Gemini handler + gpt reasoning (tagged `v0.5.6`, 2026-06-07)
+## 0.5.7 — graph-access arc (#112/#113 MCP) versioned + 2026-07-17 review-driven hygiene sweep (tagged `v0.5.7`, 2026-07-17)
+
+**Theme:** version-debt closure. The #112/#113 graph-access work shipped on `main`
+2026-06-10/11 but was never tagged; this tag versions it together with a review-driven
+fix sweep executed against the 2026-07-17 Kimi-K3 project review
+(`docs/2026-07-17-project-review-kimi-k3.md`). Note: `v0.5.7` was originally penciled
+for #111 Phase 2 (`json_schema` structured output) — that work has not landed and moves
+to `v0.5.8`.
+
+**Previously untagged (2026-06-10/11):** #112 `read_only` fix in `GraphDB._open()`;
+#113 Phases 1–3a — `kdb_graph` graph-access package boundary + `get_body` in `common/` +
+`kdb_mcp` read-only FastMCP stdio server (7 tools, per-call reopen, stable Pydantic
+shapes). (#113 Phase 3b, the `stress_test` Named Gate, was abandoned 2026-07-07 —
+degenerate at personal scale; the MCP server ships as the retained asset.)
+
+**Review sweep (2026-07-17):**
+- **Graph-path split-brain closed** — `kdb_graph.default_graph_path()` now derives
+  `<vault>/KDB/graph` from `OBSIDIAN_VAULT_PATH` (zero-`common` invariant preserved);
+  the retired `~/Droidoes/GraphDB-KDB` default is gone from code and CLI help.
+- **#112 discipline extended** — all `graphdb-kdb` read subcommands (+ `snapshot()`) open
+  the DB `read_only=True` (no silent migrations); `init`/`rebuild`/`cypher` stay writable.
+- **Dead-code sweep** — `sync_current_run` removed (D-S0 superseded by #91 shared-connection
+  design); `knowledge_graph/` deleted (831 LOC, packaging-excluded); unused `requests`/`scipy`
+  deps dropped; committed debug dumps and the duplicate `venv/` removed.
+- **Packaging/version truth** — `requirements.txt` regenerated as a true pyproject mirror;
+  `pyproject` version `0.1.0 → 0.5.7`; `common/__version__` `0.5.2 → 0.5.7` (run-journal stamp).
+- **Docs synced to post-realignment reality** — README rewritten (was frozen at M0);
+  North Star header/§5 (β commit order)/§8.1/§8.3/§8.6 + broken refs corrected, D35 annotated
+  superseded; ROADMAP current-focus updated; TASKS.md ledger cleanup (34 closed rows moved;
+  status vocabulary documented). `AGENTS.md`/`QWEN.md` updated on disk (gitignored by design).
+- **Boundary guard tightened** — `kdb_mcp` added to the AST import-contract test; `kdb_graph`
+  contract tightened from `{common}` to **zero internal imports** (now test-enforced).
+
+**Verification:** full suite **1292 passed / 1 skipped (live) / 1 deselected (bench)**.
+
+---
+
 
 **Theme:** baseline-1 marker — optimal per-model config *short of* `json_schema`. The
 `json_schema` variable stays isolated to Phase 2 (`v0.5.7`) for every provider.

@@ -1,60 +1,33 @@
 # Obsidian-KDB
 
-Karpathy-style LLM-compiled knowledge base for Obsidian vaults.
+Karpathy-style LLM-compiled knowledge base for Obsidian vaults. Raw source documents land in `raw/`; the LLM compiles them into a richly cross-linked Markdown wiki (`wiki/`) and a Kuzu-backed knowledge graph. The LLM emits structured JSON only — deterministic Python owns every filesystem write (no hallucinated paths, no corrupt frontmatter, dry-run capable, fully auditable). The Kuzu graph is the live ontology authority; the wiki is a rendering of it.
 
-**See [`docs/CODEBASE_OVERVIEW.md`](docs/CODEBASE_OVERVIEW.md) for the architectural North Star — all design rationale, decisions ledger, and roadmap live there.**
+## Packages
 
-## What this project is
+- `common/` — shared leaf package: types, `call_model` (+ retry/telemetry), model pool, paths, atomic I/O
+- `ingestion/` — Pass-1 enrichment (LLM classifies sources: domain, source type, key entities) + `kdb_scan`
+- `compiler/` — Pass-2 compile: context loader, validate, repair, canonicalize, page writer
+- `orchestrator/` — `kdb-orchestrate` conductor: the end-to-end loop, manifest writer, events, KPIs
+- `kdb_graph/` — KuzuDB-backed knowledge graph: schema, intake, queries, verifier, rebuilder, snapshot, CLI
+- `kdb_mcp/` — read-only FastMCP stdio server (7 tools over the live graph)
+- `tools/` — operational tools: cleanup, replay, benchmark engine (`tools/benchmark/`), diagnostics, viewer
 
-Obsidian vaults are great for human-curated notes but don't *compound* — concepts stay scattered across folders, links are manual, and new knowledge doesn't automatically strengthen connections to old knowledge.
-
-This project implements Karpathy's [LLM Knowledge Base pattern](https://x.com/karpathy/status/2039805659525644595): raw source documents land in a `raw/` folder; an LLM compiler produces a richly cross-linked wiki in `wiki/` — summaries, concepts, articles, and bidirectional `[[wikilinks]]` — all as plain Markdown. Obsidian becomes the IDE; the LLM is the compiler.
-
-## Architecture at a glance
-
-Two completely separate filesystems:
-
-| What | Where | Backup |
-|---|---|---|
-| **Code** (this repo) | `~/Droidoes/Obsidian-KDB/` — WSL, git | GitHub |
-| **Vault data** | `~/Obsidian/KDB/` — Windows, OneDrive | OneDrive (30-day history) |
-
-Pipeline (v1, controller-style — no mega-prompt):
-
-```
-kdb_scan  ->  planner  ->  compiler  ->  validate  ->  patch_applier  ->  manifest_update
-  (Python)    (Python)    (LLM->JSON)   (Python)     (Python)            (Python)
-```
-
-**Key discipline:** The LLM emits structured JSON patch-ops only. Python owns every filesystem write. No hallucinated paths, no corrupt frontmatter, dry-run capable, fully auditable.
-
-## Modules
-
-### `kdb_compiler/`
-The v1 pipeline. See module docstrings:
-- `kdb_scan.py` — deterministic content-hash scan of `raw/`
-- `planner.py` — chunks scan into per-source compile batches
-- `compiler.py` — per-source LLM call; returns structured JSON
-- `validate_compile_result.py` — JSON-Schema fail-fast gate
-- `patch_applier.py` — writes markdown files from validated patches
-- `manifest_update.py` — atomic ledger update with journal-then-pointer
-- `call_model.py` + `call_model_retry.py` — provider abstraction (Anthropic / OpenAI / Gemini / Ollama) with retry/backoff
-
-### `knowledge_graph/`
-Auxiliary tool (pre-existing): renders a D3.js force-directed graph of the entire vault's folder/link structure. Independent of the KDB compiler.
+## Quickstart
 
 ```bash
-python3 knowledge_graph/generate_knowledge_graph.py
+./setup.sh                  # one-shot bootstrap (venv + deps + .env seed + smoke test)
+pip install -e ".[dev]"     # or step-by-step install
+pytest                      # full test suite (skips slow bench tests by default)
 ```
 
-## Status
+Run the full pipeline end-to-end (the main entry point):
 
-**M0 (scaffolding)** — complete.
-**M1 (deterministic layer)** — next.
-**M2 (LLM compile)** — after M1.
+```bash
+kdb-orchestrate
+```
 
-See the [roadmap in the overview](docs/CODEBASE_OVERVIEW.md#9-roadmap) for details.
+## Documentation
 
-## Credits
-
-Architecture reviewed by Claude Opus 4.7 (primary), GPT 5.4 (state model), Codex 5.3 (hardening + reference code), Grok Pro 4.2 (community impl survey), Gemini Pro 3.1 (academic treatise).
+- [`docs/CODEBASE_OVERVIEW.md`](docs/CODEBASE_OVERVIEW.md) — architectural North Star (read before any code change)
+- [`docs/TASKS.md`](docs/TASKS.md) — task ledger
+- [`docs/RELEASES.md`](docs/RELEASES.md) — version history

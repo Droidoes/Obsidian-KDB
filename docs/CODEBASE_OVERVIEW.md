@@ -1,7 +1,7 @@
 # Obsidian-KDB — Codebase Overview (North Star)
 
-**Status:** v1 architecture locked; M0 → M2 landed (compiler + validator + reconciler + benchmark engine all live)
-**Last updated:** 2026-06-06
+**Status:** v1 architecture locked; M0 → M4 landed (compiler + validator + reconciler + benchmark engine + GraphDB-KDB layer + canonicalization all live). Post-`v0.5.6` (2026-06-07): the #112/#113 graph-access arc (`kdb_graph` package + `kdb_mcp` 7-tool read-only MCP server) shipped on `main` **untagged**.
+**Last updated:** 2026-07-17
 **Owners:** Joseph (human) + Claude Opus 4.7 (staff architect) + GPT 5.4 / Codex 5.3 (external review)
 
 This is the **single source of truth** for the Obsidian-KDB project. All design rationale, decisions, and open questions live here. External AI consultation artifacts (Grok / Gemini Pro / GPT 5.4 / Codex 5.3) are referenced but not authoritative — they fed into the consensus captured below.
@@ -25,7 +25,7 @@ Dated architectural inflection points. Full retrospective and three-iteration hi
 
 - **2026-06-02** — **🏁 Release `v0.5.1` — codebase realignment, Phase A (Task #105).** Architecture-level refactor so the implementation reflects the decided architecture (two pipelines — *ingestion* / *compiler* — over a *graph* substrate, conducted by an *orchestrator*, + *tools* and a *common* leaf). Thesis: **terminology debt IS the architecture problem.** 5-panel ratified (Codex/Deepseek/Qwen/Gemini/Grok-build); one refactor in two sequential phases — **A (fix-in-place) shipped, B (package split) next**, both before 0.6. Phase A retired the legacy `kdb_compile.py` batch driver + 427-ln `run_journal.py` + dead `planner`/`run_compile` + 5 CLI bindings; fixed 2 layering inversions (`common` is now a true leaf, guard-tested); renamed `reconcile→repair` · `patch_applier→page_writer` · `source_state_update→manifest_writer` · `validate_compiled_source_response→validate_source_response` · `ingestion/→enrich/` (+`run_journal→enrich_journal`); established the **single Kuzu door** (10-fn read API in `graphdb_kdb/queries.py`; `graph_context_loader→context_loader` authors zero Cypher, byte-identical port); rewrote §5 + swept stale refs. **Zero behavior change**, proven by **run-6** (`exit_reason=ok`: 29 compiled / 7 noise / 0 quarantined / 0 invariant; finalize 478 links, 0 orphans; graph 180 Entity / 29 Source / 10 Domain / **100% `BELONGS_TO`**) ≡ the run-5 standard. 1175 non-live tests green. Blueprint+plan: `docs/superpowers/{specs,plans}/2026-06-0{1,1}-codebase-realignment*`. See `docs/RELEASES.md`.
 - **2026-05-31** — **🏁 Release `v0.5.0` — reliable orchestration.** Gated on a clean run-5 (`exit_reason=ok`: 36 scanned / 29 compiled / 7 noise / **0 quarantined / 0 invariant**; finalize 449 links, 0 orphans; graph v2.4: 181 Entity / 29 Source / 10 Domain). Bundles: #96 quarantine-and-continue, D1-A derived domains, #102 live stdout progress, #103 domain-scoped Pass-2 context, #97 GraphDB viewer, and the run-4-finding fixes (#104: Pass-1 coercion + Pass-2 parse/schema retry — which recovered run-4's lone quarantine in run-5). 1219 non-live tests green. Next arc: 0.6→1.0 ingestion pipelines. See `docs/RELEASES.md`.
-- **2026-05-31** — **Task #104 — Pass-1 coercion + Pass-2 retry (run-4 findings).** Pass-1 coerces benign shape deviations instead of rejecting (truncate >10 `entity_search_keys` to 10; let `source_type='other'` pass without `other_reason`); Pass-2 retries on a recoverable bad-JSON emission (parse/schema), mirroring Pass-1's retry. Findings + resolutions in `docs/run-4-findings.md`. Principle: coerce benign deviations, retry recoverable emissions, reject only the genuinely unrecoverable.
+- **2026-05-31** — **Task #104 — Pass-1 coercion + Pass-2 retry (run-4 findings).** Pass-1 coerces benign shape deviations instead of rejecting (truncate >10 `entity_search_keys` to 10; let `source_type='other'` pass without `other_reason`); Pass-2 retries on a recoverable bad-JSON emission (parse/schema), mirroring Pass-1's retry. Findings + resolutions in `docs/archive/tasks/run-4-findings.md`. Principle: coerce benign deviations, retry recoverable emissions, reject only the genuinely unrecoverable.
 
 - **2026-05-31** — **Task #103 — T2/T3 domain-scoped retrieval (same-domain gate).** The Pass-2 context snapshot is now a positive pull from the source's Pass-1 domain only: `build_context_snapshot` scopes the T2/T3 candidate universe to entities `BELONGS_TO` the source's domain (`Domain.name`); T1 (the source's own SUPPORTS) unchanged; no padding (short/empty same-domain > off-domain noise); no-domain sources fall back to the full graph. **Overrides** the ratified D3 (C, coordinate-not-gate) → hard gate, on the rationale that context-scoping (anti-entropy) is distinct from link-creation (free) and Discover (future query-time); override recorded in `ontology-blueprint-V1.md` §7.
 
@@ -40,7 +40,7 @@ Dated architectural inflection points. Full retrospective and three-iteration hi
 - **2026-05-20** — **Canonicalization layer lands.** Stage 6 `canonicalize` inserted; `Entity.canonical_id` + `ALIAS_OF` edges shipped (Task #74).
 - **2026-05-21** — **V0 step-3 ops regression suite locked.** Typed traversal + shortest-path direct-unit-guarded; `@pytest.mark.bench` opt-in pattern established (Task #81). **Schema v2.1 Domain field** shipped: `Domain` node + `BELONGS_TO` edge (Task #76).
 - **2026-05-22** — **Three-iteration retrospective filed** ([`docs/JOURNEY.md`](JOURNEY.md)). This changelog itself is the mitigation for Lessons §5 (milestone-level signal was missing pre-this-doc).
-- **2026-05-22** — **Round 6 closes — "Learn" operationalized.** Three Learn mechanisms ratified (Belief Revision / Identity Refinement / Abstraction & Principle Induction) + Hypothesis Promotion as first-class boundary contract per **(a+)** decision; M2 + M3 reclassified as Analysis-feeding-[C] Create; project's first articulated position on [C] Create recorded ([`docs/what-is-ontology-for-V1.md`](what-is-ontology-for-V1.md) §9.4; Task #82 closure; Tasks #83–#86 filed).
+- **2026-05-22** — **Round 6 closes — "Learn" operationalized.** Three Learn mechanisms ratified (Belief Revision / Identity Refinement / Abstraction & Principle Induction) + Hypothesis Promotion as first-class boundary contract per **(a+)** decision; M2 + M3 reclassified as Analysis-feeding-[C] Create; project's first articulated position on [C] Create recorded ([`docs/reference/what-is-ontology-for-V1.md`](reference/what-is-ontology-for-V1.md) §9.4; Task #82 closure; Tasks #83–#86 filed).
 - **2026-05-23** — **Predeclared eval criteria + probe set ratified for #83/#84.** Task #87 v2 (eval criteria — 3 ops O1/O2/O3, P-On-N / F-On-N criteria, HW-1..HW-11 hedge-watch rules, `eval_config` block per Codex+Deepseek+Qwen panel review) + Task #87.1 v1 (20 probe scenarios across 7 §7.1 coverage axes, 8 OQs OQ-S1..S8 surfaced, D-87.1-1..10 decision gates ratified) both shipped. **Mutation-eval discipline adopted** (vs Task #75's retrieval-eval): pre-state + input → expected post-state + invariants preserved. **Unblocks #83/#84 implementation start.**
 - **2026-05-23 (afternoon)** — **DeepSeek-V4-Flash returned to active pool via direct API.** The 2026-05-15 "capability gap" diagnosis was a routing artifact, not a model deficiency: Alibaba's OpenAI-compat layer was stripping/mis-handling `response_format` for non-Qwen models. Empirical fire on canonical corpus: S0=1.000, M1-M5=1.000, M7=3578ms (2.75× faster than Alibaba's best historical 9830ms). Ties #1 on cost-quality frontier with `gemini-3.1-flash-lite` at FINAL=0.956 (Gemini wins latency 4×; DeepSeek wins cost 50%). `deepseek-v4-pro:direct` dropped same-session (strictly dominated by Flash:direct — 3.2× cost, 2.7× latency, identical quality). **Meta-lesson:** control models must match the model-under-test's vendor/routing relationship, not just the routing layer.
 - **2026-05-23 (Saturday afternoon, late)** — **#83/#84 O1 GREEN v1.5 — 15/15 probes (100%), zero xfail.** Closed S12 + S18 (the remaining semantic-contradicts deferral class) via: (a) **blueprint amendment narrowing D-83/84-2 `contradicts`** to polarity-flip-only — narrative reframing across different `predicate_class_canonical` is correctly captured by `classification_drift=true` → `human_review` per D-83/84-8 Part D, NOT by structural classifier detection (D-83/84-3 #1 forbids LLM-at-classifier). New **OQ-30 (predicate-class antonym registry)** filed for future load-bearing curation tied to HW-1 vanity-graph hedge. (b) **S12 rewritten** with a real polarity flip (`denies`↔`affirms`) preserving its `[fp_drift=true, classification_drift=false] → auto_promote_with_note` drift-cell role. (c) **S18 classifier patch** per OQ-18 branch B (retracted-no-sibling returns `no_counterpart`, does NOT engage retracted as counterpart) + LINKS_TO fallback gated off when `retracted_family_id` is set to preserve branch B precedence over LINKS_TO-implicit-counterpart. (d) S18 probe normalized so candidate envelope's `counterpart_status`/`relation_kind` reflect the shared-classifier output per D-83/84-3 #1 (Analysis-time and Promotion-time identical for identical input). Full suite: 999 pass / 1 skipped / 0 xfail / 0 fail (analytics excluded). The 4 latent debts surfaced in v1.4 remain explicitly tracked (mutator object-Entity/LINKS_TO writers, threshold-N gate for reinforces, Tier-1 EVIDENCES reconstruction, LINKS_TO schema enrichment) — to be addressed when verifier tightens after promotion-replay lands.
@@ -117,7 +117,7 @@ In-place enhancer for the Human Side. Scans user-authored notes and injects `[[w
 common/          ← leaf: shared types, atomic I/O, call_model, paths, source_io
 ingestion/       ← Pass-1 pipeline: kdb_scan, enrich/ (signal/noise + entity_search_keys)
 compiler/        ← Pass-2 pipeline: compiler, repair, canonicalize, page_writer, context_loader
-kdb_graph/       ← producer-agnostic graph layer: schema, ingestor, queries, adapters
+kdb_graph/       ← producer-agnostic graph layer: schema, intake, queries, adapters
 orchestrator/    ← conductor: kdb_orchestrate, manifest_writer, event recorder
 tools/           ← operational tools: replay, cleanup, benchmark, viewer, diagnostics
 ```
@@ -156,7 +156,7 @@ The live conductor is `orchestrator/kdb_orchestrate.py`. Per-source flow:
                                                                                                                        runs/<run_id>/
 ```
 
-**Finalize pass** (after all sources compiled): merge → wire_links → detect_orphans → cleanup → graph-sync via `ObsidianRunsAdapter`.
+**Finalize pass** (after all sources committed): merge the per-source compile_results → batch `wire_links` → single deferred `detect_orphans` pass → `kdb-clean` orphan reaping → write the combined `compile_result.json` replay payload. (Graph intake itself runs **per source**, inside the commit sequence — see stages below and §8.3.)
 
 **Strict separation of concerns:**
 - **LLM is stateless compute.** It receives prompt + source content + graph-derived context snapshot; returns structured JSON (no paths, no timestamps, no frontmatter). Never writes files. Never reads filesystem state.
@@ -184,9 +184,9 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 4. **Validate compile_result** (`validate_compile_result.py`) — schema-gates `compile_result.json`; aborts per-source with quarantine if malformed (source-local failure does not kill the batch — D-96-1).
 5. **Repair** (`repair.py`) — unconditional `reconcile_slug_lists` + `reconcile_body_links` (D45 / Task #65 + Task #57): `concept_slugs`/`article_slugs` rebuilt from `pages[].page_type`; body wikilinks reconciled against `pages[]`. Pairing-class defects are made structurally impossible before downstream stages observe them.
 6. **Canonicalize** (`canonicalize.py`, Task #74, see `docs/archive/tasks/task74-canonicalization-blueprint.md`) — loads `state/canonicalization/aliases.json` (missing ⇒ empty + warning, D-R5-8), resolves alias surface forms to canonical slugs (chain-flattened to root, D-R5-13), rewrites `pages[].outgoing_links`, `pages[].body` wikilinks, drops alias entries from `pages[]` (canonical-only, D-R5-12), emits `canonical_meta` (`aliases_emitted`, `outgoing_link_remaps`, `algorithm`), atomically overwrites `state/compile_result.json` (D-R5-10). Algorithmic failures (circular aliases, malformed ledger, ambiguous v2, sha mismatch) are **fatal** — failure journal written, pipeline halts before page_writer (D-R5-9). Wiki ≡ graph at the naming layer.
-7. **Apply page intents** (`page_writer.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter (`run_context.py`), writes markdown files atomically (`atomic_io.py`). No canonicalization-awareness required (D-R5-12): `pages[]` is already canonical and body wikilinks already remapped. Never writes state files.
-8. **Persist state** (`manifest_writer`) — writes `runs/<run_id>/journal.json` first, then updates `manifest.json` atomically (D15, journal-then-pointer). Runs **after** page writes so a failed vault write leaves state unchanged and the user re-runs cleanly.
-9. **Graph sync** — see §8.3. Archives sidecar at `state/runs/<run_id>/{compile_result,last_scan}.json` (preserves `canonical_meta` for D39 replay), then routes the canonicalized compile_result through `ObsidianRunsAdapter().sync_current_run(...)` to update the live GraphDB ontology authority (D50/D51). Fatal for non-dry-run compiles (D50; revokes D38).
+7. **Apply page intents** (`page_writer.py`) — resolves slugs to paths (`paths.py`), stamps frontmatter (`run_context.py`), writes markdown files atomically (`atomic_io.py`). No canonicalization-awareness required (D-R5-12): `pages[]` is already canonical and body wikilinks already remapped. Never writes state files. A throw here leaves the graph untouched (β case-a, clean).
+8. **Graph intake** (`kdb_graph/intake.py::apply_compile_result`) — per-source Kuzu transaction on the run's single shared GraphDB connection (Task #91 shared-connection design; see §8.3), updating the live GraphDB ontology authority (D50/D51). Orphan-marking and link-wiring are deferred to the finalize pass. A throw rolls the Kuzu txn back clean and the manifest is never written, so the source self-heals on re-run (β case-a). Fatal for non-dry-run compiles (D50; revokes D38).
+9. **Persist state** (`manifest_writer`) — the **commit boundary** of the β ordering (D-91-15, graph-sync-first): the advanced manifest is computed pure (no I/O) up front, then `manifest.json` is written atomically **LAST** — only after the wiki pages and the graph txn both succeed. A throw here is the distinct, surfaced `manifest_post_graph` residual (graph committed, manifest absent), which self-heals via idempotency on re-run.
 
 ---
 
@@ -340,7 +340,7 @@ kdb_graph/                                  ← producer-agnostic ontology layer
 ├── schema.py                               # Kuzu DDL (Entity / Source / LINKS_TO / SUPPORTS)
 ├── types.py                                # Entity, Source dataclasses; SyncResult, RebuildResult
 ├── graphdb.py                              # GraphDB connection manager + idempotent schema bootstrap
-├── ingestor.py                             # apply_compile_result — atomic per-run mutations
+├── intake.py                               # apply_compile_result — atomic per-run mutations
 ├── queries.py                              # neighbors, paths, provenance reads (single Kuzu door)
 ├── analytics.py                            # PageRank, Louvain, structural holes (hybrid via NetworkX)
 ├── verifier.py                             # verify_against_manifest — overlap audit
@@ -354,7 +354,7 @@ kdb_graph/                                  ← producer-agnostic ontology layer
 
 **One-way import boundary** (D34 + D-B1, mirrors D25 for kdb_benchmark): `kdb_graph/` has **zero imports from the production compiler packages**. Producer-specific knowledge lives inside `adapters/obsidian_runs.py` and is expressed as JSON parsing of producer artifacts — never as Python imports of producer types. A grep invariant on `from compiler\|from ingestion\|from orchestrator` inside `kdb_graph/` returns nothing.
 
-**Physical separation** (D35): the Kuzu *data* directory lives at `~/Droidoes/GraphDB-KDB/` (sibling to `Obsidian-KDB/`, not OneDrive-synced — avoids binary-file corruption). The Python package code lives at `kdb_graph/` inside `Obsidian-KDB/`; the extraction arc to a standalone repo `~/Droidoes/GraphDB-KDB-package/` is documented in `docs/reference/graphdb-kdb-extraction-roadmap.md`.
+**Physical separation** (D35): the Kuzu *data* directory lives at `~/Droidoes/GraphDB-KDB/` (sibling to `Obsidian-KDB/`, not OneDrive-synced — avoids binary-file corruption). (Superseded 2026-06-11, #113: the default now derives `<vault>/KDB/graph` from `OBSIDIAN_VAULT_PATH`; `KDB_GRAPH_PATH` overrides. The old `~/Droidoes/GraphDB-KDB/` dir is a retired stray.) The Python package code lives at `kdb_graph/` inside `Obsidian-KDB/`; the extraction arc to a standalone repo `~/Droidoes/GraphDB-KDB-package/` is documented in `docs/reference/graphdb-kdb-extraction-roadmap.md`.
 
 ### 8.2 Schema (Kuzu DDL)
 
@@ -405,29 +405,33 @@ Aliases are exempt from orphan detection (no `SUPPORTS` edges by OQ-E; canonical
 
 **Naming history**: `Entity` was originally `Page` (renamed per D-A1 2026-05-14); graph-side `ingest_*` fields were originally `compile_*` (renamed per D-A2). The producer source-state ledger now uses `run_state` for source lifecycle status (Task #96 C1 prep, schema v3.1); deprecated `compile_state` is accepted only as a migration/replay fallback. The verifier's `_SOURCE_DIRECT_FIELDS` tuples are the alias bridge: `("run_state", "ingest_state")` etc.
 
-### 8.3 Pipeline integration — graph-sync via adapter (D-S0)
+### 8.3 Pipeline integration — per-source graph intake (β commit model, D-91-15)
 
-`kdb-orchestrate`'s finalize pass ends with **graph-sync** (post-#74; canonicalize at Stage [6] precedes graph-sync):
+`kdb-orchestrate` runs graph intake **per source**, inside the commit sequence (post-#74 + Task #91; canonicalize at Stage [6] precedes intake):
 
 ```
-Per-source stages (post-#74): scan → enrich (Pass-1) → compile (Pass-2) →
-                               repair → canonicalize → page_writer → manifest_writer
+Per-source commit (β order):  scan → enrich (Pass-1) → compile (Pass-2) →
+                               repair → canonicalize → page_writer →
+                               graph intake → manifest write (LAST = commit boundary)
 
-Finalize graph_sync (D50: fatal for non-dry-run; revokes D38 non-fatal):
-  9a. Archive sidecar: atomic-copy state/{compile_result,last_scan}.json
-       → state/runs/<run_id>/{compile_result,last_scan}.json
-       (compile_result is the CANONICALIZED version per D-R5-10, so the
-        sidecar preserves canonical_meta for D39 replay)
-  9b. Live sync: kdb_graph.adapters.obsidian_runs.ObsidianRunsAdapter()
-       .sync_current_run(cr, scan_dict, run_id)
+  Graph intake (D50: fatal for non-dry-run; revokes D38 non-fatal):
+    kdb_graph.intake.apply_compile_result(cr, single_scan, run_id, conn=conn,
+                                          detect_orphans=False, wire_links=False)
+    — one Kuzu transaction per source over the run's shared read-write
+      GraphDB connection; a throw rolls back clean and the manifest is never
+      written (β case-a self-heal).
+
+Finalize passes (once, over the final graph): merge per-source compile_results
+  → batch wire_links → single detect_orphans pass → kdb-clean orphan reaping
+  → write the combined compile_result.json replay payload.
 ```
 
 Two architectural properties of the wiring:
 
-1. **`kdb_orchestrate.py` imports ONLY `ObsidianRunsAdapter`** (D-S0). Never `GraphDB`, never `apply_compile_result` directly. The adapter is the single producer→graph entry point — same code path as `graphdb-kdb rebuild` uses.
-2. **Sidecar archival runs *before* the live sync.** If the sync fails, the sidecar still exists — so `graphdb-kdb rebuild` is a real recovery path. (Per D50, graph_sync failure is now fatal for non-dry-run compiles since GraphDB is the live ontology authority; D38 non-fatal semantics were revoked for ontology writes.)
+1. **The orchestrator holds a shared `GraphDB` connection and calls `kdb_graph.intake` entry points directly** (Task #91 shared-connection design — `kdb_orchestrate.py` imports `GraphDB` + `apply_compile_result` / `wire_links` / `detect_orphans` / `apply_cleanup`). This supersedes the original D-S0 adapter-only wiring for the live path; the `ObsidianRunsAdapter` remains the single producer→graph entry point for **rebuild/replay** (`graphdb-kdb rebuild`, D39). (The D-S0 ledger row below is kept as the historical record.)
+2. **Replay material survives a sync failure.** Per-source Kuzu failures roll back before the manifest commit boundary (β case-a), and the combined `compile_result.json` replay payload is written at finalize — so `graphdb-kdb rebuild` remains a real recovery path. (Per D50, graph intake failure is fatal for non-dry-run compiles since GraphDB is the live ontology authority; D38 non-fatal semantics were revoked for ontology writes.)
 
-**Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `kdb_graph/ingestor.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
+**Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `kdb_graph/intake.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
 
 ### 8.4 Replay / rebuild path (D39 — the independence proof)
 
@@ -478,9 +482,11 @@ graphdb-kdb subgraph-by-source <source_id>              # source's induced subgr
 graphdb-kdb verify --vault-root <P>                     # diff Kuzu vs manifest.json
 graphdb-kdb rebuild --vault-root <P> [--backfill-baton] # drop + replay (D-S2 whole-DB)
                   [--yes] [--json]
+graphdb-kdb domains [--json]                            # Domain nodes sorted by entity count
+graphdb-kdb snapshot [--vault-root <P>] [--out <dir>]   # JSONL+manifest+schema export (#63.9)
 ```
 
-`--graph-dir <path>` overrides the Kuzu data directory (default: `$KDB_GRAPH_PATH` or `~/Droidoes/GraphDB-KDB/`).
+`--graph-dir <path>` overrides the Kuzu data directory (default: `$KDB_GRAPH_PATH`, else `<vault>/KDB/graph` derived from `OBSIDIAN_VAULT_PATH`).
 
 ### 8.7 Graph context loader — retrieval tiers & cold-start widening
 
@@ -548,7 +554,7 @@ When cold-start AND `|widened_T2| < 5` (the `_MIN_SEED_THRESHOLD`), T3 expands f
 | D32 | 2026-05-13 | **GraphDB-KDB is a multi-source raw-text → knowledge-graph compiler at the storage layer**; the schema admits `Source.source_type` as a discriminator and is source-agnostic. The ingestion API (`apply_compile_result`) is Obsidian-flavored for v1 (D32-tempered per Codex Round 1 v2 review). Graph is the architectural primitive; manifest.json + wiki markdown + future visualizations are *renderings*. | Differentiating bet: explicit edges beat implicit similarity. Vector RAG flattens ontology into cosine distance; the graph preserves what we paid to build. Storage-layer multi-source readiness is cheap to bake in; ingestion-layer abstraction without a second producer would be speculative. |
 | D33 | 2026-05-13 | Storage = Kuzu 0.11.3 (embedded graph DB, Cypher dialect, multi-language bindings, MIT). | Purpose-built for embedded graph; file-based (no daemon), portable, industry-standard Cypher. NetworkX+JSONL is Python-only; SQLite-with-graph-schema forces consumers to reimplement traversal. |
 | D34 | 2026-05-13 | Independence-by-shared-upstream: `manifest_writer` and `graphdb_kdb.ingestor` each consume `compile_result + last_scan + run_id` independently. Neither reads or writes the other's store. | Ablation: delete `manifest.json` → GraphDB still queryable; delete `GraphDB-KDB/` → manifest still works. Both regenerable from `state/runs/<run_id>.json` history. Real independence by structural construction. |
-| D35 | 2026-05-13 | Kuzu *data* directory location: `~/Droidoes/GraphDB-KDB/` (sibling to Obsidian-KDB; not OneDrive-synced). Override via `KDB_GRAPH_PATH` env var. | Physical separation mirrors logical separation. Avoids OneDrive corruption on Kuzu binary catalog files. Backup = recovery-via-rebuild (D39); belt-and-suspenders via `graphdb-kdb snapshot` (#63.9). |
+| D35 | 2026-05-13 | Kuzu *data* directory location: `~/Droidoes/GraphDB-KDB/` (sibling to Obsidian-KDB; not OneDrive-synced). Override via `KDB_GRAPH_PATH` env var. (Superseded 2026-06-11, #113: default derives `<vault>/KDB/graph` from `OBSIDIAN_VAULT_PATH`; `KDB_GRAPH_PATH` overrides.) | Physical separation mirrors logical separation. Avoids OneDrive corruption on Kuzu binary catalog files. Backup = recovery-via-rebuild (D39); belt-and-suspenders via `graphdb-kdb snapshot` (#63.9). |
 | D36 | 2026-05-13 | Naming triad: Python module `graphdb_kdb`, Kuzu directory `GraphDB-KDB/`, CLI command `graphdb-kdb`. `kdb-graph` is **reserved** for a future Obsidian-graph-view utility — out of #63 scope. | Avoid conflating the multi-source ontology layer with a (future) Obsidian-specific rendering tool. Memory: `project_graphdb_kdb_vs_kdb_graph_distinction`. |
 | D37 | 2026-05-13 (renamed D-A1 2026-05-14) | Schema: `Entity` and `Source` node tables; `LINKS_TO` (Entity→Entity), `SUPPORTS` (Source→Entity) rel tables. Originally `Page` node-table; renamed to `Entity` per D-A1 to remove the Obsidian-isms from the storage-layer vocabulary. | Provenance is first-class graph data, not a sidecar. `Entity` reads as abstract identity (vs `Page` which presumed wiki-page rendering) — better positioning for multi-source future. |
 | D38 | 2026-05-13 | Pipeline integration: Stage 9 `graph_sync` runs AFTER Stage 8 (manifest write); failure is **non-fatal** — emits warning + journal entry, but overall compile run still returns success. | Honors D34 independence: a failed graph write must not roll back a successful manifest write. Recovery via `graphdb-kdb rebuild`. |
@@ -588,7 +594,7 @@ When cold-start AND `|widened_T2| < 5` (the `_MIN_SEED_THRESHOLD`), T3 expands f
 | Open-3 | Safety model for Human Side edits | 🔴 Deferred | Only relevant to Track 2 (`llm-linker`), not v1 |
 | Open-4 | Link direction between Sides | 🔴 Deferred | Track 2 concern; recommended **Option C (asymmetric + opt-in bidirectional)** but not confirmed |
 | Open-5 | Binary file handling (PDF, images) in `raw/` | 🟡 Partial | v1 marks as `compile_mode: metadata_only`; actual PDF/image parsers = v2 |
-| Open-6 | Page-intents JSON schema design (shape, not mechanism) | 🟡 Skeleton in M0.1; full design in M2 | Skeleton committed at `kdb_compiler/schemas/compile_result.schema.json` |
+| Open-6 | Page-intents JSON schema design (shape, not mechanism) | 🟡 Skeleton in M0.1; full design in M2 | Skeleton committed at `compiler/schemas/compile_result.schema.json` |
 | Open-7 | Chunk size tuning (10–20 default) | 🟡 Heuristic | Validate empirically during M2 first compile |
 | Open-8 | Slug → path policy (how `[[slug]]` resolves to a file) | 🟡 Partial | `paths.py` stub declared; rules locked in M1 (see module docstring) |
 
@@ -635,7 +641,7 @@ Task #63 — refoundation as raw-text → knowledge-graph compiler. Supersedes #
 ### M4 — Canonicalization layer (#74) ✅ DONE — sub-tasks #74.1 through #74.8
 Task #74 — Stage [6] canonicalize lands as a top-level compile stage between reconcile and build_source_state; wiki and graph see the same canonical names. Locked decisions D-R5-1..D-R5-13 + D52. See §5 (pipeline), §8.2 (schema delta), §8.3 (adapter alias-write pass), §8.4 (rebuild + snapshot v2), and the full blueprint at `docs/archive/tasks/task74-canonicalization-blueprint.md`.
 - **Sub-tasks shipped:** #74.1 schema delta (Entity.canonical_id + ALIAS_OF + migration); #74.2 `aliases.json` ledger loader; #74.3 `canonicalize.run()` algorithm; #74.4 Stage [6] wiring + journal `2.1 → 2.2` bump + `compile_result.schema.json` whitelist; #74.5 adapter Phase 3.5 — writes alias Entity + ALIAS_OF + `canonical_id`; #74.6 `graphdb-kdb verify` Layer 3 (C1–C4 invariants on the live graph); #74.7 snapshot format v2 + canonical_meta replay tests + back-compat tests; #74.8 docs (this section).
-- **Round 5 external review:** Antigravity + Codex parallel reviews on the blueprint (see `docs/round5-external-review-{antigravity,codex,prompt}.md`); locked OQ-E (direct-to-canonical SUPPORTS), OQ-F (canonical-wins + longest + UNION merge), OQ-G (JSON ledger format) before implementation.
+- **Round 5 external review:** Antigravity + Codex parallel reviews on the blueprint (see `docs/archive/rounds/round5-external-review-{antigravity,codex,prompt}.md`); locked OQ-E (direct-to-canonical SUPPORTS), OQ-F (canonical-wins + longest + UNION merge), OQ-G (JSON ledger format) before implementation.
 - **Test surface delta:** +14 alias-ingestion tests + 11 canonicalization-invariant tests + 3 snapshot-v2 tests + 3 rebuilder canonical_meta tests + 1 schema back-compat test.
 - **Half-wire closure:** between #74.4 and #74.5, the adapter accepted v2.2 journals but ignored `canonical_meta`; #74.5 closed this. Wiki ≡ graph at the naming layer (verified by Layer 3 invariants).
 

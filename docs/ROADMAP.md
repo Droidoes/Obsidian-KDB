@@ -21,7 +21,7 @@ release notes (`docs/RELEASES.md`) and the fine-grained dev log
 
 The release boundary is principled, not cosmetic: the `0.4 → 1.0` arc builds the
 reliable **Remember + Relate** infrastructure; `2.0` is the **Learn + reasoning**
-leap (the ¶419 line). See `docs/what-is-ontology-for-V1.md` §V1.1 for the
+leap (the ¶419 line). See `docs/reference/what-is-ontology-for-V1.md` §V1.1 for the
 five-rung objective ladder these map onto.
 
 ---
@@ -58,12 +58,20 @@ an internal, zero-behavior-change refactor so the implementation reflects the de
 rewrite); gated on a clean **run-6** ≡ run-5. The terminology+structure debt is paid down *before*
 building 0.6 on top of it.
 
-**Immediate next: realignment Phase B** — split the `kdb_compiler` monolith into peer packages
-(`common`/`ingestion`/`compiler`/`graph`=`kdb_graph`/`orchestrator`/`tools`). Still pre-0.6.
+**Since then:** realignment Phase B shipped (`v0.5.2`), and the line ran through **`v0.5.6`**
+(2026-06-07) — Pass-2 robustness ladder (#106, `v0.5.3`), user-owned model pool (#110),
+benchmark calibration (#109/#111). The #112/#113 graph-access arc (`kdb_graph` package +
+7-tool read-only `kdb_mcp` MCP server) is on `main` **untagged**, past `v0.5.6`.
 
-**Then 0.6 → 1.0 — ingestion pipelines.** Vault-in-place ingestion of the entire Obsidian vault at
-scale + 1–2 KDB/raw feeder pipelines (Task #88 family / tunnel-from-both-ends). Robustness candidate:
-the **repair→retry→repair→quarantine** ladder (Task #106).
+**2026-07-07 pivot:** the LLM-operations tier proved data-gated at personal scale — #113
+Phase 3b (`stress_test`) abandoned, #83–#87 (Claim/Learn 2.0 tier) parked. The binding
+constraint has moved from code quality to corpus scale. See
+`docs/2026-07-07-state-of-the-system.md` and the 2026-07-17 project review
+(`docs/2026-07-17-project-review-kimi-k3.md`).
+
+**Immediate next (as of 2026-07-17): the ingestion arc — 0.6 → 1.0.** Vault-in-place
+ingestion of the entire Obsidian vault at scale + 1–2 KDB/raw feeder pipelines (Task #88
+family / tunnel-from-both-ends).
 
 The Claim/Learn layer is explicitly **out of scope until 2.0** — kept in the
 schema as designed-but-unwired.

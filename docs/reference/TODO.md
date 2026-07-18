@@ -6,7 +6,7 @@ documentation clarification tasks unless promoted into the North Star docs.
 
 ## Completed
 
-- Created first static HTML tutorial: `docs/tutorial/graphdb-tutorial.html`.
+- Created first static HTML tutorial: `docs/reference/graphdb-tutorial.html`.
 - Captured first reader-review pass as this TODO list.
 - Revised `graphdb-tutorial.html` to clarify multiple source-preparation pipelines,
   the special stay-in-place Obsidian case, and the distinction between upstream
@@ -21,7 +21,7 @@ documentation clarification tasks unless promoted into the North Star docs.
   concrete compile_result -> adapter -> graph-write flow.
 - Expanded Capabilities definitions for PageRank, neighbors, incoming references,
   shortest paths, subgraphs, topic communities, and structural holes.
-- Added `docs/tutorial/memory-workflow.md` as a non-authoritative primer on
+- Added `docs/reference/memory-workflow.md` as a non-authoritative primer on
   project memory, Obsidian memory, and assistant behavior memory.
 - Added a typed Kuzu graph diagram using different shapes for `Source`, `Entity`,
   `Domain`, and `Claim` nodes plus labeled relationship arrows.

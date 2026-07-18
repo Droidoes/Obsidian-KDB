@@ -37,7 +37,7 @@ Thumbs.db
 .idea/
 *.swp
 
-# Benchmark data (engine code in kdb_benchmark/ is tracked; per-run
+# Benchmark data (engine code in tools/benchmark/ is tracked; per-run
 # artifacts and ad-hoc inspection snapshots are not)
 benchmark/runs/
 benchmark/inspect/

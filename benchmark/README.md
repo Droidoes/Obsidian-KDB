@@ -1,7 +1,9 @@
 # benchmark/ — data directory for KDB cross-model benchmarking
 
 This directory holds **data only**. The benchmark engine lives in the
-`kdb_benchmark/` package at the repo root.
+`tools/benchmark/` package (CLI: `kdb-benchmark`); the former top-level
+`kdb_benchmark/` package was dissolved in the 2026-06 codebase realignment
+(#105/#109).
 
 ## Layout
 
@@ -15,12 +17,12 @@ This directory holds **data only**. The benchmark engine lives in the
 
 ## Why the split
 
-Code (`kdb_benchmark/`) is pinned by commits. Data (`benchmark/`) grows
+Code (`tools/benchmark/`) is pinned by commits. Data (`benchmark/`) grows
 per-run. Keeping them separate keeps the engine installable as a Python
 package and keeps the data dir easy to gitignore / rsync / archive.
 
 ## Related
 
-- `kdb_benchmark/` — engine code
-- `kdb_benchmark/models.json` — pinned model registry
+- `tools/benchmark/` — engine code
+- `common/models.json` — pinned model registry
 - `docs/TASKS.md` — Task #5 parent + sub-tasks #16–#23
