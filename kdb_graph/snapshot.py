@@ -87,7 +87,7 @@ def snapshot(graph_dir: Path, out_dir: Path) -> SnapshotResult:
     try:
         emitted_at = datetime.now().astimezone().isoformat()
 
-        with GraphDB(graph_dir) as gdb:
+        with GraphDB(graph_dir, read_only=True) as gdb:
             files_meta: dict[str, dict] = {}
 
             entities_path = tmp_dir / "entities.jsonl"

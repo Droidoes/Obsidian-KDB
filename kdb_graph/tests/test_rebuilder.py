@@ -134,9 +134,6 @@ class FakeAdapter:
         from kdb_graph.intake import apply_compile_result
         return apply_compile_result(mutation, scan, run_id, conn=conn)
 
-    def sync_current_run(self, mutation, scan, run_id, graph_dir=None):
-        raise NotImplementedError  # not exercised here
-
     def add(
         self,
         run_id: str,
@@ -635,7 +632,8 @@ def test_sync_cleanup_run_deletes_entity_in_graph(graph_dir):
     ])
     scan = make_scan([make_scan_entry("KDB/raw/s.md")])
     adapter = ObsidianRunsAdapter()
-    adapter.sync_current_run(cr, scan, "run-1", graph_dir)
+    with GraphDB(graph_dir) as gdb:
+        adapter.apply(cr, scan, "run-1", gdb.conn)
     retraction = {"event_type": "cleanup", "retracted_slugs": ["alpha"]}
     res = adapter.sync_cleanup_run(retraction, "clean-1", graph_dir)
     assert res.entities_deleted == 1

@@ -1,8 +1,10 @@
 """Adapter interface for producer→graph translation (D-B1, D-S3).
 
 The adapter is the producer-specific bridge. The core's `rebuilder.rebuild()`
-calls into this interface; producers also call `sync_current_run()` directly
-for live sync (D-S0).
+calls into this interface for replay. (Live sync no longer routes here: since
+Task #91 the orchestrator calls `kdb_graph.intake` directly on a shared
+connection — D-S0 superseded. The one remaining live-sync entry is
+Obsidian-specific `sync_cleanup_run`, #68.)
 
 Critical invariant (D-B1): adapters parse producer JSON artifacts by documented
 field names. Adapters MUST NOT import producer Python types (no imports from
@@ -124,24 +126,5 @@ class ProducerAdapter(Protocol):
         For future producers: delegates to `apply_mutations` once the normalized
         contract refactor lands per producer-contract §5 path (a). Adapters do
         NOT call producer-specific entry points (anti-pattern path (b)).
-        """
-        ...
-
-    # ── live-sync path (D-S0) ─────────────────────────────────────────────────
-
-    def sync_current_run(
-        self,
-        mutation: dict,
-        scan: dict,
-        run_id: str,
-        graph_dir: Path | None = None,
-    ) -> IntakeResult:
-        """Entry point for producer's live-sync hook (e.g., `kdb_orchestrate.py`
-        graph-sync step — originally wired in #63.7-pre via the deleted kdb_compile.py).
-
-        Adapter opens a GraphDB connection at `graph_dir` (or default), calls
-        `apply()` within a transaction, closes. This is the single
-        producer→graph entry point; producer code does NOT touch
-        `kdb_graph.GraphDB` or `apply_compile_result` directly (D-S0).
         """
         ...

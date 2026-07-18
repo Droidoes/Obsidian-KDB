@@ -10,8 +10,10 @@ Critical: no imports from `compiler`, `ingestion`, or `orchestrator` anywhere
 in this module. The adapter reads producer JSON by documented field names
 (D-B1 / D34 invariant; PR1 of extraction roadmap).
 
-Per D-S0 the producer's Stage 9 wiring calls `sync_current_run` here — that
-hookup itself lives in `kdb_orchestrate.py` (supersedes the deleted `kdb_compile.py`).
+Live sync: since Task #91 the orchestrator holds a shared `GraphDB` connection
+and calls `kdb_graph.intake` entry points directly (superseding D-S0's
+adapter-mediated Stage 9); this adapter remains the entry for rebuild/replay
+and for cleanup live-sync (`sync_cleanup_run`, #68).
 """
 from __future__ import annotations
 
@@ -197,27 +199,7 @@ class ObsidianRunsAdapter:
             return apply_compile_result(mutation, scan, run_id, conn=conn)
         raise ValueError(f"unsupported event_type: {event_type!r}")
 
-    # ── live-sync (D-S0) ──────────────────────────────────────────────────────
-
-    def sync_current_run(
-        self,
-        mutation: dict,
-        scan: dict,
-        run_id: str,
-        graph_dir: Path | None = None,
-    ) -> IntakeResult:
-        """Open a GraphDB at `graph_dir` and apply one run's payload.
-
-        Single Obsidian→graph entry point per D-S0; `kdb_orchestrate.py` calls
-        this for graph-sync (wired in #63.7-pre). The adapter owns connection
-        lifecycle here so the caller (producer code) never touches `kdb_graph.GraphDB`.
-        """
-        from kdb_graph import default_graph_path
-        from kdb_graph.graphdb import GraphDB
-
-        resolved = graph_dir if graph_dir is not None else default_graph_path()
-        with GraphDB(resolved) as gdb:
-            return self.apply(mutation, scan, run_id, gdb.conn)
+    # ── live-sync path (#68 cleanup; D-S0 superseded by Task #91) ────────────
 
     def sync_cleanup_run(
         self,
@@ -227,10 +209,11 @@ class ObsidianRunsAdapter:
     ) -> IntakeResult:
         """Live-sync a cleanup run into the graph (#68).
 
-        `sync_current_run`'s signature is locked by Stage 9 (D-S0) and has no
-        slot for a scan-less retraction payload — cleanup gets its own entry
-        point. `kdb-clean orphans --apply` calls this; `apply()` routes the
-        retraction (event_type='cleanup') to `apply_cleanup`."""
+        The compile live-sync path goes through `kdb_graph.intake` directly
+        (Task #91) and has no slot for a scan-less retraction payload — cleanup
+        gets its own entry point. `kdb-clean orphans --apply` calls this;
+        `apply()` routes the retraction (event_type='cleanup') to
+        `apply_cleanup`."""
         from kdb_graph import default_graph_path
         from kdb_graph.graphdb import GraphDB
 

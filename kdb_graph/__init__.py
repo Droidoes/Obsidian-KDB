@@ -38,10 +38,19 @@ __all__ = [
 def default_graph_path() -> Path:
     """Default location for the Kuzu GraphDB-KDB directory.
 
-    D35: sibling to Obsidian-KDB under the active projects root, not OneDrive-synced.
-    Override via the `KDB_GRAPH_PATH` environment variable.
+    `KDB_GRAPH_PATH` wins when set. Otherwise derives from the vault root —
+    `<vault>/KDB/graph`, vault = `OBSIDIAN_VAULT_PATH` else `~/Obsidian` — so the
+    graph and the wiki content live on the SAME KDB instance by default
+    (official: `~/Obsidian/KDB/graph`; sandbox: `~/Obsidian/Vault-in-place-test-run/KDB/graph`).
+
+    Supersedes the retired D35 default (`~/Droidoes/GraphDB-KDB`, a stray 2.3-era
+    file) per the #113 vault-derived rule. The vault resolution is mirrored inline
+    from `common/paths.py::vault_root` — do NOT import `common` here (kdb_graph's
+    zero-`common` invariant).
     """
     env = os.environ.get("KDB_GRAPH_PATH")
     if env:
         return Path(env)
-    return Path.home() / "Droidoes" / "GraphDB-KDB"
+    vault = os.environ.get("OBSIDIAN_VAULT_PATH")
+    root = Path(vault).expanduser() if vault else Path.home() / "Obsidian"
+    return root.resolve() / "KDB" / "graph"

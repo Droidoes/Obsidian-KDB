@@ -1,7 +1,7 @@
 import ast, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-INTERNAL = {"common", "ingestion", "compiler", "kdb_graph", "orchestrator", "tools",
+INTERNAL = {"common", "ingestion", "compiler", "kdb_graph", "orchestrator", "tools", "kdb_mcp",
             # removed package roots — kept here so a future stale import of one
             # surfaces as an illegal edge rather than being silently ignored:
             "kdb_compiler", "graphdb_kdb", "kdb_benchmark"}
@@ -34,11 +34,12 @@ import pytest
 
 ALLOWED = {
     "common":       set(),
-    "kdb_graph":    {"common"},
+    "kdb_graph":    set(),  # zero internal imports — stricter than the doc contract; enforced here
     "ingestion":    {"common"},
     "compiler":     {"common", "kdb_graph"},
     "orchestrator": {"common", "kdb_graph", "ingestion", "compiler", "tools"},  # 'tools' = documented cleanup edge
     "tools":        {"common", "kdb_graph", "ingestion", "compiler"},
+    "kdb_mcp":      {"common", "kdb_graph"},
 }
 
 

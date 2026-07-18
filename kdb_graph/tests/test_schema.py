@@ -328,11 +328,19 @@ def test_migration_unknown_version_raises(graph_dir, monkeypatch):
 
 
 def test_default_graph_path_default(monkeypatch):
-    """default_graph_path returns ~/Droidoes/GraphDB-KDB when env var unset."""
+    """default_graph_path derives <vault>/KDB/graph from the default vault root."""
     monkeypatch.delenv("KDB_GRAPH_PATH", raising=False)
+    monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
     p = kdb_graph.default_graph_path()
     assert isinstance(p, Path)
-    assert p == Path.home() / "Droidoes" / "GraphDB-KDB"
+    assert p == (Path.home() / "Obsidian").resolve() / "KDB" / "graph"
+
+
+def test_default_graph_path_vault_env(monkeypatch, tmp_path):
+    """OBSIDIAN_VAULT_PATH drives the derived default when KDB_GRAPH_PATH is unset."""
+    monkeypatch.delenv("KDB_GRAPH_PATH", raising=False)
+    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path))
+    assert kdb_graph.default_graph_path() == tmp_path.resolve() / "KDB" / "graph"
 
 
 def test_default_graph_path_env_override(tmp_path, monkeypatch):

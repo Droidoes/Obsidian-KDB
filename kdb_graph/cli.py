@@ -25,6 +25,16 @@ def _resolve_graph_dir(args: argparse.Namespace) -> Path:
     return Path(args.graph_dir) if args.graph_dir else default_graph_path()
 
 
+def _open_read_only(args: argparse.Namespace) -> GraphDB:
+    """Open the graph read-only for pure-read subcommands.
+
+    #112 discipline: a read command must never silently trigger a schema
+    migration — on version mismatch it fails loud with an actionable error
+    instead. Write commands (init, rebuild, cypher escape hatch) open writable.
+    """
+    return GraphDB(_resolve_graph_dir(args), read_only=True)
+
+
 def _json_default(o: Any):
     if dataclasses.is_dataclass(o):
         return dataclasses.asdict(o)
@@ -48,8 +58,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_stats(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         s = gdb.stats()
     if args.json:
         _print_json(s)
@@ -60,8 +69,7 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
 
 def cmd_neighbors(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         entities = gdb.neighbors(args.slug, direction=args.direction, depth=args.depth)
     if args.json:
         _print_json([dataclasses.asdict(e) for e in entities])
@@ -74,8 +82,7 @@ def cmd_neighbors(args: argparse.Namespace) -> int:
 
 
 def cmd_incoming(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         entities = gdb.incoming_links(args.slug)
     if args.json:
         _print_json([dataclasses.asdict(e) for e in entities])
@@ -88,8 +95,7 @@ def cmd_incoming(args: argparse.Namespace) -> int:
 
 
 def cmd_path(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         path = gdb.shortest_path(args.from_slug, args.to_slug, max_hops=args.max_hops)
     if args.json:
         _print_json(path)
@@ -102,8 +108,7 @@ def cmd_path(args: argparse.Namespace) -> int:
 
 
 def cmd_pagerank(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         ranked = gdb.pagerank(top_n=args.top)
     if args.json:
         _print_json([{"slug": s, "score": sc} for s, sc in ranked])
@@ -116,8 +121,7 @@ def cmd_pagerank(args: argparse.Namespace) -> int:
 
 
 def cmd_communities(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         membership = gdb.communities()
     if args.json:
         _print_json(membership)
@@ -137,8 +141,7 @@ def cmd_communities(args: argparse.Namespace) -> int:
 
 
 def cmd_structural_holes(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         holes = gdb.structural_holes()
     if args.json:
         _print_json([{"comm_a": a, "comm_b": b, "n_bridges": n} for a, b, n in holes])
@@ -152,8 +155,7 @@ def cmd_structural_holes(args: argparse.Namespace) -> int:
 
 
 def cmd_orphans(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         entities = gdb.orphan_entities()
     if args.json:
         _print_json([dataclasses.asdict(e) for e in entities])
@@ -213,7 +215,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         if manifest_path.is_file():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    with GraphDB(graph_dir) as gdb:
+    with GraphDB(graph_dir, read_only=True) as gdb:
         if args.canonicalization_only:
             divs = verifier.verify_canonicalization_invariants(gdb.conn)
             result = verifier.VerifyResult(ok=not divs, divergences=divs, counts={
@@ -280,8 +282,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_subgraph_by_source(args: argparse.Namespace) -> int:
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         sg = gdb.subgraph_by_source(args.source_id)
     if args.json:
         _print_json({
@@ -473,8 +474,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 def cmd_domains(args: argparse.Namespace) -> int:
     """#76.4: list Domain nodes sorted by entity count (blueprint §6.6)."""
-    graph_dir = _resolve_graph_dir(args)
-    with GraphDB(graph_dir) as gdb:
+    with _open_read_only(args) as gdb:
         result = gdb.conn.execute(
             """
             MATCH (e:Entity)-[:BELONGS_TO]->(d:Domain)
@@ -523,7 +523,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--graph-dir",
         default=None,
-        help="Override Kuzu directory location (default: $KDB_GRAPH_PATH or ~/Droidoes/GraphDB-KDB).",
+        help="Override Kuzu directory location (default: $KDB_GRAPH_PATH, else <vault>/KDB/graph from $OBSIDIAN_VAULT_PATH or ~/Obsidian).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
