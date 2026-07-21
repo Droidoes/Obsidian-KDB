@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KDB Orchestration Workflow — Visual Reference</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #5b6472;
+    --line: #d9dee7;
+    --accent: #3b5bdb;
+    --accent-soft: #e8edfb;
+    --teal: #0b7285;
+    --teal-soft: #e3f4f6;
+    --amber: #b26a00;
+    --amber-soft: #fdf0dc;
+    --red: #c92a2a;
+    --red-soft: #fbe3e3;
+    --green: #2b8a3e;
+    --green-soft: #e3f3e7;
+    --violet: #7048e8;
+    --violet-soft: #efebfd;
+    --code-bg: #f0f2f6;
+    --gray-soft: #eef1f5;
+    --radius: 10px;
+  }
+  [data-theme="dark"] {
+    --bg: #15171e;
+    --panel: #1d2029;
+    --ink: #e3e7ee;
+    --muted: #98a1b1;
+    --line: #333949;
+    --accent: #91a7ff;
+    --accent-soft: #25305b;
+    --teal: #66d9e8;
+    --teal-soft: #173a40;
+    --amber: #ffc078;
+    --amber-soft: #3f3117;
+    --red: #ff8787;
+    --red-soft: #452323;
+    --green: #8ce99a;
+    --green-soft: #1d3524;
+    --violet: #b197fc;
+    --violet-soft: #2c2650;
+    --code-bg: #282d3a;
+    --gray-soft: #262b36;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  /* ---------- sidebar ---------- */
+  nav {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 264px; overflow-y: auto;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 22px 18px 40px;
+  }
+  nav h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: .2px; }
+  nav .sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  nav ol { list-style: none; margin: 0; padding: 0; counter-reset: item; }
+  nav li { margin: 2px 0; }
+  nav a {
+    display: block; padding: 6px 10px; border-radius: 7px;
+    color: var(--ink); text-decoration: none; font-size: 13.5px;
+  }
+  nav a:hover { background: var(--accent-soft); color: var(--accent); }
+  nav a .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 7px; font-size: 12px; }
+  nav .grp { margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  /* ---------- content ---------- */
+  main { margin-left: 264px; padding: 40px 48px 90px; max-width: 1060px; }
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+  h2 { font-size: 24px; margin: 0 0 6px; }
+  h2 .n { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 10px; }
+  h3 { font-size: 16.5px; margin: 28px 0 8px; }
+  p.lede { color: var(--muted); font-size: 15px; margin: 0 0 22px; max-width: 70ch; }
+  p, li { font-size: 14.5px; }
+  code {
+    background: var(--code-bg); border-radius: 5px; padding: 1px 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px; margin: 16px 0;
+  }
+  .diagram { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin: 18px 0; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .cap { font-size: 12.5px; color: var(--muted); text-align: center; margin-top: 10px; }
+  .cap-left { text-align: left; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .callout { border-radius: var(--radius); padding: 14px 18px; margin: 16px 0; font-size: 14px; border: 1px solid; }
+  .callout .t { font-weight: 650; display: block; margin-bottom: 4px; }
+  .co-blue { background: var(--accent-soft); border-color: #c3d0f5; }
+  .co-amber { background: var(--amber-soft); border-color: #f0d9b5; }
+  .co-red { background: var(--red-soft); border-color: #f3c2c2; }
+  .co-green { background: var(--green-soft); border-color: #c6e6cf; }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 10px; font-size: 11.5px; font-weight: 600; }
+  .pill-blue { background: var(--accent-soft); color: var(--accent); }
+  .pill-teal { background: var(--teal-soft); color: var(--teal); }
+  .pill-violet { background: var(--violet-soft); color: var(--violet); }
+  .pill-amber { background: var(--amber-soft); color: var(--amber); }
+  .pill-red { background: var(--red-soft); color: var(--red); }
+  .pill-green { background: var(--green-soft); color: var(--green); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  ul.tight li { margin: 5px 0; }
+  .ref { font-size: 12.5px; color: var(--muted); }
+  .ref code { font-size: 11.5px; }
+  /* ---------- collapsible prompt sample ---------- */
+  details.prompt-sample { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 16px 0; }
+  details.prompt-sample summary { cursor: pointer; padding: 12px 18px; font-size: 13.5px; font-weight: 600; color: var(--accent); user-select: none; }
+  details.prompt-sample pre {
+    margin: 0; padding: 16px 18px; border-top: 1px solid var(--line);
+    background: var(--code-bg); border-radius: 0 0 var(--radius) var(--radius);
+    overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  }
+  /* ---------- SVG diagram primitives ---------- */
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--ink); }
+  .s-title { font-size: 13px; font-weight: 650; }
+  .s-body { font-size: 11px; fill: var(--muted); }
+  .s-small { font-size: 10px; fill: var(--muted); }
+  .s-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; fill: var(--amber); }
+  .box-blue { fill: var(--accent-soft); stroke: #8ba3ea; }
+  .box-teal { fill: var(--teal-soft); stroke: #5fb7c4; }
+  .box-violet { fill: var(--violet-soft); stroke: #b3a1f2; }
+  .box-amber { fill: var(--amber-soft); stroke: #e5bd7f; }
+  .box-red { fill: var(--red-soft); stroke: #e79a9a; }
+  .box-green { fill: var(--green-soft); stroke: #93d0a3; }
+  .box-gray { fill: var(--gray-soft); stroke: #c3cad4; }
+  .arr { stroke: #97a1b1; stroke-width: 1.6; fill: none; marker-end: url(#arrowhead); }
+  .arr-dash { stroke: #97a1b1; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrowhead); }
+  .arr-red { stroke: var(--red); stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; marker-end: url(#arrowhead-red); }
+  .lbl { font-size: 10.5px; fill: var(--muted); }
+  .lbl-red { font-size: 10.5px; fill: var(--red); }
+  .lbl-green { font-size: 10.5px; fill: var(--green); }
+  /* ---------- theme toggle ---------- */
+  body, nav, .card, .diagram, .callout, .theme-toggle { transition: background-color .18s ease, border-color .18s ease, color .18s ease; }
+  .theme-toggle {
+    margin-top: 20px; width: 100%;
+    background: var(--code-bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; font-size: 12.5px; cursor: pointer;
+    font-family: inherit;
+  }
+  .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#97a1b1"></path>
+    </marker>
+    <marker id="arrowhead-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#c92a2a"></path>
+    </marker>
+  </defs>
+</svg>
+
+<nav>
+  <h1>KDB Orchestration Workflow</h1>
+  <div class="sub">Visual reference · v0.5.7 era<br>Obsidian-KDB</div>
+  <div class="grp">The loop</div>
+  <ol>
+    <li><a href="#big-picture"><span class="n">1</span>The big picture</a></li>
+    <li><a href="#pipelines"><span class="n">2</span>Pipelines &amp; scan scope</a></li>
+    <li><a href="#hashes"><span class="n">3</span>Hashes &amp; the manifest</a></li>
+    <li><a href="#pass1"><span class="n">4</span>Pass-1 — Enrich</a></li>
+    <li><a href="#pass2"><span class="n">5</span>Pass-2 — Compile</a></li>
+    <li><a href="#gauntlet"><span class="n">6</span>Validate, repair, canonicalize</a></li>
+    <li><a href="#commit"><span class="n">7</span>The commit sequence (β)</a></li>
+    <li><a href="#intake"><span class="n">8</span>Graph intake phases</a></li>
+    <li><a href="#finalize"><span class="n">9</span>Finalize pass</a></li>
+  </ol>
+  <div class="grp">Operating the system</div>
+  <ol>
+    <li><a href="#state"><span class="n">10</span>State model &amp; rebuild</a></li>
+    <li><a href="#failures"><span class="n">11</span>Failure semantics &amp; ops</a></li>
+  </ol>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="big-picture">
+  <h2><span class="n">1</span>The big picture</h2>
+  <p class="lede">One conductor — <code>kdb-orchestrate</code> — runs the whole loop. The founding rule:
+  <strong>the LLM is stateless compute and never touches the filesystem</strong>; Python owns every write,
+  every path, every timestamp. The LLM only returns structured JSON.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 340" width="980" height="340">
+
+      <!-- Row 1: per-source loop -->
+      <text x="20" y="24" class="s-title">Per-source loop</text>
+
+      <rect x="20" y="40" width="120" height="54" rx="9" class="box-gray"></rect>
+      <text x="80" y="62" text-anchor="middle" class="s-title">1 · Scan</text>
+      <text x="80" y="79" text-anchor="middle" class="s-body">hash + diff, no LLM</text>
+
+      <rect x="176" y="40" width="150" height="54" rx="9" class="box-teal"></rect>
+      <text x="251" y="62" text-anchor="middle" class="s-title">2 · Pass-1 Enrich</text>
+      <text x="251" y="79" text-anchor="middle" class="s-body">cheap LLM: classify</text>
+
+      <rect x="362" y="40" width="150" height="54" rx="9" class="box-violet"></rect>
+      <text x="437" y="62" text-anchor="middle" class="s-title">3 · Pass-2 Compile</text>
+      <text x="437" y="79" text-anchor="middle" class="s-body">frontier LLM: extract</text>
+
+      <rect x="548" y="40" width="170" height="54" rx="9" class="box-amber"></rect>
+      <text x="633" y="62" text-anchor="middle" class="s-title">4–6 · Gauntlet</text>
+      <text x="633" y="79" text-anchor="middle" class="s-body">validate · repair · canonicalize</text>
+
+      <rect x="754" y="40" width="206" height="54" rx="9" class="box-blue"></rect>
+      <text x="857" y="62" text-anchor="middle" class="s-title">7–9 · Commit (β order)</text>
+      <text x="857" y="79" text-anchor="middle" class="s-body">pages → graph → manifest LAST</text>
+
+      <path class="arr" d="M140 67 H172"></path>
+      <path class="arr" d="M326 67 H358"></path>
+      <path class="arr" d="M512 67 H544"></path>
+      <path class="arr" d="M718 67 H750"></path>
+
+      <!-- noise exit -->
+      <path class="arr-dash" d="M251 94 V128"></path>
+      <rect x="156" y="130" width="190" height="40" rx="8" class="box-gray"></rect>
+      <text x="251" y="147" text-anchor="middle" class="s-body">noise → frontmatter only</text>
+      <text x="251" y="161" text-anchor="middle" class="s-small">no Pass-2 · no entities · no pages</text>
+
+      <!-- loop-back arrow: commit → Pass-1 (the per-source loop) -->
+      <path class="arr-dash" d="M857 94 V 190 H 148 V 67 H 172"></path>
+      <text x="500" y="184" class="lbl">next source</text>
+
+      <!-- Row 2: once per run -->
+      <text x="20" y="216" class="s-title">Once per run</text>
+
+      <rect x="20" y="232" width="180" height="54" rx="9" class="box-blue"></rect>
+      <text x="110" y="254" text-anchor="middle" class="s-title">Finalize</text>
+      <text x="110" y="271" text-anchor="middle" class="s-body">wire links · orphans · clean</text>
+
+      <rect x="236" y="232" width="200" height="54" rx="9" class="box-green"></rect>
+      <text x="336" y="254" text-anchor="middle" class="s-title">Replay payload + journals</text>
+      <text x="336" y="271" text-anchor="middle" class="s-body">compile_result.json · state/runs/</text>
+
+      <rect x="472" y="232" width="220" height="54" rx="9" class="box-gray"></rect>
+      <text x="582" y="254" text-anchor="middle" class="s-title">Durable outputs</text>
+      <text x="582" y="271" text-anchor="middle" class="s-body">KDB/wiki/ · Kuzu graph · manifest.json</text>
+
+      <path class="arr" d="M200 259 H232"></path>
+      <path class="arr" d="M436 259 H468"></path>
+    </svg>
+    <div class="cap">The whole loop: per-source stages 1–9, then a single finalize pass per run.</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">The LLM call contract (both passes)</h3>
+    <table>
+      <tr><th>Layer</th><th>Attempts</th><th>On exhaustion</th></tr>
+      <tr><td><strong>Transport</strong> — per API call (<code>call_model_retry.py</code>)</td><td><strong>3</strong> — exponential backoff (1s → 30s cap, jittered, honors <code>Retry-After</code>); transient network / rate-limit / 5xx only</td><td>error surfaces to the content layer</td></tr>
+      <tr><td><strong>Content</strong> — per source, per pass</td><td><strong>2</strong> — deterministic repairs are <em>free</em> (no API call, don't consume attempts): stray-backslash escape; slug coercion</td><td><strong>failure declared → quarantined</strong>: manifest error row (<code>RUN_STATE_ERROR_INGEST</code> for Pass-1, <code>RUN_STATE_ERROR_COMPILE</code> for Pass-2), event recorded, <strong>the loop continues</strong> — one bad source never kills the batch (D-96-1). Auto-retried next run: its hash never became <code>last_compiled_hash</code>.</td></tr>
+      <tr><td><strong>Run level</strong></td><td>—</td><td>only run-fatal / invariant failures abort (fail-fast, D-91-8); <code>last_orchestrate.json</code> is written success, abort, or crash</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Who owns what</h3>
+      <table>
+        <tr><th>Layer</th><th>Owns</th></tr>
+        <tr><td><strong>LLM</strong></td><td>Judgment + prose. Structured JSON only: slugs, bodies, links. No paths, no timestamps, no frontmatter.</td></tr>
+        <tr><td><strong>Python</strong></td><td>All state + I/O: scanning, hashing, validation, repair, page writes, graph transactions, ledger.</td></tr>
+        <tr><td><strong>Kuzu graph</strong></td><td>The live ontology authority: Entity, Source, Domain, LINKS_TO, SUPPORTS, ALIAS_OF, BELONGS_TO.</td></tr>
+        <tr><td><strong>Markdown vault</strong></td><td>Persistent state humans read: sources (with Pass-1 frontmatter) + rendered wiki pages.</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Why this shape</h3>
+      <ul class="tight">
+        <li><strong>No hallucinated paths</strong> — the model can't invent a filesystem location because it never emits one.</li>
+        <li><strong>Every write is auditable + dry-run capable</strong> — all mutations flow through one Python commit sequence.</li>
+        <li><strong>Crash-safe by construction</strong> — the manifest is written last, so any mid-source failure simply re-runs that source next time.</li>
+        <li><strong>The graph is derivable</strong> — journals + compile_result.json rebuild it from scratch (<code>graphdb-kdb rebuild</code>, D39).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout co-amber"><span class="t">Run size is a design variable (vault-in-place note)</span>
+  <code>finalize</code> runs <strong>once per invocation</strong>, and its cost scales with the batch and the graph: batch <code>wire_links</code> over all accumulated pages, PageRank recompute, orphan sweep. For a full-vault ingest (~2k sources, 6–12h), prefer <strong>chunked runs</strong> (<code>--limit N</code>, repeated) over one monolith: each chunk finalizes over its own batch — bounding finalize cost and memory, producing per-chunk checkpoints and journals, and capping the #94 blast radius if a fail-fast fires mid-run. The open trade-off for the rollout design: per-chunk finalize overhead vs. monolith efficiency.</div>
+  <p class="ref">Conductor: <code>orchestrator/kdb_orchestrate.py</code> · architecture: <code>docs/CODEBASE_OVERVIEW.md</code> §5</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="pipelines">
+  <h2><span class="n">2</span>Pipelines &amp; scan scope</h2>
+  <p class="lede">The system is multi-pipeline by design. One hand-authored registry per vault —
+  <code>&lt;vault&gt;/KDB/state/pipelines.json</code> — declares which ingestion pipelines exist and what each one scans.
+  <code>kdb-orchestrate --pipeline &lt;id&gt;</code> runs one pipeline per invocation.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 300" width="980" height="300">
+      <text x="20" y="24" class="s-title">pipelines.json (per vault)</text>
+      <rect x="20" y="38" width="300" height="112" rx="9" class="box-gray"></rect>
+      <text x="36" y="62" class="s-code">id · type (in-place | raw) · root</text>
+      <text x="36" y="80" class="s-code">excludes · force_noise · force_signal</text>
+      <text x="36" y="98" class="s-code">file_types · feeder (future streams)</text>
+      <text x="36" y="126" class="s-small">validated: unique ids, root must exist</text>
+
+      <path class="arr" d="M320 94 H380"></path>
+
+      <rect x="384" y="38" width="220" height="112" rx="9" class="box-blue"></rect>
+      <text x="494" y="62" text-anchor="middle" class="s-title">scan_scope()</text>
+      <text x="494" y="80" text-anchor="middle" class="s-body">walk root → prune excludes + hidden</text>
+      <text x="494" y="97" text-anchor="middle" class="s-body">filter file_types → sha256 each file</text>
+      <text x="494" y="114" text-anchor="middle" class="s-body">diff vs this pipeline's manifest slice</text>
+
+      <path class="arr" d="M604 94 H664"></path>
+
+      <rect x="668" y="38" width="292" height="112" rx="9" class="box-teal"></rect>
+      <text x="814" y="62" text-anchor="middle" class="s-title">last_scan.json</text>
+      <text x="814" y="80" text-anchor="middle" class="s-body">to_compile (new/changed)</text>
+      <text x="814" y="97" text-anchor="middle" class="s-body">to_reconcile (MOVED / DELETED)</text>
+      <text x="814" y="114" text-anchor="middle" class="s-body">errors · skipped symlinks</text>
+
+      <!-- vault tree -->
+      <text x="20" y="196" class="s-title">Example: vault-in-place as a general pipeline</text>
+      <rect x="20" y="210" width="940" height="70" rx="9" class="box-gray"></rect>
+      <text x="40" y="236" class="s-code">{"id": "vault-in-place", "type": "in-place", "root": "/home/ftu/Obsidian",</text>
+      <text x="40" y="254" class="s-code">  "excludes": ["KDB/"], "force_noise": ["Daily Notes/**", "Projects/**"], "file_types": [".md"]}</text>
+      <text x="40" y="272" class="s-small">excludes prunes KDB/ at walk time — the system never ingests its own wiki output, state, graph, or other pipelines' raw dirs.</text>
+    </svg>
+    <div class="cap cap-left">Config, not code: pipeline behavior comes entirely from <code>root</code> + <code>excludes</code> + globs. The <code>type</code> field is validated but behaviorally inert — no special-casing anywhere.<br>
+    <strong>Tracked design note (ratified direction for the rollout):</strong> <em>deprecate the in-place vs raw concept entirely</em> — there are only pipelines, each an absolute <code>root</code> plus scope globs. What we call "raw" pipelines are just roots at <code>&lt;vault&gt;/KDB/raw/&lt;pipeline-id&gt;</code> by convention. Companion guard: when <code>pipelines.json</code> is written/loaded, <strong>audit for overlapping roots</strong> — and the check must be exclude-aware (the vault root <em>contains</em> <code>KDB/raw/*</code> yet stays disjoint via <code>excludes: ["KDB/"]</code>; a naive prefix check would false-positive on exactly that).</div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Source identity</h3>
+      <ul class="tight">
+        <li><code>source_id</code> = <strong>vault-root-relative path</strong> (<code>kdb_scan.py</code> <code>_rel_to_vault</code>) — never pipeline-relative, so no ambiguity and no cross-pipeline collisions.</li>
+        <li>The scan diffs against <strong>only this pipeline's</strong> manifest records (filtered by <code>pipeline_id</code>) — MOVED/DELETED never leak across pipelines (D-91-9).</li>
+        <li>Renames are detected by a two-pass hash match: same hash, new path → MOVED, not delete+add.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Configuration rules</h3>
+      <ul class="tight">
+        <li><strong>Scopes must be disjoint.</strong> The manifest is keyed by <code>source_id</code>; two overlapping roots would double-ingest the same file under one key. (Enforcement = candidate validation work.)</li>
+        <li><code>excludes</code> = walk-time prune — never hashed, never tracked. <code>force_noise</code> = still scanned and hashed, recorded as sources, but skipped by the LLM.</li>
+        <li>Feeder automation (RSS, podcasts, …) is the empty <code>ingestion/feeder/</code> package — the registry's <code>feeder</code> slot is the reserved hook.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="ref"><code>ingestion/config/pipeline_registry.py</code> · <code>ingestion/kdb_scan.py::scan_scope</code> · Task #91</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="hashes">
+  <h2><span class="n">3</span>Hashes &amp; the manifest</h2>
+  <p class="lede">SHA-256 is the heartbeat of incremental operation. One honest rule decides what compiles
+  (D46): <strong>a file compiles iff <code>current_hash ≠ last_compiled_hash</code></strong>. No force flags, no run_state games.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 240" width="980" height="240">
+      <!-- timeline -->
+      <rect x="20" y="40" width="200" height="56" rx="9" class="box-gray"></rect>
+      <text x="120" y="62" text-anchor="middle" class="s-title">Scan (t₀)</text>
+      <text x="120" y="79" text-anchor="middle" class="s-body">hash H₀ of raw file</text>
+
+      <path class="arr" d="M220 68 H260"></path>
+
+      <rect x="264" y="40" width="220" height="56" rx="9" class="box-teal"></rect>
+      <text x="374" y="62" text-anchor="middle" class="s-title">Pass-1 embeds frontmatter</text>
+      <text x="374" y="79" text-anchor="middle" class="s-body">file on disk changes → H₀ is stale</text>
+
+      <path class="arr" d="M484 68 H524"></path>
+
+      <rect x="528" y="40" width="220" height="56" rx="9" class="box-blue"></rect>
+      <text x="638" y="62" text-anchor="middle" class="s-title">Orchestrator re-hashes</text>
+      <text x="638" y="79" text-anchor="middle" class="s-body">post_embed_hash H₁ + post_embed_mtime</text>
+
+      <path class="arr" d="M748 68 H788"></path>
+
+      <rect x="792" y="40" width="168" height="56" rx="9" class="box-green"></rect>
+      <text x="876" y="62" text-anchor="middle" class="s-title">Manifest records H₁</text>
+      <text x="876" y="79" text-anchor="middle" class="s-body">hash = last_compiled_hash</text>
+
+      <!-- next run -->
+      <path class="arr-dash" d="M120 96 V 150 H 876 V 100"></path>
+      <text x="480" y="144" class="lbl">next run: untouched file → current H₁ == last_compiled H₁ → skipped · any Obsidian edit (body or frontmatter) → hash flips → recompile</text>
+
+      <text x="20" y="196" class="s-body">Why the re-hash exists: without it, the frontmatter embed itself would look like a user edit on the next scan → every source would recompile forever.</text>
+      <text x="20" y="214" class="s-small">orchestrator/kdb_orchestrate.py::_commit_source — scan_entry["current_hash"] overridden with post-embed values before the manifest is computed.</text>
+    </svg>
+    <div class="cap">The post-embed hash override: the manifest always records the file <em>as it sits on disk after Pass-1</em>.</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What this buys you in daily use</h3>
+    <ul class="tight">
+      <li><strong>Edit-driven recompiles for free.</strong> Change a note in Obsidian → next run re-enriches and recompiles exactly that file. This is what makes vault-in-place <em>living</em> instead of a one-shot import.</li>
+      <li><strong>Crash = resume.</strong> A killed run restarts cleanly: committed sources are hash-current and skipped; uncommitted ones recompile.</li>
+      <li><strong>MOVED is cheap.</strong> Rename a file without editing it → hash match → path update, no LLM spend.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>ingestion/kdb_scan.py</code> (hashing, classify) · <code>orchestrator/manifest_writer.py</code> · D46</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="pass1">
+  <h2><span class="n">4</span>Pass-1 — Enrich</h2>
+  <p class="lede">One cheap LLM call per in-scope source. The model sees <strong>only the source body</strong> —
+  never the file name or path — and returns one JSON envelope: triage, classification, and retrieval seeds.
+  Python then validates, repairs, overrides, stamps, and embeds it as YAML frontmatter.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 330" width="980" height="330">
+      <!-- envelope -->
+      <rect x="20" y="30" width="440" height="170" rx="9" class="box-teal"></rect>
+      <text x="36" y="54" class="s-title">The 11 LLM-owned fields</text>
+      <text x="36" y="76" class="s-body">kdb_signal — signal | noise  (uncertain → prefer signal)</text>
+      <text x="36" y="94" class="s-body">domain — 1 of 23 ids · source_type — 1 of 21 ids</text>
+      <text x="36" y="112" class="s-body">author · summary (1–3 sentences) · key_themes (2–5)</text>
+      <text x="36" y="130" class="s-body">entity_search_keys (≤10 kebab slugs → feeds Pass-2 T2)</text>
+      <text x="36" y="148" class="s-body">confidence · uncertainty_reason · reject_reason · other_reason</text>
+      <text x="36" y="176" class="s-small">Enums come from config (domains.json / source_types.json), not code.</text>
+      <text x="36" y="191" class="s-small">Boundary-disambiguation rules are injected into the prompt.</text>
+
+      <rect x="500" y="30" width="460" height="170" rx="9" class="box-gray"></rect>
+      <text x="516" y="54" class="s-title">The 4 code-owned fields (LLM never asked)</text>
+      <text x="516" y="76" class="s-body">prompt_version · model · schema_version · override</text>
+      <text x="516" y="100" class="s-body">override block (always emitted, nulls when nothing fired):</text>
+      <text x="532" y="118" class="s-small">applied · rule (force_signal | force_noise) · match (glob)</text>
+      <text x="532" y="134" class="s-small">llm_original · reject_reason_cleared</text>
+      <text x="516" y="162" class="s-small">force_noise/force_signal globs applied AFTER the LLM answers;</text>
+      <text x="516" y="177" class="s-small">the LLM never sees the path lists; force_noise wins ties (D-89).</text>
+
+      <!-- gauntlet row -->
+      <rect x="20" y="232" width="150" height="56" rx="9" class="box-amber"></rect>
+      <text x="95" y="254" text-anchor="middle" class="s-title">Parse</text>
+      <text x="95" y="271" text-anchor="middle" class="s-body">rung-1: escape stray \</text>
+
+      <path class="arr" d="M170 260 H196"></path>
+      <rect x="200" y="232" width="190" height="56" rx="9" class="box-amber"></rect>
+      <text x="295" y="254" text-anchor="middle" class="s-title">Stage-1 validate (11 fields)</text>
+      <text x="295" y="271" text-anchor="middle" class="s-body">failure gates the single retry</text>
+
+      <path class="arr" d="M390 260 H416"></path>
+      <rect x="420" y="232" width="170" height="56" rx="9" class="box-amber"></rect>
+      <text x="505" y="254" text-anchor="middle" class="s-title">Coerce, don't reject</text>
+      <text x="505" y="271" text-anchor="middle" class="s-body">truncate keys &gt; 10</text>
+
+      <path class="arr" d="M590 260 H616"></path>
+      <rect x="620" y="232" width="170" height="56" rx="9" class="box-amber"></rect>
+      <text x="705" y="254" text-anchor="middle" class="s-title">Overrides + stamp</text>
+      <text x="705" y="271" text-anchor="middle" class="s-body">then Stage-2 validate (15)</text>
+
+      <path class="arr" d="M790 260 H816"></path>
+      <rect x="820" y="232" width="140" height="56" rx="9" class="box-green"></rect>
+      <text x="890" y="254" text-anchor="middle" class="s-title">Embed YAML</text>
+      <text x="890" y="271" text-anchor="middle" class="s-body">atomic write</text>
+    </svg>
+    <div class="cap">Pass-1: envelope → gauntlet → frontmatter. Two-stage validation (Task #95): raw LLM output first (retry-gated), assembled envelope after stamping (catches Python bugs).<br>
+    Retries: 3 transport attempts per API call; <strong>2 content attempts</strong> (rung-1 repair is free). Failure is declared after the 2nd content attempt → source quarantined (<code>enrich_failed</code>, <code>RUN_STATE_ERROR_INGEST</code>) and the loop continues.</div>
+  </div>
+
+  <h3>4.1 What the model actually sees — sample rendered prompt</h3>
+  <details class="prompt-sample">
+    <summary>Sample rendered Pass-1 prompt (v1.2.0) — click to expand</summary>
+    <pre>You are given ONE markdown document from a personal knowledge base. Your job:
+decide whether it holds substantive knowledge worth keeping, and if so, tag
+what it is about and what form it takes. Return your judgment as a single JSON
+object.
+
+Judge content substance only. Do not consider file location, file name, or
+any non-content metadata in your judgment.
+
+## Output
+
+Return ONLY a single valid JSON object — no markdown code fences, no
+explanatory text before or after it, and do not echo the source body.
+
+### Classification fields
+
+- `kdb_signal`: "signal" or "noise". Pick "signal" if the source contains
+  substantive knowledge content (idea, observation, explanation, framework,
+  theory, case study, argument, analysis, novel information). Pick "noise"
+  if the source is workflow/task tracking, conversational fragments, logs,
+  empty content, or meta-commentary without substantive content.
+  When uncertain, prefer "signal" (preserve for human review). When a source
+  mixes task-tracking with substantive design decisions, rationale, or
+  reusable knowledge, choose "signal".
+
+- `domain`: one of the following IDs. Pick the one that best captures the
+  source's primary substantive subject. If genuinely uncategorizable, pick
+  `undecided` (last resort).
+
+  - `ai-ml` — AI &amp; Machine Learning: LLMs, prompt engineering, RAG, models, MLOps, AI tools, knowledge graphs / GraphDB as AI harness, ontology engineering for AI/LLM systems. Technical and foundational content about how AI/ML systems work.
+  - `software` — Software: Programming languages, CS algorithms, operating systems (Linux / WSL), Git, dev tools, cloud infrastructure, software architecture.
+  - `hardware` — Hardware: Computer architecture, chips, semiconductors as engineering, electronics, devices, silicon design.
+  - `math-statistics-logic` — Math, Statistics &amp; Logic: Pure and applied mathematics, probability, statistics, formal logic, decision theory, computational theory foundations.
+  - `biology` — Biology: Life sciences, genetics, cellular biology, evolution, organisms.
+  - `physics` — Physics: Physical sciences, astronomy, cosmology, chemistry at fundamental level, materials physics.
+  - `neuroscience-cognition` — Neuroscience &amp; Cognition: Brain mechanisms, cognitive science, consciousness studies, philosophy of mind. Content that maps cognitive phenomena to neurological substrates.
+  - `science-technology` — Science &amp; Technology (catch-all): Scientific or technical content that does not fit cleanly in #1–7. Use ONLY when you can articulate in one sentence why none of #1–7 applies. If you cannot articulate that reason, re-examine #1–7 first.
+  - `value-investing` — Value Investing: Investment philosophy, methods, mental models in the Buffett / Munger / Li Lu / Pabrai tradition.
+  - `personal-finance` — Personal Finance: Applied personal-investor finance: sector analysis (mining, oil &amp; gas, software, semis as industry), company analysis, equity research methodology, retirement financial planning, tax strategies, portfolio construction.
+  - `economy-markets` — Economy &amp; Markets: Macro, monetary policy, currency, bonds, interest rates, gold, commodities, market structure, economic data and statistics (GDP series, unemployment, inflation, central bank data, market indicators).
+  - `business-management` — Business &amp; Management: Strategy, operations, organizational design — distinct from investment-decision-making.
+  - `health-wellbeing` — Health &amp; Wellbeing: Nutrition, fitness, longevity, sleep, applied medicine — life-application angle.
+  - `history` — History: Historical events, civilizations, eras, historical biographies, completed historical periods.
+  - `geopolitics` — Geopolitics &amp; World Affairs: International relations, geopolitical analysis, current world events, demographics, world powers.
+  - `psychology` — Psychology &amp; Self-Improvement: Cognitive psychology, behavior, personal development, productivity.
+  - `spirituality` — Spirituality: Religions, theology, comparative religion, meditation, spiritual practice.
+  - `literature` — Literature: Fiction, poetry, literary criticism, author studies.
+  - `philosophy` — Philosophy: Western and Eastern philosophy, ethics, epistemology, metaphysics.
+  - `arts-design` — Arts &amp; Design: Visual arts, architecture, design (graphic, industrial, interaction, residential), music — aesthetic and creative disciplines.
+  - `lifestyle` — Lifestyle: Travel, collections, food and drinks, retirement activities and goals, home design choices, and other content about how to live well — the personal-experience-of-living dimension.
+  - `quotes` — Quotes: Standalone quotes — attributable one-liners, wisdom snippets, aphorisms. Use ONLY when the source's primary unit is a standalone quotation or quote collection. Quote-rich essays, speeches, or books classify by substantive subject.
+  - `undecided` — Undecided: Residual catch-all for genuinely uncategorizable content. Use ONLY when no other domain in this list describes the content's primary nature. High `undecided` rates indicate the domain list needs expansion.
+
+- `source_type`: one of the following IDs. Pick the publication form of the
+  source. If genuinely uncategorizable, pick `other` (last resort,
+  with `other_reason` filled in).
+
+  - `blog` — Blog Post: Personal blog post, technical blog, Substack newsletter, Medium piece, individual-authored writing on a personal or branded publication. Typically short to medium length (500-3000 words).
+  - `post` — Online Post: Newsletter post, forum post, community-platform post (Reddit-style threaded discussion, HN-style comment), or generic online text published on a community / forum / aggregator venue.
+  - `article` — Magazine / Long-form Article: Editorially-published magazine article, longform journalism piece, think-piece, or essay published through an editorial intermediary (The Atlantic, New Yorker, trade publication). Analytical, argumentative, or interpretive in voice.
+  - `news` — News Report: Event-reporting journalism: news article reporting facts of a current event, press release, market report. Reports what happened.
+  - `paper` — Academic / Research Paper: Peer-reviewed paper, preprint (arXiv, SSRN), working paper, conference paper, thesis, dissertation. Academic publication form regardless of subject.
+  - `book-chapter` — Book Chapter / Excerpt: Verbatim chapter, section, or excerpt extracted from a longer book-length work. The content IS the book's text.
+  - `book-summary` — Book Summary: Full-book distillation, chapter-by-chapter notes, or third-party summary of a book-length work (Blinkist-style abstracts, user's reading notes, executive summaries). The content is ABOUT a book, not FROM the book.
+  - `letter` — Public Letter: Shareholder letter, public open letter, addressed correspondence intended for a defined audience and published as such (Buffett's letters, Bezos's letters, public open letters in trade publications). Curated, public-facing, addressed.
+  - `documentation` — Technical Documentation: Software API documentation, product documentation, technical reference, tutorial, runbook, README. Content structured as a technical reference — navigable, lookup-oriented, not narrative.
+  - `wiki` — Wiki / Encyclopedic Entry: Wikipedia article, encyclopedia entry, knowledge-base reference article, fandom wiki page. Content authored in encyclopedic register — third-person, multi-source, citation-heavy, neutral tone.
+  - `transcript-podcast` — Podcast Transcript: Verbatim transcript of an audio podcast episode — host monologue, host + guest conversation, or panel discussion.
+  - `transcript-video` — Video Transcript: Verbatim transcript of video content — YouTube video, recorded talk, Vimeo, Loom, local video file. Medium-neutral within the video umbrella.
+  - `transcript-lecture` — Lecture / Talk Transcript: Verbatim transcript of one-direction educational or informational delivery — academic lecture, conference talk, keynote, TED-style talk, public address.
+  - `interview` — Interview: Q&amp;A-structured exchange where one or more interlocutors question a primary subject. Curated and intentional — the interviewer prepares questions and the subject is the focus. Format-driven and medium-neutral: applies to spoken interviews (transcribed), written interviews (email Q&amp;A, document-based submission), and any other Q&amp;A-structured exchange that is the source's primary form.
+  - `chat-log` — Chat Log / Conversation: Verbatim log of a conversational exchange between two or more parties in a messaging or LLM interface — Slack export, Discord channel archive, Google Chat export, saved ChatGPT / Claude / Gemini conversation transcript. Informal register, rapid alternating multi-speaker conversational blocks, often tool-mediated.
+  - `speech` — Speech / Address: Written-prose form of an address — prepared text of a speech, written speech, written address. Often the speaker's prepared text, regardless of whether the speech was actually delivered.
+  - `social-thread` — Social Media Thread: Long-form thread, carousel, or substantive standalone post on a social platform (Twitter/X thread, LinkedIn long-form post, Threads multi-post, substantive single-post platform-native essay). Authored on the platform; the platform IS the publication venue.
+  - `email` — Email: Forwarded or saved email correspondence, individual or distribution-list email content. Informal register, individual or small-group distribution.
+  - `daily-note` — Daily Note / Log Entry: Obsidian Daily Note format — date-stamped vault page logging activities, reflections, todos. Typically a diary-style omnibus of the day's events.
+  - `meeting-notes` — Meeting Notes: User-generated meeting notes — attendee-recorded notes from a meeting, call, or working session. Single-meeting artifact (one source = one meeting). User-summarized, paraphrased, action-item-structured.
+  - `other` — Other source form: Residual catch-all for source forms not covered by #1-20. Use ONLY when you can articulate in one sentence why none of #1-20 applies — the articulation MUST name the specific missing publication form (not just "doesn't fit"). If you cannot articulate that reason, re-examine #1-20 first. High `other` rate indicates the vocabulary needs expansion (OQ-NW7-1).
+
+### Boundary disambiguation rules
+
+When content sits at a domain or source_type edge, apply these rules to
+choose between candidates. (These are classification rules, not
+relationships.)
+
+**Domain boundaries:**
+
+- ai-ml vs software vs hardware: compute stack — AI algorithms/models → ai-ml; OS/dev tools/programming → software; chips/silicon/electronics → hardware. Content classifies at the layer it primarily operates on.
+- ai-ml vs software (AI tooling override): if content reads as software/dev-tooling BUT its subject is an AI/LLM model or product (Claude, ChatGPT, Codex, DeepSeek, Qwen, Gemini, Grok, Copilot, etc.) — classify as ai-ml, not software. Reserve software for general programming/OS/dev tooling with no AI/LLM subject.
+- neuroscience-cognition vs biology: brain mechanisms, cognition (the former) vs cellular/genetic/evolutionary (the latter).
+- psychology vs neuroscience-cognition: behavior/self-improvement/applied (the former) vs mechanism-level empirical brain science (the latter).
+- health-wellbeing vs biology: applied personal-health decisions (the former) vs biological mechanisms without personal application (the latter).
+- personal-finance vs value-investing: applied/situational (sector analysis, portfolio, tax) is personal-finance vs investment philosophy/methods/models is value-investing.
+- value-investing vs economy-markets: investment-decision lens (what to buy/sell, valuation) vs market-mechanism lens (how markets/economies function).
+- literature vs philosophy: narrative form (fiction, poetry) vs argumentative form (systematic thought).
+- lifestyle vs personal-finance: experiential/personal-living (travel, hobbies, retirement activities) vs resource-management (retirement planning, tax, portfolio).
+- lifestyle vs health-wellbeing: living-experiential focus vs health-focused (nutrition for longevity, fitness protocols).
+- geopolitics vs history: current/recent → geopolitics; completed historical period → history.
+- science-technology (catch-all): use ONLY when no specific S&amp;T domain (#1-7) fits AND you can articulate why.
+
+**Source_type boundaries:**
+
+- blog vs post: blog = own publication (personal blog, Substack on own subdomain); post = community/forum/aggregator. When venue cannot be inferred, classify by authorial stance: self-contained piece → blog; community-participation → post.
+- article vs news: article = analysis/argument/extended take; news = event reporting. Hybrid: classify by dominant mode.
+- Transcript family: Q&amp;A dominates → interview regardless of medium; one-direction educational delivery → transcript-lecture regardless of medium; otherwise medium-based (transcript-podcast vs transcript-video).
+- book-chapter vs book-summary: chapter = verbatim book text; summary = ABOUT the book. Annotated excerpts classified by volume: verbatim majority → book-chapter; user-authored majority → book-summary.
+- letter vs email: letter = curated public-facing addressed correspondence; email = informal individual/small-group.
+- speech vs transcript-lecture: speech = prepared text form of address; transcript-lecture = transcribed-from-delivery.
+- wiki vs article: wiki = encyclopedic register (third-person, neutral, multi-source citations); article = editorial (author voice, argument).
+- social-thread vs post: social-thread = platform-native substantive authored content (multi-tweet thread, LinkedIn long-form post, substantive single-post platform-native essay); post = community comment or short casual share.
+- interview vs meeting-notes: interview = verbatim Q&amp;A (transcribed or text-native); meeting-notes = user-summarized.
+- daily-note vs meeting-notes: daily-note = date-stamped omnibus log; meeting-notes = single-meeting dedicated artifact.
+- documentation vs wiki: documentation = product/instructional reference (READMEs, runbooks, tutorials — reader does); wiki = descriptive encyclopedic entry (reader learns about).
+- chat-log vs interview: chat-log = informal multi-party / human-to-AI exchange (no curated questioner/subject roles); interview = curated Q&amp;A (clear interlocutor + subject).
+
+### Content-description fields
+
+- `author`: string or null. Extract the source's primary author from the
+  content if attributable; null otherwise.
+- `summary`: 1-3 sentences of plain prose distilling the substantive content.
+  Neutral, descriptive register — no marketing or promotional phrasing.
+- `key_themes`: list of 2-5 strings naming finer-grained sub-topics than
+  `domain`. Format: lowercase kebab-case slugs (e.g. "value-investing",
+  "attention-mechanism", "breathing-exercises") — not natural-language
+  phrases with spaces.
+- `entity_search_keys`: list of lowercase kebab-case slugs for the notable
+  people, organizations, concepts, frameworks, and named ideas this source
+  substantively engages. These seed a later entity lookup, so emit the
+  canonical form a reader would search by. Guidance:
+  1. Include each `key_themes` slug.
+  2. Add slugs for entities named substantively in the source — people,
+     organizations, named frameworks. Prefer the full-name form
+     ("warren-buffett") over surname-only ("buffett"); emit only one form
+     per entity.
+  3. Add closely-related concepts the source actually engages as distinct
+     ideas (e.g. a framework's foundational principle). Do NOT include
+     speculative or weak co-occurrences.
+  
+  Emit only the most relevant keys — those that genuinely identify what this
+  source is about. Prefer a few high-precision slugs over a long list; do not
+  pad. Hard cap: 10. Format: lowercase, hyphens between words, no spaces, no
+  punctuation other than hyphens (conjunctions/prepositions inside slugs are
+  fine: "graham-and-doddsville", "theory-of-mind"). Prefer specificity:
+  "value-investing" beats "investing".
+
+  Examples (domain-diverse):
+
+  - Finance: a source about Warren Buffett and Charlie Munger's value-investing
+    approach (key_themes ["value-investing", "margin-of-safety", "compounding"])
+    → `["value-investing", "margin-of-safety", "compounding",
+       "warren-buffett", "charlie-munger", "intrinsic-value",
+       "circle-of-competence"]`.
+
+  - AI/ML: a source about transformer architectures in NLP
+    (key_themes ["attention-mechanism", "self-attention", "transformers"])
+    → `["attention-mechanism", "self-attention", "transformers",
+       "multi-head-attention", "positional-encoding", "bert"]`.
+
+  - Philosophy: a source about Rawls' veil of ignorance
+    (key_themes ["veil-of-ignorance", "distributive-justice", "original-position"])
+    → `["veil-of-ignorance", "distributive-justice", "original-position",
+       "john-rawls", "theory-of-justice", "social-contract"]`.
+
+### Confidence fields
+
+- `confidence`: a number from 0.0 to 1.0 — your confidence in the `kdb_signal`
+  call. Calibrate: 0.9-1.0 clear-cut; 0.7-0.89 reasonable with some ambiguity;
+  0.5-0.69 genuine uncertainty between two options; below 0.5 essentially a guess.
+- `uncertainty_reason`: string or null. Populate with the nature of the doubt
+  whenever `confidence &lt; 0.9` OR you resolved a close boundary call (e.g. a
+  domain or source_type that was nearly a tie). Null otherwise.
+- `reject_reason`: string or null. When `kdb_signal` is "noise", populate with
+  the reason. Null otherwise.
+- `other_reason`: string or null. Required (non-null) when `source_type` is
+  "other" — name the specific missing publication form. Null otherwise.
+
+## Output template
+
+Return exactly this structure (fill in the values; keep these keys, no others):
+
+{
+  "kdb_signal": "signal" | "noise",
+  "domain": "&lt;one domain id from the list&gt;",
+  "source_type": "&lt;one source_type id from the list&gt;",
+  "author": "&lt;name&gt;" | null,
+  "summary": "&lt;1-3 sentence plain-prose summary&gt;",
+  "key_themes": ["&lt;kebab-slug&gt;", ...],
+  "entity_search_keys": ["&lt;kebab-slug&gt;", ...],
+  "confidence": 0.0,
+  "uncertainty_reason": "&lt;reason&gt;" | null,
+  "reject_reason": "&lt;reason&gt;" | null,
+  "other_reason": "&lt;reason&gt;" | null
+}
+
+## Source content to classify
+
+{{ source_text }}
+   — the source document body is inserted here at render time (omitted in this sample) —
+
+Return the JSON object now.
+</pre>
+  </details>
+  <p class="ref" style="margin-top:-6px">Rendered from <code>ingestion/enrich/pass1_prompt.j2</code> with the live <code>domains.json</code> / <code>source_types.json</code> vocabularies injected at render time; source body omitted. Compiled sample courtesy of <code>~/Obsidian/Projects/Obsidian-KDB/Sample-Prompt-Pass-1.md</code>.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The vocabularies</h3>
+      <table>
+        <tr><th>Vocab</th><th>Ids</th><th>Escape valves</th></tr>
+        <tr><td><strong>domains.json</strong> (23)</td><td>ai-ml, software, value-investing, personal-finance, history, philosophy, …</td><td><code>science-technology</code> catch-all (must articulate why #1–7 fail) · <code>undecided</code> residual — high rate = vocab needs a new id</td></tr>
+        <tr><td><strong>source_types.json</strong> (21)</td><td>blog, paper, letter, documentation, transcript-*, meeting-notes, chat-log, …</td><td><code>other</code> + required <code>other_reason</code> naming the missing form — the designed vocab-evolution channel</td></tr>
+      </table>
+      <p style="margin-bottom:0">Both are plain JSON config — adding an id is a config edit, no code change.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">The frontmatter contract</h3>
+      <ul class="tight">
+        <li>Two sections in one YAML block: <strong>GraphDB-input</strong> (Pass-2 consumes) + <strong>Audit</strong> (Pass-2 ignores), then any pre-existing user keys preserved as a third block.</li>
+        <li><strong>The body is never modified</strong> — byte-identical, guaranteed by the embedder.</li>
+        <li>Noise sources get the same frontmatter (with <code>reject_reason</code>) and a manifest row — then stop: no Pass-2 call, no entities, no wiki pages.</li>
+        <li>Re-embedding overwrites only Pass-1-owned keys — idempotent re-runs.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout co-blue"><span class="t">What Pass-1 output feeds downstream</span>
+  <code>domain</code> scopes Pass-2's context retrieval (same-domain gate) and becomes the graph's Domain/BELONGS_TO projection ·
+  <code>source_type</code>, <code>author</code>, <code>summary</code> land on the graph Source node (the future search substrate) ·
+  <code>entity_search_keys</code> seed Pass-2's T2 tier — the model never sees them, so it can't parrot them (D-89-20).</div>
+  <p class="ref"><code>ingestion/enrich/</code> — pass1_prompt.j2 · pass1_schema.py · pass1_caller.py · overrides.py · frontmatter_embedder.py</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="pass2">
+  <h2><span class="n">5</span>Pass-2 — Compile</h2>
+  <p class="lede">The expensive knowledge-extraction call. It reads the whole source plus a
+  <strong>graph-derived context snapshot</strong> — the anti-entropy mechanism that makes the model reuse existing
+  entities instead of minting near-duplicates — and returns semantic intent only: pages and links.</p>
+
+  <h3>5.1 The context snapshot — retrieval tiers</h3>
+  <div class="diagram">
+    <svg viewBox="0 0 980 260" width="980" height="260">
+      <rect x="20" y="30" width="300" height="88" rx="9" class="box-green"></rect>
+      <text x="36" y="54" class="s-title">T1 · Provenance <tspan class="pill pill-green">score 3</tspan></text>
+      <text x="36" y="74" class="s-body">Entities this source already SUPPORTS</text>
+      <text x="36" y="91" class="s-body">(recompile continuity — strongest signal)</text>
+
+      <rect x="340" y="30" width="300" height="88" rx="9" class="box-blue"></rect>
+      <text x="356" y="54" class="s-title">T2 · Lexical seeds <tspan class="pill pill-blue">score 2</tspan></text>
+      <text x="356" y="74" class="s-body">entity_search_keys resolved to Entity.slug</text>
+      <text x="356" y="91" class="s-body">cold-start: + title-in-text (with guardrails)</text>
+
+      <rect x="660" y="30" width="300" height="88" rx="9" class="box-violet"></rect>
+      <text x="676" y="54" class="s-title">T3 · Neighborhood <tspan class="pill pill-violet">score 1</tspan></text>
+      <text x="676" y="74" class="s-body">1-hop LINKS_TO neighbors of T1 ∪ T2</text>
+      <text x="676" y="91" class="s-body">2-hop only if cold-start AND seeds &lt; 5</text>
+
+      <path class="arr" d="M170 118 V 168 H 480 V 196"></path>
+      <path class="arr" d="M490 118 V 168 H 500 V 196"></path>
+      <path class="arr" d="M810 118 V 168 H 520 V 196"></path>
+
+      <rect x="240" y="196" width="520" height="46" rx="9" class="box-gray"></rect>
+      <text x="500" y="216" text-anchor="middle" class="s-body">rank: tier desc → PageRank desc → slug asc · capped snapshot</text>
+      <text x="500" y="232" text-anchor="middle" class="s-small">same-domain gate (D3): T2/T3 candidates only from the source's Pass-1 domain</text>
+    </svg>
+    <div class="cap">T1/T2 choose seeds (what to look for); T3 expands from seeds (how far to walk). Tier scores never change — only the candidate pools widen on cold-start.</div>
+  </div>
+
+  <h3>5.2 The compile contract</h3>
+  <div class="card">
+    <table>
+      <tr><th>Field</th><th>Meaning</th></tr>
+      <tr><td><code>summary_slug</code></td><td>Reserved <code>summary-&lt;filename-stem&gt;</code> form — one summary page per source.</td></tr>
+      <tr><td><code>pages[]</code></td><td><code>slug</code> · <code>page_type</code> (summary | concept | article) · <code>title</code> · <code>body</code> (full markdown, no frontmatter) · <code>outgoing_links</code> · <code>confidence</code> · <code>status</code></td></tr>
+      <tr><td><code>log_entries[]</code></td><td>The model's self-flagged contradictions, ambiguities, low-confidence calls → run journal for human review.</td></tr>
+      <tr><td>never emitted</td><td>paths · timestamps · source_ids · frontmatter — Python injects all of it (Task #41 source-id-space split).</td></tr>
+    </table>
+  </div>
+
+  <h3>5.3 The gauntlet, per attempt</h3>
+  <div class="diagram">
+    <svg viewBox="0 0 980 216" width="980" height="216">
+      <rect x="20" y="30" width="170" height="54" rx="9" class="box-blue"></rect>
+      <text x="105" y="52" text-anchor="middle" class="s-title">Ctx guard (#110)</text>
+      <text x="105" y="69" text-anchor="middle" class="s-body">est. tokens; skip w/ $0 spend</text>
+      <path class="arr" d="M190 57 H216"></path>
+
+      <rect x="220" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
+      <text x="295" y="52" text-anchor="middle" class="s-title">Parse · rung-1</text>
+      <text x="295" y="69" text-anchor="middle" class="s-body">escape stray backslashes</text>
+      <path class="arr" d="M370 57 H396"></path>
+
+      <rect x="400" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
+      <text x="475" y="52" text-anchor="middle" class="s-title">Schema · rung-2</text>
+      <text x="475" y="69" text-anchor="middle" class="s-body">slug coercion</text>
+      <path class="arr" d="M550 57 H576"></path>
+
+      <rect x="580" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
+      <text x="655" y="52" text-anchor="middle" class="s-title">Semantic gates</text>
+      <text x="655" y="69" text-anchor="middle" class="s-body">e.g. source_name echo</text>
+      <path class="arr" d="M730 57 H756"></path>
+
+      <rect x="760" y="30" width="200" height="54" rx="9" class="box-green"></rect>
+      <text x="860" y="52" text-anchor="middle" class="s-title">Reconcile (deterministic)</text>
+      <text x="860" y="69" text-anchor="middle" class="s-body">body wins · pages win</text>
+
+      <path class="arr-red" d="M295 84 V 120 H 60 V 90"></path>
+      <text x="120" y="114" class="lbl-red">fail → full re-call once (2 attempts total) → quarantine</text>
+
+      <rect x="20" y="140" width="940" height="62" rx="9" class="box-gray"></rect>
+      <text x="40" y="159" class="s-body">Quarantine is declared after the 2nd content attempt fails (repair rungs are free — no API call) and is source-local (D-96-1):</text>
+      <text x="40" y="175" class="s-body">one bad source never kills the batch. Transport retries (3 attempts, backoff) sit below this layer. One RespStatsRecord per</text>
+      <text x="40" y="191" class="s-body">source regardless of outcome, discarded-retry tokens aggregated into cost KPIs. Pass-2 ≈ 3× Pass-1 latency — full bodies in and out.</text>
+    </svg>
+  </div>
+
+  <h3>5.4 What the model sees — rendered sample (offline, zero API cost)</h3>
+  <p>Rendered by the real <code>compiler/prompt_builder.build_prompt</code> against the sandbox graph (read-only) for the same
+  Buddy source as 4.1 — a <em>warm</em> snapshot: the source was already compiled, so T1 finds its own 9 entities
+  (<code>fnv-1a</code>, <code>bones-and-soul</code>, …). Full untruncated render:
+  <code>~/Obsidian/Projects/Obsidian-KDB/Sample-Prompt-Pass-2.md</code>.</p>
+  <details class="prompt-sample">
+    <summary>System prompt — vault-owned invariants doc + locked RESPONSE_CONTRACT (20,245 chars) — click to expand</summary>
+    <pre># KDB Compiler — System Prompt
+
+You are a semantic compiler for a personal Obsidian knowledge base. You read one source document and return one JSON object describing the wiki pages that source should produce. Ground everything in the source text — never invent facts, citations, URLs, dates, or author names. If the source does not support a claim, omit it.
+
+---
+
+## 1. Input
+
+You will be given one source document from a markdown knowledge base. The full text of the source appears in the user message under `## SOURCE CONTENT`, preceded by `source_name:`. Treat that `source_name` as the canonical identifier for this source — echo it verbatim in your response. The source text itself is the only substrate for the claims you make about it.
+
+Two more blocks appear in the user message:
+
+- `## EXISTING CONTEXT (manifest snapshot)` — pages already in the knowledge base from sources compiled before this one, rendered without bodies (slug + title + page_type + outgoing_links). This is how you see what the knowledge base already contains, so that your response can connect to existing pages instead of creating duplicates. It may be empty.
+- `## RESPONSE SCHEMA` — the JSON schema your output must conform to. If you are unsure about a field, re-read the schema rather than guessing.
+
+You output **slug-space** data only — slugs, titles, bodies, wikilinks, and one `source_name` field that echoes the file you were given. **Source-id-space fields** (full path-prefixed `source_id`, per-page `supports_page_existence`, per-log_entry `related_source_ids`) are the runner's responsibility and are added to your output after the runner parses it. Do not invent path-prefixed source_ids; if the schema doesn't ask for one, don't emit one.
+
+---
+
+## 2. Example of what you return
+
+The example below is the canonical shape. Every rule in the sections that follow refers back to it.
+
+Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
+
+&gt; **Annotations after `//` are teaching aids only — they MUST NOT appear in your output.** Your output is one JSON object with no comments.
+
+```json
+{
+  "source_name": "attention-is-all-you-need.md",        // echo verbatim whatever you receive in the `source_name:` line; filename only, no path prefix
+  "summary_slug": "summary-attention-is-all-you-need",  // mandatory `summary-&lt;stem&gt;` form (see §3)
+  "concept_slugs": [                                    // mirrors `concept` entries in `pages[]` exactly — same slugs, same count
+    "attention-mechanism",
+    "self-attention",
+    "positional-encoding"
+  ],
+  "article_slugs": [                                    // mirrors `article` entries in `pages[]` exactly
+    "transformer-attention-only-architecture"
+  ],
+  "pages": [
+    {
+      "slug": "summary-attention-is-all-you-need",      // &lt;kebab-case-lowercase&gt; only — never sentence-case, PascalCase, or language type names like `String`
+      "title": "Attention Is All You Need (summary)",
+      "page_type": "summary",                           // one of: summary | concept | article
+      "status": "active",
+      "confidence": "high",
+      "outgoing_links": [                               // EXACTLY the slugs that appear as [[slug]] in body — bidirectional, no orphans either way
+        "attention-mechanism",
+        "self-attention",
+        "positional-encoding",
+        "transformer-attention-only-architecture"
+      ],
+      "body": "Vaswani et al. propose a sequence model built entirely from [[attention-mechanism|attention]]. They introduce [[self-attention]] as its core operation and [[positional-encoding]] to recover token order lost by dropping recurrence. The paper's unifying argument is synthesized in [[transformer-attention-only-architecture]]."  // wikilink slugs inside [[…]] are &lt;kebab-case-lowercase&gt; — `[[Attention-mechanism]]` does not match `attention-mechanism`
+    },
+    {
+      "slug": "attention-mechanism",
+      "title": "Attention Mechanism",
+      "page_type": "concept",
+      "status": "active",
+      "confidence": "high",
+      "outgoing_links": ["softmax", "self-attention"],
+      "body": "An attention mechanism computes a weighted sum over a set of value vectors, where the weights come from a compatibility score between a query and a set of keys, normalized by [[softmax]]. Originally introduced for neural machine translation to align source and target sequences, it has since generalized beyond alignment — see [[self-attention]] for the variant that drops recurrence entirely."
+    },
+    {
+      "slug": "self-attention",
+      "title": "Self-Attention",
+      "page_type": "concept",
+      "status": "active",
+      "confidence": "high",
+      "outgoing_links": ["attention-mechanism"],
+      "body": "Self-attention is the variant of [[attention-mechanism]] in which queries, keys, and values all come from the same sequence. Every position attends to every other position in a single step, giving constant path length between any two tokens."
+    },
+    {
+      "slug": "positional-encoding",
+      "title": "Positional Encoding",
+      "page_type": "concept",
+      "status": "active",
+      "confidence": "medium",
+      "outgoing_links": ["self-attention"],
+      "body": "Positional encodings are fixed or learned vectors added to token embeddings so a model built on [[self-attention]] can distinguish token order. Without them, self-attention is permutation-invariant and would treat a sentence as a bag of words."
+    },
+    {
+      "slug": "transformer-attention-only-architecture",
+      "title": "The Transformer as an Attention-Only Architecture",
+      "page_type": "article",
+      "status": "active",
+      "confidence": "high",
+      "outgoing_links": [
+        "attention-mechanism",
+        "self-attention",
+        "positional-encoding"
+      ],
+      "body": "Before 2017, sequence modelling relied on recurrence or convolution to carry information across positions. [[attention-mechanism|Attention]] was an auxiliary alignment tool on top of those primitives. The Transformer's novelty is not any single component but the claim that these primitives are unnecessary: [[self-attention]] paired with [[positional-encoding]] is sufficient on its own. Three consequences follow from that single commitment — parallel training across positions, constant-length gradient paths between any two tokens, and higher translation quality than recurrent baselines."
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",                                  // one of: info | notice | contradiction | warning (see §6 for semantics)
+      "message": "Extended existing `attention-mechanism` (from bahdanau-2014) with self-attention as the paper's named variant; kept the Bahdanau-era framing in the existing page's body and cross-linked.",
+      "related_slugs": ["attention-mechanism", "self-attention"]
+    }
+  ],
+  "warnings": []
+}
+```
+
+Note the pairing in the example: `pages[]` contains three `concept` entries → `concept_slugs` lists those same three slugs. One `article` entry → `article_slugs` has one slug. This mirror is mandatory — each concept/article page contributes exactly one slug to its matching list, and each slug in those lists corresponds to exactly one page of the matching type in `pages[]`. A slug without a matching page, or a page without a matching slug, is a hard failure.
+
+Treat the example above as the behavioral model. Treat the schema in the user message as the final contract — when the two seem to disagree, the schema wins.
+
+---
+
+## 3. What pages to return
+
+Identify the wiki pages this source should produce. A "wiki page" is one of three kinds:
+
+- **`summary`** — one per source. A short overview of what this source is about and what concepts it introduces or reinforces. **The summary's slug is always `summary-&lt;stem&gt;` where `&lt;stem&gt;` is the source file's stem in kebab-case, copied verbatim — preserve every character of the stem, including numeric or identifier prefixes.** Examples: `KDB/raw/attention-is-all-you-need.md` → `summary-attention-is-all-you-need`; `KDB/raw/EP1 - The Journey of China.md` → `summary-ep1-the-journey-of-china`; `KDB/raw/04-research-debt.md` → `summary-04-research-debt`. The `summary-` prefix is reserved — it MUST appear on every summary slug and MUST NOT appear on concept or article slugs. Every compile returns exactly one summary page.
+- **`concept`** — one per atomic idea. A concept is a reusable building block of the ontology; it may be supported by many sources over time. Prefer many small concept pages (one idea, one page) over few large ones. Use short, semantic, kebab-case slugs **that do not start with the reserved `summary-` prefix**. In the example: `attention-mechanism`, `self-attention`, `positional-encoding`.
+- **`article`** — a narrative that ties several concepts together into a cohesive whole. An article is 1+1=3: its meaning is more than the sum of the concept pages it references — it captures something about how the source *uses those concepts together* that no single concept page, and no addition of concept pages, would carry on its own. In the example, `transformer-attention-only-architecture` is an article because the paper's claim is the combination — self-attention paired with positional encoding, as a standalone sequence model — and that claim is not on any of the individual concept pages.
+
+### When to include an article
+
+Include an article only when the source itself is doing this kind of synthesis — tying concepts together in a way that changes what they mean collectively, not just mentioning them in succession. Most sources don't: focused technical papers, interviews on a single topic, and how-to guides typically produce one summary and a handful of concepts, with no article. When you are on the fence, skip the article and let the concept pages stand on their own.
+
+### Per-page metadata
+
+For each page you include, commit to:
+
+- **`confidence`** — an honest bucket:
+  - **`high`** — the source states the material explicitly; no interpretation required. In the example, `self-attention` is `high` because the paper defines it directly.
+  - **`medium`** — the source implies or assembles the material across passages; you synthesized rather than quoted. In the example, `positional-encoding` is `medium` because the paper gives the sinusoidal formula without a theoretical treatment — the page's framing ("self-attention is permutation-invariant, so without order signals a sentence would be a bag of words") is pieced together from surrounding context, not stated in the text.
+  - **`low`** — the source gestures at the idea but doesn't develop it; you are reaching a little. When you land here, consider whether the page should exist at all, or whether a mention inside another page would do instead.
+  - Three buckets are enough — there is no `0.72`. Pick the honest one. Do not stretch to `high` to seem decisive.
+- **`status`** — always `active` for pages you are creating or updating in this compile.
+
+---
+
+## 4. Reuse slugs from EXISTING CONTEXT
+
+Read each EXISTING CONTEXT entry by its *meaning*, not its spelling. For each existing page, ask: does this source discuss the same underlying idea? If yes, reuse the existing slug verbatim — in body wikilinks, in `outgoing_links`, and (if the page is being extended) in `concept_slugs` / `article_slugs`.
+
+In the example, `attention-mechanism` is reused from EXISTING CONTEXT rather than minted as `attention-mech` or `self-attention-mechanism`. The Transformer paper's treatment of attention is the *same underlying concept* that Bahdanau 2014 introduced, even though the paper's phrasing and level of generality differ. That semantic sameness is what licenses reuse.
+
+### When to reuse vs. mint a new slug
+
+- **Reuse** when the existing page is about the same underlying concept, even if the source uses a different word, a different tense or number, or a different level of abstraction. If the ideas would live comfortably on the same page without one overwriting the other, they belong on the same slug.
+- **Mint a new slug** when the source is discussing a genuinely distinct idea — a related cousin, a specific variant that deserves its own page, or a same-named concept from a different domain that shares the word but not the mechanism. When you mint a sibling to an existing slug, link to the existing slug explicitly in the new page's body so the relationship is legible. In the example, `self-attention` is minted as a sibling to `attention-mechanism` — close family, but a distinct enough idea to deserve its own page, and its body links back to `[[attention-mechanism]]`.
+- **Genuinely on the fence** — when you cannot confidently tell whether the current source's idea is the same as or different from an existing slug, lean toward reuse. A missed reuse fragments the graph irreversibly; a shared slug that accumulates slightly broader meaning over time is self-correcting as more sources compile onto it.
+
+Record non-obvious reuse or sibling decisions in `log_entries` (see the example's entry about extending `attention-mechanism`).
+
+### Cold start (empty EXISTING CONTEXT)
+
+Sometimes the block is empty — the source is the first in its domain, or nothing prior overlaps semantically. That is expected. When EXISTING CONTEXT is empty, you are building the ontology from scratch: mint slugs using the same conventions (short, semantic, kebab-case), and link concepts to each other inside this compile. Subsequent sources in the same domain will see what this compile returns and compound onto it.
+
+---
+
+## 5. Body format
+
+Write page bodies in Obsidian-flavored markdown. Keep bodies focused, readable, and proportional to the page type:
+
+- **Summary bodies** are short — a paragraph or two of overview, followed by `[[concept-slug]]` links to the concepts and articles this source contributed. Not a reproduction of the source; not a line-by-line rehash. A reader should skim the summary and know whether to open the source itself. The example summary models this.
+- **Concept bodies** are atomic — explain the one idea as the current source presents it (treating any extension of an EXISTING CONTEXT page as adding to that page's accumulated treatment, not overwriting it). Link to related concepts via `[[slug]]`. If the source contradicts a prior source's treatment of the same concept, record that in `log_entries` rather than picking a winner in the body.
+- **Article bodies** are narrative — weave the referenced concepts into a unified argument. Heavy linking is expected. Articles read like essays, not lists of bullets. The example article models this.
+
+### Wikilink syntax
+
+Use Obsidian-flavored wikilink syntax only:
+
+- `[[slug]]` — plain link. (Example: `[[self-attention]]`.)
+- `[[slug|display text]]` — link with custom display text, used when the sentence grammar wants a different surface word than the slug. (Example: `[[attention-mechanism|attention]]` — the slug is `attention-mechanism`, but the sentence reads "built entirely from attention".)
+- `[[slug#heading]]` — link to a specific heading inside the target page. Use sparingly.
+
+No HTML. No markdown-style `[text](url)` for internal slugs. No bare URLs for internal references.
+
+### `outgoing_links` must match the body
+
+For every slug in a page's `outgoing_links`, that slug must appear as `[[slug]]` somewhere in that page's body. And the reverse: every `[[slug]]` in the body must appear in `outgoing_links`. The two lists must agree exactly.
+
+Every slug you use in `outgoing_links` must exist — either as a page you are returning in this response, or as an entry in EXISTING CONTEXT. Do not link to slugs that do not exist anywhere.
+
+### Tone and length
+
+- Prose, not bullet-lists, unless the source is inherently list-like.
+- Present tense, neutral voice, third person.
+- No meta-commentary about the compile process ("This page summarizes…", "As of this source…").
+- No YAML frontmatter inside any `body` field. Body is pure content.
+- Summaries: ~150–400 words. Concepts: ~100–500 words, scaling with the depth the source provides. Articles: ~400–1,200 words. Soft guides — shorter is fine when the source is thin; longer should be rare and justified.
+
+---
+
+## 6. Output envelope
+
+Return one JSON object matching the schema in the user message. Nothing before it, nothing after it, no markdown fences around it, no prose explaining it.
+
+The top-level object has these fields (see §2 for the canonical shape):
+
+- `source_name` — echo the `source_name` you were given, verbatim. Filename only, no path prefix.
+- `summary_slug` — the slug of the single summary page.
+- `concept_slugs`, `article_slugs` — flat slug lists that mirror `pages[]`. Build each by walking `pages[]` and collecting every `concept` (resp. `article`) page's slug — every such page contributes exactly one entry. Equivalently, every entry in these lists must correspond to exactly one page of the matching type in `pages[]`. Three concept pages in `pages[]` → three entries in `concept_slugs` with the same slugs; no more, no fewer.
+- `pages[]` — one entry per page you are returning, with the full set of fields shown in the example.
+- `log_entries[]` — structured notes about this compile, each `{level, message, related_slugs}` (see §2). Use for notable decisions that deserve traceability: non-obvious slug reuse, choosing a sibling rather than reusing an existing slug, article-vs-concept boundary calls, contradictions between sources, concepts that almost-but-not-quite matched an existing slug. Empty array is fine. Levels: `info` for routine decisions, `notice` for something worth a second look, `contradiction` for conflicting claims between this source and a page's prior support, `warning` for anything the compile run should surface.
+- `warnings[]` — free-text observations about the source itself (ambiguous terms, unresolved references, uncertain categorization). Empty array is fine.
+
+### Thin or trivial sources
+
+If the source genuinely contains nothing knowledge-worthy, return a single summary page whose body honestly says so, leave `concept_slugs` and `article_slugs` empty, and add a `warning` explaining why. Do not fabricate pages to fill a schema.
+
+Malformed output aborts the run before any file is written.
+
+---
+
+## Self-check before returning
+
+- [ ] `source_name` echoed verbatim (filename only, no path prefix).
+- [ ] Exactly one `summary` page; its slug matches `summary_slug`.
+- [ ] Count the `concept` pages in `pages[]` — `concept_slugs` has the same count and the same slugs. Count the `article` pages in `pages[]` — `article_slugs` has the same count and the same slugs. One missing or extra entry is a hard failure.
+- [ ] Every `outgoing_links` slug appears as `[[slug]]` in the same page's body; every `[[slug]]` in the body is in `outgoing_links`.
+- [ ] Every slug used in `outgoing_links` exists in this response's `pages[]` or in EXISTING CONTEXT.
+- [ ] No invented citations, URLs, dates, or author names.
+- [ ] No YAML frontmatter inside any `body` field.
+- [ ] No source-id-space fields (`source_id`, `supports_page_existence`, `related_source_ids`) — those are runner-injected, not part of your contract.
+- [ ] Output is one JSON object — no prose, no fences, no `//` comments (the annotations in §2 are teaching aids only, never appear in your output).
+
+
+---
+RESPONSE CONTRACT (non-negotiable):
+- Return EXACTLY ONE JSON object. No other output.
+- No markdown code fences around the object.
+- No prose before or after the object.
+- The object MUST satisfy the schema provided in the user message exactly.
+- The "source_name" field MUST echo the provided source_name verbatim.
+- Use the "warnings" array for non-fatal observations about the source
+  (ambiguous terms, unresolved references, uncertain categorization). DO NOT
+  fabricate pages to satisfy the schema. If the source genuinely contains
+  nothing knowledge-worthy, emit a single summary page whose body explains
+  that — with honest content — and leave concept/article lists empty.</pre>
+  </details>
+  <details class="prompt-sample">
+    <summary>User prompt — Pass-1 metadata block + context snapshot + schema + exemplar (source body omitted) — click to expand</summary>
+    <pre>source_name: Claude Code Buddy System.md
+
+## PASS-1 SOURCE METADATA
+The following fields were derived by the Pass-1 enrichment step and are
+TRUSTED values — do NOT re-derive them from the source body.
+
+- domain: ai-ml
+- source_type: blog
+- author: (unknown)
+
+### Source summary (Pass-1 verbatim + appended themes per D-89-19)
+The note explains how Claude Code’s buddy companion is deterministically generated from an identity string using FNV-1a and Mulberry32, with separate "bones" and "soul" components. It also describes a reroll strategy, command usage, and community tools for forcing preferred pet traits by manipulating the identity seed or patching the binary. Themes: deterministic-generation, fnv-1a, mulberry32, identity-seed, reroll-strategy.
+
+**Instructions:**
+- USE `domain`, `source_type`, and `author` directly. Do NOT re-derive them.
+- The summary above is authoritative; you do not need to rewrite or merge it.
+
+## SOURCE CONTENT
+{{ source_text }}
+   — the verbatim source body goes here (omitted in this sample; 1,097 words in the real render) —
+
+## EXISTING CONTEXT (graph snapshot)
+{
+  "source_id": "AIML/Claude/Claude Code Buddy System.md",
+  "pages": [
+    {
+      "slug": "fnv-1a",
+      "title": "FNV-1a",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "bones-and-soul",
+      "title": "Bones and Soul",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "buddy-commands",
+      "title": "Buddy Commands",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "community-buddy-tools",
+      "title": "Community Buddy Tools",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "deterministic-generation",
+      "title": "Deterministic Generation",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "identity-seed",
+      "title": "Identity Seed",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "mulberry32",
+      "title": "Mulberry32",
+      "page_type": "concept",
+      "outgoing_links": [
+        "fnv-1a"
+      ]
+    },
+    {
+      "slug": "reroll-strategy",
+      "title": "Reroll Strategy",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "summary-claude-code-buddy-system",
+      "title": "Claude Code Buddy System (summary)",
+      "page_type": "summary",
+      "outgoing_links": [
+        "bones-and-soul",
+        "buddy-commands",
+        "community-buddy-tools",
+        "deterministic-generation",
+        "fnv-1a",
+        "identity-seed",
+        "mulberry32",
+        "reroll-strategy"
+      ]
+    }
+  ]
+}
+
+## RESPONSE SCHEMA
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
+  "title": "KDB Compiled Source Response (per-call model output)",
+  "description": "Exactly one source -&gt; exactly one response object. The LLM emits this shape per compile call. Source-id-space fields (top-level source_id, per-page supports_page_existence, per-log_entry related_source_ids) are NOT in this contract — the runner injects them after parse from runtime knowledge + manifest lookup. This separation is structural: the LLM owns slug-space, the runner owns source_id-space. Run-level fields (run_id, success, aggregate errors) are also Python-owned; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 7 LLM-emitted page fields required) so the model must commit to status, links, and confidence on every page rather than relying on Python backfill.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_name",
+    "summary_slug",
+    "pages",
+    "log_entries",
+    "warnings"
+  ],
+  "properties": {
+    "source_name": {
+      "$ref": "#/$defs/sourceName"
+    },
+    "summary_slug": {
+      "$ref": "#/$defs/summarySlug"
+    },
+    "concept_slugs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slug"
+      }
+    },
+    "article_slugs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slug"
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pageIntent"
+      }
+    },
+    "log_entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/logEntry"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators. The 'summary-' prefix is reserved (see summarySlug).",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "summarySlug": {
+      "type": "string",
+      "description": "Slug for the per-source summary page. MUST start with the reserved 'summary-' prefix followed by the kebab-cased source filename stem. Concept and article slugs do NOT use this prefix. Reserving the prefix structurally prevents within-source slug collision between the summary and a concept whose name matches the source's main topic.",
+      "pattern": "^summary-[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 9,
+      "maxLength": 120
+    },
+    "sourceName": {
+      "type": "string",
+      "description": "The source filename the LLM was given, echoed verbatim. No path separators — the runner constructs the full source_id from runtime knowledge after parse.",
+      "pattern": "^[^/\\\\]+\\.md$",
+      "minLength": 4,
+      "maxLength": 200
+    },
+    "pageType": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "concept",
+        "article"
+      ]
+    },
+    "pageStatus": {
+      "type": "string",
+      "enum": [
+        "active",
+        "stale",
+        "archived"
+      ]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "pageIntent": {
+      "type": "object",
+      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 7 LLM-emitted fields required. Source-id-space field supports_page_existence is runner-injected post-parse.",
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "page_type",
+        "title",
+        "body",
+        "status",
+        "outgoing_links",
+        "confidence"
+      ],
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "page_type": {
+          "$ref": "#/$defs/pageType"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax `[[slug]]` inline whenever you reference another page in this response or in EXISTING CONTEXT — concepts, articles, and the summary all link to each other via `[[slug]]` in body prose, not as separate metadata. Every `[[slug]]` you write here MUST also appear in this page's `outgoing_links`, and conversely every entry in `outgoing_links` MUST appear as `[[slug]]` somewhere in this body. Building outgoing_links without writing the matching `[[slug]]` in the body is a contract violation."
+        },
+        "status": {
+          "$ref": "#/$defs/pageStatus"
+        },
+        "outgoing_links": {
+          "type": "array",
+          "description": "Slugs this page's body links to. Bidirectional with body: every entry MUST appear as `[[slug]]` somewhere in this page's body, and every `[[slug]]` in the body MUST appear here. Build this list by collecting the distinct slugs you wrote in `[[…]]` tokens in the body — not as a separate list of related concepts. Python reconciles incoming_links_known from these.",
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "logEntry": {
+      "type": "object",
+      "description": "One structured note about this compile. Source-id-space field related_source_ids is runner-derived post-parse from related_slugs via manifest lookup.",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "message",
+        "related_slugs"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "info",
+            "notice",
+            "contradiction",
+            "warning"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "related_slugs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/slug"
+          }
+        }
+      }
+    }
+  }
+}
+
+## EXAMPLE RESPONSE
+{
+  "source_name": "Claude Code Buddy System.md",
+  "summary_slug": "summary-example",
+  "concept_slugs": [
+    "example-concept"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-example",
+      "page_type": "summary",
+      "title": "Example Summary",
+      "body": "A short summary of what this source is about, introducing [[example-concept]] as the central idea.",
+      "status": "active",
+      "outgoing_links": [
+        "example-concept"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "slug": "example-concept",
+      "page_type": "concept",
+      "title": "Example Concept",
+      "body": "Definition and treatment of the concept as the source presents it.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "medium"
+    }
+  ],
+  "log_entries": [],
+  "warnings": []
+}</pre>
+  </details>
+
+  <div class="callout co-amber"><span class="t">Cold-start is the normal case for a fresh vault</span>
+  Every source in a first full run has no SUPPORTS edges → T1 empty → widened T2 (title-in-text) and possibly 2-hop T3 fire constantly.
+  The earliest compiles seed the graph's entity namespace — commit order (alphabetical by path) decides which directories shape it first.</div>
+  <p class="ref"><code>compiler/compiler.py</code> · <code>compiler/context_loader.py</code> · <code>compiler/prompt_builder.py</code> · system prompt: <code>&lt;vault&gt;/KDB/KDB-Compiler-System-Prompt.md</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="gauntlet">
+  <h2><span class="n">6</span>Validate, repair, canonicalize</h2>
+  <p class="lede">Between the LLM's JSON and any durable write sit three deterministic stages.
+  Their job: make whole defect classes structurally impossible before state is touched.</p>
+
+  <div class="callout co-blue"><span class="t">No LLM calls happen in stages 4–6</span>
+  Every retry already happened <em>inside</em> the Pass-2 call (3 transport attempts; 2 content attempts wrapping parse/schema/semantic checks).
+  Downstream of <code>compile_one</code> the model is done for that source — these stages only decide <strong>how</strong> to fail, never whether to retry:
+  validate → <strong>quarantine</strong> (source-local) · repair → <strong>run-fatal invariant abort</strong> (code's own guarantee broke) · canonicalize → <strong>fatal halt</strong> before any write (D-R5-9; the fix is human — repair the alias ledger, no LLM sample can fix a circular alias).</div>
+
+  <table>
+    <tr><th>Stage</th><th>Module</th><th>What it guarantees</th></tr>
+    <tr><td><strong>4 · Validate</strong></td><td><code>validate_compile_result.py</code> + per-source response schema</td><td>Malformed payloads never reach state. Per-source failure → quarantine; the batch survives (D-96-1).</td></tr>
+    <tr><td><strong>5 · Repair</strong></td><td><code>repair.py</code></td><td><code>reconcile_slug_lists</code> rebuilds concept/article lists from <code>pages[]</code> (pages win); <code>reconcile_body_links</code> reconciles declared links against body wikilinks (body wins). Pairing inconsistency becomes unrepresentable.</td></tr>
+    <tr><td><strong>6 · Canonicalize</strong></td><td><code>canonicalize.py</code> (Task #74)</td><td>Alias surface forms resolve to canonical slugs via the human-maintained <code>state/canonicalization/aliases.json</code> ledger — wiki ≡ graph at the naming layer.</td></tr>
+  </table>
+
+  <div class="card">
+    <h3 style="margin-top:0">Canonicalize, up close</h3>
+    <ul class="tight">
+      <li>Ledger entries: <code>surface → canonical</code> (e.g. <code>"AAPL" → "apple-inc"</code>), chain-flattened to root.</li>
+      <li>Rewrites <code>outgoing_links</code> and body <code>[[wikilinks]]</code>; drops alias page intents; emits <code>canonical_meta.aliases_emitted</code> (later materialized as <code>ALIAS_OF</code> edges).</li>
+      <li>The ledger's SHA-256 is recorded into <code>canonical_meta</code> so a rebuild can prove it replayed against the same ledger state.</li>
+      <li><strong>Algorithmic failures are fatal</strong> (circular aliases, malformed ledger, sha mismatch): the pipeline halts <em>before</em> page_writer (D-R5-9). Better no write than an inconsistent write.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>compiler/validate_compile_result.py</code> · <code>compiler/repair.py</code> · <code>compiler/canonicalize.py</code> · schemas in <code>compiler/schemas/</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="commit">
+  <h2><span class="n">7</span>The commit sequence (β order)</h2>
+  <p class="lede">All durable state changes for one source happen in a strict order, with the
+  <strong>manifest written LAST</strong> — that write is the commit boundary. Anything that fails before it
+  leaves the source looking un-compiled, so it simply re-runs next time.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 250" width="980" height="250">
+
+      <rect x="20" y="34" width="270" height="66" rx="9" class="box-blue"></rect>
+      <text x="155" y="58" text-anchor="middle" class="s-title">7 · page_writer</text>
+      <text x="155" y="75" text-anchor="middle" class="s-body">wiki .md under KDB/wiki/&lt;type&gt;/</text>
+      <text x="155" y="91" text-anchor="middle" class="s-small">whole-page rewrite · atomic (D14/D18)</text>
+
+      <path class="arr" d="M290 67 H326"></path>
+
+      <rect x="330" y="34" width="270" height="66" rx="9" class="box-violet"></rect>
+      <text x="465" y="58" text-anchor="middle" class="s-title">8 · graph intake</text>
+      <text x="465" y="75" text-anchor="middle" class="s-body">per-source Kuzu transaction</text>
+      <text x="465" y="91" text-anchor="middle" class="s-small">rollback on any failure</text>
+
+      <path class="arr" d="M600 67 H636"></path>
+
+      <rect x="640" y="34" width="320" height="66" rx="9" class="box-green"></rect>
+      <text x="800" y="58" text-anchor="middle" class="s-title">9 · manifest write — COMMIT BOUNDARY</text>
+      <text x="800" y="75" text-anchor="middle" class="s-body">content prepared in memory first, written LAST</text>
+      <text x="800" y="91" text-anchor="middle" class="s-small">stores H₁ → marks the source as compiled</text>
+
+      <!-- failure annotations -->
+      <path class="arr-red" d="M155 100 V 150"></path>
+      <text x="155" y="168" text-anchor="middle" class="lbl-red">fails → graph untouched · clean re-run (case-a)</text>
+
+      <path class="arr-red" d="M465 100 V 150"></path>
+      <text x="465" y="168" text-anchor="middle" class="lbl-red">fails → txn rolled back · manifest never written · self-heal</text>
+
+      <path class="arr-red" d="M800 100 V 150"></path>
+      <text x="800" y="168" text-anchor="middle" class="lbl-red">fails → graph committed, manifest absent → re-run self-heals by idempotency</text>
+
+      <text x="20" y="216" class="s-body">Every failure mode lands in one of two buckets: nothing durable happened (re-run is free), or the graph committed without the manifest</text>
+      <text x="20" y="232" class="s-body">(the distinct <tspan style="font-style:italic">manifest_post_graph</tspan> residual — re-running the same source is idempotent, so it heals itself).</text>
+    </svg>
+    <div class="cap">β ordering (D-91-15): pages → graph → manifest. The order is chosen so every failure is recoverable without human intervention.</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Terms used here (and across sections)</h3>
+    <table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td><strong>body</strong></td><td>The prose content of a wiki page — everything below the YAML frontmatter metadata block. The LLM writes bodies; Python writes frontmatter. (Field name in the LLM's JSON: <code>pages[].body</code>.)</td></tr>
+      <tr><td><strong>whole-page rewrite</strong> (D18)</td><td>A wiki page is <em>never updated partially</em> — every update replaces the entire page: the complete file, frontmatter and body together. (The decision ledger's name for this is "full-body replacement", because the LLM must always send the complete body text, never just a changed fragment — that's what makes rewriting the whole page possible. No diffing anywhere in the system.)</td></tr>
+      <tr><td><strong>atomic write</strong> (D14)</td><td>Never edit an existing file piecemeal. Instead (<code>common/atomic_io.py</code>): write the full new content to a temp file in the same directory → flush it to disk (<code>fsync</code>) → rename the temp over the target — one indivisible filesystem operation. Readers (Obsidian, Drive sync) always see a complete old file or a complete new one — never a half-written one.</td></tr>
+      <tr><td><strong>txn / rolled back</strong></td><td>Txn = database transaction: the bundle of graph changes for one source (entities, edges, domains, aliases), executed all-or-nothing. <code>BEGIN</code> → make every change → <code>COMMIT</code> makes them real; if anything fails first, the database <strong>rolls back</strong> — undoes the whole bundle, leaving zero trace. The database analog of the atomic write.</td></tr>
+      <tr><td><strong>idempotent</strong></td><td>Doing it twice has the same effect as doing it once. Writing the same page twice leaves the file exactly as if written once — no duplication, no corruption.</td></tr>
+      <tr><td><strong>throw / raises</strong></td><td>"Fails with an exception" at that point in the sequence.</td></tr>
+      <tr><td><strong>clean re-run</strong> (case-a)</td><td>If a run dies before the manifest write, the bookkeeping still says "never compiled", so the next run simply compiles that source again. No leftovers to untangle: re-writing a page just replaces it (whole-page rewrite), re-adding graph nodes updates them in place, and this time the manifest lands.</td></tr>
+      <tr><td><strong>commit boundary</strong></td><td>The manifest write — the last step of the commit sequence. Its content is prepared in memory beforehand (no I/O), so the final step is a single quick write. Before it: nothing officially happened, so re-running is free. After it: the source is officially compiled, its manifest row storing the post-embed hash H₁ as <code>last_compiled_hash</code>.</td></tr>
+      <tr><td><strong>β ordering</strong> (D-91-15)</td><td>"Option β" from the Task #91 design panel — not beta software. The blueprint's original pseudo-code was option α (manifest first, then graph); β (graph-sync first, manifest LAST) won unanimously because α allowed a "manifest says compiled but graph is empty" state after a sync failure. β eliminates that class by construction: graph failure → rollback → manifest never written → clean re-run.</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">page_writer guarantees</h3>
+    <ul class="tight">
+      <li>Pure render core + I/O shell: each page intent → <code>PagePatch</code> (slug → path, frontmatter, body).</li>
+      <li>Frontmatter carries provenance: <code>title · slug · page_type · raw_path · raw_hash · compiled_at · source_refs</code>.</li>
+      <li><strong>Never writes outside <code>KDB/wiki/</code></strong> — sources and state are untouchable at this stage.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>orchestrator/kdb_orchestrate.py::_commit_source</code> · <code>compiler/page_writer.py</code> · <code>kdb_graph/intake.py</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="intake">
+  <h2><span class="n">8</span>Graph intake phases</h2>
+  <p class="lede">Inside the per-source Kuzu transaction, six ordered phases mutate the graph.
+  The ordering exists so references always resolve and projections derive from fresh state.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 270" width="980" height="270">
+      <rect x="20" y="30" width="300" height="62" rx="9" class="box-gray"></rect>
+      <text x="36" y="52" class="s-title">Phase 1 — Sources</text>
+      <text x="36" y="70" class="s-body">upsert Source nodes from the scan entry</text>
+
+      <rect x="340" y="30" width="300" height="62" rx="9" class="box-gray"></rect>
+      <text x="356" y="52" class="s-title">Phase 2 — Reconcile</text>
+      <text x="356" y="70" class="s-body">MOVED → path update · DELETED → retract</text>
+
+      <rect x="660" y="30" width="300" height="62" rx="9" class="box-blue"></rect>
+      <text x="676" y="52" class="s-title">Phase 3 — Entities, two passes</text>
+      <text x="676" y="70" class="s-body">pass 1: upsert ALL Entity nodes batch-wide</text>
+
+      <path class="arr" d="M810 92 V 124"></path>
+      <rect x="660" y="128" width="300" height="62" rx="9" class="box-blue"></rect>
+      <text x="676" y="150" class="s-title">Phase 3 (pass 2)</text>
+      <text x="676" y="168" class="s-body">SUPPORTS + ingest-state + source meta</text>
+
+      <path class="arr" d="M660 159 H 500 V 124"></path>
+      <rect x="340" y="128" width="160" height="62" rx="9" class="box-teal"></rect>
+      <text x="356" y="150" class="s-title">Phase 3.6 — Domains</text>
+      <text x="356" y="168" class="s-body">Domain + BELONGS_TO projection</text>
+
+      <path class="arr" d="M340 159 H 180 V 124"></path>
+      <rect x="20" y="128" width="160" height="62" rx="9" class="box-teal"></rect>
+      <text x="36" y="150" class="s-title">Phase 3.5 — Aliases</text>
+      <text x="36" y="168" class="s-body">alias Entities + ALIAS_OF</text>
+
+      <rect x="20" y="216" width="940" height="40" rx="9" class="box-gray"></rect>
+      <text x="40" y="241" class="s-body">Phase 4 (orphan marking) and LINKS_TO wiring are <tspan font-weight="650">skipped here in orchestrator mode</tspan> — both are deferred to the finalize pass by design.</text>
+    </svg>
+    <div class="cap">Two-pass entity ingest: all nodes exist before any edge is wired, so cross-entity (and cross-source) references always resolve. Any exception → ROLLBACK.</div>
+  </div>
+
+  <div class="callout co-blue"><span class="t">Why domains and aliases are phases, not afterthoughts</span>
+  <code>BELONGS_TO</code> is a <em>derived projection</em> of <code>Source.domain × SUPPORTS</code> (schema v2.4) — it must run after both exist in the txn.
+  Alias Entities + <code>ALIAS_OF</code> edges come only from <code>canonical_meta.aliases_emitted</code> — the one per-source graph effect that lives outside <code>compiled_sources[]</code>, which is why the finalize merge treats its union as load-bearing for replay fidelity.</div>
+  <p class="ref"><code>kdb_graph/intake.py::apply_compile_result</code> · schema: <code>kdb_graph/schema.py</code> (v2.4)</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="finalize">
+  <h2><span class="n">9</span>Finalize pass</h2>
+  <p class="lede">Once per run, after the last source commits. This is where the deliberately-deferred work lands —
+  and the ordering is what makes <strong>live ≡ replay</strong> hold by construction.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 230" width="980" height="230">
+      <rect x="20" y="30" width="180" height="60" rx="9" class="box-gray"></rect>
+      <text x="110" y="52" text-anchor="middle" class="s-title">1 · combine crs</text>
+      <text x="110" y="69" text-anchor="middle" class="s-body">+ aliases_emitted union</text>
+      <path class="arr" d="M200 60 H224"></path>
+
+      <rect x="228" y="30" width="180" height="60" rx="9" class="box-blue"></rect>
+      <text x="318" y="52" text-anchor="middle" class="s-title">2 · wire_links</text>
+      <text x="318" y="69" text-anchor="middle" class="s-body">batch LINKS_TO (C1)</text>
+      <path class="arr" d="M408 60 H432"></path>
+
+      <rect x="436" y="30" width="180" height="60" rx="9" class="box-violet"></rect>
+      <text x="526" y="52" text-anchor="middle" class="s-title">3 · detect_orphans</text>
+      <text x="526" y="69" text-anchor="middle" class="s-body">single deferred pass</text>
+      <path class="arr" d="M616 60 H640"></path>
+
+      <rect x="644" y="30" width="150" height="60" rx="9" class="box-amber"></rect>
+      <text x="719" y="52" text-anchor="middle" class="s-title">4 · kdb-clean</text>
+      <text x="719" y="69" text-anchor="middle" class="s-body">reap + retraction.json</text>
+      <path class="arr" d="M794 60 H818"></path>
+
+      <rect x="822" y="30" width="138" height="60" rx="9" class="box-green"></rect>
+      <text x="891" y="52" text-anchor="middle" class="s-title">5 · persist</text>
+      <text x="891" y="69" text-anchor="middle" class="s-body">replay payload</text>
+
+      <rect x="20" y="120" width="940" height="90" rx="9" class="box-gray"></rect>
+      <text x="40" y="144" class="s-title">Why wire_links waits (the C1 fix)</text>
+      <text x="40" y="164" class="s-body">Per-source wiring meant a link pointing at an entity owned by a LATER source in the batch would dangle. Wiring once at the end — with every entity</text>
+      <text x="40" y="180" class="s-body">present — resolves cross-source edges by construction, and a replay of the combined compile_result reproduces the live graph exactly (live ≡ replay).</text>
+      <text x="40" y="200" class="s-small">Orphan detection is likewise deferred so transiently-unsupported entities mid-run are never marked (and never pollute later sources' T1/T2 context).</text>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What finalize persists</h3>
+    <ul class="tight">
+      <li><code>state/compile_result.json</code> — the combined replay payload (input to <code>graphdb-kdb rebuild</code>).</li>
+      <li><code>state/runs/&lt;run_id&gt;/</code> — per-run sidecars + journals (audit log; also the rebuild material, D39).</li>
+      <li><code>state/last_orchestrate.json</code> — slim run summary: counts, failures, manifest delta (D-91-10).</li>
+      <li>Cleanup journal + <code>retraction.json</code> when orphans were reaped.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>orchestrator/kdb_orchestrate.py::_finalize</code> · <code>kdb_graph/intake.py::{wire_links, detect_orphans, apply_cleanup}</code> · <code>tools/cleanup.py</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="state">
+  <h2><span class="n">10</span>State model &amp; rebuild</h2>
+  <p class="lede">Six layers, each with one job (D51). The graph is the authority, but it is
+  <em>derivable</em> — the journals are the real treasure.</p>
+
+  <table>
+    <tr><th>Layer</th><th>Path</th><th>Role</th></tr>
+    <tr><td>Source corpus</td><td>vault (in-place) or <code>KDB/raw/</code></td><td>Human-authored input. Pass-1 frontmatter is the only system mutation allowed here.</td></tr>
+    <tr><td><strong>Live ontology authority</strong></td><td>Kuzu graph dir</td><td>Primary. Entity, Source, Domain, all edges. Updated per source inside the commit sequence.</td></tr>
+    <tr><td>Reconstruction material</td><td><code>KDB/state/runs/&lt;run_id&gt;/</code> sidecars + <code>compile_result.json</code></td><td>Replay input for <code>graphdb-kdb rebuild</code> if the graph is lost or corrupted (D39).</td></tr>
+    <tr><td>Audit log</td><td><code>KDB/state/runs/&lt;run_id&gt;.json</code></td><td>What happened, when, with which model, what failed.</td></tr>
+    <tr><td>Source-file lifecycle</td><td><code>KDB/state/manifest.json</code></td><td>Hashes, run_state, timestamps per source, stamped with <code>pipeline_id</code>. A metadata ledger — not an ontology index (D50).</td></tr>
+    <tr><td>Rendered view</td><td><code>KDB/wiki/</code></td><td>Markdown output for Obsidian consumption; per-page provenance in frontmatter.</td></tr>
+  </table>
+
+  <div class="callout co-green"><span class="t">Backup logic</span>
+  The rebuild inputs are small JSON files — they sync cleanly to any cloud drive. The Kuzu binaries are large, churny, and sync-hostile;
+  they don't need backup at all, because they are reproducible. Protect the journals; regenerate the graph.</div>
+  <p class="ref"><code>docs/CODEBASE_OVERVIEW.md</code> §6 (D51) · <code>kdb_graph/rebuilder.py</code> · <code>kdb_graph/verifier.py</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="failures">
+  <h2><span class="n">11</span>Failure semantics &amp; operations</h2>
+  <p class="lede">The system is designed so that failures are boring: each one has exactly one defined outcome,
+  and almost all of them self-heal on the next run.</p>
+
+  <table>
+    <tr><th>Failure</th><th>Outcome</th><th>Recovery</th></tr>
+    <tr><td>Bad LLM output after <strong>2 content attempts</strong> (parse/schema/semantic; free repair rungs in between; transport adds 3 backoff attempts per call)</td><td>Source <strong>quarantined</strong>; batch continues (D-96-1)</td><td>Recorded in journal + RespStatsRecord; re-runs next time automatically</td></tr>
+    <tr><td>Prompt would exceed ctx_window</td><td>Skip-and-quarantine <strong>with zero API spend</strong> (#110)</td><td>Same as above</td></tr>
+    <tr><td>page_writer fails</td><td>Graph untouched (case-a)</td><td>Re-run recompiles the source</td></tr>
+    <tr><td>Graph txn fails</td><td>Rollback; manifest never written (case-a)</td><td>Re-run recompiles the source</td></tr>
+    <tr><td>Manifest write fails after graph commit</td><td><code>manifest_post_graph</code> residual</td><td>Idempotent re-run self-heals</td></tr>
+    <tr><td>Canonicalize algorithmic failure</td><td><strong>Fatal</strong> — pipeline halts before any write (D-R5-9)</td><td>Fix the alias ledger; failure journal points at the cause</td></tr>
+    <tr><td>Operator kill / crash mid-run</td><td>Committed sources are hash-current</td><td>Next run resumes from the first uncommitted source</td></tr>
+  </table>
+
+  <div class="callout co-red"><span class="t">Known pre-production blocker — Task #94 (fail-fast strands LINKS_TO)</span>
+  <code>_finalize</code> runs only when the run completes normally. A mid-run <strong>fail-fast abort</strong> (D-91-8) leaves already-committed sources with
+  entities + SUPPORTS but <strong>zero LINKS_TO</strong>, and no <code>compile_result.json</code>. The next run sees those sources as hash-current → skips them →
+  finalize wires only the new batch → <strong>the earlier sources' cross-source links are permanently lost.</strong><br><br>
+  Today's rule: on abort, delete graph + manifest and re-run clean — acceptable for a throwaway sandbox, unacceptable for a real vault.
+  Fixing #94 (finalize-on-abort, per-source sidecars, or prefix-rewire) gates the first official run.</div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Operator surface</h3>
+    <ul class="tight">
+      <li><code>kdb-orchestrate --vault-root &lt;vault&gt; --pipeline &lt;id&gt;</code> — run one pipeline. Omit <code>--pipeline</code> to list what's registered.</li>
+      <li><code>--dry-run</code> — scan + print the plan; no LLM calls, no writes.</li>
+      <li><code>--limit N</code> — stop after N compiled sources (noise is free); the remainder resumes next run. Finalize still runs over the compiled batch.</li>
+      <li><code>--model &lt;pool-id&gt;</code> — model from <code>common/models.json</code>; <code>--emit-kpis</code> writes benchmark measurements for the run.</li>
+      <li><code>graphdb-kdb stats | verify | rebuild | snapshot</code> — inspect, prove, reconstruct, or export the graph.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>orchestrator/kdb_orchestrate.py</code> CLI · Task #94 in <code>docs/TASKS.md</code></p>
+</section>
+
+<footer style="color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); padding-top:18px;">
+  Generated as a session reference for the vault-in-place initiative · Sources: <code>docs/CODEBASE_OVERVIEW.md</code>, package docstrings, and live code walkthroughs (2026-07-19).
+</footer>
+
+</main>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('theme-toggle');
+  function syncLabel() {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    btn.textContent = dark ? 'Light mode' : 'Dark mode';
+    btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+  }
+  var saved = null;
+  try { saved = localStorage.getItem('kdb-orch-theme'); } catch (e) { /* file:// or privacy mode */ }
+  if (saved === 'dark' || saved === 'light') {
+    root.setAttribute('data-theme', saved);
+  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    root.setAttribute('data-theme', 'dark');
+  }
+  syncLabel();
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('kdb-orch-theme', next); } catch (e) { /* ignore */ }
+    syncLabel();
+  });
+})();
+</script>
+</body>
+</html>
