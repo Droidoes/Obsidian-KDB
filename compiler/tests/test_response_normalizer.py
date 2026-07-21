@@ -180,3 +180,20 @@ def test_unwrap_prose_passthrough():
 
 def test_unwrap_non_json_fence_passthrough():
     assert unwrap_response('```python\n{"a": 1}\n```') == '```python\n{"a": 1}\n```'
+
+
+def test_unwrap_multiple_blocks_returned_unchanged():
+    # Two genuine fenced blocks: NOT a single clearly-present block — the
+    # fences stay as carrier noise for the recovery stage (spec §3.1:
+    # parse-based disambiguation, mirroring extract_json_text). Unwrapping
+    # here would let the first block's scalar root ('null') win over the
+    # real payload via root preservation.
+    raw = '```json\nnull\n```\n```json\n{"a": 1}\n```'
+    assert unwrap_response(raw) == raw
+
+
+def test_unwrap_fence_inside_string_values_still_unwrapped():
+    # A single JSON object whose string values embed ``` — the body decodes
+    # as one document, so it IS a single block and gets unwrapped.
+    raw = '```json\n{"a": "x ``` y"}\n```'
+    assert unwrap_response(raw) == '{"a": "x ``` y"}'

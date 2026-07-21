@@ -99,6 +99,13 @@ def unwrap_response(raw_text: str) -> str:
     """Loose unwrap (#114): strip a single clearly-present fenced block;
     otherwise return the stripped text unchanged. Never rejects — carrier
     noise is the recovery stage's problem, not the unwrap stage's.
+
+    "Clearly present" mirrors extract_json_text's parse-based
+    disambiguation (spec §3.1): when the fenced body itself contains a
+    fence, it is a single block only if the whole body decodes as one JSON
+    document (backticks inside string values); genuine multiple blocks are
+    returned unwrapped — unwrapping them would fuse the blocks and let the
+    first block's root win over the real payload.
     """
     text = raw_text.strip()
     if not text.startswith("```"):
@@ -111,5 +118,11 @@ def unwrap_response(raw_text: str) -> str:
         return text
     body_and_rest = text[first_newline + 1:]
     if body_and_rest.endswith("```"):
-        return body_and_rest[:-3].strip()
+        body = body_and_rest[:-3].strip()
+        if "```" in body:
+            try:
+                json.loads(body)
+            except json.JSONDecodeError:
+                return text
+        return body
     return body_and_rest.strip()

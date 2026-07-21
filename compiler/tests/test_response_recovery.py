@@ -94,3 +94,13 @@ def test_first_brace_only_no_scanning():
 def test_selection_first_no_unneeded_edit():
     r = recover_json_response('{"a": "no backslashes"}\n}')
     assert r.recovered and r.boundary_recovered and not r.syntax_repaired
+
+
+def test_multiple_fenced_blocks_recovers_object_not_scalar():
+    # Codex pre-merge review F1: a 'null' block followed by an object block.
+    # Unwrap must NOT fuse them into 'null ... {obj}' (which root
+    # preservation would decode as JSON null → schema retry → quarantine).
+    # With the fences kept, prose fallback selects the object payload.
+    r = recover_json_response('```json\nnull\n```\n```json\n{"pages": []}\n```')
+    assert r.recovered and r.parsed == {"pages": []}
+    assert r.boundary_recovered and not r.extract_ok
