@@ -6,7 +6,13 @@ Accepts only two shapes:
 
 Leading/trailing whitespace is stripped before checking. Any other shape
 (prose before/after, multiple objects, regex-found substrings, etc.)
-raises ValueError and is caught as extract_ok=False by compile_one.
+raises ValueError.
+
+Since #114 the strict verdict is telemetry-only (non-gating): compile_one
+consumes this module via response_recovery, which catches the ValueError
+as extract_ok=False for resp-stats rather than failing the source. For
+never-rejecting loose extraction use unwrap_response — the module's
+lenient half.
 
 Explicitly NOT handled here:
     - prose stripping / "find the first JSON-looking substring"

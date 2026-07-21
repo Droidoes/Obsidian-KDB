@@ -256,7 +256,7 @@ def compile_one(
         # (max_tokens) would exceed the model's ctx_window, skip-and-quarantine
         # THIS source with NO API spend. Routes through the EXISTING failure-
         # staging path (the same "truncation"/"TokenOverrun" vocabulary the
-        # OUTPUT-side truncation guard below uses, ~line 313) → the finally block
+        # OUTPUT-side truncation guard below uses, ~line 353) → the finally block
         # records one RespStatsRecord; no model call → zeroed token counters →
         # no spend. The message is differentiated (ctx_window, no stop_reason) so
         # telemetry can tell input- from output-side overruns apart. ctx_window

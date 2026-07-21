@@ -61,6 +61,9 @@ def test_escape_plus_tail_composed_step5():
 def test_unterminated_returns_not_recovered_with_error():
     r = recover_json_response('{"pages": [1, 2')
     assert not r.recovered and r.parsed is None and r.error
+    # #114 final-review: error carries the terminal decoder error, not a
+    # static string (pre-#114 format, spec §3.2).
+    assert r.error == "Expecting ',' delimiter at line 1"
     assert not r.boundary_recovered and not r.syntax_repaired
 
 
@@ -79,11 +82,13 @@ def test_non_dict_top_level_returned_for_schema_gate():
 def test_truncated_array_never_lifts_nested_object():
     r = recover_json_response('[{"pages": []}')
     assert not r.recovered
+    assert r.error == "Expecting ',' delimiter at line 1"
 
 
 def test_first_brace_only_no_scanning():
     r = recover_json_response('{bad} {"pages": []}')
     assert not r.recovered
+    assert "no complete" not in r.error and "at line 1" in r.error
 
 
 def test_selection_first_no_unneeded_edit():

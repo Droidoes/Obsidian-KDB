@@ -50,8 +50,10 @@ def recover_json_response(raw_text: str) -> RecoveryResult:
     try:
         return RecoveryResult(recovered=True, extract_ok=extract_ok,
                               parsed=json.loads(candidate))
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        # Terminal parse error carried to the caller (for resp-stats) if the
+        # whole ladder fails — spec §3.2.
+        terminal_error = f"{e.msg} at line {e.lineno}"
 
     # 2. boundary-decode original (root-preserving)
     hit = parse_document_prefix(candidate)
@@ -79,4 +81,4 @@ def recover_json_response(raw_text: str) -> RecoveryResult:
 
     return RecoveryResult(
         recovered=False, extract_ok=extract_ok,
-        error="no complete JSON document recoverable from response")
+        error=terminal_error)
