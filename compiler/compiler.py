@@ -21,7 +21,6 @@ seam without touching `call_model_retry` itself.
 """
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any, Callable, Literal, NamedTuple
@@ -30,7 +29,6 @@ from compiler import (
     canonicalize,
     prompt_builder,
     repair,
-    response_normalizer,
     validate_compile_result,
     validate_source_response,
 )
@@ -38,12 +36,12 @@ from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
 from common.model_pool import estimate_prompt_tokens, fits_context
-from common.util.json_escape_fix import escape_stray_backslashes
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
 from compiler.repair import coerce_slugs_and_propagate, reconcile_body_links, reconcile_slug_lists
 from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
+from compiler.response_recovery import recover_json_response
 from common.run_context import RunContext
 from common.types import (
     CompiledSource,
@@ -198,6 +196,10 @@ def compile_one(
         "compile_attempts": None,
         "syntax_repaired": False,
         "slug_coerced": False,
+        # recovery telemetry (#114) — winning-attempt values
+        "boundary_recovered": False,
+        "prefix_discarded_chars": 0,
+        "tail_discarded_chars": 0,
         # discarded-attempt aggregation (#109 Task 2)
         "_agg_input_tokens": 0,
         "_agg_output_tokens": 0,
@@ -306,6 +308,9 @@ def compile_one(
             state["semantic_errors"] = []
             state["syntax_repaired"] = False
             state["slug_coerced"] = False
+            state["boundary_recovered"] = False
+            state["prefix_discarded_chars"] = 0
+            state["tail_discarded_chars"] = 0
 
             # --- model call ---
             try:
@@ -341,69 +346,43 @@ def compile_one(
                 )
                 return (None, [], [], state["error"])
 
-            # --- truncation guard (terminal — a re-call won't fit a bigger output) ---
-            # Anthropic: stop_reason == "max_tokens"; OpenAI-compat: "length".
-            sr = state["model_response"].stop_reason
-            if sr in ("max_tokens", "length"):
-                _set_failure(
-                    state,
-                    "truncation",
-                    "TokenOverrun",
-                    f"stop_reason={sr!r}; max_tokens={max_tokens}",
-                )
-                state["error"] = (
-                    f"{source_id}: truncated at max_tokens={max_tokens} "
-                    f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
-                )
-                return (None, [], [], state["error"])
-
-            # --- extract ---
-            try:
-                json_text = response_normalizer.extract_json_text(
-                    state["raw_response_text"]
-                )
-                state["extract_ok"] = True
-            except ValueError as e:
+            # --- recovery (#114): unwrap + strict-eval + 5-step ladder ---
+            result = recover_json_response(state["raw_response_text"])
+            state["extract_ok"] = result.extract_ok
+            if not result.recovered:
+                # truncation guard — terminal only AFTER recovery fails
+                # (a truncated-flagged response may still carry a complete
+                # document; stop_reason is carrier metadata, not proof of
+                # absence). A re-call won't fit a bigger output → no retry.
+                sr = state["model_response"].stop_reason
+                if sr in ("max_tokens", "length"):
+                    _set_failure(
+                        state, "truncation", "TokenOverrun",
+                        f"stop_reason={sr!r}; max_tokens={max_tokens}",
+                    )
+                    state["error"] = (
+                        f"{source_id}: truncated at max_tokens={max_tokens} "
+                        f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
+                    )
+                    return (None, [], [], state["error"])
                 if not last_attempt:
                     log.warning(
                         f"{source_id}: Pass-2 attempt {attempt}/"
-                        f"{_MAX_COMPILE_ATTEMPTS} extract failed, retrying: {e}"
+                        f"{_MAX_COMPILE_ATTEMPTS} unrecoverable JSON, retrying: "
+                        f"{result.error}"
                     )
                     continue
-                _set_failure(state, "extract", type(e).__name__, str(e))
-                state["error"] = f"{source_id}: extract failed: {e}"
+                _set_failure(state, "parse", "JSONDecodeError",
+                             result.error or "unrecoverable")
+                state["error"] = f"{source_id}: invalid JSON: {result.error}"
                 return (None, [], [], state["error"])
 
-            # --- parse (+ rung-1: targeted backslash-escape on failure, #106) ---
-            try:
-                state["parsed_json"] = json.loads(json_text)
-                state["parse_ok"] = True
-            except json.JSONDecodeError as e:
-                fixed = escape_stray_backslashes(json_text)
-                if fixed != json_text:
-                    try:
-                        state["parsed_json"] = json.loads(fixed)
-                        state["parse_ok"] = True
-                        state["syntax_repaired"] = True
-                        log.info(
-                            f"{source_id}: Pass-2 attempt {attempt} "
-                            f"syntax-repaired, proceeding"
-                        )
-                    except json.JSONDecodeError:
-                        pass
-                if not state["parse_ok"]:
-                    if not last_attempt:
-                        log.warning(
-                            f"{source_id}: Pass-2 attempt {attempt}/"
-                            f"{_MAX_COMPILE_ATTEMPTS} invalid JSON, retrying: "
-                            f"{e.msg} at line {e.lineno}"
-                        )
-                        continue
-                    _set_failure(state, "parse", type(e).__name__, str(e))
-                    state["error"] = (
-                        f"{source_id}: invalid JSON: {e.msg} at line {e.lineno}"
-                    )
-                    return (None, [], [], state["error"])
+            state["parsed_json"] = result.parsed
+            state["parse_ok"] = True
+            state["syntax_repaired"] = result.syntax_repaired
+            state["boundary_recovered"] = result.boundary_recovered
+            state["prefix_discarded_chars"] = result.prefix_discarded_chars
+            state["tail_discarded_chars"] = result.tail_discarded_chars
 
             # --- schema (+ rung-2: slug coercion on failure, #106) ---
             state["schema_errors"] = validate_source_response.validate(
@@ -411,7 +390,11 @@ def compile_one(
             )
             state["schema_ok"] = state["schema_errors"] == []
             if not state["schema_ok"]:
-                if coerce_slugs_and_propagate(state["parsed_json"]):
+                # Coercion guarded (#114): non-dict payloads (list / scalar /
+                # JSON null recovered by the ladder) skip coercion — the
+                # schema gate alone arbitrates them, no AttributeError.
+                if isinstance(state["parsed_json"], dict) and \
+                        coerce_slugs_and_propagate(state["parsed_json"]):
                     state["schema_errors"] = validate_source_response.validate(
                         state["parsed_json"]
                     )
@@ -543,10 +526,11 @@ def compile_one(
         # Derive final_status for repair-ladder telemetry (#106).
         _syntax_repaired = state["syntax_repaired"]
         _slug_coerced = state["slug_coerced"]
+        _boundary_recovered = state["boundary_recovered"]
         _compile_attempts = state["compile_attempts"]
         if state["error"] is not None:
             _final_status = "quarantined"
-        elif _syntax_repaired or _slug_coerced:
+        elif _syntax_repaired or _slug_coerced or _boundary_recovered:
             _final_status = (
                 "retried-and-repaired" if _compile_attempts == 2 else "repaired"
             )
@@ -592,6 +576,9 @@ def compile_one(
             compile_attempts=_compile_attempts,
             syntax_repaired=_syntax_repaired,
             slug_coerced=_slug_coerced,
+            boundary_recovered=_boundary_recovered,
+            prefix_discarded_chars=state["prefix_discarded_chars"],
+            tail_discarded_chars=state["tail_discarded_chars"],
             final_status=_final_status,
             total_input_tokens=state["_agg_input_tokens"] if _has_calls else None,
             total_output_tokens=state["_agg_output_tokens"] if _has_calls else None,

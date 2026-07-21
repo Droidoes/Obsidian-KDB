@@ -5,7 +5,9 @@ Coverage per blueprint §10:
     - source-read failure writes a resp-stats record (prompt=None, model_resp=None)
     - prompt-build failure writes a resp-stats record (prompt=None)
     - model-call (SDK) failure writes a resp-stats record (model_response=None)
-    - extract failure (prose) writes a resp-stats record with extract_ok=False
+    - extract failure (prose) is non-gating telemetry (#114): extract_ok=False
+      on the record while recovery still selects the document; content gates
+      (schema/semantic) arbitrate the payload
     - parse failure (broken JSON) writes a resp-stats record with parse_ok=False,
       parsed_summary=None
     - schema failure writes a resp-stats record with schema_ok=False and
@@ -501,17 +503,19 @@ def test_compile_one_model_call_failure_writes_resp_stats_record(
     assert record["response_hash"] == "sha256:none"
 
 
-def test_compile_one_truncation_guard_short_circuits_extract(
+def test_compile_one_truncation_guard_is_post_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """stop_reason='max_tokens' must fail with a clear truncation error
-    before extract — otherwise we'd get a misleading 'unclosed fence'."""
+    """#114: recovery runs FIRST — stop_reason='max_tokens' is terminal only
+    AFTER recovery fails. A truncated-flagged response that still carries a
+    complete document compiles; stop_reason is carrier metadata, persisted
+    on the record (token_overrun derived from it)."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Valid-looking JSON, but the call was truncated.
+    # Valid, complete JSON — but the call was flagged truncated.
     truncated = ModelResponse(
         text=json.dumps(_good_response(SOURCE_A)),
         input_tokens=100, output_tokens=4096, latency_ms=10,
@@ -532,35 +536,42 @@ def test_compile_one_truncation_guard_short_circuits_extract(
         model="claude-haiku-4-5-20251001",
         max_tokens=4096,
     )
-    assert cs is None
-    assert err is not None
-    assert "truncated at max_tokens=4096" in err
-    assert "stop_reason='max_tokens'" in err
+    assert err is None
+    assert cs is not None
 
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
-    # Guard fires before extract — extract_ok stays False.
-    assert record["extract_ok"] is False
-    assert record["parse_ok"] is False
+    assert record["extract_ok"] is True
+    assert record["parse_ok"] is True
+    assert record["stop_reason"] == "max_tokens"
+    assert record["token_overrun"] is True
 
 
 def test_compile_one_openai_length_stop_reason_also_guarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """OpenAI-compat providers emit 'length' instead of 'max_tokens'."""
+    """OpenAI-compat providers emit 'length' instead of 'max_tokens'. With a
+    genuinely truncated (unrecoverable) document, the post-recovery guard
+    fires for 'length' too — terminal, no retry (#114)."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
     truncated = ModelResponse(
-        text=json.dumps(_good_response(SOURCE_A)),
+        text='{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
         input_tokens=100, output_tokens=4096, latency_ms=10,
         model="gpt-something", provider="openai", attempts=1,
         stop_reason="length",
     )
+    calls = {"n": 0}
+
+    def counting_fake(req):
+        calls["n"] += 1
+        return truncated
+
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: truncated}),
+        _fake_call({SOURCE_A: counting_fake}),
     )
 
     _, _, _, err = compiler.compile_one(
@@ -575,17 +586,22 @@ def test_compile_one_openai_length_stop_reason_also_guarded(
     assert err is not None
     assert "truncated" in err
     assert "stop_reason='length'" in err
+    assert calls["n"] == 1  # terminal — no retry
 
 
-def test_compile_one_extract_failure_writes_resp_stats_record(
+def test_compile_one_extract_failure_is_non_gating_telemetry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """#114: extract_ok is non-gating telemetry. Prose around the object
+    fails the STRICT shape check (extract_ok=False) but the recovery ladder
+    still selects the embedded document (parse_ok=True) — the schema gate,
+    not extraction, arbitrates the undersized payload → quarantine."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Prose around the object -> extract should reject.
+    # Prose around the object -> strict extract rejects, recovery selects.
     bad = ModelResponse(
         text="sure, here you go:\n{\"source_id\": \"x\"}\n cheers!",
         input_tokens=10, output_tokens=5, latency_ms=10,
@@ -606,11 +622,13 @@ def test_compile_one_extract_failure_writes_resp_stats_record(
         max_tokens=4096,
     )
     assert cs is None
-    assert "extract failed" in (err or "")
+    assert "schema validation failed" in (err or "")
 
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
-    assert record["extract_ok"] is False
-    assert record["parse_ok"] is False
+    assert record["extract_ok"] is False   # strict-shape verdict, telemetry only
+    assert record["parse_ok"] is True      # recovery selected the document
+    assert record["boundary_recovered"] is True
+    assert record["schema_ok"] is False    # content gate did the rejecting
 
 
 def test_compile_one_parse_failure_writes_resp_stats_record(
@@ -937,14 +955,16 @@ def test_failure_triplet_truncation_uses_synthetic_token_overrun(
 ) -> None:
     """Truncation is not an exception — we use the synthetic stage name
     'truncation' and synthetic exception_type 'TokenOverrun'. The message
-    encodes the actual stop_reason and max_tokens for grouping."""
+    encodes the actual stop_reason and max_tokens for grouping. #114: the
+    guard fires only AFTER recovery fails, so the document here is genuinely
+    truncated (unrecoverable)."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
     truncated = ModelResponse(
-        text=json.dumps(_good_response(SOURCE_A)),
+        text='{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
         input_tokens=100, output_tokens=4096, latency_ms=10,
         model="m", provider="anthropic", attempts=1,
         stop_reason="max_tokens",
@@ -1039,9 +1059,14 @@ def test_compile_one_fits_context_proceeds_to_model(
     assert cs is not None
 
 
-def test_failure_triplet_extract_populates_valueerror(
+def test_failure_triplet_extract_stage_never_emitted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """#114: failure_stage="extract" is never emitted. The prose-wrapped
+    payload below fails the strict shape check (extract_ok=False, telemetry
+    only) but recovery still selects the embedded object; the SCHEMA gate
+    rejects the undersized payload — and schema failures carry no failure
+    triplet (they have the structured schema_errors surface instead)."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
@@ -1057,14 +1082,14 @@ def test_failure_triplet_extract_populates_valueerror(
         _fake_call({SOURCE_A: bad}),
     )
 
-    compiler.compile_one(
+    cs, _, _, err = compiler.compile_one(
         _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
         ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
     )
+    assert cs is None
+    assert "schema validation failed" in (err or "")
     stage, etype, msg = _failure_fields(state_root, ctx.run_id)
-    assert stage == "extract"
-    assert etype == "ValueError"
-    assert msg  # non-empty (extract_json_text raises a specific msg)
+    assert stage is None and etype is None and msg is None
 
 
 def test_failure_triplet_parse_populates_jsondecodeerror(
