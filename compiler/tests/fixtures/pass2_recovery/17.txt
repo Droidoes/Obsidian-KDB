@@ -1,0 +1,101 @@
+{
+  "source_name": "Li Lu 2021 Enoch Wealth Institute Lecture.md",
+  "summary_slug": "summary-li-lu-2021-enoch-wealth-institute-lecture",
+  "concept_slugs": [
+    "globalization",
+    "value-investing-disposition",
+    "economic-moats",
+    "compound-interest-knowledge-wealth",
+    "wealth-management-alignment",
+    "index-fund-investing"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-li-lu-2021-enoch-wealth-institute-lecture",
+      "page_type": "summary",
+      "title": "Li Lu 2021 Enoch Wealth Institute Lecture (Summary)",
+      "body": "In this 2021 lecture, Li Lu discusses the irrepressible nature of [[globalization]], the psychological and behavioral requirements of a [[value-investing-disposition]], and the structural dynamics of identifying [[economic-moats]]. He outlines how to achieve the [[compound-interest-knowledge-wealth|compound interest of knowledge and wealth]] over a lifetime, while detailing specific criteria for [[wealth-management-alignment|selecting aligned wealth managers]] and advocating for [[index-fund-investing]] as a highly effective default path.",
+      "status": "active",
+      "outgoing_links": [
+        "globalization",
+        "value-investing-disposition",
+        "economic-moats",
+        "compound-interest-knowledge-wealth",
+        "wealth-management-alignment",
+        "index-fund-investing"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "globalization",
+      "page_type": "concept",
+      "title": "Globalization and Market Integration",
+      "body": "According to Li Lu, globalization has created a highly integrated, single global market that is independent of any single nation's will. While historically markets were bound by political unification (which permitted secondary welfare redistribution to protect short-term losers of free competition), modern globalization lacks a centralized secondary adjustment mechanism. This places pressure on major developed nations to regulate and coordinate rationally, particularly through bodies like the G20. Because decoupling would generate massive inefficiencies, no single economy can reverse this process; global market competition remains a single, irreversible system where the most efficient operators inevitably emerge victorious.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "value-investing-disposition",
+      "page_type": "concept",
+      "title": "The Value Investing Disposition",
+      "body": "Li Lu observes that success in value investing is fundamentally a matter of inborn or early-developed personal temperament rather than intellectual capacity alone. Individuals with this disposition rely strictly on logical facts, disregard market consensus or public opinion, and are comfortable accumulating wealth gradually in the slow lane. Conversely, individuals lacking this disposition are rarely converted to the methodology and remain highly vulnerable to short-term speculative trading, as exemplified in historical market tragedies like that of Jesse Livermore described in _Reminiscences of a Stock Operator_.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "economic-moats",
+      "page_type": "concept",
+      "title": "Economic Moats and Competitive Advantage",
+      "body": "The intrinsic value of a business is defined as the sum of all cash profits generated during its life cycle, discounted to the present. Because businesses with exceptionally high returns on investment inevitably attract fierce competition, a company must possess sustainable competitive advantages, or 'economic moats', to survive and generate long-term profits. While some moats are structural monopolies, most are built on leading technologies, visionary leadership, corporate culture, unique business models, or deep consumer relationships. Analyzing these competitive positions is the core focus of assessing business value.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "compound-interest-knowledge-wealth",
+      "page_type": "concept",
+      "title": "The Compound Interest of Knowledge and Wealth",
+      "body": "Li Lu compares the development of deep business expertise to the progressive accumulation of financial compound interest—which Einstein called the eighth wonder of the world. By studying thousands of business models and experiencing diverse market cycles over decades, an investor's knowledge takes permanent root in the brain, exponentially improving their analytical skills and business judgment. To unlock this lifelong compounding effect, an investor must avoid tracking K-line patterns or speculative shortcuts, focusing instead on honest, step-by-step learning.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "wealth-management-alignment",
+      "page_type": "concept",
+      "title": "Wealth Management Alignment and Manager Selection",
+      "body": "To successfully safeguard and compound wealth, asset owners must seek out investment managers who demonstrate structural alignment of interests. Li Lu highlights that many conventional fund managers charge fees regardless of performance, creating an ethical conflict of interest and investing their own capital elsewhere. A trustworthy wealth manager should treat the client's capital as their own. Illustrating this principle, Li Lu notes that Himalaya Capital did not charge a conventional flat management fee from the beginning, instead waiving fees for the first 60% of profits to guarantee that compensation is entirely tied to investor outcomes.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "index-fund-investing",
+      "page_type": "concept",
+      "title": "Index Fund Investing",
+      "body": "For individuals who cannot identify or access aligned, high-performing active managers, investing in index funds represents one of the smartest and most reliable investment options. However, index investing in China historically faced limitations because the market had not fully implemented a stock registration system, resulting in an index that did not perfectly track or represent the true underlying growth of the Chinese economy. Transitioning toward a representative index fund of leading Chinese companies—including those listed in Hong Kong and the United States—remains a highly viable alternative to cash preservation and speculative trading.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Created concept pages covering globalization, value-investing temperament, moats, compounding knowledge, manager selection, and index funds, mapping fully to Li Lu's structural lecture themes.",
+      "related_slugs": [
+        "globalization",
+        "value-investing-disposition",
+        "economic-moats",
+        "compound-interest-knowledge-wealth",
+        "wealth-management-alignment",
+        "index-fund-investing"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

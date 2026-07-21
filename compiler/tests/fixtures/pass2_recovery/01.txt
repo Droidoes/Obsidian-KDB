@@ -1,0 +1,69 @@
+{
+  "source_name": "Archiving Claude Conv to Obsidian Vault.md",
+  "summary_slug": "summary-archiving-claude-conv-to-obsidian-vault",
+  "concept_slugs": [
+    "claude-jsonl-format",
+    "claude-to-obsidian-pipeline",
+    "obsidian-knowledge-retrieval"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-archiving-claude-conv-to-obsidian-vault",
+      "page_type": "summary",
+      "title": "Archiving Claude Conv to Obsidian Vault (summary)",
+      "body": "This guide provides a structured workflow and Python script to parse local Claude session data, convert it to Obsidian markdown files, and integrate those files into a searchable knowledge base. The process covers reading the [[claude-jsonl-format|JSONL structure]], automating the conversion using a [[claude-to-obsidian-pipeline|Python parsing script and cron job]], and applying [[obsidian-knowledge-retrieval|retrieval patterns]] such as Dataview queries and Maps of Content (MOCs).",
+      "status": "active",
+      "outgoing_links": [
+        "claude-jsonl-format",
+        "claude-to-obsidian-pipeline",
+        "obsidian-knowledge-retrieval"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "claude-jsonl-format",
+      "page_type": "concept",
+      "title": "Claude JSONL Format",
+      "body": "Claude local session data is stored as line-delimited JSON (JSONL). Each line represents a discrete turn containing a `timestamp` and a `message` object with a designated `role` ('user' or 'assistant'). The `content` value of the message can be a raw string or an array of blocks, which requires parsing block types (such as 'text') to reconstruct the conversation text.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "claude-to-obsidian-pipeline",
+      "page_type": "concept",
+      "title": "Claude to Obsidian Pipeline",
+      "body": "A pipeline for archiving conversation history reads local `.jsonl` session files, extracts timestamps and text blocks from the [[claude-jsonl-format|Claude JSONL format]], and converts them to frontmatter-enriched markdown files inside an Obsidian vault. Automation is achieved by scheduling the Python script as a background service via a utility like cron to ensure nightly, incremental synchronization of new and modified sessions.",
+      "status": "active",
+      "outgoing_links": [
+        "claude-jsonl-format"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-knowledge-retrieval",
+      "page_type": "concept",
+      "title": "Obsidian Knowledge Retrieval",
+      "body": "Once external content is synchronized to a vault via an automated parser like the [[claude-to-obsidian-pipeline|Claude to Obsidian pipeline]], it can be synthesized into a personal knowledge base using structured retrieval patterns. These include automatic tag-based organization, dynamic Dataview database queries to aggregate documents by date and project metadata, and manually curated Map of Content (MOC) index notes to link related research threads.",
+      "status": "active",
+      "outgoing_links": [
+        "claude-to-obsidian-pipeline"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Created concept pages covering the file format, the pipeline script, and the Obsidian indexing strategies outlined in the source.",
+      "related_slugs": [
+        "claude-jsonl-format",
+        "claude-to-obsidian-pipeline",
+        "obsidian-knowledge-retrieval"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

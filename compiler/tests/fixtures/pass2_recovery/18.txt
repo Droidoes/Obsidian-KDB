@@ -1,0 +1,84 @@
+{
+  "source_name": "How share BUYBACKS can 10x - Boston College 2022.md",
+  "summary_slug": "summary-how-share-buybacks-can-10x-boston-college-2022",
+  "concept_slugs": [
+    "uber-cannibals",
+    "capital-allocation",
+    "secular-decline"
+  ],
+  "article_slugs": [
+    "singleton-teledyne-buyback-playbook"
+  ],
+  "pages": [
+    {
+      "slug": "summary-how-share-buybacks-can-10x-boston-college-2022",
+      "page_type": "summary",
+      "title": "Mohnish Pabrai on Share Buybacks and the Uber Cannibals Framework",
+      "body": "In this 2022 Boston College lecture, Mohnish Pabrai presents his [[uber-cannibals|Uber Cannibals]] investing framework. He highlights companies that compound immense shareholder value by aggressively buying back their own stock rather than paying dividends. Drawing on historical case studies like NVR, AutoZone, and Henry Singleton's Teledyne, Pabrai outlines the mathematical magic of share reduction alongside critical risks like [[secular-decline]] and poor [[capital-allocation]] by corporate executives.",
+      "status": "active",
+      "outgoing_links": [
+        "uber-cannibals",
+        "secular-decline",
+        "capital-allocation"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "uber-cannibals",
+      "page_type": "concept",
+      "title": "Uber Cannibals",
+      "body": "The term 'Uber Cannibals' (originally inspired by Charlie Munger's advice to 'pay close attention to the cannibals') refers to stable, high-return businesses that consistently eat themselves by buying back their own stock. According to Mohnish Pabrai, the financial magic of cannibals compounds dramatically once a business retires a massive portion of its equity. If a company retires 80% of its shares, it achieves a 5x multiple pop on its remaining shares even with zero earnings growth. To succeed as an Uber Cannibal, a business must have stable or growing earnings, avoid [[secular-decline]], and employ disciplined [[capital-allocation]] that prioritizes internal growth before buybacks.",
+      "status": "active",
+      "outgoing_links": [
+        "secular-decline",
+        "capital-allocation"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "capital-allocation",
+      "page_type": "concept",
+      "title": "Capital Allocation",
+      "body": "Capital allocation is the process of deciding how to deploy a firm's cash, primarily choosing between internal reinvestment, acquisitions, share buybacks, and dividends. Mohnish Pabrai notes that most corporate CEOs are promoted because they are exceptional at sales, marketing, or R&D, leaving their capital allocation skills largely untested until they reach the top job. An exceptional capital allocator understands when to throttle buybacks (purchasing aggressively at low valuations) and when to pause. Pabrai references Tim Cook of Apple seeking counsel from Warren Buffett on how to optimize this playbook, contrasting it with value-destructive allocation seen in companies like Sears or IBM.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "secular-decline",
+      "page_type": "concept",
+      "title": "Secular Decline",
+      "body": "Secular decline is a long-term, irreversible downward trajectory in a business or industry, driven by creative destruction and technological disruption under capitalism. Mohnish Pabrai warns that share buybacks only generate value if the underlying business remains stable or grows over a ten-to-twenty-year horizon. When a business enters secular decline—as seen with Sears and IBM—furious share repurchases fail because multiplying a declining intrinsic value by a larger ownership fraction still leads to a poor or zero return. Pabrai cites potential long-term disruptions, such as electric vehicles threatening the service operations of car dealerships and automotive parts retailers like AutoZone.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "singleton-teledyne-buyback-playbook",
+      "page_type": "article",
+      "title": "The Henry Singleton Teledyne Buyback Playbook",
+      "body": "Henry Singleton, who ran Teledyne, is celebrated by investors like Charlie Munger and Mohnish Pabrai as the ultimate practitioner of [[capital-allocation]]. His strategy was divided into two distinct historical phases. Throughout the 1960s, when Teledyne stock traded at high multiples (40x to 70x), Singleton issued shares aggressively to acquire 130 companies. In the 1970s, when market valuations collapsed and Teledyne's PE ratio fell below 10, he stopped using stock for acquisitions and pivoted completely. Between 1972 and 1984, Singleton launched consecutive tender offers and debt exchanges, buying back over 90% of Teledyne's outstanding shares. Despite only tripling its net income over this period, the massive reduction in shares outstanding caused Teledyne's stock price to increase 40x. This demonstrates how a skilled CEO can exploit market cycles by shifting from share issuance to aggressive stock repurchases, transforming a business into an extraordinarily successful [[uber-cannibals|Uber Cannibal]].",
+      "status": "active",
+      "outgoing_links": [
+        "capital-allocation",
+        "uber-cannibals"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Compiled summary, core concepts (Uber Cannibals, Capital Allocation, Secular Decline), and a synthesizing historical article on Henry Singleton's Teledyne playbook.",
+      "related_slugs": [
+        "summary-how-share-buybacks-can-10x-boston-college-2022",
+        "uber-cannibals",
+        "capital-allocation",
+        "secular-decline",
+        "singleton-teledyne-buyback-playbook"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

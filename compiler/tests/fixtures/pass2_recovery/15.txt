@@ -1,0 +1,51 @@
+{
+  "source_name": "Negative cash-conversion cycle.md",
+  "summary_slug": "summary-negative-cash-conversion-cycle",
+  "concept_slugs": [
+    "cash-conversion-cycle",
+    "negative-cash-conversion-cycle"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-negative-cash-conversion-cycle",
+      "page_type": "summary",
+      "title": "Summary: Negative Cash-Conversion Cycle",
+      "body": "The cash conversion cycle (CCC) measures the operational and financial timeline required for a business to convert inventory and resources back into cash. This source defines the baseline calculation for the [[cash-conversion-cycle]] and details the operational mechanics of achieving a [[negative-cash-conversion-cycle]], where customer collections precede vendor payments.",
+      "status": "active",
+      "outgoing_links": [
+        "cash-conversion-cycle",
+        "negative-cash-conversion-cycle"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "cash-conversion-cycle",
+      "page_type": "concept",
+      "title": "Cash Conversion Cycle",
+      "body": "The Cash Conversion Cycle (CCC) is a central financial metric tracking the number of days a company takes to convert its resource investments in inventory into cash from sales. It is mathematically calculated as:\n\n`CCC = DIO + DSO - DPO`\n\nWhere:\n- **Days Inventory Outstanding (DIO)** represents the average time required to sell inventory.\n- **Days Sales Outstanding (DSO)** measures the average time to collect customer payments.\n- **Days Payable Outstanding (DPO)** reflects the average time to pay suppliers.\n\nOptimizing these components is a primary focus of working capital management, direct liquidity, and operational efficiency. Lower metrics reduce the need for external financing.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "negative-cash-conversion-cycle",
+      "page_type": "concept",
+      "title": "Negative Cash-Conversion Cycle",
+      "body": "A negative cash conversion cycle (CCC) is an operational state where a firm's Days Payable Outstanding (DPO) exceeds the sum of its Days Inventory Outstanding (DIO) and Days Sales Outstanding (DSO). Under this dynamic, a business collects cash from customer sales before its bills to suppliers are due.\n\nThis sequence effectively allows the organization to utilize its suppliers' capital as interest-free financing to fund ongoing operations and corporate growth. Large-scale retail and logistics firms like Amazon achieve a negative CCC by maintaining rapid inventory turnover, collecting fast payments from buyers, and negotiating highly extended payment terms with vendors. While advantageous for liquidity, sustaining a negative CCC requires careful management of vendor relations to avoid straining supply partners.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Initialized the graph with core working capital metrics: cash-conversion-cycle and its specialized variant negative-cash-conversion-cycle.",
+      "related_slugs": [
+        "cash-conversion-cycle",
+        "negative-cash-conversion-cycle"
+      ]
+    }
+  ],
+  "warnings": []

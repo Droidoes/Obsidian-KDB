@@ -1,0 +1,182 @@
+[
+  {
+    "file": "01.txt",
+    "source_id": "AIML/Obsidian/Archiving Claude Conv to Obsidian Vault.md",
+    "source_name": "Archiving Claude Conv to Obsidian Vault.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "02.txt",
+    "source_id": "AIML/Obsidian/Callouts.md",
+    "source_name": "Callouts.md",
+    "recoverable": true,
+    "extract_ok": false,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 19
+  },
+  {
+    "file": "03.txt",
+    "source_id": "AIML/Obsidian/Obsidian CLI Skills for Claude Code.md",
+    "source_name": "Obsidian CLI Skills for Claude Code.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "04.txt",
+    "source_id": "AIML/Programing-Algorithm/Vibe Coding/Canonical Ontology for Financial Reports GPT5.2.md",
+    "source_name": "Canonical Ontology for Financial Reports GPT5.2.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "05.txt",
+    "source_id": "Life-Health-Wellbeing/Sleep and Aging - Research on Aging.md",
+    "source_name": "Sleep and Aging - Research on Aging.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "06.txt",
+    "source_id": "NWO/rare-earth-trucks-to-hormuz-leverage.md",
+    "source_name": "rare-earth-trucks-to-hormuz-leverage.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "07.txt",
+    "source_id": "Value Investing/Buffett Munger/Warren Buffett Brian Moynihan -Speak at Georgetown.md",
+    "source_name": "Warren Buffett Brian Moynihan -Speak at Georgetown.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "08.txt",
+    "source_id": "Value Investing/Li Lu/Li Lu 2021 Enoch Wealth Institute Lecture.md",
+    "source_name": "Li Lu 2021 Enoch Wealth Institute Lecture.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 20
+  },
+  {
+    "file": "09.txt",
+    "source_id": "AIML/Claude/Claude Code Buddy System.md",
+    "source_name": "Claude Code Buddy System.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 22
+  },
+  {
+    "file": "10.txt",
+    "source_id": "AIML/Graph RAG/GraphRAG for Adaptive KB - Gemini3.1.md",
+    "source_name": "GraphRAG for Adaptive KB - Gemini3.1.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "11.txt",
+    "source_id": "AIML/Obsidian/Obsidian CLI Skills for Claude Code.md",
+    "source_name": "Obsidian CLI Skills for Claude Code.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "12.txt",
+    "source_id": "AIML/Obsidian/Obsidian CLI Skills.md",
+    "source_name": "Obsidian CLI Skills.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "13.txt",
+    "source_id": "AIML/Programing-Algorithm/Vibe Coding/Canonical Ontology for Financial Reports GPT5.2.md",
+    "source_name": "Canonical Ontology for Financial Reports GPT5.2.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 20
+  },
+  {
+    "file": "14.txt",
+    "source_id": "AIML/Programing-Algorithm/Vibe Coding/Windows-ports-not-visible-WSL-Ubuntu.md",
+    "source_name": "Windows-ports-not-visible-WSL-Ubuntu.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "15.txt",
+    "source_id": "Value Investing/Accounting/Negative cash-conversion cycle.md",
+    "source_name": "",
+    "recoverable": false,
+    "extract_ok": false,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 0
+  },
+  {
+    "file": "16.txt",
+    "source_id": "Value Investing/Buffett Munger/Warren Buffett Brian Moynihan -Speak at Georgetown.md",
+    "source_name": "Warren Buffett Brian Moynihan -Speak at Georgetown.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "17.txt",
+    "source_id": "Value Investing/Li Lu/Li Lu 2021 Enoch Wealth Institute Lecture.md",
+    "source_name": "Li Lu 2021 Enoch Wealth Institute Lecture.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "18.txt",
+    "source_id": "Value Investing/Monish Pabrai/How share BUYBACKS can 10x - Boston College 2022.md",
+    "source_name": "How share BUYBACKS can 10x - Boston College 2022.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "19.txt",
+    "source_id": "Value Investing/Monish Pabrai/Pabrai interview - August 2025 - 3.md",
+    "source_name": "Pabrai interview - August 2025 - 3.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  },
+  {
+    "file": "20.txt",
+    "source_id": "Value Investing/Monish Pabrai/Pabrai on Investing -Buffett - Life Lessons 2025.md",
+    "source_name": "Pabrai on Investing -Buffett - Life Lessons 2025.md",
+    "recoverable": true,
+    "extract_ok": true,
+    "prefix_discarded_chars": 0,
+    "tail_discarded_chars": 2
+  }
+]

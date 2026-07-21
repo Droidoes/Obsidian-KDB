@@ -1,0 +1,101 @@
+{
+  "source_name": "rare-earth-trucks-to-hormuz-leverage.md",
+  "summary_slug": "summary-rare-earth-trucks-to-hormuz-leverage",
+  "concept_slugs": [
+    "heavy-rare-earth-elements",
+    "myanmar-rare-earth-supply-chain",
+    "operation-epic-fury",
+    "strait-of-hormuz-asymmetric-leverage"
+  ],
+  "article_slugs": [
+    "us-china-leverage-asymmetry-2026"
+  ],
+  "pages": [
+    {
+      "slug": "summary-rare-earth-trucks-to-hormuz-leverage",
+      "page_type": "summary",
+      "title": "Summary: Rare Earth Trucks to Hormuz Leverage",
+      "body": "This document analyzes the geopolitical stalemate and asymmetric leverage between the United States and China following the May 2026 Trump-Xi Beijing Summit. It details how physical bottlenecks in the [[myanmar-rare-earth-supply-chain]] fuel China's processing monopoly over [[heavy-rare-earth-elements]]. Additionally, it examines how the US military limits in the [[strait-of-hormuz-asymmetric-leverage]], combined with the fallout of [[operation-epic-fury]] in Iran, prevent Washington from pressuring Beijing without triggering a catastrophic supply-chain retaliation. The synthesis of these dynamics is captured in [[us-china-leverage-asymmetry-2026]].",
+      "status": "active",
+      "outgoing_links": [
+        "heavy-rare-earth-elements",
+        "myanmar-rare-earth-supply-chain",
+        "operation-epic-fury",
+        "strait-of-hormuz-asymmetric-leverage",
+        "us-china-leverage-asymmetry-2026"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "heavy-rare-earth-elements",
+      "page_type": "concept",
+      "title": "Heavy Rare Earth Elements",
+      "body": "Heavy rare earth elements (HREEs), including dysprosium and terbium, are critical minerals for advanced defense, computing, and green energy applications. Global supply is defined by extreme geographical concentration: Myanmar supplies approximately 60–70% of China's heavy rare earth imports as raw ore, while China dominates 80–90% of global downstream processing. This concentration gives Beijing a powerful geopolitical tool, as demonstrated by China's 2025 export curbs which reduced US-bound heavy rare earth shipments by approximately 50%.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "myanmar-rare-earth-supply-chain",
+      "page_type": "concept",
+      "title": "Myanmar Rare Earth Supply Chain",
+      "body": "The physical supply line for global heavy rare earths relies heavily on overland trucking from mines in northern Myanmar's Kachin State (particularly the Pang War and Chipwe areas) across the border into Yunnan, China. Controlled largely by the Kachin Independence Army (KIA), this corridor is highly vulnerable to disruptions from Myanmar's ongoing civil war. The US has attempted to construct a 'Myanmar Side Door' strategy by engaging the KIA to divert raw ore westward to India for pilot processing, bypassing Chinese refineries. However, this route remains commercially unviable at scale due to severe logistics hurdles, active conflict, and India's early-stage refining capabilities.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "operation-epic-fury",
+      "page_type": "concept",
+      "title": "Operation Epic Fury",
+      "body": "Launched on February 28, 2026, Operation Epic Fury was a rapid US military intervention in Iran aimed at achieving political decapitation and establishing a friendly regime. While the US successfully assassinated Supreme Leader Ali Khamenei on Day 1, the broader objective of regime change failed. Mojtaba Khamenei was quickly elected as the new Supreme Leader, the Islamic Revolutionary Guard Corps (IRGC) consolidated power, and no pro-US government was installed. Consequently, the US was unable to control Iranian oil fields or turn Iran's oil supply into a strategic lever against China.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "strait-of-hormuz-asymmetric-leverage",
+      "page_type": "concept",
+      "title": "Strait of Hormuz Asymmetric Leverage",
+      "body": "The shipping corridor in the Strait of Hormuz represents a hard boundary for US military projection against Chinese energy imports. While the US blockades Iranian ports and intercepts Iranian-flagged vessels, China continues to receive Iranian crude (comprising roughly 21% of its imports in early 2026) via workarounds such as STS transfers and the shadow fleet. Direct US interception of China-bound or Chinese-protected tankers is deterred because such an escalation would trigger immediate retaliatory measures from Beijing, including cutting off the supply of [[heavy-rare-earth-elements]] to the US.",
+      "status": "active",
+      "outgoing_links": [
+        "heavy-rare-earth-elements"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "us-china-leverage-asymmetry-2026",
+      "page_type": "article",
+      "title": "US-China Leverage Asymmetry (2026)",
+      "body": "Following the May 2026 Trump-Xi Beijing Summit, the structural leverage between the United States and China remains heavily tilted in Beijing's favor due to overlapping resource and military dependencies. \n\nThe US relies on China's processing monopoly for [[heavy-rare-earth-elements]], which are fed by the physical [[myanmar-rare-earth-supply-chain]]. Although the US has pursued a hedge via India, this alternative route is years away from viability. China's control over these supply lines acts as a powerful deterrent against US geopolitical maneuvers.\n\nThis resource dependency directly constrains US naval and military policy in the Middle East. Although the US launched [[operation-epic-fury]] to disrupt Iranian oil flows to China and secure a strategic bargaining chip, the failure to install a pro-US regime in Tehran left Chinese energy workarounds intact. Consequently, the US cannot blockade China-bound oil tankers in the [[strait-of-hormuz-asymmetric-leverage]] without risking a direct military clash and a retaliatory shutdown of Chinese rare-earth exports. This circular dependence creates a decisive strategic asymmetry where military leverage in the Persian Gulf is effectively checked by resource supply-chains in Southeast Asia.",
+      "status": "active",
+      "outgoing_links": [
+        "heavy-rare-earth-elements",
+        "myanmar-rare-earth-supply-chain",
+        "operation-epic-fury",
+        "strait-of-hormuz-asymmetric-leverage"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Created concept pages for the specific physical supply chain in Myanmar and the military limits of the Hormuz strait to clarify how they interact as strategic leverage.",
+      "related_slugs": [
+        "myanmar-rare-earth-supply-chain",
+        "strait-of-hormuz-asymmetric-leverage"
+      ]
+    },
+    {
+      "level": "info",
+      "message": "Synthesized the overarching post-summit strategic dynamic into an analytical article detailing the asymmetry between US military actions and China's resource monopolies.",
+      "related_slugs": [
+        "us-china-leverage-asymmetry-2026"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

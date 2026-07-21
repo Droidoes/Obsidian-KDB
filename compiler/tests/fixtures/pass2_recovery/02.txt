@@ -1,0 +1,59 @@
+{
+  "source_name": "Callouts.md",
+  "summary_slug": "summary-callouts",
+  "concept_slugs": [
+    "obsidian-callouts",
+    "callout-syntax-features"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-callouts",
+      "page_type": "summary",
+      "title": "Obsidian Callouts (summary)",
+      "body": "This document serves as a comprehensive reference guide to the built-in callout types in Obsidian. It introduces [[obsidian-callouts]] and details their interactive [[callout-syntax-features]] including folding, custom titles, nesting, and custom CSS styling.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-callouts",
+        "callout-syntax-features"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-callouts",
+      "page_type": "concept",
+      "title": "Obsidian Callouts",
+      "body": "Obsidian supports a fixed, case-insensitive set of built-in callout types. These are rendered as distinct visual containers to group or highlight specific blocks of text. The core callouts are organized by purpose:\n\n* **Core Informational**: `[!note]`, `[!info]`, `[!summary]`, `[!abstract]`, `[!todo]`, `[!tip]`, `[!hint]`, `[!important]`, `[!success]`, `[!check]`, and `[!done]`.\n* **Warnings & Errors**: `[!warning]`, `[!attention]`, `[!caution]`, `[!danger]`, `[!error]`, `[!failure]`, and `[!missing]`.\n* **Questions & Discussions**: `[!question]`, `[!help]`, and `[!faq]`.\n* **Examples & References**: `[!example]`, `[!quote]`, and `[!cite]`.\n* **Development / Technical**: `[!bug]`.\n\nThese core types serve as semantic building blocks for markdown styling within Obsidian, and they support advanced structural features defined in [[callout-syntax-features]].",
+      "status": "active",
+      "outgoing_links": [
+        "callout-syntax-features"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "callout-syntax-features",
+      "page_type": "concept",
+      "title": "Callout Syntax Features",
+      "body": "The markdown implementation of [[obsidian-callouts]] supports several rich syntax configurations:\n\n* **Folding**: Callout blocks can be made collapsible by appending `+` (expanded by default) or `-` (collapsed by default) to the type identifier (e.g., `[!tip]+` or `[!info]-`).\n* **Custom Titles**: A custom header can be specified immediately following the type identifier (e.g., `> [!warning] Read this first`).\n* **Nesting**: Callouts can be nested indefinitely by cascading markdown blockquote prefixes (e.g., `>> [!todo] Nested` inside a parent callout).\n* **Custom Callouts**: Users can define non-default callout types via CSS classes targetting the `data-callout=\"your-type\"` attribute to customize icons and colors.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-callouts"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Created the summary page and two focused concept pages to represent the dictionary of types and their structural syntax rules respectively.",
+      "related_slugs": [
+        "summary-callouts",
+        "obsidian-callouts",
+        "callout-syntax-features"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}
+  "warnings": []

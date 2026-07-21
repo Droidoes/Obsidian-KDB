@@ -1,0 +1,112 @@
+{
+  "source_name": "GraphRAG for Adaptive KB - Gemini3.1.md",
+  "summary_slug": "summary-graphrag-for-adaptive-kb-gemini31",
+  "concept_slugs": [
+    "headless-graphrag",
+    "scuttlebutt-methodology",
+    "too-hard-pile",
+    "pydantic-validation-schemas",
+    "poor-mans-graph",
+    "delta-protocol"
+  ],
+  "article_slugs": [
+    "learning-engine-architecture"
+  ],
+  "pages": [
+    {
+      "slug": "summary-graphrag-for-adaptive-kb-gemini31",
+      "page_type": "summary",
+      "title": "GraphRAG for Adaptive KB (Summary)",
+      "body": "This document outlines the system architecture for the 10x-Learning-Engine, a headless system designed to automate qualitative investment research using value-investing principles. It combines Gmail ingestion, structured LLM extraction, and a relational PostgreSQL database to identify net-new insights and anti-patterns. The engine is modeled as a [[learning-engine-architecture]] that implements [[headless-graphrag]] and a strict [[delta-protocol]] to continuously compound qualitative scuttlebutt while avoiding administrative noise and the [[too-hard-pile]].",
+      "status": "active",
+      "outgoing_links": [
+        "learning-engine-architecture",
+        "headless-graphrag",
+        "delta-protocol",
+        "too-hard-pile"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "headless-graphrag",
+      "page_type": "concept",
+      "title": "Headless GraphRAG",
+      "body": "Headless GraphRAG is an architectural pattern that combines retrieval-augmented generation with structured knowledge graphs without exposing a traditional graphical user interface. Instead of searching solely for semantically similar text blocks as standard vector search does, GraphRAG maps structural relationships between nodes to construct a latticework of mental models. Operating headlessly allows researchers to query relationships directly from backend scripts or analytical notebooks.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "scuttlebutt-methodology",
+      "page_type": "concept",
+      "title": "Scuttlebutt Methodology",
+      "body": "Derived from Philip Fisher's investing philosophy, the Scuttlebutt Methodology involves gathering qualitative, unstructured, and informal intelligence about businesses from diverse sources like specialized industry newsletters, supply chain partners, and deep-dive research blogs. In automated systems, this unstructured data serves as the raw material for entity extraction and relationship modeling.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "too-hard-pile",
+      "page_type": "concept",
+      "title": "Too Hard Pile",
+      "body": "The Too Hard Pile is a structured categorization for businesses and industries that fail to meet a value investor's strict operational or analytical criteria. Rather than discarding these cases, mapping investment anti-patterns within this category serves to systematically define and enforce an investment firm's Circle of Competence.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "pydantic-validation-schemas",
+      "page_type": "concept",
+      "title": "Pydantic Validation Schemas",
+      "body": "Pydantic Validation Schemas are strict data models used to govern LLM extractions. By forcing an LLM to output structured JSON matching a predefined Pydantic model, systems can discard administrative noise and guarantee that only correctly formatted entities, relationships, and qualitative metrics enter the database.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "poor-mans-graph",
+      "page_type": "concept",
+      "title": "Poor Man's Graph",
+      "body": "A Poor Man's Graph is a relational implementation of a knowledge graph built directly within a standard relational database like PostgreSQL rather than a dedicated graph engine like Neo4j. By storing entities in a node table and connections in an edge table alongside extensions like pgvector, developers reduce infrastructure complexity while supporting both vector and relational graph traversal queries.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "delta-protocol",
+      "page_type": "concept",
+      "title": "Delta Protocol",
+      "body": "The Delta Protocol is an adaptive learning workflow that evaluates incoming information against an existing knowledge base to determine if it offers net-new insights. The protocol performs semantic vector search and graph traversal on historical data, feeds this context to an LLM alongside the new content, and commits the data only if it represents a structural change or update (a Delta). Redundant information is flagged as consensus reinforcement and archived.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "learning-engine-architecture",
+      "page_type": "article",
+      "title": "The 10x-Learning-Engine Architecture",
+      "body": "The 10x-Learning-Engine is a technical blueprint for deep qualitative value investing. The architecture automates the ingest of industry [[scuttlebutt-methodology]] via a headless ingestion pipeline, passing the cleaned text to an LLM guided by [[pydantic-validation-schemas]] to separate signal from noise. Validated findings are integrated into a [[poor-mans-graph]] using PostgreSQL and pgvector, avoiding specialized graph databases. Adaptive learning is maintained via the [[delta-protocol]], which compares incoming articles against existing semantic vectors and relationship paths to write only net-new entities or record anti-patterns into the [[too-hard-pile]]. The resulting headless database can then be queried programmatically without premature frontend UI bottlenecks.",
+      "status": "active",
+      "outgoing_links": [
+        "scuttlebutt-methodology",
+        "pydantic-validation-schemas",
+        "poor-mans-graph",
+        "delta-protocol",
+        "too-hard-pile"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Initialized system architecture and concept pages for the 10x-Learning-Engine from a cold start.",
+      "related_slugs": [
+        "learning-engine-architecture",
+        "headless-graphrag"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

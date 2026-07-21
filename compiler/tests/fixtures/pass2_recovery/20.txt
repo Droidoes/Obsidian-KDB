@@ -1,0 +1,102 @@
+{
+  "source_name": "Pabrai on Investing -Buffett - Life Lessons 2025.md",
+  "summary_slug": "summary-pabrai-on-investing-buffett-life-lessons-2025",
+  "concept_slugs": [
+    "inner-scorecard",
+    "leverage-risk",
+    "patience-in-investing",
+    "know-nothing-investor",
+    "illusion-of-smoke",
+    "single-player-game-mindset"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-pabrai-on-investing-buffett-life-lessons-2025",
+      "page_type": "summary",
+      "title": "Pabrai on Investing: Buffett & Life Lessons (2025)",
+      "body": "In this 2025 interview with Sonia Shenoy, Mohnish Pabrai shares a wide range of investing and philosophical insights, heavily influenced by his interactions with Warren Buffett and Charlie Munger. Pabrai explains how his $650,000 lunch with Buffett transformed into a lasting friendship with Munger. He advocates for the use of the [[inner-scorecard]] as a metric of self-evaluation, explains his approach to [[single-player-game-mindset|life as a single-player game]], and emphasizes that [[patience-in-investing]] is the most critical asset for long-term compounding. \n\nPabrai outlines why retail investors should act as a [[know-nothing-investor]] by utilizing low-cost index funds to capture market gain without frictional costs. He contrasts this passive stance with his deep-value experience in Turkey, where he successfully exploited the [[illusion-of-smoke]] in distressed assets while strictly avoiding [[leverage-risk]].",
+      "status": "active",
+      "outgoing_links": [
+        "inner-scorecard",
+        "single-player-game-mindset",
+        "patience-in-investing",
+        "know-nothing-investor",
+        "illusion-of-smoke",
+        "leverage-risk"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "inner-scorecard",
+      "page_type": "concept",
+      "title": "Inner Scorecard",
+      "body": "The inner scorecard is a self-evaluation framework championed by Warren Buffett. It asserts that individuals should measure their actions, morals, and achievements by their own internal standards rather than relying on external validation. Buffett frames this with the question of whether one would prefer to be known as the best lover in the world while internally knowing they are the worst, or known as the worst while internally knowing they are the best. Aligning with an inner scorecard prevents self-delusion, establishes a baseline for genuine personal growth, and protects the individual from being swayed or polluted by public opinion.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "leverage-risk",
+      "page_type": "concept",
+      "title": "Leverage Risk",
+      "body": "Leverage risk is the danger of using borrowed capital (such as margin loans) to fund investments. Mohnish Pabrai highlights how Rick Guerin—an early investing partner of Warren Buffett and Charlie Munger—was forced to liquidate his Berkshire Hathaway shares at $20 during the 1973-1974 market drawdown due to margin calls. Buffett summarizes the antidote to this risk: if an individual is even a slightly above-average investor who spends less than they earn and avoids leverage, they are guaranteed to accumulate wealth over a lifetime.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "patience-in-investing",
+      "page_type": "concept",
+      "title": "Patience in Investing",
+      "body": "Patience is identified as the single most critical skill for a successful investor. Historically, equity markets exhibit long periods of zero flatlines—such as the Dow being flat from 1965 to 1982—punctuated by explosive periods of exponential growth. Investors who thrive are those who are comfortable 'watching paint dry' and allowing long-term compounding to run uninterrupted, rather than trading actively in and out of positions. This extreme discipline is a key reason index-style investing succeeds over active trading.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "know-nothing-investor",
+      "page_type": "concept",
+      "title": "Know-Nothing Investor",
+      "body": "A know-nothing investor is an individual who lacks the specialized training, time, or information to value individual corporate cash flows. According to Mohnish Pabrai, such investors are best served by bypassing individual stock-picking entirely. Instead, they should invest in low-cost, broad-market index funds and dollar-cost average (or SIP) into them. The structural advantage of the index is that it is 'too dumb to sell' compounders (such as Asian Paints, Google, or Walmart), meaning it automatically holds onto winners for decades while passively pruning losers.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "illusion-of-smoke",
+      "page_type": "concept",
+      "title": "Illusion of Smoke",
+      "body": "The illusion of smoke describes a stock market scenario where temporary distress or localized macroeconomic panic triggers mass investor liquidation of assets, even though the underlying business engine is unimpaired. This phenomenon occurs because auction-driven markets require every share to be owned by someone; if panic drives investors to exit, prices collapse to irrational levels. Savvy value investors seek out situations where the panic is merely an 'illusion of smoke' rather than actual fire, allowing them to purchase high-quality or highly asset-rich businesses at a fraction of their liquidation value.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "single-player-game-mindset",
+      "page_type": "concept",
+      "title": "Single-Player Game Mindset",
+      "body": "A single-player game mindset is a philosophical framework that treats life, business, and philanthropy as games played entirely against oneself and the parameters of the system, rather than as cooperative team endeavors or competitive social comparisons. In this view, goals such as compounding wealth or giving it back to society through strategic philanthropy are structured as personal milestones. This mindset aligns with stoic philosophy, emphasizing inner play, self-containment, and personal fun over external accolades.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Created summary and 6 standalone concepts outlining Mohnish Pabrai's framework of investing, game playing, and life lessons.",
+      "related_slugs": [
+        "summary-pabrai-on-investing-buffett-life-lessons-2025",
+        "inner-scorecard",
+        "leverage-risk",
+        "patience-in-investing",
+        "know-nothing-investor",
+        "illusion-of-smoke",
+        "single-player-game-mindset"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

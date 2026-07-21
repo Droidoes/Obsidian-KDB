@@ -1,0 +1,97 @@
+{
+  "source_name": "Obsidian CLI Skills.md",
+  "summary_slug": "summary-obsidian-cli-skills",
+  "concept_slugs": [
+    "obsidian-cli",
+    "obsidian-cli-tui",
+    "obsidian-cli-direct-mode",
+    "obsidian-cli-graph-commands"
+  ],
+  "article_slugs": [
+    "wsl-obsidian-cli-configuration"
+  ],
+  "pages": [
+    {
+      "slug": "summary-obsidian-cli-skills",
+      "page_type": "summary",
+      "title": "Obsidian CLI Skills (summary)",
+      "body": "This document outlines instructions and copy-paste examples for using the official Obsidian command-line interface (CLI) shipped in version 1.12+. It explains how to interact with the interface using [[obsidian-cli-tui|TUI mode]] or [[obsidian-cli-direct-mode|Direct mode]], lists official commands for controlling the knowledge graph via [[obsidian-cli-graph-commands]], and details automation scripts, daily note commands, workspaces, and [[wsl-obsidian-cli-configuration|WSL configuration]].",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-cli-tui",
+        "obsidian-cli-direct-mode",
+        "obsidian-cli-graph-commands",
+        "wsl-obsidian-cli-configuration"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-cli",
+      "page_type": "concept",
+      "title": "Obsidian CLI",
+      "body": "The official Obsidian Command-Line Interface (CLI), shipped in version 1.12+, allows users to control and automate Obsidian directly from a terminal. The tool supports looking up commands via the `obsidian commands` subcommand, filtering actions (such as graph, workspace, task, and daily commands), managing note properties, querying bases, and running custom JavaScript on the vault with the `obsidian eval` subcommand.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-cli-tui",
+      "page_type": "concept",
+      "title": "Obsidian CLI TUI Mode",
+      "body": "The interactive Text User Interface (TUI) mode is recommended for learning the [[obsidian-cli]]. Launched simply by running `obsidian`, it drops the user into an interactive shell complete with autocomplete, command history (`Ctrl+R`), and live help, acting as a built-in REPL for the vault.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-cli"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-cli-direct-mode",
+      "page_type": "concept",
+      "title": "Obsidian CLI Direct Mode",
+      "body": "Direct mode is the non-interactive operating method of the [[obsidian-cli]] designed for scripts and shell automation. It executes a single command and exits immediately using the syntax `obsidian <subcommand> [parameters]`. An example is triggering a internal command directly like `obsidian command id=\"graph:open\"`.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-cli"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "obsidian-cli-graph-commands",
+      "page_type": "concept",
+      "title": "Obsidian CLI Graph Commands",
+      "body": "The [[obsidian-cli]] exposes native control actions for the knowledge graph via the internal command subcommands. These include `obsidian command id=\"graph:open\"` to open the full global knowledge graph, `obsidian command id=\"graph:open-local\"` to show the local graph of the currently focused note, and `obsidian command id=\"graph:toggle\"` to toggle the graph pane layout.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-cli"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "wsl-obsidian-cli-configuration",
+      "page_type": "article",
+      "title": "WSL Obsidian CLI Configuration",
+      "body": "Running Obsidian and the [[obsidian-cli]] under Windows Subsystem for Linux (WSL) with GPU acceleration requires specific hardware configurations and wrapper scripts. In setups with an NVIDIA GPU, custom shell wrappers are used to inject mandatory flags (such as the D3D12 flags for WSLg rendering) into the underlying `obsidian` binary executable. When properly wrapped, commands like [[obsidian-cli-graph-commands]] work seamlessly, rendering interactive knowledge graphs through WSLg. Bash scripts can then build on top of this wrapper to streamline daily workflows, such as quick-capturing notes directly from a terminal shell.",
+      "status": "active",
+      "outgoing_links": [
+        "obsidian-cli",
+        "obsidian-cli-graph-commands"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Initialized Obsidian CLI skills pages, categorizing modes (TUI vs. Direct), graph integration, and WSL/NVIDIA specifics.",
+      "related_slugs": [
+        "obsidian-cli",
+        "obsidian-cli-tui",
+        "obsidian-cli-direct-mode",
+        "wsl-obsidian-cli-configuration"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

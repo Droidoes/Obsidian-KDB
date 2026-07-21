@@ -1,0 +1,102 @@
+{
+  "source_name": "Sleep and Aging - Research on Aging.md",
+  "summary_slug": "summary-sleep-and-aging-research-on-aging",
+  "concept_slugs": [
+    "sleep-architecture",
+    "sleep-hygiene",
+    "obstructive-sleep-apnea",
+    "insomnia",
+    "advanced-sleep-phase-syndrome",
+    "rem-sleep-behavior-disorder"
+  ],
+  "article_slugs": [],
+  "pages": [
+    {
+      "slug": "summary-sleep-and-aging-research-on-aging",
+      "page_type": "summary",
+      "title": "Sleep and Aging (summary)",
+      "body": "In this lecture, Dr. Loredo examines the physiological changes in [[sleep-architecture]] that occur naturally as humans age. He discusses how to maintain sleep quality using principles of [[sleep-hygiene]], and details the diagnosis, mechanics, and therapies for common age-related clinical sleep disorders: [[obstructive-sleep-apnea]], [[insomnia]], [[advanced-sleep-phase-syndrome]], and [[rem-sleep-behavior-disorder]].",
+      "status": "active",
+      "outgoing_links": [
+        "sleep-architecture",
+        "sleep-hygiene",
+        "obstructive-sleep-apnea",
+        "insomnia",
+        "advanced-sleep-phase-syndrome",
+        "rem-sleep-behavior-disorder"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "sleep-architecture",
+      "page_type": "concept",
+      "title": "Sleep Architecture",
+      "body": "Sleep architecture describes the structural organization of sleep cycles and their distinct physiological stages: transition (stage N1), light restful sleep marked by spindles and K-complexes (stage N2), slow-wave deep sleep (stage N3 or delta sleep), and rapid eye movement (REM) sleep. As people age, normal sleep architecture undergoes predictable changes. These include a decline in total sleep time, an increase in wake after sleep onset (WASO) due to more frequent minor awakenings, and a severe drop in slow-wave deep sleep, particularly in men.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "sleep-hygiene",
+      "page_type": "concept",
+      "title": "Sleep Hygiene",
+      "body": "Sleep hygiene is the practice of maintaining consistent, structured, and healthy sleep habits to facilitate natural sleep initiation and quality. Key behaviors include maintaining a fixed schedule for going to bed and waking up, eliminating stimulants like caffeine and nicotine, limiting alcohol consumption before bed, and creating an optimal sleep environment free from televisions and clocks. Additionally, obtaining at least 30 minutes of bright sunlight exposure in the morning acts as a powerful natural cue to entrain the body's internal circadian rhythm with the 24-hour day.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "obstructive-sleep-apnea",
+      "page_type": "concept",
+      "title": "Obstructive Sleep Apnea",
+      "body": "Obstructive sleep apnea (OSA) is a highly prevalent sleep disorder caused by intermittent, repetitive collapse or mechanical obstruction of the upper airway during sleep. It leads to severe physiological consequences, including repetitive drops in blood oxygen saturation, elevated blood pressure, and micro-awakenings that disrupt restorative sleep. Untreated OSA is strongly linked to long-term cardiovascular diseases such as hypertension, stroke, and myocardial infarction. Standard treatment includes continuous positive airway pressure (CPAP) therapy, mandibular repositioning devices, weight loss, and upper-airway exercises.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "insomnia",
+      "page_type": "concept",
+      "title": "Insomnia",
+      "body": "Insomnia is characterized by persistent difficulty in initiating sleep, maintaining sleep, or awakening too early without the ability to fall back asleep, resulting in impaired daytime functioning. According to the Spielman model, insomnia is driven by predisposing, precipitating (such as acute life stressors), and perpetuating factors (such as maladaptive behaviors like watching TV in bed or clock-watching). Cognitive Behavioral Therapy for Insomnia (CBTI)—which emphasizes stimulus control, sleep restriction, and correcting cognitive errors—is superior to pharmacological interventions for long-term recovery and does not carry the risk of drug dependency.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "advanced-sleep-phase-syndrome",
+      "page_type": "concept",
+      "title": "Advanced Sleep Phase Syndrome",
+      "body": "Advanced sleep phase syndrome is a circadian rhythm shift commonly observed in older adults, characterized by a mismatch where sleep onset and morning awakening occur significantly earlier than socially conventional hours (e.g., falling asleep at 7:00 PM and waking at 3:00 AM). It is driven by natural age-related changes in the suprachiasmatic nucleus, reduced amplitude of melatonin release from a calcified pineal gland, and a lack of strong environmental time givers (zeitgebers) like outdoor sunlight.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "rem-sleep-behavior-disorder",
+      "page_type": "concept",
+      "title": "REM Sleep Behavior Disorder",
+      "body": "REM sleep behavior disorder (RBD) is a parasomnia occurring almost exclusively in older men, marked by the loss of normal skeletal muscle atonia during rapid eye movement (REM) sleep. Lacking normal motor paralysis, individuals physically and often violently act out action-packed or aggressive dreams, posing a significant risk of physical injury to themselves and their bed partners. Clinically, about 85% of individuals diagnosed with idiopathic RBD go on to develop neurodegenerative disorders, most notably Parkinson's disease. RBD is diagnosed via polysomnography showing abnormal muscle tone during REM sleep and is treated by making the bedroom environment safe and using low-dose clonazepam or high-dose melatonin.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Compiled summary and six major age-related sleep concepts directly supported by Dr. Loredo's lecture.",
+      "related_slugs": [
+        "summary-sleep-and-aging-research-on-aging",
+        "sleep-architecture",
+        "sleep-hygiene",
+        "obstructive-sleep-apnea",
+        "insomnia",
+        "advanced-sleep-phase-syndrome",
+        "rem-sleep-behavior-disorder"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}

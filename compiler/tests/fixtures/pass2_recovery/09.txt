@@ -1,0 +1,88 @@
+{
+  "source_name": "Claude Code Buddy System.md",
+  "summary_slug": "summary-claude-code-buddy-system",
+  "concept_slugs": [
+    "claude-code-buddy-system",
+    "mulberry32",
+    "fnv-1a"
+  ],
+  "article_slugs": [
+    "claude-code-buddy-reroll-exploit"
+  ],
+  "pages": [
+    {
+      "slug": "summary-claude-code-buddy-system",
+      "page_type": "summary",
+      "title": "Claude Code Buddy System (Summary)",
+      "body": "This document reverse-engineers the terminal pet companion buddy system in Claude Code (v2.1.89+). It details how a deterministic PRNG pipeline—utilizing the [[fnv-1a]] hash function and the [[mulberry32]] generator—produces a pet's immutable attributes from user identity. It highlights the core mechanics of the [[claude-code-buddy-system]] and details the community-developed [[claude-code-buddy-reroll-exploit]] used to systematically brute-force and patch a legendary-tier buddy.",
+      "status": "active",
+      "outgoing_links": [
+        "claude-code-buddy-system",
+        "fnv-1a",
+        "mulberry32",
+        "claude-code-buddy-reroll-exploit"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "claude-code-buddy-system",
+      "page_type": "concept",
+      "title": "Claude Code Buddy System",
+      "body": "The Claude Code Buddy System is an interactive terminal companion companion launched on April 1, 2026. The buddy runs on a strict two-layer model. First, the 'Bones' layer is fully deterministic and recomputed dynamically every session from a hashed identity seed (user ID or account UUID). This governs uneditable stats, 18 possible species (ranging from Dragon to Chonk), and rarity tiers (Common at 60%, up to Legendary at 1%). Second, the 'Soul' layer is generated once upon hatching, saved in `~/.claude.json`, and dictates personality and commentary. The system features commands like `/buddy` for the companion panel, `/buddy card` for stats, `/buddy pet` for interaction, and `/buddy off` to hide the companion.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "fnv-1a",
+      "page_type": "concept",
+      "title": "FNV-1a Hash Function",
+      "body": "The Fowler–Noll–Vo variant 1a (FNV-1a) is a rapid, non-cryptographic 32-bit hash function used to transform strings into numerical seeds. Operating by applying an XOR step to each input byte prior to multiplying by the FNV prime (16777619), it provides a strong avalanche effect suitable for deterministic generation. In the context of terminal companion generations, it maps the user's raw identity string directly into the initialization seed for the [[mulberry32]] pseudo-random number generator.",
+      "status": "active",
+      "outgoing_links": [
+        "mulberry32"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "mulberry32",
+      "page_type": "concept",
+      "title": "Mulberry32 PRNG",
+      "body": "Mulberry32 is a lightweight, efficient 32-bit pseudo-random number generator (PRNG) that maps a seed to a reproducible sequence of floating-point numbers between 0 and 1. Commonly leveraged in gaming environments for its speed and predictability, it generates sequential values to execute weighted draws for deterministic companion features (rarity, species, eye styles, and stats). In the terminal pet generation pipeline, it is initialized by a seed provided by the [[fnv-1a]] hash of a user's identity string.",
+      "status": "active",
+      "outgoing_links": [
+        "fnv-1a"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "claude-code-buddy-reroll-exploit",
+      "page_type": "article",
+      "title": "Claude Code Buddy Reroll Exploit",
+      "body": "Because the [[claude-code-buddy-system]] generates stats and species deterministically, players can exploit the generation logic to brute-force highly sought-after traits like a Legendary Shiny Dragon. The core strategy depends on identifying the user's active identity string, which prioritizes the `accountUuid` inside `~/.claude.json` over the `userID` if present. By targeting alternate identities and either removing the `accountUuid` or directly patching the compiled binary using community tools such as `buddy-reroll`, `any-buddy` (powered by Bun), or `cc-buddy`, users can achieve specific configurations. A typical exploit run leverages [[fnv-1a]] and [[mulberry32]] calculations to brute-force hundreds of millions of combinations in seconds, patching the binary and configuring properties such as maxed stats or specific cosmetics like a wizard hat.",
+      "status": "active",
+      "outgoing_links": [
+        "claude-code-buddy-system",
+        "fnv-1a",
+        "mulberry32"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Extracted core algorithmic components of the Claude Code Buddy system as concepts (Mulberry32, FNV-1a) and detailed the user-end exploit as an article.",
+      "related_slugs": [
+        "claude-code-buddy-system",
+        "fnv-1a",
+        "mulberry32",
+        "claude-code-buddy-reroll-exploit"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}
+    warnings": []
+}

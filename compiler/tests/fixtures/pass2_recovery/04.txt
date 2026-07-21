@@ -1,0 +1,105 @@
+{
+  "source_name": "Canonical Ontology for Financial Reports GPT5.2.md",
+  "summary_slug": "summary-canonical-ontology-for-financial-reports-gpt52",
+  "concept_slugs": [
+    "financial-ontology",
+    "structural-inference-mapping",
+    "decomposition-mapping-rules",
+    "canonical-value-coverage",
+    "reconciliation-engine"
+  ],
+  "article_slugs": [
+    "layered-financial-etl-pipeline"
+  ],
+  "pages": [
+    {
+      "slug": "summary-canonical-ontology-for-financial-reports-gpt52",
+      "page_type": "summary",
+      "title": "Canonical Ontology for Financial Reports GPT5.2 (summary)",
+      "body": "This document outlines a multi-layered design for mapping raw financial line items to a [[financial-ontology]] using a deterministic decision tree and a [[reconciliation-engine]]. Rather than relying on simple synonym lookups, the architecture uses [[structural-inference-mapping]], [[decomposition-mapping-rules]], and an AI-assisted fallback layer. It introduces a formal framework for measuring semantic completeness using [[canonical-value-coverage]] and validates accounting constraints across balance sheets, income statements, and cash flows. The holistic synthesis of this architecture is detailed in [[layered-financial-etl-pipeline]].",
+      "status": "active",
+      "outgoing_links": [
+        "financial-ontology",
+        "reconciliation-engine",
+        "structural-inference-mapping",
+        "decomposition-mapping-rules",
+        "canonical-value-coverage",
+        "layered-financial-etl-pipeline"
+      ],
+      "confidence": "high"
+    },
+    {
+      "slug": "financial-ontology",
+      "page_type": "concept",
+      "title": "Financial Ontology",
+      "body": "A financial ontology is a typed, relational model of financial meaning, distinct from flat canonical data models. While canonical data simply labels a number (answering 'what is this called'), a financial ontology models the underlying concept type (e.g., asset, expense), statement role, temporal behavior (point-in-time stock vs. period flow), and structural relationships (parent, child, rollup, component). This enables downstream automated validation, declarative ratios, and structured reasoning such as automatic EBITDA calculation directly from the economic properties of the concepts.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "structural-inference-mapping",
+      "page_type": "concept",
+      "title": "Structural Inference Mapping",
+      "body": "Structural inference mapping is an ETL technique that determines the canonical target of a raw financial line item by analyzing its position, indentation, parents, children, and neighbors in the statement rather than relying solely on string matches. This gate in the decision tree resolves hierarchical structures (such as recognizing when a parent acts as a rollup) and limits the mapping domain to valid sections (e.g., current assets vs. noncurrent liabilities), dramatically improving mapping recall on complex and reordered statements.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "decomposition-mapping-rules",
+      "page_type": "concept",
+      "title": "Decomposition Mapping Rules",
+      "body": "Decomposition mapping rules split single raw composite line items containing multiple economic concepts into separate, distinct canonical items. For example, a raw label such as 'Cash, Cash Equivalents and Short Term Investments' is mapped to two separate canonical items: `cash_and_cash_equivalents` and `marketable_securities_current`. This process overcomes the limitations of naive synonym lookup tables which assume a strict one-to-one mapping between statement lines and canonical entities.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "canonical-value-coverage",
+      "page_type": "concept",
+      "title": "Canonical Value Coverage",
+      "body": "Canonical Value Coverage (CVC) is a financial ETL metric that measures the proportion of total absolute statement value captured by mapped canonical items. Distinct from simple row-mapping percentages (which treat economically irrelevant disclosures equally with core items), CVC is computed as the sum of absolute mapped canonical values divided by the sum of absolute total statement values. This prioritizes high-impact numbers like Total Assets and Gross Profit, establishing whether the resulting dataset is economically complete for downstream analytics.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "reconciliation-engine",
+      "page_type": "concept",
+      "title": "Reconciliation Engine",
+      "body": "A reconciliation engine is an automated validation pipeline stage that checks mathematical and structural identities across processed financial statements. Operating over normalized facts, it tests intra-statement identities (e.g., the balance sheet equation `assets = liabilities + stockholders_equity` and the gross profit identity) and cross-statement cash roll-forwards. By evaluating these accounting invariants, it calculates error deltas, catches mapping issues, and validates financial system integrity without relying on hardcoded procedural rules.",
+      "status": "active",
+      "outgoing_links": [],
+      "confidence": "high"
+    },
+    {
+      "slug": "layered-financial-etl-pipeline",
+      "page_type": "article",
+      "title": "The Layered Financial ETL Pipeline",
+      "body": "To handle the diverse, hierarchy-rich presentation of financial statements in the wild, systems must transition from flat synonym lookups to a layered, ontology-aware pipeline. This architecture operates in sequential stages: first extracting raw tables, next executing a deterministic six-gate mapping decision tree (integrating exact matches, section constraints, [[structural-inference-mapping]], [[decomposition-mapping-rules]], and constrained AI fallbacks), and then writing normalized facts to storage. Following ingestion, a post-mapping semantic layer compiles these facts into a [[financial-ontology]], materializes derived concepts, computes metrics such as EBITDA programmatically, and runs automated tests via a [[reconciliation-engine]] to ensure structural self-consistency. System performance is measured using [[canonical-value-coverage]] alongside model and decision-weighted coverage, shifting the focus from superficial lexical correctness to true economic completeness.",
+      "status": "active",
+      "outgoing_links": [
+        "financial-ontology",
+        "structural-inference-mapping",
+        "decomposition-mapping-rules",
+        "reconciliation-engine",
+        "canonical-value-coverage"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "log_entries": [
+    {
+      "level": "info",
+      "message": "Initialized the financial ontology architecture pages, including mapping strategies and the post-mapping verification stack using Apple's GAAP reporting patterns as an ontological baseline.",
+      "related_slugs": [
+        "financial-ontology",
+        "reconciliation-engine",
+        "layered-financial-etl-pipeline"
+      ]
+    }
+  ],
+  "warnings": []
+}
+}
