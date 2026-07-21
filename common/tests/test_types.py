@@ -8,6 +8,7 @@ from common.types import (
     LogEntry,
     PageIntent,
     ReconcileOp,
+    RespStatsRecord,
     ScanEntry,
     ScanResult,
     ScanSummary,
@@ -211,3 +212,45 @@ def test_compile_result_to_dict_keys() -> None:
     cr = CompileResult(run_id="r", success=True)
     d = cr.to_dict()
     assert set(d) == {"run_id", "success", "compiled_sources", "log_entries", "errors", "warnings"}
+
+
+# ---------- RespStatsRecord (#114 recovery telemetry) ----------
+
+def test_resp_stats_record_boundary_fields_default_and_serialize():
+    rec = RespStatsRecord(
+        run_id="r", source_id="s", provider="p", model="m",
+        attempts=1, latency_ms=1, input_tokens=1, output_tokens=1,
+        prompt_hash="h", response_hash="h",
+        extract_ok=False, parse_ok=True, schema_ok=True, semantic_ok=True,
+        boundary_recovered=True, prefix_discarded_chars=3, tail_discarded_chars=2,
+    )
+    d = rec.to_dict()
+    assert d["boundary_recovered"] is True
+    assert d["prefix_discarded_chars"] == 3 and d["tail_discarded_chars"] == 2
+
+
+def test_resp_stats_record_boundary_defaults():
+    rec = RespStatsRecord(
+        run_id="r", source_id="s", provider="p", model="m",
+        attempts=1, latency_ms=1, input_tokens=1, output_tokens=1,
+        prompt_hash="h", response_hash="h",
+        extract_ok=True, parse_ok=True, schema_ok=True, semantic_ok=True,
+    )
+    d = rec.to_dict()
+    assert d["boundary_recovered"] is False
+    assert d["prefix_discarded_chars"] == 0 and d["tail_discarded_chars"] == 0
+
+
+def test_resp_stats_record_list_parsed_json_roundtrips():
+    """#114 any-value recovery: on schema failure a list payload can flow
+    through parsed_json — it must still serialize via to_dict()."""
+    payload = [{"slug": "a"}, {"slug": "b"}]
+    rec = RespStatsRecord(
+        run_id="r", source_id="s", provider="p", model="m",
+        attempts=1, latency_ms=1, input_tokens=1, output_tokens=1,
+        prompt_hash="h", response_hash="h",
+        extract_ok=True, parse_ok=True, schema_ok=False, semantic_ok=False,
+        parsed_json=payload,
+    )
+    d = rec.to_dict()
+    assert d["parsed_json"] == payload

@@ -416,7 +416,7 @@ class RespStatsRecord:
     schema_errors: list[str] = field(default_factory=list)
     semantic_errors: list[str] = field(default_factory=list)
     parsed_summary: Optional[ParsedSummary] = None
-    parsed_json: Optional[dict] = None
+    parsed_json: object | None = None
     system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     raw_response_text: Optional[str] = None
@@ -435,6 +435,10 @@ class RespStatsRecord:
     compile_attempts: Optional[int] = None      # loop attempt (1 or 2) that produced final parsed_json
     syntax_repaired: bool = False               # rung-1 escaping rescued a parse
     slug_coerced: bool = False                  # rung-2 coercion rescued schema/semantic
+    # #114 recovery telemetry (Pass-2 only; always serialized, False/0 default).
+    boundary_recovered: bool = False            # selection recovered a document amid carrier noise
+    prefix_discarded_chars: int = 0             # carrier noise before the selected root boundary
+    tail_discarded_chars: int = 0               # carrier noise after the decoder boundary
     final_status: Optional[str] = None          # clean | repaired | retried-and-repaired | quarantined
     # #109 Task 2: discarded-attempt aggregation.
     # Aggregated across ALL Pass-2 loop attempts (including failed/discarded ones).

@@ -97,3 +97,31 @@ def test_cost_usd_defaults_zero_when_unpriced(tmp_path: Path) -> None:
         total_output_tokens=500_000,
     )
     assert rec.cost_usd == 0.0
+
+
+def test_build_resp_stats_boundary_fields_land(tmp_path: Path) -> None:
+    """#114 recovery telemetry: the three boundary kwargs flow through to
+    the returned record."""
+    ctx = _ctx(tmp_path)
+    rec = resp_stats_writer.build_resp_stats(
+        ctx=ctx,
+        source_id="KDB/raw/foo.md",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True,
+        parse_ok=True,
+        parsed_json={},
+        schema_ok=True,
+        schema_errors=[],
+        semantic_ok=True,
+        semantic_errors=[],
+        boundary_recovered=True,
+        prefix_discarded_chars=2,
+        tail_discarded_chars=20,
+    )
+    assert rec.boundary_recovered is True
+    assert rec.prefix_discarded_chars == 2
+    assert rec.tail_discarded_chars == 20
