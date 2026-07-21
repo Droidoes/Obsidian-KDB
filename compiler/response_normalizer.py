@@ -87,3 +87,23 @@ def parse_json_object(raw_text: str) -> dict:
     if not isinstance(parsed, dict):
         raise ValueError(f"expected JSON object at top level, got {type(parsed).__name__}")
     return parsed
+
+
+def unwrap_response(raw_text: str) -> str:
+    """Loose unwrap (#114): strip a single clearly-present fenced block;
+    otherwise return the stripped text unchanged. Never rejects — carrier
+    noise is the recovery stage's problem, not the unwrap stage's.
+    """
+    text = raw_text.strip()
+    if not text.startswith("```"):
+        return text
+    first_newline = text.find("\n")
+    if first_newline == -1:
+        return text
+    lang = text[3:first_newline].strip().lower()
+    if lang not in ("", "json"):
+        return text
+    body_and_rest = text[first_newline + 1:]
+    if body_and_rest.endswith("```"):
+        return body_and_rest[:-3].strip()
+    return body_and_rest.strip()

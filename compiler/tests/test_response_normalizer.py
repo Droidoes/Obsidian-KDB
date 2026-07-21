@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from compiler.response_normalizer import extract_json_text, parse_json_object
+from compiler.response_normalizer import (
+    extract_json_text,
+    parse_json_object,
+    unwrap_response,
+)
 
 
 # ---------- extract_json_text: accepted shapes ----------
@@ -145,7 +149,34 @@ def test_no_semantic_functions_present() -> None:
     import compiler.response_normalizer as rn
     public_names = [n for n in dir(rn) if not n.startswith("_") and callable(getattr(rn, n))]
     public_names = [n for n in public_names if n not in ("json",)]  # imports are callable
-    assert sorted(public_names) == ["extract_json_text", "parse_json_object"], (
-        f"response_normalizer must expose only extract_json_text and "
-        f"parse_json_object; found: {public_names}"
+    assert sorted(public_names) == [
+        "extract_json_text", "parse_json_object", "unwrap_response"], (
+        f"response_normalizer must expose only extract_json_text, "
+        f"parse_json_object and unwrap_response; found: {public_names}"
     )
+
+
+# ---------- unwrap_response: loose unwrap, never rejects ----------
+
+def test_unwrap_bare_object_passthrough():
+    assert unwrap_response('{"a": 1}') == '{"a": 1}'
+
+
+def test_unwrap_strips_json_fence():
+    assert unwrap_response('```json\n{"a": 1}\n```') == '{"a": 1}'
+
+
+def test_unwrap_strips_unlabelled_fence():
+    assert unwrap_response('```\n{"a": 1}\n```') == '{"a": 1}'
+
+
+def test_unwrap_trailing_junk_after_fence_is_kept_for_recovery():
+    assert unwrap_response('```json\n{"a": 1}\njunk') == '{"a": 1}\njunk'
+
+
+def test_unwrap_prose_passthrough():
+    assert unwrap_response('note: {"a": 1}') == 'note: {"a": 1}'
+
+
+def test_unwrap_non_json_fence_passthrough():
+    assert unwrap_response('```python\n{"a": 1}\n```') == '```python\n{"a": 1}\n```'
