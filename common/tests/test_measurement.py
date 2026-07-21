@@ -165,6 +165,23 @@ def test_from_pass2_final_status_none():
     assert m.final_status == ""
 
 
+def test_from_pass2_reads_boundary_recovered():
+    """boundary_recovered=True (#114 parse-stage recovery) is carried through."""
+    rec = {
+        "run_id": "r", "source_id": "s", "provider": "p", "model": "m",
+        "final_status": "repaired", "boundary_recovered": True,
+    }
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.boundary_recovered is True
+
+
+def test_from_pass2_old_record_defaults_false():
+    """Pre-#114 record with no boundary_recovered key projects to False."""
+    rec = {"run_id": "r", "source_id": "s", "provider": "p", "model": "m",
+           "final_status": "clean"}  # pre-#114 record: key absent
+    assert PassCallMeasurement.from_pass2(rec).boundary_recovered is False
+
+
 # ---------------------------------------------------------------------------
 # Fix 1 (#111 retry-telemetry): from_pass2 attempts = final_attempt_index ONLY
 # (compile re-prompt count; SDK transient retries deliberately excluded).
@@ -351,6 +368,13 @@ def test_from_pass1_syntax_repaired():
     # repaired is not quarantined → parse/schema ok
     assert m.parse_ok is True
     assert m.schema_ok is True
+
+
+def test_from_pass1_boundary_recovered_always_false():
+    """Pass-1 has no parse-stage boundary recovery — always False."""
+    sidecar = _make_sidecar_dict()
+    m = PassCallMeasurement.from_pass1(sidecar, run_id="run-2026-06-05")
+    assert m.boundary_recovered is False
 
 
 # ---------------------------------------------------------------------------

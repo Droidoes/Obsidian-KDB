@@ -58,14 +58,15 @@ def compute_processing(
     n_quarantined = sum(1 for c in calls if c.final_status == "quarantined")
 
     # recovery_rate: non-quarantined survivors that needed RETRY or REPAIR to
-    # succeed (syntax_repaired ∨ slug_coerced = repair; attempts>1 = retry).
+    # succeed (syntax_repaired ∨ slug_coerced ∨ boundary_recovered = repair;
+    # attempts>1 = retry).
     # token_overrun is NOT counted here — it's degraded-survival, not
     # retry/repair, and lives as its own diagnostic (token_overrun_rate).
     # Disjoint from the quarantine set (survivors only → no double-count).
     n_recovery = sum(
         1 for c in calls
         if c.final_status != "quarantined"
-        and (c.syntax_repaired or c.slug_coerced or c.attempts > 1)
+        and (c.syntax_repaired or c.slug_coerced or c.boundary_recovered or c.attempts > 1)
     )
 
     total_latency_ms = sum(c.total_latency_ms for c in calls)
@@ -90,8 +91,12 @@ def compute_processing(
     # token_overrun_rate: quarantined NOT excluded (counts all calls).
     n_overrun = sum(1 for c in calls if c.token_overrun)
 
-    # repair_rung_rate: syntax_repaired OR slug_coerced; quarantined NOT excluded.
-    n_repair_rung = sum(1 for c in calls if c.syntax_repaired or c.slug_coerced)
+    # repair_rung_rate: syntax_repaired OR slug_coerced OR boundary_recovered;
+    # quarantined NOT excluded.
+    n_repair_rung = sum(
+        1 for c in calls
+        if c.syntax_repaired or c.slug_coerced or c.boundary_recovered
+    )
 
     # semantic_pass_rate: mean over P2 calls where semantic_ok is not None.
     eligible_semantic = [c for c in pass2_calls if c.semantic_ok is not None]

@@ -51,6 +51,7 @@ def _call(
     syntax_repaired: bool = False,
     slug_coerced: bool = False,
     token_overrun: bool = False,
+    boundary_recovered: bool = False,
     total_input_tokens: int,
     total_output_tokens: int,
     total_latency_ms: int,
@@ -77,6 +78,7 @@ def _call(
         parse_ok=(final_status != "quarantined"),
         schema_ok=(final_status != "quarantined"),
         semantic_ok=semantic_ok,
+        boundary_recovered=boundary_recovered,
     )
 
 
@@ -343,6 +345,23 @@ class TestEdgeCaseScannedZero:
         )
         result = compute_processing(header_zero, [])
         assert result["diagnostic"]["signal_noise_ratio"] is None
+
+
+class TestBoundaryRecovered:
+    """#114 parse-stage recovery: a boundary-recovered call with no other
+    repair/retry signal must count in BOTH recovery_rate and repair_rung_rate."""
+
+    def test_boundary_recovered_counts_in_recovery_and_repair_rung(self):
+        recovered = _call(
+            pass_="pass2", final_status="repaired", attempts=1,
+            syntax_repaired=False, slug_coerced=False, boundary_recovered=True,
+            total_input_tokens=400, total_output_tokens=100, total_latency_ms=50,
+            semantic_ok=True,
+        )
+        result = compute_processing(HEADER, [recovered])
+        T_single = 400 + 100  # 500
+        assert result["scored"]["recovery_rate"] == pytest.approx(1 * 1e6 / T_single)
+        assert result["diagnostic"]["repair_rung_rate"] == pytest.approx(1 * 1e6 / T_single)
 
 
 class TestRepromptOnlyRecovery:

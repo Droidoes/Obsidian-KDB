@@ -38,6 +38,7 @@ class PassCallMeasurement:
     parse_ok: bool
     schema_ok: bool
     semantic_ok: bool | None
+    boundary_recovered: bool = False
 
     @classmethod
     def from_pass1(cls, sidecar: dict, *, run_id: str) -> "PassCallMeasurement":
@@ -105,6 +106,7 @@ class PassCallMeasurement:
             parse_ok=not_quarantined,
             schema_ok=not_quarantined,
             semantic_ok=None,      # Pass-1 has no semantic validation gate
+            boundary_recovered=False,  # Pass-1 has no parse-stage boundary recovery
         )
 
     @classmethod
@@ -156,6 +158,8 @@ class PassCallMeasurement:
             parse_ok=rec.get("parse_ok", False),
             schema_ok=rec.get("schema_ok", False),
             semantic_ok=rec.get("semantic_ok"),
+            # #114 parse-stage boundary recovery; absent on pre-#114 records.
+            boundary_recovered=rec.get("boundary_recovered", False),
         )
 
 
