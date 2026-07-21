@@ -200,6 +200,63 @@ def test_metadata_only_record_when_capture_full_unset(
     assert record.raw_response_text is None
 
 
+def test_recovered_success_extract_false_suppresses_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#114 + Codex pre-merge F2: extract_ok is non-gating telemetry. A
+    boundary-recovered success (extract_ok=False, all gating verdicts True)
+    is NOT a failure — raw text must stay gated off when capture is unset."""
+    monkeypatch.delenv("KDB_RESP_STATS_CAPTURE_FULL", raising=False)
+    ctx = _ctx(tmp_path)
+    record = resp_stats_writer.build_resp_stats(
+        ctx=ctx,
+        source_id="KDB/raw/foo.md",
+        prompt=None,
+        raw_response_text='Here is JSON:\n{"source_id": "KDB/raw/foo.md"}',
+        model_response=_model_response(),
+        extract_ok=False,
+        parse_ok=True,
+        parsed_json=None,
+        schema_ok=True,
+        schema_errors=[],
+        semantic_ok=True,
+        semantic_errors=[],
+        boundary_recovered=True,
+        prefix_discarded_chars=14,
+    )
+    assert record.raw_response_text is None
+    assert record.boundary_recovered is True
+
+
+def test_failure_still_retains_raw_when_capture_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Real failures keep the raw response for debugging even with capture
+    unset — one case per gating verdict (parse / schema / semantic)."""
+    monkeypatch.delenv("KDB_RESP_STATS_CAPTURE_FULL", raising=False)
+    ctx = _ctx(tmp_path)
+    for extract, parse, schema, semantic in (
+        (False, False, False, False),   # unrecoverable carrier
+        (True, True, False, False),     # schema gate
+        (True, True, True, False),      # semantic gate
+    ):
+        record = resp_stats_writer.build_resp_stats(
+            ctx=ctx,
+            source_id="KDB/raw/foo.md",
+            prompt=None,
+            raw_response_text="garbage",
+            model_response=_model_response(),
+            extract_ok=extract,
+            parse_ok=parse,
+            parsed_json=None,
+            schema_ok=schema,
+            schema_errors=[],
+            semantic_ok=semantic,
+            semantic_errors=[],
+        )
+        assert record.raw_response_text == "garbage", (extract, parse, schema, semantic)
+
+
 def test_full_record_when_capture_full_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

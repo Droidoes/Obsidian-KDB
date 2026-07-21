@@ -153,8 +153,12 @@ def build_resp_stats(
     else:
         prompt_hash = _NONE_HASH
 
+    # Failure is decided by the GATING verdicts only. extract_ok is
+    # non-gating telemetry since #114 — a boundary-recovered success
+    # (extract_ok=False, parse/schema/semantic all True) must not trip
+    # raw-response capture (Codex pre-merge review F2).
     failed_after_response = bool(raw_response_text) and not (
-        extract_ok and parse_ok and schema_ok and semantic_ok
+        parse_ok and schema_ok and semantic_ok
     )
 
     # Discarded-attempt aggregation (#109 Task 2).
