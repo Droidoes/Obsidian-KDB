@@ -289,6 +289,25 @@ def test_xai_dispatch_uses_xai_endpoint(
     assert client.chat.completions.create.call_args.kwargs["model"] == "grok-4-1-fast-reasoning"
 
 
+def test_zai_dispatch_uses_zai_endpoint(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    _use_settings(monkeypatch, zai_api_key="zai-test")
+    client = MagicMock()
+    client.chat.completions.create.return_value = openai_resp
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="zai", model="glm-5-turbo", prompt="hi"))
+    assert ctor.call_args.kwargs["base_url"] == "https://api.z.ai/api/paas/v4"
+    assert ctor.call_args.kwargs["api_key"] == "zai-test"
+    assert client.chat.completions.create.call_args.kwargs["model"] == "glm-5-turbo"
+
+
+def test_missing_zai_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_settings(monkeypatch, zai_api_key="")
+    with pytest.raises(ModelConfigError):
+        call_model(ModelRequest(provider="zai", model="glm-5-turbo", prompt="hi"))
+
+
 def test_alibaba_dispatch_uses_dashscope_endpoint(
     monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
 ) -> None:

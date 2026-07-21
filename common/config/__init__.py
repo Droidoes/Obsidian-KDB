@@ -44,6 +44,7 @@ class Settings:
     ollama_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434/v1"
     deepseek_api_key: str = ""
+    zai_api_key: str = ""
     llm_timeout_seconds: int = 300
 
     @classmethod
@@ -64,6 +65,8 @@ class Settings:
             # DeepSeek direct OpenAI-compat endpoint (provider=deepseek).
             # Replaces the Alibaba-routed access dropped 2026-05-15 for re-test.
             deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+            # Zhipu z.ai OpenAI-compat endpoint (provider=zai) — GLM family.
+            zai_api_key=os.getenv("ZAI_API_KEY", ""),
             llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
         )
 

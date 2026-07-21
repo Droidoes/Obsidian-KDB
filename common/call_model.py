@@ -14,6 +14,7 @@ Providers:
     deepseek     → openai SDK, base_url=https://api.deepseek.com
     ollama-local → openai SDK, base_url=http://localhost:11434/v1 (or OLLAMA_BASE_URL)
     ollama-cloud → openai SDK, base_url=https://ollama.com/v1 (Ollama Cloud)
+    zai          → openai SDK, base_url=https://api.z.ai/api/paas/v4 (Zhipu GLM)
 
 No streaming; batch-compile workload. SDK httpx timeout handles pre-first-byte
 hangs. Retry/backoff lives in call_model_retry.py, not here.
@@ -32,7 +33,8 @@ from openai import OpenAI
 from common.config import settings
 
 Provider = Literal[
-    "anthropic", "openai", "gemini", "xai", "alibaba", "deepseek", "ollama-local", "ollama-cloud"
+    "anthropic", "openai", "gemini", "xai", "alibaba", "deepseek", "ollama-local", "ollama-cloud",
+    "zai",
 ]
 
 
@@ -112,6 +114,12 @@ def call_model(req: ModelRequest) -> ModelResponse:
     elif req.provider == "ollama-cloud":
         text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
             req, base_url="https://ollama.com/v1", api_key=settings.ollama_api_key,
+        )
+    elif req.provider == "zai":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
+            req,
+            base_url="https://api.z.ai/api/paas/v4",
+            api_key=settings.zai_api_key,
         )
     else:
         raise ModelConfigError(f"Unknown provider: {req.provider!r}")

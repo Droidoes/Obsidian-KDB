@@ -22,6 +22,9 @@ WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
 _THINKING_DISABLE_EXTRA_BODY = {
     "alibaba": {"enable_thinking": False},
     "deepseek": {"thinking": {"type": "disabled"}},
+    # z.ai GLM: `thinking.type` enabled|disabled (default enabled) — verified
+    # against docs.z.ai GLM-5-Turbo guide (same shape as deepseek's param).
+    "zai": {"thinking": {"type": "disabled"}},
 }
 
 
