@@ -113,20 +113,23 @@ def _synth(**overrides) -> ReplayFixture:
     return ReplayFixture(**base)
 
 
-def test_replay_extract_failure_short_circuits() -> None:
-    """Prose around the object breaks extract; downstream flags stay False."""
+def test_replay_extract_failure_boundary_recovers() -> None:
+    """Prose around the object breaks strict extract (extract_ok=False), but
+    the shared recovery ladder boundary-decodes the embedded document —
+    extract no longer gates parse (#114). The recovered {'x': 1} then
+    fails schema, which cascades to semantic."""
     f = _synth(
         stored_response_text="Sure thing: {\"x\": 1} — hope that helps!",
         expected_extract_ok=False,
-        expected_parse_ok=False,
+        expected_parse_ok=True,
         expected_schema_ok=False,
         expected_semantic_ok=False,
     )
     r = replay_case(f)
-    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (False, False, False, False)
+    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (False, True, False, False)
     assert r.matches_expected is True
     assert r.error_detail is not None
-    assert "extract:" in r.error_detail
+    assert "schema:" in r.error_detail
 
 
 def test_replay_parse_failure_after_extract() -> None:
@@ -146,6 +149,40 @@ def test_replay_parse_failure_after_extract() -> None:
     assert r.matches_expected is True
     assert r.error_detail is not None
     assert "parse:" in r.error_detail
+
+
+def test_replay_recovers_trailing_junk_like_compile_one() -> None:
+    """A valid payload followed by a trailing '}' is boundary-recovered by the
+    shared recovery ladder — the same verdict compile_one gives (#114).
+    Pre-#114 replay failed this at parse; now parse_ok=True and the
+    schema/semantic stages proceed on the recovered document."""
+    payload = json.dumps({
+        "source_name": "x.md",
+        "summary_slug": "summary-x",
+        "concept_slugs": [],
+        "article_slugs": [],
+        "pages": [
+            {
+                "slug": "summary-x",
+                "page_type": "summary",
+                "title": "X",
+                "body": "Minimal body.",
+                "status": "active",
+                "outgoing_links": [],
+                "confidence": "high",
+            }
+        ],
+        "log_entries": [],
+        "warnings": [],
+    })
+    f = _synth(stored_response_text=payload + "\n}")
+    r = replay_case(f)
+    assert r.extract_ok is True   # strict shape conforms: starts '{' ends '}'
+    assert r.parse_ok is True     # boundary recovery, not a strict json.loads
+    assert r.schema_ok is True
+    assert r.semantic_ok is True
+    assert r.matches_expected is True
+    assert r.error_detail is None
 
 
 def test_replay_mismatch_flags_expected() -> None:

@@ -1,5 +1,5 @@
 """response_replay — run stored model responses through the compile validator
-stack (extract → parse → schema → semantic) and compare the observed
+stack (recover → schema → semantic) and compare the observed
 flags against each fixture's expected flags.
 
 Complements the live resp-stats records written by `compile_one` (blueprint
@@ -25,7 +25,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from compiler import response_normalizer, validate_source_response
+from compiler import validate_source_response
+from compiler.response_recovery import recover_json_response
 
 
 @dataclass
@@ -88,9 +89,11 @@ def load_fixtures(fixtures_dir: Path) -> list[ReplayFixture]:
 def replay_case(fixture: ReplayFixture) -> ReplayResult:
     """Run one fixture through the full validator stack.
 
-    Short-circuits on first failure (mirroring compile_one): an
-    extract-fail yields parse=schema=semantic=False. The first failure's
-    message is captured in error_detail for the report.
+    Uses the shared recovery ladder (#114) so a captured response yields
+    ONE verdict across compile_one and replay. Short-circuits on first
+    failure (mirroring compile_one): a recovery-fail yields
+    parse=schema=semantic=False. The first failure's message is captured
+    in error_detail for the report.
     """
     extract_ok = False
     parse_ok = False
@@ -98,23 +101,14 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
     semantic_ok = False
     error_detail: str | None = None
 
-    json_text: str
-    try:
-        json_text = response_normalizer.extract_json_text(
-            fixture.stored_response_text
-        )
-        extract_ok = True
-    except ValueError as e:
-        error_detail = f"extract: {e}"
+    result = recover_json_response(fixture.stored_response_text)
+    extract_ok = result.extract_ok
+    if not result.recovered:
+        error_detail = f"parse: {result.error}"
         return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
 
-    parsed: object
-    try:
-        parsed = json.loads(json_text)
-        parse_ok = True
-    except json.JSONDecodeError as e:
-        error_detail = f"parse: {e.msg} at line {e.lineno}"
-        return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
+    parse_ok = True
+    parsed = result.parsed
 
     schema_errors = validate_source_response.validate(parsed)
     schema_ok = schema_errors == []
