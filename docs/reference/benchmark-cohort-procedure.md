@@ -52,11 +52,17 @@ The orchestrator routes by `--provider`; each provider reads one env var (see
 | `deepseek`     | `deepseek-v4-flash`        | `DEEPSEEK_API_KEY` |
 | `gemini`       | `gemini-3.1-flash-lite`    | `GEMINI_API_KEY` |
 | `alibaba`      | `qwen3.5-flash`            | `QWEN_US_API_KEY` (DashScope US) |
-| `anthropic`    | `haiku-4.5` / `sonnet-4.6` | `ANTHROPIC_API_KEY` |
 | `openai`       | `gpt-5.4-mini`             | `OPENAI_API_KEY` |
-| `xai`          | `grok-4-1-fast-reasoning`  | `XAI_GROK_API_KEY` |
+| `xai`          | `grok-4.20-0309-non-reasoning` | `XAI_GROK_API_KEY` |
 | `ollama-cloud` | (cloud model id)           | `OLLAMA_API_KEY` |
 | `ollama-local` | (local model id)           | — (none; `OLLAMA_BASE_URL`) |
+
+(`zai` — Zhipu GLM, `ZAI_API_KEY`, `https://api.z.ai/api/paas/v4` — remains
+wired in `call_model.py` but has no active pool model: `glm-5-turbo` was
+added + retired 2026-07-21. `xai` — `XAI_GROK_API_KEY`, `https://api.x.ai/v1`
+— likewise wired but model-less: `grok-4.20-0309-non-reasoning` was retired
+2026-07-21 when xAI deprecated it; a future candidate would be a new entry,
+e.g. `grok-4.3`. See `models_dropped.json`.)
 
 The `--model` value becomes the run-dir prefix (`<model>-<run_id>`), so use the
 slug you want to see on the leaderboard.

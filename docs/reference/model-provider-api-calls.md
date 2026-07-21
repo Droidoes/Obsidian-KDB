@@ -74,6 +74,7 @@ param ever fires on a paid call**.
 | gemini (3.x flash-lite) | ON (floor `minimal`) | **native SDK** `thinking_config.thinking_level="minimal"` (NOT `extra_body`; full-off unsupported — `minimal` ≈ off) | ✅ verified (native `_call_gemini`, #111 Phase 1) |
 | openai (gpt-5.x) | reasoning models reason | `reasoning_effort` — gpt-5.4-mini uses `"low"` for structured output (not fully disabled) | ✅ verified (gpt-5.4-mini, #111 Phase 1) |
 | xai (grok reasoning) | ON | `reasoning_effort`? — may not be disableable | ⚠️ **TODO verify** |
+| zai (GLM) | ON (`thinking.type` enabled by default) | `{"thinking": {"type": "disabled"}}` — same shape as deepseek | ✅ verified (docs.z.ai GLM-5-Turbo guide) |
 
 > **Gemini exception:** gemini's thinking is set in the **native `_call_gemini` handler** (google-genai SDK, Gemini 3.x uses `thinking_level` not the 2.5-era `thinking_budget`; passing both → 400), NOT via the `_THINKING_DISABLE_EXTRA_BODY` table. All other providers ride the openai-compat `extra_body` path above.
 
@@ -101,7 +102,7 @@ param ever fires on a paid call**.
 ### alibaba (Qwen) — `https://dashscope-us.aliyuncs.com/compatible-mode/v1` · `QWEN_US_API_KEY` · openai SDK
 - **API docs:** https://www.alibabacloud.com/help/en/model-studio/ · thinking: https://www.alibabacloud.com/help/en/model-studio/deep-thinking
 - **Model page (qwen3.5-flash):** https://modelstudio.console.alibabacloud.com/us-east-1?tab=doc#/doc/?type=model&url=2840914_2&modelId=group-qwen3.5-flash (Model Studio console — requires login)
-- Models: `qwen3.5-flash`, `qwen3.6-flash` (active). Hybrid reasoning, **thinking ON by default**.
+- Models: `qwen3.5-flash`, `qwen3.6-flash` (active). (`qwen3.6-flash-us`, the US-deployed variant, was added + retired 2026-07-21 after its first cohort run quarantined 3/36 sources — see `models_dropped.json`. The Li Lu pass1 400 was a DashScope content-filter false positive, a provider-level vault-scale risk.) Hybrid reasoning, **thinking ON by default**.
 - Disable: `extra_body={"enable_thinking": false}` (now set via the `thinking` field). This is the fix for qwen's slowness.
 - Provider's own example (thinking ENABLED + **streaming** — *not* our config):
   ```python
@@ -141,7 +142,7 @@ param ever fires on a paid call**.
 ### gemini — **native `google-genai` SDK** (`from google import genai`) · `GEMINI_API_KEY`
 - **API docs:** https://ai.google.dev/gemini-api/docs
 - **Model page (gemini-3.1-flash-lite):** https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite · **thinking:** https://ai.google.dev/gemini-api/docs/thinking
-- Model: `gemini-3.1-flash-lite` — **bare id** on the native path (the old `models/` prefix was a compat-only hack, now removed).
+- Model: `gemini-3.1-flash-lite` — **bare id** on the native path (the old `models/` prefix was a compat-only hack, now removed). (`gemini-3.5-flash` was added + retired 2026-07-21: systematic `Extra data` trailing-content JSON on Pass-2 at BOTH thinking levels — minimal 10Q, low 13Q, `entity_reuse` 0. Thinking level is not the lever; the un-retire trigger is Phase-2 `response_json_schema`. Evidence in `models_dropped.json`.)
 - **#111 Phase 1: moved OFF the openai-compat shim onto the native handler `_call_gemini`** (sibling to `_call_anthropic`). Sends `GenerateContentConfig(response_mime_type="application/json", thinking_config=ThinkingConfig(thinking_level="minimal"), system_instruction=…, max_output_tokens=…)`. Telemetry maps `usage_metadata`: input=`prompt_token_count`, output=`candidates_token_count`+`thoughts_token_count`.
 - **Thinking:** Gemini 3.x uses `thinking_level` (`minimal`/`low`/`medium`/`high`), **NOT** the 2.5-era `thinking_budget`; passing both → 400. Flash-lite's floor is `minimal` (full thinking-off unsupported) = the near-zero-reasoning equivalent of "off". We send `minimal`.
 - **Structured output:** native JSON-mode (`response_mime_type="application/json"`) shipped Phase 1. The stronger **`response_json_schema`** (schema-constrained decode against `compiled_source_response.schema.json`) is the **Phase 2** add — the candidate fix for Gemini's #109 quarantines.
@@ -152,12 +153,31 @@ param ever fires on a paid call**.
 > native); Phase 2 (`response_json_schema`) isolates the *schema* effect (→ `@v0.5.7`). Whether
 > Gemini's quarantines were path-induced or JSON-malformation will show in those baselines.
 
+### zai (Zhipu GLM) — `https://api.z.ai/api/paas/v4` · `ZAI_API_KEY` · openai SDK
+- **API docs:** https://docs.z.ai/ (GLM-5-Turbo guide: https://docs.z.ai/guides/llm/glm-5-turbo · pricing: https://docs.z.ai/guides/overview/pricing)
+- Model: `glm-5-turbo` — **added + retired 2026-07-21** (first cohort run: 5/36 quarantined — 4× systematic `page_type` omission on non-summary pages + 1× z.ai content-filter 400 on the Li Lu lecture, the same source DashScope blocked; slowest + priciest run of the cohort; board 26.00, rank 4/5 — see `models_dropped.json`). **No active zai pool model; provider wiring retained for future GLM entries.**
+- ⚠️ **z.ai has a mandatory content-moderation layer** (like DashScope's Green Net): HTTP 400 code 1301, no disable switch — provider-level vault-scale risk, same class as Alibaba.
+- Thinking: **ON by default**; disable via `extra_body={"thinking": {"type": "disabled"}}` (verified param shape in the official guide — same shape as deepseek's; `enabled`|`disabled`). Pool entry carried `thinking: "disabled"` per house pattern for the extraction workload.
+- Structured output: the guide advertises JSON/structured-output support; we use the standard weak `json_object` mode. `json_schema` strong mode unverified for zai (TODO if ever needed).
+- Provider's own example (thinking ENABLED — *not* our config):
+  ```python
+  client = OpenAI(api_key="your-Z.AI-api-key", base_url="https://api.z.ai/api/paas/v4/")
+  client.chat.completions.create(
+      model="glm-5-turbo",
+      messages=[{"role":"user","content":"…"}],
+      thinking={"type": "enabled"},   # default; we send disabled via extra_body
+      max_tokens=4096,
+      temperature=1.0,                # API default; we send 0.0 (pool default)
+  )
+  ```
+- **Our call:** standard `_call_openai_compat` — `extra_body={"thinking":{"type":"disabled"}}`, `response_format={"type":"json_object"}` (json_mode), `temperature=0.0`, non-streaming.
+
 ### xai (Grok) — `https://api.x.ai/v1` · `XAI_GROK_API_KEY` · openai SDK
 - **API docs:** https://docs.x.ai/ · structured outputs: https://docs.x.ai/developers/model-capabilities/text/structured-outputs
-- Model: `grok-4-1-fast-reasoning` (a *reasoning* model).
-- **Structured outputs:** ✅ `response_format={"type":"json_schema","json_schema":{"name":…,"schema":…,"strict":true}}` — works through the **OpenAI SDK** against `api.x.ai/v1` (our existing path), explicitly supported on `grok-4-1-fast-reasoning`. We use the weaker `json_object`.
+- **No active xai pool model.** `grok-4-1-fast-reasoning` was pool-retired earlier (xAI killed the 4-1-fast line 2026-05-15); `grok-4.20-0309-non-reasoning` was retired 2026-07-21 when xAI deprecated the dated 4.20 variant — see `models_dropped.json`. **Current flagship: `grok-4.3`** ($1.25/$2.50, 1M ctx, structured outputs, low/medium/high reasoning efforts) — the natural candidate if xai re-enters the cohort; would be a NEW pool entry.
+- **Structured outputs:** ✅ `response_format={"type":"json_schema","json_schema":{"name":…,"schema":…,"strict":true}}` — works through the **OpenAI SDK** against `api.x.ai/v1` (our existing path), explicitly supported on grok reasoning models. We use the weaker `json_object`.
 - Reasoning control — `reasoning_effort`: `"none"` (disables reasoning entirely), `"low"` (default), `"medium"`, `"high"` (docs: https://docs.x.ai/developers/model-capabilities/text/reasoning#the-reasoning_effort-parameter). Disable via `extra_body={"reasoning_effort": "none"}` (merges into the request body) — IF added, the table maps `xai → {"reasoning_effort": "none"}`.
-  - ⚠️ **Still TODO / do NOT add yet:** the doc covers `grok-4.3` / `grok-4.20-multi-agent`, **not** our `grok-4-1-fast-reasoning` — its support for `"none"` is unconfirmed (a "fast-reasoning" model may not allow disabling reasoning), and the exact shape (flat `reasoning_effort` vs nested `reasoning.effort`) is ambiguous. Verify against `grok-4-1-fast-reasoning` before adding a pool knob.
+  - ⚠️ **Still TODO / do NOT add yet:** the doc covers `grok-4.3` / `grok-4.20-multi-agent`; `"none"` support per-model is unconfirmed, and the exact shape (flat `reasoning_effort` vs nested `reasoning.effort`) is ambiguous. Verify against the specific model before adding a pool knob.
   - Note: unlike deepseek/qwen (whose disable param is a nested `extra_body` object/bool), xai's lever is `reasoning_effort` — a top-level request-body string. The `_THINKING_DISABLE_EXTRA_BODY` table handles it fine (`extra_body` merges into the body), so the `thinking` field abstraction still covers it once verified.
 
 ### ollama-local / ollama-cloud — `http://localhost:11434/v1` (or `OLLAMA_BASE_URL`) / `https://ollama.com/v1`

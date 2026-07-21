@@ -28,7 +28,7 @@
     "ctx_window": 1000000,
     "max_output_tokens": 32768,
     "price_in": 0.05,
-    "price_out": 0.40,
+    "price_out": 0.4,
     "dropped": true,
     "dropped_reason": "M5 (body_emit_set_coverage) = 0.111 in post-#60 regression scorecard (2026-05-10T12:08): declares concept_slugs but barely integrates them via cross-page wikilinks (KB-graph value degraded). The pre-#59 reading of M5=1.000 was the tautological-by-construction artifact; the new measure surfaces real model behavior. Excellent cost+latency don't compensate for this quality gap on the canonical corpus."
   },
@@ -62,5 +62,70 @@
     "price_out": 0.0,
     "dropped": true,
     "dropped_reason": "local 12B-QAT too slow + majority of sources quarantined + could not complete a 36-source run (2026-06-07); local-model capability/hardware limit, not transient. No active ollama-local model remains. Un-archive only if a faster local model or a viable config emerges."
+  },
+  {
+    "id": "haiku-4.5",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "ctx_window": 200000,
+    "max_output_tokens": 64000,
+    "price_in": 1.0,
+    "price_out": 5.0,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph): Anthropic models no longer used for API calls or as benchmark references — other providers have caught up. Pool prune ahead of the WS1 cohort refresh. Historical role: M2 baseline scorecard 2026-05-08 (haiku-4.5 vs sonnet-4.6). Engine support (common/call_model.py anthropic path) retained."
+  },
+  {
+    "id": "sonnet-4.6",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "ctx_window": 1048576,
+    "max_output_tokens": 64000,
+    "price_in": 3.0,
+    "price_out": 15.0,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph): Anthropic models no longer used for API calls or as benchmark references — other providers have caught up. Pool prune ahead of the WS1 cohort refresh. Historical role: M2 baseline scorecard 2026-05-08 (haiku-4.5 vs sonnet-4.6). Engine support (common/call_model.py anthropic path) retained."
+  },
+  {
+    "id": "qwen3.6-flash-us",
+    "provider": "alibaba",
+    "model": "qwen3.6-flash-us",
+    "ctx_window": 1000000,
+    "max_output_tokens": 65536,
+    "price_in": 0.25,
+    "price_out": 1.5,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph) hours after being added, on its first cohort run (2026-07-21T00-51-24_EDT): 3/36 sources quarantined — 2 structured-contract failures at compile (summary_slug absent from pages[].slug on Obsidian CLI Skills; pages[3].status='high' — a confidence value in the status enum — on Quotes from Napoleon) + 1 DashScope content-filter 400 (data_inspection_failed) at pass1 on the Li Lu lecture (provider moderation false positive; gpt-5.4-mini + deepseek-v4-flash compiled the same source cleanly that night). Bottom board score 6.00 (rank 7/7); weak graph KPIs (link_density 0.863, entity_search_key_resolution 0.179, graph_score 0.192). Consistent with the qwen-flash family pattern (qwen-flash-us dropped 2026-05-10; qwen3.5-flash bottom-tier 2026-06-07). n=1 stochastic caveat on the 2 compile failures; the provider content-filter class is the durable concern for vault-scale ingest. Kept as audit trail; run dir benchmark/runs/qwen3.6-flash-us-2026-07-21T00-51-24_EDT retained."
+  },
+  {
+    "id": "gemini-3.5-flash",
+    "provider": "gemini",
+    "model": "gemini-3.5-flash",
+    "ctx_window": 1048576,
+    "max_output_tokens": 65536,
+    "price_in": 1.5,
+    "price_out": 9.0,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph) hours after being added, on TWO same-night cohort runs at both thinking levels (minimal: 2026-07-21T01-09-32_EDT — 10 quarantined, $2.39, board 8.00; low: 2026-07-21T01-46-20_EDT — 13 quarantined, $2.38, board 10.00). Systematic contract-shape failure on Pass-2: ~72% of calls failed attempt 1; dominant signature JSONDecodeError 'Extra data' — a valid JSON object followed by trailing content (clean STOP, no truncation, outputs 0.9-1.8K tokens); #104 retry rescued only ~half (11 then 9); entity_reuse 0 and search-key resolution ~0.11 even on passes; semantic_pass 0.65/0.59. Third confirmation of the gemini + json_object Pass-2 weakness class (gemini-3.1-flash-lite 2026-06-07: pass-2-heavy quarantines). temperature was omitted (null) per 3.5 dropping legacy sampling params; thinking level is NOT the lever (both flopped identically). Un-retire trigger: #111 Phase-2 response_json_schema (schema-constrained decode forces single-object output) — re-test when it lands. Run dirs retained: benchmark/runs/gemini-3.5-flash-2026-07-21T01-09-32_EDT + ...T01-46-20_EDT."
+  },
+  {
+    "id": "glm-5-turbo",
+    "provider": "zai",
+    "model": "glm-5-turbo",
+    "ctx_window": 200000,
+    "max_output_tokens": 128000,
+    "price_in": 1.2,
+    "price_out": 4.0,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph) hours after being added, on its first cohort run (thinking disabled via pool) (2026-07-21T10-45-04_EDT — 5 quarantined of 36, $1.22 recorded, board 26.00, rank 4/5, slowest in field at 50:30). Two failure classes: (1) 4x systematic structured-contract slip — page_type omitted on every non-summary page (pages[1..N]; page 0 correct) with otherwise well-formed output; #104 retry rescued only 1 of 5. (2) z.ai mandatory content filter (HTTP 400, code 1301) hard-blocked the Li Lu lecture at Pass-2 — the SAME source DashScope Green Net blocked in the qwen3.6-flash-us run → two-provider (Alibaba + Zhipu) compliance-layer pattern; provider-level vault-scale risk with no disable switch (official remedy: 'modify input and retry' / submit ticket). Graph score middling (0.525 vs deepseek 0.60, gpt 0.925); latency worst in cohort (Borda 0.0; one Pass-2 call 98.6s); most expensive run ($1.22 vs gpt $0.85) at $1.2/$4.0 per 1M. Un-retire trigger: none identified — agentic tuning brings nothing to the extraction workload; would need both the contract-slip class and the latency/cost gap addressed. Provider wiring (zai) retained in call_model.py for future GLM models. Run dir retained: benchmark/runs/glm-5-turbo-2026-07-21T10-45-04_EDT."
+  },
+  {
+    "id": "grok-4.20-0309-non-reasoning",
+    "provider": "xai",
+    "model": "grok-4.20-0309-non-reasoning",
+    "ctx_window": 1000000,
+    "price_in": 1.25,
+    "price_out": 2.5,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-21 (Joseph): the model is DEPRECATED by xAI — the dated grok-4.20 variant is gone from the API; grok-4.3 is the current flagship ($1.25/$2.50, 1M ctx, structured outputs, low/medium/high reasoning efforts). xAI's 2026-05-15 purge had already killed the grok-4-1-fast line. Never fired in the current-gen cohort — pool-only retirement, no benchmark run dirs, no board row. Un-retire trigger: N/A (model no longer exists); a future xai cohort candidate would be a NEW pool entry (e.g. grok-4.3)."
   }
 ]

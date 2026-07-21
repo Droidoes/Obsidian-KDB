@@ -41,7 +41,7 @@ pip install --quiet -e ".[dev]"
 if [ ! -f ".env" ]; then
   if [ -f ".env.example" ]; then
     cp .env.example .env
-    echo "==> Seeded .env from .env.example — edit it and fill in ANTHROPIC_API_KEY"
+    echo "==> Seeded .env from .env.example — edit it and fill in your provider keys (DEEPSEEK_API_KEY is the standing default)"
   else
     echo "==> WARNING: no .env.example found; skipping .env bootstrap"
   fi
@@ -58,7 +58,7 @@ cat <<'EOF'
 ==> Setup complete.
 
 Next steps:
-  1. Edit .env and set ANTHROPIC_API_KEY.
+  1. Edit .env and set your provider keys (DEEPSEEK_API_KEY is the standing default).
   2. Activate the venv:       source .venv/bin/activate
   3. Try the CLIs:            kdb-scan --help    kdb-orchestrate --help
   4. Green-light live compile (costs one API call):

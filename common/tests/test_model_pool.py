@@ -63,10 +63,10 @@ def test_resolve_undropped_deepseek_pro_returns_modelspec():
 
 
 def test_resolve_unmapped_provider_injects_no_thinking_param():
-    # anthropic has no verified disable param → no_op even though thinking
+    # gemini has no verified disable param → no_op even though thinking
     # defaults to "disabled"; never inject a guessed param on a paid provider.
-    spec = resolve_models_json("haiku-4.5")
-    assert spec.provider == "anthropic"
+    spec = resolve_models_json("gemini-3.1-flash-lite")
+    assert spec.provider == "gemini"
     assert spec.extra_body is None
 
 
@@ -115,7 +115,7 @@ def test_temperature_null_resolves_to_none():
 
 def test_temperature_absent_defaults_to_zero():
     # A model without the key → spec.temperature == 0.0 (deterministic default).
-    spec = resolve_models_json("haiku-4.5")
+    spec = resolve_models_json("deepseek-v4-pro")
     assert spec.temperature == 0.0
 
 
@@ -149,12 +149,29 @@ def test_deprecated_grok_is_archived():
     with pytest.raises(UnknownModelError):
         resolve_models_json("grok-4-1-fast-reasoning")  # deprecated → archived
 
-def test_new_grok_resolves_with_correct_provider_and_pricing():
-    spec = resolve_models_json("grok-4.20-0309-non-reasoning")
-    assert spec.provider == "xai"
-    assert spec.ctx_window == 1_000_000
-    assert spec.price_in == 1.25 and spec.price_out == 2.50
-    assert spec.extra_body is None  # non-reasoning ⇒ no thinking to disable
+def test_retired_grok_4_20_archived():
+    # Retired 2026-07-21: xAI deprecated the dated grok-4.20 variant
+    # (successor: grok-4.3 flagship; xAI killed the 4-1-fast line 2026-05-15).
+    # Never fired in the current-gen cohort — pool-only retirement, no board row.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("grok-4.20-0309-non-reasoning")
+
+
+def test_retired_gemini35_flash_archived():
+    # Added + retired 2026-07-21 (same day): two cohort runs at both thinking
+    # levels flopped identically — systematic 'Extra data' trailing-content
+    # JSON on Pass-2 (10 then 13 quarantined). Un-retire trigger: #111
+    # Phase-2 response_json_schema. See models_dropped.json for the evidence.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("gemini-3.5-flash")
+
+
+def test_retired_qwen36_flash_us_archived():
+    # Added + retired 2026-07-21 (same day): first cohort run quarantined 3/36
+    # sources (2 structured-contract failures, 1 DashScope content-filter 400);
+    # bottom board score. See models_dropped.json for the full evidence trail.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("qwen3.6-flash-us")
 
 
 _COMMON_DIR = Path(__file__).parent.parent
@@ -169,12 +186,32 @@ def test_dropped_archive_is_valid_json_and_holds_the_moved_entries():
     arch = json.loads((_COMMON_DIR / "models_dropped.json").read_text(encoding="utf-8"))
     ids = {e["id"] for e in arch}
     assert {"gemini-3-flash-preview", "deepseek-v4-flash:cloud",
-            "qwen-flash-us", "deepseek-v4-flash:alibaba"} <= ids
+            "qwen-flash-us", "deepseek-v4-flash:alibaba",
+            "haiku-4.5", "sonnet-4.6"} <= ids
     assert all(e.get("dropped") is True and e.get("dropped_reason") for e in arch), \
         "archive entries keep their dropped/dropped_reason record"
+
+
+def test_retired_anthropic_models_archived():
+    # Retired 2026-07-21: Anthropic models left the pool (no API calls, no
+    # benchmark references — other providers caught up) → models_dropped.json.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("haiku-4.5")
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("sonnet-4.6")
 
 
 def test_gpt_5_4_mini_carries_reasoning_config():
     spec = resolve_models_json("gpt-5.4-mini")
     assert spec.provider == "openai"
     assert spec.extra_body == {"reasoning_effort": "low"}
+
+
+def test_retired_glm_5_turbo_archived():
+    # Added + retired 2026-07-21 (same day): first cohort run quarantined 5/36
+    # (4x systematic page_type omission on non-summary pages + 1x z.ai
+    # content-filter 400 on the Li Lu lecture — the same source DashScope
+    # blocked; two-provider compliance-layer pattern). Slowest + priciest run
+    # of the cohort; board 26.00, rank 4/5. See models_dropped.json.
+    with pytest.raises(UnknownModelError):
+        resolve_models_json("glm-5-turbo")
