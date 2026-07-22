@@ -441,6 +441,26 @@ def test_load_run_measurements_returns_header_and_both_passes(tmp_path):
     assert p2.run_id == run_id
 
 
+def test_load_run_measurements_normalizes_pre115_header(tmp_path):
+    """A historical header dict written before the optional fields existed
+    (no release_version — pre-#111; no pass2_system_prompt_sha256 — pre-#115)
+    still loads; the loader fills the missing fields with ""."""
+    run_id = "run-historical"
+    run_dir = tmp_path / run_id
+    historical = _make_header_dict(run_id)
+    # Pin the historical shape — this dict is the pre-#115 contract.
+    assert "release_version" not in historical
+    assert "pass2_system_prompt_sha256" not in historical
+    _write_json(run_dir / "measurement_header.json", historical)
+
+    header, measurements = load_run_measurements(run_dir)
+
+    assert header.run_id == run_id
+    assert header.release_version == ""
+    assert header.pass2_system_prompt_sha256 == ""
+    assert measurements == []
+
+
 def test_load_run_measurements_skips_enrich_skipped(tmp_path):
     """Sidecars with outcome='enrich_skipped' are excluded from measurements."""
     run_id = "run-skip"

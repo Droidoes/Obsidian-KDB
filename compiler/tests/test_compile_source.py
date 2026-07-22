@@ -32,9 +32,8 @@ def _fm() -> SourceFrontmatter:
 
 
 def _vault(tmp_path: Path) -> Path:
+    # The system prompt is repo-packaged (post-#115) — no vault prompt file.
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n", encoding="utf-8")
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
     return tmp_path
 

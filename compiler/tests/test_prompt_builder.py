@@ -1,7 +1,9 @@
 """Tests for prompt_builder — system/user assembly for one compile call.
 
 Coverage per blueprint §10:
-    - load_system_prompt returns the file at <vault>/KDB/KDB-Compiler-System-Prompt.md
+    - load_system_prompt returns the repo-packaged prompt (post-#115)
+    - the packaged prompt's SHA-256 matches the ratified pre-move anchor
+      (Gate-0 pin: the vault→repo copy is byte-verbatim)
     - load_response_schema_text returns schema text with the expected keys
     - build_prompt system includes the system prompt + contract lines
     - build_prompt user includes source_name, source_text, context, schema, exemplar
@@ -16,6 +18,7 @@ injects them post-parse. Tests use source_name accordingly.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -35,24 +38,20 @@ from compiler.validate_source_response import semantic_check, validate
 SOURCE_NAME = "foo.md"
 SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction
 
-SYSTEM_PROMPT_FILENAME = "KDB-Compiler-System-Prompt.md"
+# Gate-0 pin (Task #115, blueprint Task 0.1): SHA-256 of the live vault
+# prompt at the moment of the vault→repo copy (2026-07-22). The packaged
+# file must remain byte-identical until Phase 1 deliberately rewrites it.
+PACKAGED_PROMPT_SHA256 = (
+    "dcfa3d1cd9c1e7c543527b5d4357ce46fb9f1e31a766a8127b8565942c11e12a"
+)
 
 
 @pytest.fixture(autouse=True)
 def _clear_caches() -> None:
-    """The system prompt is cached per-vault-path; the schema is cached
-    globally. Both are memoised via functools.cache — clear between tests
-    so per-test vaults don't leak."""
+    """Both loaders are memoised via functools.cache — clear between tests
+    so monkeypatched paths don't leak."""
     load_system_prompt.cache_clear()
     load_response_schema_text.cache_clear()
-
-
-def _write_vault_system_prompt(tmp_path: Path, contents: str) -> Path:
-    """Create <tmp_path>/KDB/KDB-Compiler-System-Prompt.md and return the vault root."""
-    kdb = tmp_path / "KDB"
-    kdb.mkdir(parents=True, exist_ok=True)
-    (kdb / SYSTEM_PROMPT_FILENAME).write_text(contents, encoding="utf-8")
-    return tmp_path
 
 
 def _snapshot() -> ContextSnapshot:
@@ -71,24 +70,41 @@ def _snapshot() -> ContextSnapshot:
 
 # ---------- load_system_prompt ----------
 
-def test_load_system_prompt_returns_vault_file(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# invariants doc\n")
-    assert load_system_prompt(vault) == "# invariants doc\n"
+def test_load_system_prompt_returns_packaged_file() -> None:
+    packaged = (Path(prompt_builder.__file__).parent
+                / "prompts" / "KDB-Compiler-System-Prompt.md")
+    assert load_system_prompt() == packaged.read_text(encoding="utf-8")
 
 
-def test_load_system_prompt_missing_raises(tmp_path: Path) -> None:
+def test_packaged_prompt_matches_gate0_anchor_sha256() -> None:
+    """Gate-0 anchor: the repo copy is byte-verbatim against the pre-move
+    vault prompt (defects intact — D-115-7 fixes land in Phase 1)."""
+    digest = hashlib.sha256(load_system_prompt().encode("utf-8")).hexdigest()
+    assert digest == PACKAGED_PROMPT_SHA256
+
+
+def test_load_system_prompt_missing_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        prompt_builder, "_PROMPT_PATH", tmp_path / "no-such-prompt.md"
+    )
+    load_system_prompt.cache_clear()
     with pytest.raises(FileNotFoundError):
-        load_system_prompt(tmp_path)  # no KDB/KDB-Compiler-System-Prompt.md under tmp_path
+        load_system_prompt()
 
 
-def test_load_system_prompt_cached_per_vault_root(tmp_path: Path) -> None:
-    vault_a = _write_vault_system_prompt(tmp_path / "a", "aaa")
-    vault_b = _write_vault_system_prompt(tmp_path / "b", "bbb")
-    assert load_system_prompt(vault_a) == "aaa"
-    assert load_system_prompt(vault_b) == "bbb"
+def test_load_system_prompt_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text("aaa", encoding="utf-8")
+    monkeypatch.setattr(prompt_builder, "_PROMPT_PATH", prompt_file)
+    load_system_prompt.cache_clear()
+    assert load_system_prompt() == "aaa"
     # mutate file on disk — cached result should not change
-    (vault_a / "KDB" / SYSTEM_PROMPT_FILENAME).write_text("MUTATED", encoding="utf-8")
-    assert load_system_prompt(vault_a) == "aaa"
+    prompt_file.write_text("MUTATED", encoding="utf-8")
+    assert load_system_prompt() == "aaa"
 
 
 # ---------- load_response_schema_text ----------
@@ -134,39 +150,36 @@ def test_exemplar_passes_schema_and_semantic() -> None:
 
 # ---------- build_prompt: system ----------
 
-def test_system_includes_system_prompt_and_contract(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# KDB invariants\n\nsome rules\n")
+def test_system_includes_system_prompt_and_contract() -> None:
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hello",
         context_snapshot=_snapshot(),
     )
-    assert "# KDB invariants" in bp.system
-    assert "some rules" in bp.system
+    assert bp.system == f"{load_system_prompt()}\n\n{RESPONSE_CONTRACT}"
     assert "RESPONSE CONTRACT (non-negotiable):" in bp.system
     assert "Return EXACTLY ONE JSON object." in bp.system
     assert 'The "source_name" field MUST echo' in bp.system
 
 
-def test_system_does_not_include_user_sections(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
+def test_system_does_not_include_user_sections() -> None:
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hello",
         context_snapshot=_snapshot(),
     )
-    assert "## SOURCE CONTENT" not in bp.system
-    assert "## RESPONSE SCHEMA" not in bp.system
+    # The packaged prompt *mentions* the user-section headings in prose, so
+    # assert on the actual per-call payloads instead: source text, context
+    # JSON, and rendered schema must not leak into the system half.
+    assert "hello" not in bp.system
+    assert "## EXISTING CONTEXT (graph snapshot)" not in bp.system
+    assert '"$schema"' not in bp.system
 
 
 # ---------- build_prompt: user ----------
 
-def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
+def test_user_has_all_four_sections_in_locked_order() -> None:
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="SOURCE BODY",
         context_snapshot=_snapshot(),
@@ -180,11 +193,9 @@ def test_user_has_all_four_sections_in_locked_order(tmp_path: Path) -> None:
     assert bp.user.index(f"source_name: {SOURCE_NAME}") < src_idx
 
 
-def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
+def test_user_includes_source_text_verbatim() -> None:
     text = "# Transformers\n\nSelf-attention is the key idea.\n"
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text=text,
         context_snapshot=_snapshot(),
@@ -192,11 +203,9 @@ def test_user_includes_source_text_verbatim(tmp_path: Path) -> None:
     assert text in bp.user  # verbatim, no truncation
 
 
-def test_user_includes_context_snapshot_as_json(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
+def test_user_includes_context_snapshot_as_json() -> None:
     snap = _snapshot()
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=snap,
@@ -205,10 +214,8 @@ def test_user_includes_context_snapshot_as_json(tmp_path: Path) -> None:
     assert expected in bp.user
 
 
-def test_user_includes_schema_and_exemplar(tmp_path: Path) -> None:
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
+def test_user_includes_schema_and_exemplar() -> None:
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -235,12 +242,10 @@ _SAMPLE_SOURCE_META: dict = {
 }
 
 
-def test_build_prompt_includes_source_meta_block_when_present(tmp_path: Path) -> None:
+def test_build_prompt_includes_source_meta_block_when_present() -> None:
     """When source_meta is passed the user prompt contains a '## PASS-1 SOURCE
     METADATA' section with field values and an explicit USE instruction (D-89-17)."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -253,12 +258,10 @@ def test_build_prompt_includes_source_meta_block_when_present(tmp_path: Path) ->
     assert "USE" in bp.user
 
 
-def test_build_prompt_omits_source_meta_block_when_absent(tmp_path: Path) -> None:
+def test_build_prompt_omits_source_meta_block_when_absent() -> None:
     """Pre-Pass-1 sources (source_meta=None) get the original prompt unchanged —
     no PASS-1 SOURCE METADATA section appears."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -266,15 +269,11 @@ def test_build_prompt_omits_source_meta_block_when_absent(tmp_path: Path) -> Non
     assert "## PASS-1 SOURCE METADATA" not in bp.user
 
 
-def test_build_prompt_summary_carries_appended_themes_per_d_89_19(
-    tmp_path: Path,
-) -> None:
+def test_build_prompt_summary_carries_appended_themes_per_d_89_19() -> None:
     """Per D-89-19 (v0.2.2): the summary string in source_meta already carries
     key_themes mechanically appended by compiler.py. The prompt renders that
     string verbatim — no LLM-merge instruction (D-89-18 retracted)."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -295,16 +294,12 @@ def test_build_prompt_summary_carries_appended_themes_per_d_89_19(
     assert "authoritative" in bp.user.lower()
 
 
-def test_build_prompt_omits_key_entities_seed_section_per_d_89_20(
-    tmp_path: Path,
-) -> None:
+def test_build_prompt_omits_key_entities_seed_section_per_d_89_20() -> None:
     """Per D-89-20 (v0.2.2): key_entities is no longer threaded to Pass-2 as
     seeds (the 'TREAT key_entities as seed candidates' clause of D-89-17 was
     retracted). The prompt renders no entity-seed section and no 'seed'
     instruction language."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -316,14 +311,10 @@ def test_build_prompt_omits_key_entities_seed_section_per_d_89_20(
     assert "seed entity-extraction" not in user_lower
 
 
-def test_build_prompt_source_meta_section_precedes_source_content(
-    tmp_path: Path,
-) -> None:
+def test_build_prompt_source_meta_section_precedes_source_content() -> None:
     """The PASS-1 SOURCE METADATA block must appear before SOURCE CONTENT so
     the LLM receives context before reading the body (locked ordering)."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),
@@ -334,13 +325,11 @@ def test_build_prompt_source_meta_section_precedes_source_content(
     assert meta_idx < src_idx
 
 
-def test_build_prompt_source_meta_excludes_kdb_signal(tmp_path: Path) -> None:
+def test_build_prompt_source_meta_excludes_kdb_signal() -> None:
     """kdb_signal is the Pass-1 gatekeeper; once compile runs it's noise.
     Even if caller passes it, the block must not surface it to the LLM."""
-    vault = _write_vault_system_prompt(tmp_path, "# rules")
     meta_with_signal = {**_SAMPLE_SOURCE_META, "kdb_signal": "signal"}
     bp = build_prompt(
-        vault_root=vault,
         source_name=SOURCE_NAME,
         source_text="hi",
         context_snapshot=_snapshot(),

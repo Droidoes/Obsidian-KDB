@@ -3,6 +3,7 @@
 All non-live: the Pass-2 model is faked via monkeypatch (test_compile_source
 pattern). Run: python -m pytest orchestrator/tests/test_kdb_orchestrate.py -m "not live"
 """
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from orchestrator import kdb_orchestrate
 import orchestrator.emit_kpis as _emit_kpis_mod
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
+from compiler.prompt_builder import PASS2_PROMPT_VERSION, load_system_prompt
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from common.run_context import RunContext
@@ -36,9 +38,8 @@ def _fm() -> SourceFrontmatter:
 
 
 def _vault(tmp_path: Path) -> Path:
+    # The system prompt is repo-packaged (post-#115) — no vault prompt file.
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n", encoding="utf-8")
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
     return tmp_path
 
@@ -1037,7 +1038,8 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
         p1_attempted=2, p2_attempted=1,
         corpus_fingerprint = 64-hex sha256,
         pass1_prompt_version = PASS1_PROMPT_VERSION,
-        pass2_prompt_version = "".
+        pass2_prompt_version = PASS2_PROMPT_VERSION,
+        pass2_system_prompt_sha256 = sha256 of the packaged prompt (post-#115).
     """
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -1073,7 +1075,11 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert all(c in "0123456789abcdef" for c in fp)
     # prompt versions
     assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
-    assert hdr["pass2_prompt_version"] == ""
+    assert hdr["pass2_prompt_version"] == PASS2_PROMPT_VERSION
+    # post-#115 stamp: SHA-256 of the loaded (packaged) Pass-2 system prompt
+    assert hdr["pass2_system_prompt_sha256"] == hashlib.sha256(
+        load_system_prompt().encode("utf-8")
+    ).hexdigest()
 
 
 # ---------- Task #111 Phase 0 Task 2: release_version recorded in header ----------
@@ -1179,6 +1185,13 @@ def test_emit_kpis_writes_measurements_json(tmp_path, monkeypatch):
     # compile_result.json and wiki/ are copied for full self-contained record.
     assert (out_dir / "compile_result.json").exists()
     assert (out_dir / "wiki").is_dir()
+
+    # system_prompt.md — the packaged Pass-2 prompt snapshotted for the
+    # record (post-#115; Task #30 re-runnability).
+    prompt_snap = out_dir / "system_prompt.md"
+    assert prompt_snap.exists(), f"system_prompt.md not found at {prompt_snap}"
+    from compiler.prompt_builder import load_system_prompt
+    assert prompt_snap.read_text(encoding="utf-8") == load_system_prompt()
 
 
 def test_emit_kpis_absent_does_not_write_measurements_json(tmp_path, monkeypatch):

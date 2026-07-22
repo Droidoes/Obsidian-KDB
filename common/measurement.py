@@ -178,6 +178,9 @@ class RunMeasurementHeader:
     p1_attempted: int
     p2_attempted: int
     release_version: str = ""
+    # SHA-256 of the loaded Pass-2 system prompt text (post-#115, D-115-13).
+    # "" on historical (pre-#115) headers — see load_run_measurements.
+    pass2_system_prompt_sha256: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +212,11 @@ def load_run_measurements(
     """
     header_path = run_dir / "measurement_header.json"
     header_data = json.loads(header_path.read_text(encoding="utf-8"))
+    # Normalize historical headers: fields added after a run was written
+    # (release_version pre-#111; pass2_system_prompt_sha256 pre-#115) are
+    # absent on disk — fill them so old run dirs still load.
+    header_data.setdefault("release_version", "")
+    header_data.setdefault("pass2_system_prompt_sha256", "")
     header = RunMeasurementHeader(**header_data)
     run_id = header.run_id
 

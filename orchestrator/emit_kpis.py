@@ -27,6 +27,7 @@ from common.measurement import RunMeasurementHeader, load_run_measurements
 from compiler.kpi.processing import compute_processing
 from compiler.kpi.graph import compute_graph
 from compiler.kpi.report import render_report
+from compiler.prompt_builder import system_prompt_path
 from kdb_graph.graphdb import GraphDB
 
 log = logging.getLogger(__name__)
@@ -159,6 +160,13 @@ def emit_run_kpis(
         shutil.copy2(state_root / "compile_result.json", out_dir / "compile_result.json")
     except OSError:
         log.warning("emit-kpis: could not copy compile_result.json for run %s", run_id)
+    # system_prompt.md — the repo-packaged Pass-2 system prompt (post-#115), so
+    # each benchmark record preserves the exact prompt text (Task #30
+    # re-runnability); complements the header's pass2_system_prompt_sha256 stamp.
+    try:
+        shutil.copy2(system_prompt_path(), out_dir / "system_prompt.md")
+    except OSError:
+        log.warning("emit-kpis: could not copy system prompt for run %s", run_id)
     # wiki/ — rendered Markdown pages (same data as compile_result, human-browsable).
     try:
         shutil.copytree(vault_root / "KDB" / "wiki", out_dir / "wiki")

@@ -50,11 +50,9 @@ def _clear_prompt_caches() -> None:
 # ---------- fixtures ----------
 
 def _write_vault(tmp_path: Path) -> Path:
-    """Create a minimal vault: KDB/KDB-Compiler-System-Prompt.md + raw source + state dir."""
+    """Create a minimal vault: KDB/ + raw source + state dir. The system
+    prompt is repo-packaged (post-#115) — no vault prompt file needed."""
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n\nRule 1: be honest.\n", encoding="utf-8"
-    )
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
     return tmp_path
 

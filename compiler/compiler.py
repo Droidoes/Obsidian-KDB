@@ -238,7 +238,6 @@ def compile_one(
             }
         try:
             state["prompt"] = prompt_builder.build_prompt(
-                vault_root=vault_root,
                 source_name=source_name,
                 source_text=source_text,
                 context_snapshot=job.context_snapshot,

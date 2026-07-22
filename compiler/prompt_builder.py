@@ -3,8 +3,9 @@
 The prompt has two halves:
 
   system — the KDB compiler system prompt (the LLM's full invariants
-           doc, served from the vault so the operator can edit it
-           without a code change) + a locked response-contract block
+           doc, packaged in the repo at compiler/prompts/ post-#115 —
+           provenance is git + PASS2_PROMPT_VERSION + the loaded-text
+           SHA-256 run stamp) + a locked response-contract block
            that enforces the shape the Python side actually parses.
 
   user   — source_name (echoed for semantic check), the verbatim source
@@ -12,10 +13,8 @@ The prompt has two halves:
            the per-source response schema, and a minimal exemplar.
 
 `load_system_prompt` and `load_response_schema_text` are memoised so a
-batch of compiles pays the file-read cost once. The system prompt is
-vault-owned (we load `<vault>/KDB/KDB-Compiler-System-Prompt.md`), so
-the cache key is the vault Path. The schema lives in the package and
-has no key.
+batch of compiles pays the file-read cost once. Both live in the package,
+so neither takes a key.
 
 The response-contract block below is intentionally terse and mirrors the
 semantic rules in validate_compiled_source_response.semantic_check.
@@ -35,6 +34,12 @@ from pathlib import Path
 from common.types import ContextSnapshot
 
 _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
+_PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.md"
+
+# Code-owned Pass-2 prompt version (D-115-13). Bumped in the SAME commit as
+# any prompt-content change — content and version never drift. Stamped on
+# every run header alongside the loaded-text SHA-256.
+PASS2_PROMPT_VERSION = "2.0.0"
 
 RESPONSE_CONTRACT = """\
 ---
@@ -58,12 +63,19 @@ class BuiltPrompt:
 
 
 @cache
-def load_system_prompt(vault_root: Path) -> str:
-    """Read <vault_root>/KDB/KDB-Compiler-System-Prompt.md. Cached per
-    vault_root (Path is hashable). Raises FileNotFoundError if the
-    vault has no system-prompt file."""
-    path = vault_root / "KDB" / "KDB-Compiler-System-Prompt.md"
-    return path.read_text(encoding="utf-8")
+def load_system_prompt() -> str:
+    """Read the repo-packaged compiler system prompt
+    (`compiler/prompts/KDB-Compiler-System-Prompt.md`, post-#115). Cached —
+    the file is static within a process. Raises FileNotFoundError naming
+    the packaged path if the file is missing (e.g. a broken wheel)."""
+    return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def system_prompt_path() -> Path:
+    """Filesystem path of the packaged system prompt. For snapshotting
+    (emit_kpis preserves the exact prompt text in each benchmark run dir —
+    Task #30 re-runnability), NOT for reading: use load_system_prompt()."""
+    return _PROMPT_PATH
 
 
 @cache
@@ -153,7 +165,6 @@ def _build_pass1_meta_block(source_meta: dict) -> str:
 
 def build_prompt(
     *,
-    vault_root: Path,
     source_name: str,
     source_text: str,
     context_snapshot: ContextSnapshot,
@@ -173,7 +184,7 @@ def build_prompt(
     When None (pre-Pass-1 sources), the block is omitted and the prompt
     renders unchanged for backward compatibility.
     """
-    system_prompt = load_system_prompt(vault_root)
+    system_prompt = load_system_prompt()
     schema_text = load_response_schema_text()
 
     system = f"{system_prompt}\n\n{RESPONSE_CONTRACT}"
