@@ -1,7 +1,9 @@
 # Task #115 — Pass-2 contract revision: decisions (ratified)
 
-**Version:** v1.5 (2026-07-21) — RATIFIED product decisions (v1.4, Joseph) +
-ratified integration contracts (v1.5, Joseph, after Codex R4). This document
+**Version:** v1.6 (2026-07-21) — RATIFIED product decisions (v1.4, Joseph) +
+ratified integration contracts (v1.5, Joseph, after Codex R4) + carve
+addendum (v1.6, Joseph, after Codex R12/R13: D-115-11 split; the
+reservation/MOVED/durability subsystem moved to #116). This document
 is the architecture basis for the #115 blueprint.
 **Anchors:** repo `main` @ `7d8263b`; pre-move prompt SHA-256
 `dcfa3d1cd9c1e7c543527b5d4357ce46fb9f1e31a766a8127b8565942c11e12a`.
@@ -108,8 +110,17 @@ LINKS_TO = rebuilt graph LINKS_TO.**
   zero or multiple pages — never silently take the first.
 - Executable summary-slug validation: exact algorithm from source filename
   stem (normalization rules, 120-char total budget incl. `summary-` prefix,
-  non-ASCII-only stems, empty normalization, collisions) — model remains
-  slug author; Python validates.
+  non-ASCII-only stems, empty normalization) — model remains slug author;
+  Python validates.
+- **SPLIT BY THE v1.8 CARVE (addendum, 2026-07-21):** the original v1.5
+  wording also assigned "collisions" to #115. Per the ratified carve:
+  **#115 retains** deterministic per-source derivation, exactly-one-summary,
+  exact expected-slug validation, underivable-stem rejection,
+  post-canonical re-validation, and fail-closed writer lookup;
+  **#116 owns** cross-source derived-slug collision detection,
+  occupancy/reservation, and lifecycle-aware ownership. The validation
+  matrix's collision item moves to #116; #115 keeps local
+  length/non-ASCII/empty and exact-match boundary tests only.
 
 ### D-115-12 — `Entity.confidence`: logical deprecation now
 
@@ -164,7 +175,8 @@ executable summary-slug rule, body↔page consistency.
 ## D. Validation matrix (blueprint test plan input)
 
 - packaged-wheel prompt-load smoke test;
-- summary-slug boundary tests (length/non-ASCII/empty/collision) +
+- summary-slug boundary tests (length/non-ASCII/empty + exact-match;
+  cross-source COLLISION tests are #116's, per the D-115-11 carve split) +
   post-canonicalization summary gate tests;
 - canonical-collision tests pinning losing-body link behavior (D-115-9);
 - compiler/graph wikilink-parser parity fixtures (D-115-10);
@@ -185,3 +197,11 @@ executable summary-slug rule, body↔page consistency.
   recommended leans: body-authority links, graph-owned derivation, logical
   confidence deprecation, optional-deprecated compat, packaging gates,
   ParsedSummary migration, wording fix).
+- **v1.6 (carve addendum, 2026-07-21)** — per blueprint v1.8 (Codex R12 +
+  Joseph): the reservation/MOVED/durability subsystem leaves #115 for the
+  new **Task #116** (paired with #94). D-115-11 formally split (§B/D-115-11
+  above); #115 keeps per-source exactness, #116 owns cross-source
+  collision/reservation. Accepted temporary behavior: normalized
+  derived-slug collisions keep today's last-writer-wins (wiki) /
+  co-ownership (graph) until #116. v1.7 blueprint archived as #116's CANDIDATE design seed at
+  `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.
