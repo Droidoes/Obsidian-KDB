@@ -23,12 +23,163 @@ from tools.benchmark.paths import RUNS_DIR, SCORES_DIR
 from common.run_context import now_iso
 
 
+def _fmt_val(v) -> str:
+    """Cell formatter shared by the leaderboard renderers (#117 extracted)."""
+    if v is None:
+        return "—"
+    if isinstance(v, float):
+        if v == 0.0:
+            return "0"
+        if abs(v) >= 1000:
+            return f"{v:,.0f}"
+        return f"{v:.4g}"
+    return str(v)
+
+
+def _md_row(cells: list[str]) -> str:
+    return "| " + " | ".join(cells) + " |"
+
+
+def _md_sep(n: int) -> str:
+    return "|" + "|".join(["---"] * n) + "|"
+
+
+def _fmt_cost(raw: dict, scope: str) -> str:
+    """D-117-8 cost cell: ≥$X (+N unknown) when unpriced/failed calls exist."""
+    v = raw.get(f"cost_usd_{scope}")
+    u = raw.get(f"cost_unknown_calls_{scope}")
+    if v is None:
+        return "—"
+    base = f"${v:.3f}"
+    return f"≥{base} (+{u} unknown)" if u else base
+
+
+def _render_pass_board_md(
+    ranking: list[dict],
+    raw_by_model: dict,
+    updated_at: str,
+    board: dict,
+) -> str:
+    """Render a pass board as Markdown (Task #117 D-117-4/7/8/9).
+
+    Ranking table carries a cost column (D-117-8) and omits graph_score when
+    every row's is None (the Pass-1 case). The raw-values table is built from
+    measured raw_values ONLY (P-F4) — per_kpi_borda appears nowhere but the
+    ranking table.
+    """
+    from compiler.kpi.score import GRAPH_WEIGHTS
+
+    scope = board["scope"]
+    weights = board["effective_top_weights"]
+    unranked = board.get("unranked", [])
+    graph_set = set(GRAPH_WEIGHTS)
+    proc_kpis = [k for k in (ranking[0]["per_kpi_borda"] if ranking else {})
+                 if k not in graph_set]
+    show_graph = any(r.get("graph_score") is not None for r in ranking)
+
+    if scope == "pass1":
+        lines: list[str] = ["# Model leaderboard — Pass-1 (enrich) only", ""]
+        lines.append(
+            f"_Pass-1-only weighted Borda — effective weights: "
+            f"quarantine {weights.get('quarantine_rate'):.3f} / "
+            f"recovery {weights.get('recovery_rate'):.3f} / "
+            f"latency {weights.get('latency'):.3f} (graph inactive). "
+            f"Updated {updated_at}._"
+        )
+    else:
+        lines = ["# Model leaderboard — Pass-2 (compile) — downstream outcome", ""]
+        lines.append(
+            f"_Hierarchical weighted Borda — §6 weights: "
+            f"quarantine {weights.get('quarantine_rate')} / "
+            f"graph {weights.get('graph')} / "
+            f"recovery {weights.get('recovery_rate')} / "
+            f"latency {weights.get('latency')}. Pass-2 downstream-outcome "
+            f"board: includes Pass-1 gating/failure effects — isolated "
+            f"per-pass attribution awaits #118. Updated {updated_at}._"
+        )
+    lines.append("")
+
+    def fmt2(v) -> str:
+        return "—" if v is None else f"{v:.2f}"
+
+    # --- ranking (Borda) ---
+    head = ["rank", "model", "cost"] + [f"{k} ↓" for k in proc_kpis]
+    if show_graph:
+        head.append("graph_score ↑")
+    head += ["pre-pen", "PENALTY", "score (0-100)"]
+    lines.append(_md_row(head))
+    lines.append(_md_sep(len(head)))
+    for r in ranking:
+        pkb = r.get("per_kpi_borda", {})
+        cells = [str(r.get("rank", "")), str(r.get("model", "")),
+                 _fmt_cost(r.get("raw_values", {}), scope)]
+        cells += [_fmt_val(pkb.get(k)) for k in proc_kpis]
+        if show_graph:
+            cells.append(_fmt_val(r.get("graph_score")))
+        cells.append(fmt2(r.get("composite_pre_penalty")))
+        pen = r.get("penalty") or 0.0
+        wk = r.get("weakest_kpi")
+        cells.append(f"{fmt2(r.get('penalty'))} ({wk})" if pen > 0 and wk else fmt2(r.get("penalty")))
+        cells.append(fmt2(r.get("composite")))
+        lines.append(_md_row(cells))
+    lines.append("")
+
+    # --- raw measured values (measured raw_values only — never Borda) ---
+    raw_cols: list[str] = []
+    for raw in raw_by_model.values():
+        for k in raw:
+            if k not in raw_cols:
+                raw_cols.append(k)
+    lines.append("## Raw measured values (per-pass recomputed at score time; "
+                 "graph from measurements.json)")
+    lines.append("")
+    lines.append(_md_row(["model"] + raw_cols))
+    lines.append(_md_sep(len(raw_cols) + 1))
+    for r in ranking:
+        raw = raw_by_model.get(r["model"], {})
+        lines.append(_md_row([r["model"]] + [_fmt_val(raw.get(k)) for k in raw_cols]))
+    lines.append("")
+
+    # --- unranked rows (D-117-5) ---
+    if unranked:
+        lines.append("## Unranked (incomplete evidence — excluded from Borda, D-117-5)")
+        lines.append("")
+        lines.append(_md_row(["model", "run_dir", "measurement_source", "missing_kpis"]))
+        lines.append(_md_sep(4))
+        for u in unranked:
+            lines.append(_md_row([
+                str(u.get("model", "")), str(u.get("run_dir", "")),
+                str(u.get("measurement_source", "")),
+                ", ".join(u.get("missing_kpis") or ["—"]),
+            ]))
+        lines.append("")
+
+    # --- footer ---
+    if scope == "pass1":
+        lines.append(
+            "> Composite is comparable ONLY within this candidate set "
+            "(average-rank Borda — adding/removing a model shifts ranks). "
+            "Cost = model-pool pricing × tokens (cohort-comparable, not an invoice)."
+        )
+    else:
+        lines.append(
+            "> Pass-2 downstream-outcome board — includes Pass-1 gating/failure "
+            "effects; isolated per-pass attribution awaits #118. Composite & "
+            "graph_score are comparable ONLY within this candidate set "
+            "(average-rank Borda). graph_score = weighted Borda of the 4 graph "
+            "KPIs (connectivity 35 / link 30 / supports 20 / reuse 15)."
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_leaderboard_md(
     ranking: list[dict],
     scored_by_model: dict,
     diagnostics_by_model: dict,
     top_weights: dict,
     updated_at: str,
+    *,
+    board: dict | None = None,
 ) -> str:
     """Render the leaderboard as a Markdown document (written to leaderboard.md).
 
@@ -36,7 +187,16 @@ def _render_leaderboard_md(
     composite). Detail table = the RAW measured values per model (all scored
     KPIs + diagnostics/watched) so the actual numbers are readable, not just
     their Borda ranks.
+
+    board=None (default) renders the combined board exactly as before #117.
+    board={"scope": "pass1"|"pass2", "unranked": [...],
+    "effective_top_weights": {...}} renders a pass board (D-117-7) — raw table
+    from diagnostics_by_model (= measured raw_values; scored_by_model unused).
     """
+    if board is not None:
+        return _render_pass_board_md(
+            ranking, diagnostics_by_model, updated_at, board)
+
     from compiler.kpi.score import GRAPH_WEIGHTS
 
     graph_set = set(GRAPH_WEIGHTS)
@@ -44,21 +204,13 @@ def _render_leaderboard_md(
                  if k not in graph_set]
 
     def fmt(v) -> str:
-        if v is None:
-            return "—"
-        if isinstance(v, float):
-            if v == 0.0:
-                return "0"
-            if abs(v) >= 1000:
-                return f"{v:,.0f}"
-            return f"{v:.4g}"
-        return str(v)
+        return _fmt_val(v)
 
     def row(cells: list[str]) -> str:
-        return "| " + " | ".join(cells) + " |"
+        return _md_row(cells)
 
     def sep(n: int) -> str:
-        return "|" + "|".join(["---"] * n) + "|"
+        return _md_sep(n)
 
     lines: list[str] = ["# Model leaderboard", ""]
     lines.append(
@@ -124,7 +276,8 @@ def _render_leaderboard_md(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _render_score_table(ranking: list[dict], diagnostics_by_model: dict) -> str:
+def _render_score_table(ranking: list[dict], diagnostics_by_model: dict,
+                        *, note: str | None = None) -> str:
     """Render the leaderboard table for the score subcommand.
 
     Main table: rank | model | <processing KPIs (Borda)> | graph_score |
@@ -132,7 +285,8 @@ def _render_score_table(ranking: list[dict], diagnostics_by_model: dict) -> str:
     combined graph_score; their individual Borda values + the watched/diagnostic
     KPIs follow in a detail section for inspection.  `ranking` rows carry model /
     rank / composite / composite_pre_penalty / penalty / weakest_kpi /
-    graph_score / per_kpi_borda.
+    graph_score / per_kpi_borda.  `note` overrides the trailing NOTE line
+    (#117 pass boards); None keeps the canonical text.
     """
     from compiler.kpi.score import GRAPH_WEIGHTS
 
@@ -219,6 +373,7 @@ def _render_score_table(ranking: list[dict], diagnostics_by_model: dict) -> str:
 
     lines.append("")
     lines.append(
+        note if note is not None else
         "NOTE: composite & graph_score are comparable ONLY within this candidate "
         "set (average-rank Borda — adding/removing a model shifts ranks). "
         "graph_score = weighted Borda of the 4 graph KPIs (35/30/20/15)."

@@ -83,6 +83,42 @@ def _load(lb: Path) -> dict:
     return json.loads(lb.read_text(encoding="utf-8"))
 
 
+# Golden-fixture input (Task #117): single source for the pre-change golden
+# generator and the byte-identical regression test (P-F6).
+_GOLDEN_INPUT = {
+    "ranking": [
+        {"model": "prov/a@unversioned", "rank": 1, "composite": 80.0,
+         "composite_pre_penalty": 82.0, "penalty": 2.0, "weakest_kpi": "latency",
+         "graph_score": 1.0,
+         "per_kpi_borda": {"quarantine_rate": 1.0, "recovery_rate": 1.0,
+                           "latency": 0.5, "entity_reuse": 1.0,
+                           "graph_connectivity": 1.0, "link_density": 1.0,
+                           "supports_density": 1.0}},
+        {"model": "prov/b@unversioned", "rank": 2, "composite": 40.0,
+         "composite_pre_penalty": 50.0, "penalty": 10.0, "weakest_kpi": "graph",
+         "graph_score": 0.0,
+         "per_kpi_borda": {"quarantine_rate": 0.0, "recovery_rate": 0.0,
+                           "latency": 1.0, "entity_reuse": 0.0,
+                           "graph_connectivity": 0.0, "link_density": 0.0,
+                           "supports_density": 0.0}},
+    ],
+    "scored_by_model": {
+        "prov/a@unversioned": {"quarantine_rate": 0.0, "recovery_rate": 0.0,
+                               "latency": 100.0, "entity_reuse": 0.1,
+                               "graph_connectivity": 0.2, "link_density": 2.0,
+                               "supports_density": 5.0},
+        "prov/b@unversioned": {"quarantine_rate": 5.0, "recovery_rate": 3.0,
+                               "latency": 900.0, "entity_reuse": 0.3,
+                               "graph_connectivity": 0.1, "link_density": 1.0,
+                               "supports_density": 3.0}},
+    "diagnostics_by_model": {"prov/a@unversioned": {"signal_noise_ratio": 0.8},
+                             "prov/b@unversioned": {"signal_noise_ratio": 0.7}},
+    "top_weights": {"quarantine_rate": 0.4, "graph": 0.4,
+                    "recovery_rate": 0.1, "latency": 0.1},
+    "updated_at": "2026-07-22T00:00:00",
+}
+
+
 # ---------------------------------------------------------------------------
 # Fresh leaderboard
 # ---------------------------------------------------------------------------
@@ -447,3 +483,169 @@ class TestReleaseVersionKeying:
         lb_data = _load(lb)
         assert len(lb_data["models"]) == 1
         assert list(lb_data["models"].values())[0] == "run2"
+
+
+# ---------------------------------------------------------------------------
+# Task #117 — board-aware rendering (pass boards + byte-identical main board)
+# ---------------------------------------------------------------------------
+
+class TestPassBoardRendering:
+    def _board_rows(self):
+        return [
+            {"model": "prov/a@unversioned", "rank": 1, "composite": 80.0,
+             "composite_pre_penalty": 80.0, "penalty": 0.0, "weakest_kpi": "latency",
+             "graph_score": None,
+             "per_kpi_borda": {"quarantine_rate": 1.0, "recovery_rate": 1.0,
+                               "latency": 0.5},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"quarantine_rate_pass1": 0.0, "recovery_rate_pass1": 0.0,
+                            "latency_pass1": 100.0, "retry_load_pass1": 0.0,
+                            "cost_usd_pass1": 0.05, "cost_unknown_calls_pass1": 0}},
+            {"model": "prov/b@unversioned", "rank": 2, "composite": 40.0,
+             "composite_pre_penalty": 50.0, "penalty": 10.0, "weakest_kpi": "latency",
+             "graph_score": None,
+             "per_kpi_borda": {"quarantine_rate": 0.0, "recovery_rate": 0.0,
+                               "latency": 1.0},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"quarantine_rate_pass1": 1.0, "recovery_rate_pass1": 2.0,
+                            "latency_pass1": 900.0, "retry_load_pass1": 0.5,
+                            "cost_usd_pass1": 0.30, "cost_unknown_calls_pass1": 1}},
+        ]
+
+    def _render(self, scope="pass1", unranked=None):
+        ranking = self._board_rows()
+        return cli._render_leaderboard_md(
+            ranking,
+            {},                                     # pass boards: raw table from
+            {r["model"]: r["raw_values"] for r in ranking},   # raw_values only
+            {"quarantine_rate": 2 / 3, "recovery_rate": 1 / 6, "latency": 1 / 6,
+             "graph": 0.0},
+            "2026-07-22T00:00:00",
+            board={"scope": scope, "unranked": unranked or [],
+                   "effective_top_weights": {"quarantine_rate": 2 / 3,
+                                             "recovery_rate": 1 / 6,
+                                             "latency": 1 / 6, "graph": 0.0}},
+        )
+
+    def test_pass1_render_suppresses_graph_and_titles_board(self):
+        md = self._render()
+        assert md.startswith("# Model leaderboard — Pass-1 (enrich)")
+        assert "graph_score" not in md
+        assert "graph KPIs" not in md
+        assert "≥" in md and "unknown" in md          # cost honesty for row b
+        assert "| rank | model | cost |" in md
+
+    def test_competition_ranks_rendered_in_markdown(self):
+        """D-117-9 display half (R7-F3): tied leaders share rank 1; next row 3."""
+        rows = [
+            {"model": "prov/a@unversioned", "rank": 1, "composite": 66.7,
+             "composite_pre_penalty": 66.7, "penalty": 0.0, "weakest_kpi": "latency",
+             "graph_score": None,
+             "per_kpi_borda": {"quarantine_rate": 0.5, "recovery_rate": 0.5,
+                               "latency": 1.0},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"latency_pass1": 100.0, "cost_usd_pass1": 0.04,
+                            "cost_unknown_calls_pass1": 0}},
+            {"model": "prov/b@unversioned", "rank": 1, "composite": 66.7,
+             "composite_pre_penalty": 66.7, "penalty": 0.0, "weakest_kpi": "latency",
+             "graph_score": None,
+             "per_kpi_borda": {"quarantine_rate": 0.5, "recovery_rate": 0.5,
+                               "latency": 1.0},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"latency_pass1": 100.0, "cost_usd_pass1": 0.04,
+                            "cost_unknown_calls_pass1": 0}},
+            {"model": "prov/c@unversioned", "rank": 3, "composite": 40.0,
+             "composite_pre_penalty": 50.0, "penalty": 10.0, "weakest_kpi": "latency",
+             "graph_score": None,
+             "per_kpi_borda": {"quarantine_rate": 0.5, "recovery_rate": 0.5,
+                               "latency": 0.0},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"latency_pass1": 900.0, "cost_usd_pass1": 0.36,
+                            "cost_unknown_calls_pass1": 0}},
+        ]
+        md = cli._render_leaderboard_md(
+            rows, {},
+            {r["model"]: r["raw_values"] for r in rows},
+            {"quarantine_rate": 2 / 3, "recovery_rate": 1 / 6, "latency": 1 / 6,
+             "graph": 0.0},
+            "2026-07-22T00:00:00",
+            board={"scope": "pass1", "unranked": [],
+                   "effective_top_weights": {"quarantine_rate": 2 / 3,
+                                             "recovery_rate": 1 / 6,
+                                             "latency": 1 / 6, "graph": 0.0}},
+        )
+        rank_cells = [ln.split("|")[1].strip() for ln in md.splitlines()
+                      if ln.startswith("| ") and "prov/" in ln
+                      and ln.split("|")[1].strip().isdigit()]
+        assert rank_cells == ["1", "1", "3"]
+
+    def test_raw_table_shows_measured_values_not_borda(self):
+        """P-F4 guard: the raw section must contain measured values
+        (latency 100 ms, cost 0.05), never the row's Borda scores."""
+        md = self._render()
+        raw_section = md.split("## Raw measured values", 1)[1]
+        header_line = next(ln for ln in raw_section.splitlines()
+                           if ln.startswith("| model |"))
+        # raw columns are the suffixed measured KPIs, not canonical Borda axes
+        assert "latency_pass1" in header_line
+        assert "cost_usd_pass1" in header_line
+        assert "| quarantine_rate |" not in header_line   # no bare Borda axis column
+        # measured values present in the body
+        assert "100" in raw_section                     # measured latency
+        assert "0.05" in raw_section                    # measured cost (model a)
+
+    def test_unranked_section_rendered(self):
+        md = self._render(unranked=[{
+            "model": "prov/c@unversioned", "run_dir": "c-T1",
+            "measurement_source": "measurements_fallback",
+            "missing_kpis": ["recovery_rate"], "raw_values": {}}])
+        assert "## Unranked" in md
+        assert "prov/c@unversioned" in md
+        assert "measurements_fallback" in md
+
+    def test_pass2_render_keeps_graph_and_states_caveat(self):
+        rows = [
+            {"model": "prov/a@unversioned", "rank": 1, "composite": 80.0,
+             "composite_pre_penalty": 80.0, "penalty": 0.0, "weakest_kpi": "latency",
+             "graph_score": 0.85,
+             "per_kpi_borda": {"quarantine_rate": 1.0, "recovery_rate": 1.0,
+                               "latency": 0.5, "entity_reuse": 1.0,
+                               "graph_connectivity": 1.0, "link_density": 1.0,
+                               "supports_density": 1.0},
+             "measurement_source": "run_state_recomputed",
+             "raw_values": {"quarantine_rate_pass2": 0.0, "recovery_rate_pass2": 0.0,
+                            "latency_pass2": 300.0, "retry_load_pass2": 0.0,
+                            "cost_usd_pass2": 0.54, "cost_unknown_calls_pass2": 0,
+                            "entity_reuse": 0.1, "graph_connectivity": 0.2,
+                            "link_density": 2.0, "supports_density": 5.0,
+                            "pass2_eligibility_rate": 0.75,
+                            "pass2_measurement_coverage": 1.0,
+                            "p1_noise": 1, "p1_failed": 0}},
+        ]
+        md = cli._render_leaderboard_md(
+            rows,
+            {},                                     # pass boards: no scored raw cols
+            {r["model"]: r["raw_values"] for r in rows},
+            {"quarantine_rate": 0.4, "graph": 0.4, "recovery_rate": 0.1,
+             "latency": 0.1},
+            "2026-07-22T00:00:00",
+            board={"scope": "pass2", "unranked": [],
+                   "effective_top_weights": {"quarantine_rate": 0.4, "graph": 0.4,
+                                             "recovery_rate": 0.1, "latency": 0.1}},
+        )
+        assert "Pass-2" in md and "downstream" in md
+        assert "#118" in md
+        assert "graph_score" in md                   # graph column retained
+        assert "0.85" in md                          # populated graph_score shown
+        raw_section = md.split("## Raw measured values", 1)[1]
+        assert "pass2_eligibility_rate" in raw_section
+        assert "p1_failed" in raw_section
+
+    def test_main_board_render_byte_identical_golden(self):
+        """Full-byte guard (P-F6): board=None output must equal the golden
+        fixture generated from the pre-#117 renderer (characterization test —
+        green before AND after the renderer change)."""
+        golden = (Path(__file__).parent / "fixtures"
+                  / "leaderboard_main_golden.md").read_text(encoding="utf-8")
+        md = cli._render_leaderboard_md(**_GOLDEN_INPUT)
+        assert md == golden
