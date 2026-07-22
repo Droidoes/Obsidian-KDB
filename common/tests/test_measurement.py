@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from common.measurement import PassCallMeasurement, RunMeasurementHeader, load_run_measurements
+from common.measurement import (
+    PassCallMeasurement,
+    RunMeasurementHeader,
+    load_run_measurements,
+    load_run_measurements_with_stats,
+)
 
 
 def test_passcallmeasurement_fields():
@@ -571,3 +576,131 @@ def test_load_run_measurements_tolerates_unknown_header_keys(tmp_path):
     header, calls = load_run_measurements(tmp_path)
     assert header.run_id == "r1"
     assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Task #117 — load_run_measurements_with_stats (strict/tolerant paths)
+# ---------------------------------------------------------------------------
+
+def _write_sidecar(d, source_id, outcome="enriched"):
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{source_id.replace('/', '_')}.json").write_text(json.dumps({
+        "source_id": source_id, "outcome": outcome,
+        "request": {"provider": "p", "model": "m"},
+        "raw_response": {"final_status": "clean", "call_count": 1},
+    }))
+
+
+def _write_header(tmp_path, **over):
+    h = {"run_id": "r", "corpus_fingerprint": "fp", "pass1_prompt_version": "1",
+         "pass2_prompt_version": "", "scanned": 3, "to_compile": 3, "signal": 2,
+         "noise": 1, "p1_attempted": 3, "p2_attempted": 2}
+    h.update(over)
+    (tmp_path / "measurement_header.json").write_text(json.dumps(h))
+
+
+def test_stats_count_identified_skipped_unique(tmp_path):
+    _write_header(tmp_path)
+    _write_sidecar(tmp_path / "pass1", "a.md")
+    _write_sidecar(tmp_path / "pass1", "b.md", outcome="enrich_skipped")
+    _write_sidecar(tmp_path / "pass1", "c.md")
+    header, calls, stats = load_run_measurements_with_stats(tmp_path)
+    assert stats["pass1_identified"] == 3
+    assert stats["pass1_skipped"] == 1
+    assert stats["pass1_unique_source_ids"] == 3
+    assert len([c for c in calls if c.pass_ == "pass1"]) == 2
+
+
+def test_stats_count_malformed_and_missing_dirs(tmp_path):
+    _write_header(tmp_path)
+    (tmp_path / "pass1").mkdir()
+    (tmp_path / "pass1" / "broken.json").write_text("{not json")
+    _h, _c, stats = load_run_measurements_with_stats(tmp_path)
+    assert stats["pass1_malformed"] == 1
+    assert stats["pass1_dir_exists"] is True
+    assert stats["pass2_dir_exists"] is False
+    assert stats["pass2_records"] == 0
+
+
+def test_stats_count_structurally_invalid_record_as_malformed(tmp_path):
+    """Valid JSON, invalid record shape → malformed in the tolerant loader,
+    not a crash that aborts all three boards."""
+    _write_header(tmp_path)
+    d = tmp_path / "pass1"
+    d.mkdir()
+    (d / "bad.json").write_text(json.dumps({
+        "source_id": "a.md", "raw_response": "not-a-dict"}))  # from_pass1 raises
+    _h, calls, stats = load_run_measurements_with_stats(tmp_path)
+    assert stats["pass1_malformed"] == 1
+    assert calls == []
+
+
+def test_production_loader_stays_strict_on_malformed(tmp_path):
+    """Regression guard: the production path (emit_run_kpis) must keep
+    failing safely — malformed files raise, never silently skipped."""
+    _write_header(tmp_path)
+    (tmp_path / "pass1").mkdir()
+    (tmp_path / "pass1" / "broken.json").write_text("{not json")
+    with pytest.raises(json.JSONDecodeError):
+        load_run_measurements(tmp_path)
+
+
+def test_production_loader_stays_strict_on_invalid_record(tmp_path):
+    _write_header(tmp_path)
+    d = tmp_path / "pass1"
+    d.mkdir()
+    (d / "bad.json").write_text(json.dumps({
+        "source_id": "a.md", "raw_response": "not-a-dict"}))
+    with pytest.raises((AttributeError, TypeError, KeyError, ValueError)):
+        load_run_measurements(tmp_path)
+
+
+def test_load_run_measurements_wrapper_unchanged_shape(tmp_path):
+    _write_header(tmp_path)
+    header, calls = load_run_measurements(tmp_path)   # 2-tuple, as today
+    assert header.run_id == "r" and calls == []
+
+
+def test_stats_loader_rejects_wrong_typed_header_field(tmp_path):
+    """R6-F1: a string where an int belongs → TypeError at load time, so the
+    board builder marks ONLY this row unranked."""
+    _write_header(tmp_path, p1_attempted="36")
+    with pytest.raises(TypeError):
+        load_run_measurements_with_stats(tmp_path)
+
+
+def test_stats_loader_counts_wrong_typed_sidecar_field(tmp_path):
+    """R6-F1: string token count → counted malformed, not a mid-board crash."""
+    _write_header(tmp_path)
+    d = tmp_path / "pass1"
+    d.mkdir()
+    (d / "a.json").write_text(json.dumps({
+        "source_id": "a.md", "outcome": "enriched",
+        "request": {"provider": "p", "model": "m"},
+        "raw_response": {"final_status": "clean", "call_count": 1,
+                         "total_input_tokens": "100"}}))   # string, not int
+    _h, calls, stats = load_run_measurements_with_stats(tmp_path)
+    assert stats["pass1_malformed"] == 1
+    assert calls == []
+
+
+def test_strict_loader_raises_on_wrong_typed_header(tmp_path):
+    """R7-F2: the production path fails safely on wrong-typed header fields —
+    same exception class emit would hit today, never a silent pass-through."""
+    _write_header(tmp_path, scanned="4")
+    with pytest.raises(TypeError):
+        load_run_measurements(tmp_path)
+
+
+def test_strict_loader_raises_on_wrong_typed_measurement(tmp_path):
+    """R7-F2: wrong-typed record fields raise on the strict path too."""
+    _write_header(tmp_path)
+    d = tmp_path / "pass1"
+    d.mkdir()
+    (d / "a.json").write_text(json.dumps({
+        "source_id": "a.md", "outcome": "enriched",
+        "request": {"provider": "p", "model": "m"},
+        "raw_response": {"final_status": "clean", "call_count": 1,
+                         "total_latency_ms": "fast"}}))
+    with pytest.raises(TypeError):
+        load_run_measurements(tmp_path)

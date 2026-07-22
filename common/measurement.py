@@ -191,28 +191,65 @@ class RunMeasurementHeader:
 # Run-directory loader (B1 §3)
 # ---------------------------------------------------------------------------
 
-def load_run_measurements(
-    run_dir: Path,
-) -> tuple["RunMeasurementHeader", list["PassCallMeasurement"]]:
-    """Load all measurement projections for one run.
+_HEADER_INT_FIELDS = ("scanned", "to_compile", "signal", "noise",
+                      "p1_attempted", "p2_attempted")
 
-    Actual on-disk layout (verified from orchestrator + compiler source):
+
+def _validate_header_types(header: "RunMeasurementHeader") -> None:
+    """Type guard (#117 R6-F1/R7-F2, BOTH loader paths): header numeric fields
+    must be real ints (bool excluded) — else KPI computation fails mid-board
+    outside every guard. Strict path: raises (emit fails safely, as today).
+    Tolerant path: raises so the board builder marks the row unranked."""
+    for f in _HEADER_INT_FIELDS:
+        v = getattr(header, f)
+        if not isinstance(v, int) or isinstance(v, bool):
+            raise TypeError(
+                f"header field {f!r} must be int, got {type(v).__name__}")
+
+
+_MEASUREMENT_INT_FIELDS = ("attempts", "call_count", "total_input_tokens",
+                           "total_output_tokens", "total_latency_ms")
+
+
+def _valid_measurement(m: "PassCallMeasurement") -> bool:
+    """Type guard (#117 R6-F1/R7-F2, BOTH loader paths): KPI-relevant numeric
+    fields must be real ints; cost_usd None or numeric. Strict path raises
+    TypeError on False; tolerant path counts the record malformed."""
+    for f in _MEASUREMENT_INT_FIELDS:
+        v = getattr(m, f)
+        if not isinstance(v, int) or isinstance(v, bool):
+            return False
+    return m.cost_usd is None or isinstance(m.cost_usd, (int, float))
+
+
+def _load_run_measurements(
+    run_dir: Path,
+    *,
+    tolerate_malformed: bool,
+    collect_stats: bool,
+) -> tuple["RunMeasurementHeader", list["PassCallMeasurement"], dict]:
+    """Shared loader core.
+
+    Layout (verified from orchestrator + compiler source):
       <run_dir>/measurement_header.json        — RunMeasurementHeader JSON
       <run_dir>/pass1/*.json                   — Pass-1 sidecars
       <run_dir>/pass2/*.json                   — Pass-2 RespStatsRecord JSONs
 
-    Pass-1 sidecar identification: a file in <run_dir>/pass1/ is a sidecar iff
-    it contains both "source_id" and "raw_response" keys.  This positively
-    identifies sidecars and naturally excludes any future administrative files
-    that might land in pass1/.
+    Pass-1 sidecar identification: a file is a sidecar iff it contains both
+    "source_id" and "raw_response" keys. Skip predicate: outcome ==
+    "enrich_skipped" (empty sources; no LLM call was made). Quarantined /
+    failed sidecars ARE included — the benchmark's primary failure-mode
+    signal.
 
-    Skip predicate: sidecars with outcome == "enrich_skipped" are excluded.
-    These represent empty sources where no LLM call was made (call_count=0)
-    and there is nothing to measure.  Quarantined / failed sidecars ARE
-    included — they are the benchmark's primary failure-mode signal.
-
-    Returns (header, measurements) where measurements is pass1_list +
-    pass2_list (order is deterministic within each group via sorted glob).
+    tolerate_malformed=False (production): any malformed/unloadable file
+    raises, exactly as the pre-#117 loader did — emit_run_kpis fails safely
+    rather than emitting KPIs from partial evidence.
+    tolerate_malformed=True (score-time stats loader): bad files are counted
+    in stats["*_malformed"] and skipped, so the #117 completeness contract
+    can mark the row unranked instead of aborting all three boards.
+    "Malformed" covers unparseable JSON AND structurally valid records that
+    fail projection (KeyError/TypeError/AttributeError/ValueError) or carry
+    wrong-typed numeric fields (R6-F1).
     """
     header_path = run_dir / "measurement_header.json"
     header_data = json.loads(header_path.read_text(encoding="utf-8"))
@@ -223,27 +260,106 @@ def load_run_measurements(
     header = RunMeasurementHeader(
         **{k: v for k, v in header_data.items() if k in known})
     run_id = header.run_id
+    # Type guard on BOTH paths (R7-F2): strict raises (same exception class
+    # emit would hit today), tolerant lets the board builder mark the row.
+    _validate_header_types(header)
 
-    # Pass-1: sidecars under pass1/ sub-directory.
+    stats = {
+        "pass1_dir_exists": (run_dir / "pass1").is_dir(),
+        "pass2_dir_exists": (run_dir / "pass2").is_dir(),
+        "pass1_identified": 0, "pass1_skipped": 0,
+        "pass1_unique_source_ids": 0, "pass1_malformed": 0,
+        "pass2_records": 0, "pass2_malformed": 0,
+    }
+    _PROJECTION_ERRORS = (json.JSONDecodeError, UnicodeDecodeError,
+                          KeyError, TypeError, AttributeError, ValueError)
+
     pass1: list[PassCallMeasurement] = []
+    source_ids: set[str] = set()
     pass1_dir = run_dir / "pass1"
     if pass1_dir.is_dir():
         for p in sorted(pass1_dir.glob("*.json")):
-            data = json.loads(p.read_text(encoding="utf-8"))
-            # Positive sidecar identification: must have source_id + raw_response.
-            if "source_id" not in data or "raw_response" not in data:
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                identified = "source_id" in data and "raw_response" in data
+                if identified:
+                    stats["pass1_identified"] += 1
+                    source_ids.add(data["source_id"])
+            except _PROJECTION_ERRORS:
+                if not tolerate_malformed:
+                    raise
+                stats["pass1_malformed"] += 1
                 continue
-            # Skip empty-source records — no LLM call was made.
+            if not identified:
+                continue
             if data.get("outcome") == "enrich_skipped":
+                stats["pass1_skipped"] += 1
                 continue
-            pass1.append(PassCallMeasurement.from_pass1(data, run_id=run_id))
+            try:
+                m = PassCallMeasurement.from_pass1(data, run_id=run_id)
+            except _PROJECTION_ERRORS:
+                if not tolerate_malformed:
+                    raise
+                stats["pass1_malformed"] += 1
+                continue
+            if not _valid_measurement(m):
+                if not tolerate_malformed:
+                    raise TypeError(
+                        f"pass1 measurement for {m.source_id!r} has "
+                        "wrong-typed numeric fields")
+                stats["pass1_malformed"] += 1
+                continue
+            pass1.append(m)
+    stats["pass1_unique_source_ids"] = len(source_ids)
 
-    # Pass-2: RespStatsRecord JSONs under pass2/ sub-directory.
     pass2: list[PassCallMeasurement] = []
     pass2_dir = run_dir / "pass2"
     if pass2_dir.is_dir():
         for p in sorted(pass2_dir.glob("*.json")):
-            data = json.loads(p.read_text(encoding="utf-8"))
-            pass2.append(PassCallMeasurement.from_pass2(data))
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                m = PassCallMeasurement.from_pass2(data)
+            except _PROJECTION_ERRORS:
+                if not tolerate_malformed:
+                    raise
+                stats["pass2_malformed"] += 1
+                continue
+            if not _valid_measurement(m):
+                if not tolerate_malformed:
+                    raise TypeError(
+                        f"pass2 measurement for {m.source_id!r} has "
+                        "wrong-typed numeric fields")
+                stats["pass2_malformed"] += 1
+                continue
+            stats["pass2_records"] += 1
+            pass2.append(m)
 
-    return header, pass1 + pass2
+    if not collect_stats:
+        stats = {}
+    return header, pass1 + pass2, stats
+
+
+def load_run_measurements(
+    run_dir: Path,
+) -> tuple["RunMeasurementHeader", list["PassCallMeasurement"]]:
+    """Load all measurement projections for one run — STRICT (production
+    path): malformed files raise, as before #117.
+
+    Returns (header, measurements) where measurements is pass1_list +
+    pass2_list (order is deterministic within each group via sorted glob).
+    """
+    header, measurements, _ = _load_run_measurements(
+        run_dir, tolerate_malformed=False, collect_stats=False)
+    return header, measurements
+
+
+def load_run_measurements_with_stats(
+    run_dir: Path,
+) -> tuple["RunMeasurementHeader", list["PassCallMeasurement"], dict]:
+    """Score-time variant (Task #117): tolerant of malformed files (counted
+    in stats) and returns per-pass load statistics for the D-117-5
+    completeness contract. Stats keys: pass1_dir_exists, pass2_dir_exists,
+    pass1_identified, pass1_skipped, pass1_unique_source_ids,
+    pass1_malformed, pass2_records, pass2_malformed."""
+    return _load_run_measurements(
+        run_dir, tolerate_malformed=True, collect_stats=True)
