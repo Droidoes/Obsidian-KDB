@@ -649,3 +649,124 @@ class TestPassBoardRendering:
                   / "leaderboard_main_golden.md").read_text(encoding="utf-8")
         md = cli._render_leaderboard_md(**_GOLDEN_INPUT)
         assert md == golden
+
+
+# ---------------------------------------------------------------------------
+# Task #117 — three-board score command (integration)
+# ---------------------------------------------------------------------------
+
+class TestThreeBoards:
+    def test_pass_files_written_next_to_main(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        for p in ("pass1", "pass2"):
+            assert (tmp_path / f"leaderboard-{p}.json").exists()
+            assert (tmp_path / f"leaderboard-{p}.md").exists()
+        # fixture has no run_state → the row is unranked on both pass boards
+        b1 = _load(tmp_path / "leaderboard-pass1.json")
+        assert b1["board_scope"] == "pass1"
+        assert b1["ranking"] == [] and len(b1["unranked"]) == 1
+        assert b1["unranked"][0]["measurement_source"] == "measurements_fallback"
+
+    def test_all_three_payloads_share_updated_at(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                  "--leaderboard", str(lb)])
+        stamps = {_load(tmp_path / n)["updated_at"] for n in
+                  ("leaderboard.json", "leaderboard-pass1.json",
+                   "leaderboard-pass2.json")}
+        assert len(stamps) == 1
+
+    def test_custom_leaderboard_stem_derives_pass_filenames(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "deep" / "my-board.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                  "--leaderboard", str(lb)])
+        assert (tmp_path / "deep" / "my-board-pass1.json").exists()
+
+    def test_pre_write_failure_leaves_prior_artifacts_untouched(self, tmp_path, monkeypatch):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                  "--leaderboard", str(lb)])
+        before = {p.name: p.read_bytes() for p in tmp_path.glob("leaderboard*")}
+        def boom(*a, **k):
+            raise RuntimeError("simulated build failure")
+        # cli imports build_pass_board by name → patch the cli-bound reference
+        monkeypatch.setattr(cli, "build_pass_board", boom)
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc != 0
+        after = {p.name: p.read_bytes() for p in tmp_path.glob("leaderboard*")}
+        assert before == after
+
+    def test_mid_commit_failure_then_rerun_heals(self, tmp_path, monkeypatch):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        calls = {"n": 0}
+        real = cli.atomic_write_text
+        def flaky(path, text, **kw):
+            calls["n"] += 1
+            if calls["n"] == 2:          # fail the 2nd write (main .md)
+                raise OSError("simulated mid-commit failure")
+            return real(path, text, **kw)
+        monkeypatch.setattr(cli, "atomic_write_text", flaky)
+        with pytest.raises(OSError):
+            cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                      "--leaderboard", str(lb)])
+        monkeypatch.setattr(cli, "atomic_write_text", real)
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        stamps = {_load(tmp_path / n)["updated_at"] for n in
+                  ("leaderboard.json", "leaderboard-pass1.json",
+                   "leaderboard-pass2.json")}
+        assert len(stamps) == 1          # healed to one generation
+
+    def test_non_serializable_payload_aborts_before_any_write(self, tmp_path, monkeypatch):
+        """P-F3: serialization happens BEFORE the first write — a bad value
+        in a pass-board payload leaves all prior artifacts byte-identical."""
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                  "--leaderboard", str(lb)])
+        before = {p.name: p.read_bytes() for p in tmp_path.glob("leaderboard*")}
+        real = cli.build_pass_board
+        def poisoned(*a, **k):
+            b = real(*a, **k)
+            b["penalty_params"] = {"threshold": {0.5}, "cap": 0.10}  # set: not JSON-serializable
+            return b
+        monkeypatch.setattr(cli, "build_pass_board", poisoned)
+        with pytest.raises(TypeError):
+            cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                      "--leaderboard", str(lb)])
+        after = {p.name: p.read_bytes() for p in tmp_path.glob("leaderboard*")}
+        assert before == after
+
+    def test_future_shaped_measurements_add_only_raw_columns(self, tmp_path):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        # inject #117 diagnostics into the fixture's processing.diagnostic
+        mpath = runs_root / "a-T1" / "measurements.json"
+        m = json.loads(mpath.read_text())
+        m["processing"]["diagnostic"].update({
+            "recovery_rate_pass1": 0.0, "cost_usd_pass1": 0.05})
+        mpath.write_text(json.dumps(m))
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        md = (tmp_path / "leaderboard.md").read_text()
+        data = _load(lb)
+        assert "cost_usd_pass1" in md                     # raw table passthrough
+        assert "cost_usd_pass1" not in data["ranking"][0]["per_kpi_borda"]

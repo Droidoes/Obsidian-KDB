@@ -20,6 +20,8 @@ import sys
 from pathlib import Path
 
 from tools.benchmark.paths import RUNS_DIR, SCORES_DIR
+from tools.benchmark.pass_boards import GRAPH_KPIS, build_pass_board
+from common.atomic_io import atomic_write_text
 from common.run_context import now_iso
 
 
@@ -391,6 +393,13 @@ def _read_measurements(mpath: Path) -> dict | None:
         return None
 
 
+def _pass_paths(leaderboard_path: Path, pass_: str) -> tuple[Path, Path]:
+    """Pass-board artifact paths derived from the --leaderboard stem (D-117-10)."""
+    stem = leaderboard_path.with_suffix("")
+    return (stem.parent / f"{stem.name}-{pass_}.json",
+            stem.parent / f"{stem.name}-{pass_}.md")
+
+
 def _scored_and_diag(meas: dict) -> tuple[dict, dict]:
     """Split a measurements payload into (merged scored KPIs, merged diag+watched).
 
@@ -587,6 +596,34 @@ def _score_command(args: argparse.Namespace) -> int:
     for i, row in enumerate(ranking, start=1):
         row["rank"] = i
 
+    # --- Pass boards (#117): recompute per-pass KPIs from run_state/ ---
+    graph_scored_by_model = {
+        m["model"]: {k: m["scored"].get(k) for k in GRAPH_KPIS} for m in models
+    }
+    # measurements.json headers (already parsed above) feed header-derived
+    # fallback evidence for rows without a usable run_state/ (R6-F2).
+    header_by_model = {}
+    for key, run_dir in models_to_rundir.items():
+        data = _read_measurements(runs_root / run_dir / "measurements.json") or {}
+        header_by_model[key] = data.get("header", {}) or {}
+    try:
+        pass_boards = {
+            p: build_pass_board(
+                models_to_rundir, runs_root, p,
+                graph_scored_by_model=graph_scored_by_model,
+                fallback_diag_by_model=diagnostics_by_model,
+                header_by_model=header_by_model)
+            for p in ("pass1", "pass2")
+        }
+    except Exception as exc:   # pre-write failure: every artifact untouched
+        print(f"error: pass-board build failed: {exc}", file=sys.stderr)
+        return 1
+
+    # --- One shared generation stamp across all three boards (D-117-10) ---
+    stamp = now_iso()
+    for b in pass_boards.values():
+        b["updated_at"] = stamp
+
     # --- Persist the leaderboard (pointers + ranking only; no KPI values) ---
     payload: dict = {
         "models": models_to_rundir,
@@ -594,31 +631,65 @@ def _score_command(args: argparse.Namespace) -> int:
         "top_weights": result["top_weights"],
         "graph_weights": result["graph_weights"],
         "penalty_params": result["penalty_params"],
-        "updated_at": now_iso(),
+        "updated_at": stamp,
     }
-    leaderboard_path.parent.mkdir(parents=True, exist_ok=True)
-    leaderboard_path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
 
-    # --- Rendered Markdown leaderboard alongside the JSON ---
+    # --- Render everything before writing anything (D-117-10) ---
     scored_by_model = {m["model"]: m["scored"] for m in models}
-    md_path = leaderboard_path.with_suffix(".md")
-    md_path.write_text(
-        _render_leaderboard_md(
-            ranking, scored_by_model, diagnostics_by_model,
-            result["top_weights"], payload["updated_at"],
-        ),
-        encoding="utf-8",
-    )
+    main_md = _render_leaderboard_md(
+        ranking, scored_by_model, diagnostics_by_model,
+        result["top_weights"], stamp)
+    pass_md = {
+        p: _render_leaderboard_md(
+            b["ranking"],
+            {},                                  # pass boards: raw table from
+            {r["model"]: r["raw_values"] for r in b["ranking"]},   # raw_values only
+            b["effective_top_weights"], stamp,
+            board={"scope": p, "unranked": b["unranked"],
+                   "effective_top_weights": b["effective_top_weights"]})
+        for p, b in pass_boards.items()
+    }
 
-    # --- Render terminal table ---
+    # --- Pre-serialize EVERY payload before the first write (D-117-10):
+    # a serialization failure here is a pre-write failure and leaves every
+    # existing artifact untouched. _dump matches atomic_write_json's
+    # serialization, so the main board's bytes are unchanged.
+    def _dump(obj: dict) -> str:
+        return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
+
+    writes: list[tuple[Path, str]] = [
+        (leaderboard_path, _dump(payload)),
+        (leaderboard_path.with_suffix(".md"), main_md),
+    ]
+    for p in ("pass1", "pass2"):
+        pj, pm = _pass_paths(leaderboard_path, p)
+        writes.append((pj, _dump(pass_boards[p])))
+        writes.append((pm, pass_md[p]))
+
+    # --- Individually-atomic writes; a mid-commit failure may leave a mixed
+    # generation (detectable via updated_at; rerun heals) ---
+    leaderboard_path.parent.mkdir(parents=True, exist_ok=True)
+    for path, text in writes:
+        atomic_write_text(path, text)
+
+    # --- Terminal output: main table + pass-board summaries ---
     table = _render_score_table(ranking, diagnostics_by_model)
     print(table)
+    for p in ("pass1", "pass2"):
+        b = pass_boards[p]
+        if b["ranking"]:
+            print(_render_score_table(
+                b["ranking"],
+                {r["model"]: r["raw_values"] for r in b["ranking"]},
+                note=f"NOTE: {p} board — composite comparable ONLY within this "
+                     f"candidate set. See {leaderboard_path.with_suffix('').name}-{p}.md"))
+        else:
+            print(f"{p} board: 0 ranked, {len(b['unranked'])} unranked")
+    pj1, _pm1 = _pass_paths(leaderboard_path, "pass1")
+    pj2, _pm2 = _pass_paths(leaderboard_path, "pass2")
     print(
-        f"leaderboard updated: {leaderboard_path} (+ {md_path.name})  "
-        f"({len(models)} models)"
+        f"leaderboards updated: {leaderboard_path} (+ .md, {pj1.name}+.md, "
+        f"{pj2.name}+.md)  ({len(models)} models)"
     )
     return 0
 
