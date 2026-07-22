@@ -56,6 +56,7 @@ def _call(
     total_output_tokens: int,
     total_latency_ms: int,
     semantic_ok: bool | None = None,
+    cost_usd: float | None = None,
 ) -> PassCallMeasurement:
     return PassCallMeasurement(
         run_id="run-test",
@@ -79,6 +80,7 @@ def _call(
         schema_ok=(final_status != "quarantined"),
         semantic_ok=semantic_ok,
         boundary_recovered=boundary_recovered,
+        cost_usd=cost_usd,
     )
 
 
@@ -130,7 +132,7 @@ class TestComputeProcessingStructure:
             "latency",
         }
 
-    def test_diagnostic_has_exactly_nine_keys(self):
+    def test_diagnostic_has_exactly_seventeen_keys(self):
         result = compute_processing(HEADER, ALL_CALLS)
         assert set(result["diagnostic"].keys()) == {
             "retry_load",
@@ -142,6 +144,15 @@ class TestComputeProcessingStructure:
             "quarantine_rate_pass2",
             "latency_pass1",
             "latency_pass2",
+            # #117 per-pass splits + cost
+            "recovery_rate_pass1",
+            "recovery_rate_pass2",
+            "retry_load_pass1",
+            "retry_load_pass2",
+            "cost_usd_pass1",
+            "cost_usd_pass2",
+            "cost_unknown_calls_pass1",
+            "cost_unknown_calls_pass2",
         }
 
 
@@ -396,3 +407,74 @@ class TestRepromptOnlyRecovery:
         result = compute_processing(HEADER, [reprompt])
         # retry_load = sum(max(0, c.attempts - 1)) / N = 1 / 1 = 1.0
         assert result["diagnostic"]["retry_load"] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Task #117 — per-pass splits (recovery / retry) + cost diagnostics
+# ---------------------------------------------------------------------------
+
+class TestPerPassSplits:
+    """Fixture math (C1..C5 from the module docstring):
+      pass1: C1 clean (T=700), C2 repaired+retried (T=900)   → T_pass1=1600
+      pass2: C3 clean (T=500), C4 quarantined (T=450),
+             C5 slug_coerced+overrun (T=300)                  → T_pass2=1250
+    """
+
+    def test_recovery_rate_pass1(self):
+        r = compute_processing(HEADER, ALL_CALLS)["diagnostic"]
+        # C2 only: 1 * 1e6 / 1600
+        assert r["recovery_rate_pass1"] == pytest.approx(1e6 / 1600)
+
+    def test_recovery_rate_pass2(self):
+        r = compute_processing(HEADER, ALL_CALLS)["diagnostic"]
+        # C5 only (C4 quarantined-excluded): 1 * 1e6 / 1250
+        assert r["recovery_rate_pass2"] == pytest.approx(1e6 / 1250)
+
+    def test_token_weighted_recombination(self):
+        r = compute_processing(HEADER, ALL_CALLS)
+        combined = r["scored"]["recovery_rate"]          # scored tier, not diagnostic
+        d = r["diagnostic"]
+        recombined = (d["recovery_rate_pass1"] * 1600
+                      + d["recovery_rate_pass2"] * 1250) / (1600 + 1250)
+        assert combined == pytest.approx(recombined)
+
+    def test_retry_load_pass_split_and_recombination(self):
+        d = compute_processing(HEADER, ALL_CALLS)["diagnostic"]
+        assert d["retry_load_pass1"] == pytest.approx(1 / 2)   # C2: 1 extra / 2 calls
+        assert d["retry_load_pass2"] == pytest.approx(0.0)
+        assert d["retry_load"] == pytest.approx(
+            (d["retry_load_pass1"] * 2 + d["retry_load_pass2"] * 3) / 5)
+
+    def test_empty_pass_yields_none(self):
+        d = compute_processing(HEADER, [c for c in ALL_CALLS
+                                        if c.pass_ == "pass1"])["diagnostic"]
+        assert d["recovery_rate_pass2"] is None
+        assert d["retry_load_pass2"] is None
+        assert d["cost_usd_pass2"] is None
+        assert d["cost_unknown_calls_pass2"] is None
+
+
+class TestCostDiagnostics:
+    def _calls_with_cost(self):
+        return [
+            _call(pass_="pass1", total_input_tokens=100, total_output_tokens=50,
+                  total_latency_ms=10, cost_usd=0.01),   # priced
+            _call(pass_="pass1", total_input_tokens=100, total_output_tokens=50,
+                  total_latency_ms=10, cost_usd=0.0),    # tokens, no cost → unknown
+            _call(pass_="pass1", total_input_tokens=100, total_output_tokens=50,
+                  total_latency_ms=10, cost_usd=None),   # absent → unknown
+            _call(pass_="pass1", total_input_tokens=0, total_output_tokens=0,
+                  total_latency_ms=0, cost_usd=None),    # no tokens → not unknown
+            _call(pass_="pass2", total_input_tokens=200, total_output_tokens=100,
+                  total_latency_ms=10, cost_usd=0.30),
+        ]
+
+    def test_cost_sums_priced_calls_only(self):
+        d = compute_processing(HEADER, self._calls_with_cost())["diagnostic"]
+        assert d["cost_usd_pass1"] == pytest.approx(0.01)
+        assert d["cost_usd_pass2"] == pytest.approx(0.30)
+
+    def test_unknown_counts_unpriced_token_calls(self):
+        d = compute_processing(HEADER, self._calls_with_cost())["diagnostic"]
+        assert d["cost_unknown_calls_pass1"] == 2      # 0.0-with-tokens + None
+        assert d["cost_unknown_calls_pass2"] == 0

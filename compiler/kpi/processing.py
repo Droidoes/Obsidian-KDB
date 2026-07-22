@@ -30,7 +30,12 @@ def compute_processing(
       "diagnostic" — {"retry_load", "token_overrun_rate", "repair_rung_rate",
                       "semantic_pass_rate", "signal_noise_ratio",
                       "quarantine_rate_pass1", "quarantine_rate_pass2",
-                      "latency_pass1", "latency_pass2"}
+                      "latency_pass1", "latency_pass2",
+                      # #117 per-pass splits + cost
+                      "recovery_rate_pass1", "recovery_rate_pass2",
+                      "retry_load_pass1", "retry_load_pass2",
+                      "cost_usd_pass1", "cost_usd_pass2",
+                      "cost_unknown_calls_pass1", "cost_unknown_calls_pass2"}
 
     All per-token rates are None when the relevant token denominator is 0.
     retry_load is None when N == 0.
@@ -116,6 +121,46 @@ def compute_processing(
     n_quar_pass1 = sum(1 for c in pass1_calls if c.final_status == "quarantined")
     n_quar_pass2 = sum(1 for c in pass2_calls if c.final_status == "quarantined")
 
+    # Per-pass recovery split (#117) — same survivor-retry/repair predicate as
+    # the combined recovery_rate, partitioned by pass.
+    n_recovery_pass1 = sum(
+        1 for c in pass1_calls
+        if c.final_status != "quarantined"
+        and (c.syntax_repaired or c.slug_coerced or c.boundary_recovered or c.attempts > 1)
+    )
+    n_recovery_pass2 = sum(
+        1 for c in pass2_calls
+        if c.final_status != "quarantined"
+        and (c.syntax_repaired or c.slug_coerced or c.boundary_recovered or c.attempts > 1)
+    )
+
+    retry_load_pass1: float | None = (
+        sum(max(0, c.attempts - 1) for c in pass1_calls) / len(pass1_calls)
+        if pass1_calls else None
+    )
+    retry_load_pass2: float | None = (
+        sum(max(0, c.attempts - 1) for c in pass2_calls) / len(pass2_calls)
+        if pass2_calls else None
+    )
+
+    # Cost split (#117 D-117-3/D-117-8): sums over PRICED calls only; calls
+    # with token usage but no positive cost attribution (unpriced, or
+    # failed-before-attribution — the #110 deferred item) count as unknown,
+    # never as $0.
+    def _cost_split(calls: list[PassCallMeasurement]) -> tuple[float | None, int | None]:
+        if not calls:
+            return None, None
+        priced = sum(c.cost_usd for c in calls if c.cost_usd and c.cost_usd > 0)
+        unknown = sum(
+            1 for c in calls
+            if (c.total_input_tokens + c.total_output_tokens) > 0
+            and not (c.cost_usd and c.cost_usd > 0)
+        )
+        return priced, unknown
+
+    cost_pass1, unknown_pass1 = _cost_split(pass1_calls)
+    cost_pass2, unknown_pass2 = _cost_split(pass2_calls)
+
     diagnostic: dict = {
         "retry_load": retry_load,
         "token_overrun_rate": _rate(n_overrun, T),
@@ -128,6 +173,15 @@ def compute_processing(
         # `latency` stays the scored KPI; these isolate where time is spent.
         "latency_pass1": _rate(latency_ms_pass1, T_pass1),
         "latency_pass2": _rate(latency_ms_pass2, T_pass2),
+        # #117 per-pass recovery/retry splits + cost diagnostics.
+        "recovery_rate_pass1": _rate(n_recovery_pass1, T_pass1),
+        "recovery_rate_pass2": _rate(n_recovery_pass2, T_pass2),
+        "retry_load_pass1": retry_load_pass1,
+        "retry_load_pass2": retry_load_pass2,
+        "cost_usd_pass1": cost_pass1,
+        "cost_usd_pass2": cost_pass2,
+        "cost_unknown_calls_pass1": unknown_pass1,
+        "cost_unknown_calls_pass2": unknown_pass2,
     }
 
     return {"scored": scored, "diagnostic": diagnostic}
