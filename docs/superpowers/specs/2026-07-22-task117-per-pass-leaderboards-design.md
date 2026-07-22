@@ -36,6 +36,14 @@
   - R3-F5 `updated_at` second-precision not a strict generation id → D-117-10
     wording weakened to the single-user execution model; mid-commit test added.
 
+- **v0.3.1 → plan-review amendments (Codex R4, implementation-plan review):**
+  plan-level corrections folded into `docs/superpowers/plans/2026-07-22-task117-per-pass-leaderboards.md`;
+  two reach back into this spec: (1) the unranked row gains `completeness_errors`
+  (canonical KPI names stay alone in `missing_kpis`); (2) D-117-5(e) made
+  explicit — the Pass-2 board's required inputs include all four graph KPIs, and
+  a count-complete row with any required input `None` is unranked (never
+  pro-rated on missing evidence). No architectural change.
+
 ## 1. Motivation
 
 Model performance is pass-specific: each pass has its own prompt, its own contract, and
@@ -115,8 +123,10 @@ every run is single-model; the split boards merely re-slice data the runs alread
   `loaded_pass1_measurements == p1_attempted − enrich_skipped_sidecars`, and
   `unique source_id count == identified_pass1_sidecars` (catches the missing-sidecar
   case: `p1_attempted` increments at loop entry, before `enrich_one` runs); (d) for
-  Pass-2, loaded records == `p2_attempted`; (e) the board's required KPI inputs are
-  present. Otherwise the row is **excluded from that board's Borda** and rendered
+  Pass-2, loaded records == `p2_attempted`; (e) the board's required KPI inputs
+  are all present — the three processing axes, **plus all four graph KPIs on the
+  Pass-2 board** — so a count-complete row with any required input `None` is
+  unranked, never pro-rated on partial evidence. Otherwise the row is **excluded from that board's Borda** and rendered
   `unranked` — this covers partial `run_state/` copies (emit's copy is best-effort),
   not just a wholly missing directory. JSON shape — one `raw_values` contract on
   ranked and unranked rows alike (`ranking` stays ranked-only):
@@ -141,11 +151,16 @@ every run is single-model; the split boards merely re-slice data the runs alread
         "run_dir": "<run dir>",
         "measurement_source": "run_state_partial | measurements_fallback",
         "missing_kpis": ["recovery_rate"],
+        "completeness_errors": ["pass1_sidecars:35!=p1_attempted:36"],
         "raw_values": { "...": "available raw values" }
       }
     ]
   }
   ```
+
+  (`missing_kpis` holds canonical KPI names only; contract violations live in
+  `completeness_errors` — refinement per the implementation-plan review, same
+  separation as D-117-5 intends.)
 
   Rationale: an incomplete row would score on fewer axes (weight redistributed
   pro-rata, weak-spot axis set shrunk) and could rank *more* favorably purely
