@@ -272,7 +272,7 @@ Two families, kept structurally separate — never blended at scoring time.
 | `entity_reuse` | ↑ | fraction of entities referenced by ≥2 sources |
 
 **Watched diagnostics** (emitted each run, not scored; evaluated for promotion after each cohort via `tools/benchmark/promotion.py`):
-`entity_search_key_resolution` · `orphan_rate` · `semantic_pass_rate` · `signal_noise_ratio` · `retry_load` · `token_overrun_rate` · `repair_rung_rate` · `domain_breadth` · `domain_null_rate` · `belongs_to_coverage` · per-pass breakdowns (`quarantine_rate_pass1/2`, `latency_pass1/2`)
+`entity_search_key_resolution` · `orphan_rate` · `semantic_pass_rate` · `signal_noise_ratio` · `retry_load` · `token_overrun_rate` · `repair_rung_rate` · `domain_breadth` · `domain_null_rate` · `belongs_to_coverage` · per-pass breakdowns (`quarantine_rate_pass1/2`, `latency_pass1/2`; #117 adds `recovery_rate_pass1/2`, `retry_load_pass1/2`, `cost_usd_pass1/2`, `cost_unknown_calls_pass1/2`)
 
 ### 7.4 Weights & penalty (all PINNED)
 
@@ -312,10 +312,11 @@ benchmark/runs/<run-id>/report.md           (per-run human summary)
         │
         ▼ (collect one run-id per candidate model)
 kdb-benchmark score <run-id…>
-        │  Borda rank → hierarchical composite → penalty → leaderboard
+        │  Borda rank → hierarchical composite → penalty → leaderboards (§7.7)
         ▼
-benchmark/scores/leaderboard.json
-benchmark/scores/leaderboard.md
+benchmark/scores/leaderboard.json            (+ .md)
+benchmark/scores/leaderboard-pass1.json      (+ .md)   # #117
+benchmark/scores/leaderboard-pass2.json      (+ .md)   # #117
 ```
 
 ### 7.6 Promotion rule
@@ -327,6 +328,19 @@ benchmark/scores/leaderboard.md
 3. **max |Spearman| vs scored < 0.7** — not redundant with any already-scored KPI
 
 Promotion is advisory (human decision, not automatic). Prime candidates from baseline-1: `entity_search_key_resolution`, `orphan_rate`.
+
+### 7.7 Per-pass leaderboards (#117, spec v0.3.1)
+
+`kdb-benchmark score` writes **three** boards per invocation: the combined board (§7.4 scoring, unchanged) plus `leaderboard-pass1.{json,md}` and `leaderboard-pass2.{json,md}` (filenames derive from the `--leaderboard` stem). Rationale: model performance is pass-specific (own prompt/contract/failure modes); the split boards are the evidence base for a later cheap-Pass-1 / quality-Pass-2 model split (#118).
+
+- **Recompute, don't re-run.** Per-pass processing KPIs are recomputed at score time from each row's `run_state/` (`load_run_measurements` → `compute_processing`); graph KPIs come from `measurements.json` (emit-time graph state, not reproducible at score time). No pipeline change, no re-runs.
+- **Same machinery, pass-scoped inputs.** Pass KPIs map onto the canonical processing names and go through the §6 `score_models` path: Pass-1 = 3 processing KPIs (pro-rata 4:1:1 + weak-spot penalty, graph term inactive); Pass-2 = 3 processing + 4 graph KPIs (identical 40/40/10/10 shape). The Pass-2 board is explicitly a **downstream-outcome** board (Pass-1 gating/failures decide Pass-2 coverage — e.g. Qwen's 28 vs 29) — isolated per-pass attribution waits on #118. It carries `pass2_eligibility_rate` (`signal/p1_attempted`), `pass2_measurement_coverage` (`loaded/p2_attempted`), and `p1_noise`/`p1_failed` disposition columns.
+- **Cost is a selection column, never a Borda axis.** `cost_usd_pass1/2` render prominently; `cost_unknown_calls > 0` ⇒ `≥$X (+N unknown)` (zero cost can mean unpriced/failed, not free — cf. #110 deferred item).
+- **Fail closed.** A row is ranked on a pass board only if its `run_state/` passes the per-board completeness contract (header parses; Pass-1 sidecar count reconciles with `p1_attempted` incl. skipped; Pass-2 records == `p2_attempted`; required KPI inputs present). Incomplete rows render `unranked` with `measurement_source` + `missing_kpis` — never pro-rata on missing evidence.
+- **Honest metadata.** Pass boards persist `board_scope`, full-precision `effective_top_weights` (Pass-1: 2/3, 1/6, 1/6, graph 0.0), `unranked[]`, and per-row `raw_values` (one contract for ranked + unranked rows). Competition ranking: tied composites share a rank (1, 1, 3); the main board keeps sequential ranks.
+- **Write boundary.** All three boards are computed/validated/rendered before any write; each file is replaced individually-atomically under one shared `updated_at` (mixed-generation detection is best-effort under the single-user model; rerun heals).
+
+Main-board contract: scored KPIs, ranking, composite, and scored columns unchanged; its data-driven raw-values table may additionally surface the #117 diagnostics on newly emitted runs. Spec: `docs/superpowers/specs/2026-07-22-task117-per-pass-leaderboards-design.md` (v0.3.1, Codex 3 rounds).
 
 ---
 
