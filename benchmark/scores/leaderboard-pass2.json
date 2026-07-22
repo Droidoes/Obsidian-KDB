@@ -5,7 +5,8 @@
     "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty": "gpt-5.4-mini-2026-07-20T23-52-49_EDT",
     "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty": "qwen3.6-flash-us-2026-07-21T00-51-24_EDT",
     "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty": "glm-5-turbo-2026-07-21T10-45-04_EDT",
-    "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT"
+    "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT",
+    "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323": "gpt-5.4-mini-2026-07-22T14-48-09_EDT"
   },
   "board_scope": "pass2",
   "effective_top_weights": {
@@ -16,22 +17,57 @@
   },
   "ranking": [
     {
-      "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
-      "composite": 83.60000000000002,
-      "composite_pre_penalty": 83.60000000000002,
+      "model": "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323",
+      "composite": 80.50000000000001,
+      "composite_pre_penalty": 80.50000000000001,
       "penalty": 0.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.9400000000000002,
+      "graph_score": 0.9083333333333334,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8,
-        "recovery_rate": 0.8,
-        "latency": 0.6,
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.75,
+        "latency": 0.6666666666666666,
         "graph_connectivity": 1.0,
-        "link_density": 0.8,
-        "supports_density": 1.0,
-        "entity_reuse": 1.0
+        "link_density": 0.8333333333333334,
+        "supports_density": 0.9166666666666666,
+        "entity_reuse": 0.8333333333333334
       },
       "rank": 1,
+      "measurement_source": "run_state_recomputed",
+      "raw_values": {
+        "quarantine_rate_pass2": 0.0,
+        "recovery_rate_pass2": 0.0,
+        "latency_pass2": 781557.2563338928,
+        "retry_load_pass2": 0.0,
+        "cost_usd_pass2": 0.53937225,
+        "cost_unknown_calls_pass2": 0,
+        "graph_connectivity": 0.2425531914893617,
+        "link_density": 1.9191489361702128,
+        "supports_density": 8.379310344827585,
+        "entity_reuse": 0.024271844660194174,
+        "pass2_eligibility_rate": 0.8055555555555556,
+        "pass2_measurement_coverage": 1.0,
+        "p1_noise": 7,
+        "p1_failed": 0
+      }
+    },
+    {
+      "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
+      "composite": 75.50000000000001,
+      "composite_pre_penalty": 75.50000000000001,
+      "penalty": 0.0,
+      "weakest_kpi": "latency",
+      "graph_score": 0.8250000000000002,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.75,
+        "latency": 0.5,
+        "graph_connectivity": 0.8333333333333334,
+        "link_density": 0.6666666666666666,
+        "supports_density": 0.9166666666666666,
+        "entity_reuse": 1.0
+      },
+      "rank": 2,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 0.0,
@@ -52,21 +88,21 @@
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323",
-      "composite": 64.80000000000001,
-      "composite_pre_penalty": 66.80000000000001,
-      "penalty": 1.9999999999999998,
+      "composite": 56.50000000000001,
+      "composite_pre_penalty": 59.833333333333336,
+      "penalty": 3.333333333333334,
       "weakest_kpi": "latency",
-      "graph_score": 0.5700000000000002,
+      "graph_score": 0.475,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8,
-        "recovery_rate": 0.8,
-        "latency": 0.4,
-        "graph_connectivity": 0.6,
-        "link_density": 0.6,
-        "supports_density": 0.6,
-        "entity_reuse": 0.4
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.75,
+        "latency": 0.3333333333333333,
+        "graph_connectivity": 0.5,
+        "link_density": 0.5,
+        "supports_density": 0.5,
+        "entity_reuse": 0.3333333333333333
       },
-      "rank": 2,
+      "rank": 3,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 0.0,
@@ -87,21 +123,21 @@
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 60.80000000000001,
-      "composite_pre_penalty": 66.80000000000001,
-      "penalty": 6.0,
+      "composite": 53.16666666666667,
+      "composite_pre_penalty": 59.833333333333336,
+      "penalty": 6.666666666666668,
       "weakest_kpi": "latency",
-      "graph_score": 0.6200000000000001,
+      "graph_score": 0.5166666666666667,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8,
-        "recovery_rate": 0.8,
-        "latency": 0.2,
-        "graph_connectivity": 0.8,
-        "link_density": 0.2,
-        "supports_density": 0.8,
-        "entity_reuse": 0.8
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.75,
+        "latency": 0.16666666666666666,
+        "graph_connectivity": 0.6666666666666666,
+        "link_density": 0.16666666666666666,
+        "supports_density": 0.6666666666666666,
+        "entity_reuse": 0.6666666666666666
       },
-      "rank": 3,
+      "rank": 4,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 0.0,
@@ -122,21 +158,21 @@
     },
     {
       "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
-      "composite": 31.200000000000006,
-      "composite_pre_penalty": 37.2,
-      "penalty": 6.0,
+      "composite": 26.0,
+      "composite_pre_penalty": 32.666666666666664,
+      "penalty": 6.666666666666668,
       "weakest_kpi": "recovery_rate",
-      "graph_score": 0.23,
+      "graph_score": 0.19166666666666668,
       "per_kpi_borda": {
-        "quarantine_rate": 0.4,
-        "recovery_rate": 0.2,
+        "quarantine_rate": 0.3333333333333333,
+        "recovery_rate": 0.16666666666666666,
         "latency": 1.0,
-        "graph_connectivity": 0.4,
+        "graph_connectivity": 0.3333333333333333,
         "link_density": 0.0,
         "supports_density": 0.0,
-        "entity_reuse": 0.6
+        "entity_reuse": 0.5
       },
-      "rank": 4,
+      "rank": 5,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 4.731432086206692,
@@ -157,21 +193,21 @@
     },
     {
       "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
-      "composite": 21.200000000000006,
-      "composite_pre_penalty": 31.200000000000006,
+      "composite": 18.000000000000004,
+      "composite_pre_penalty": 28.000000000000004,
       "penalty": 10.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.48000000000000004,
+      "graph_score": 0.45000000000000007,
       "per_kpi_borda": {
-        "quarantine_rate": 0.2,
-        "recovery_rate": 0.4,
+        "quarantine_rate": 0.16666666666666666,
+        "recovery_rate": 0.3333333333333333,
         "latency": 0.0,
-        "graph_connectivity": 0.2,
+        "graph_connectivity": 0.16666666666666666,
         "link_density": 1.0,
-        "supports_density": 0.4,
-        "entity_reuse": 0.2
+        "supports_density": 0.3333333333333333,
+        "entity_reuse": 0.16666666666666666
       },
-      "rank": 5,
+      "rank": 6,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 10.730719044021702,
@@ -192,21 +228,21 @@
     },
     {
       "model": "gemini/gemini-3.5-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 4.400000000000001,
-      "composite_pre_penalty": 14.400000000000002,
+      "composite": 3.666666666666668,
+      "composite_pre_penalty": 13.666666666666668,
       "penalty": 10.0,
       "weakest_kpi": "quarantine_rate",
-      "graph_score": 0.16000000000000003,
+      "graph_score": 0.13333333333333336,
       "per_kpi_borda": {
         "quarantine_rate": 0.0,
         "recovery_rate": 0.0,
-        "latency": 0.8,
+        "latency": 0.8333333333333334,
         "graph_connectivity": 0.0,
-        "link_density": 0.4,
-        "supports_density": 0.2,
+        "link_density": 0.3333333333333333,
+        "supports_density": 0.16666666666666666,
         "entity_reuse": 0.0
       },
-      "rank": 6,
+      "rank": 7,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass2": 15.716783560244396,
@@ -243,5 +279,5 @@
     "threshold": 0.5,
     "cap": 0.1
   },
-  "updated_at": "2026-07-22T14:28:08-04:00"
+  "updated_at": "2026-07-22T14:58:20-04:00"
 }

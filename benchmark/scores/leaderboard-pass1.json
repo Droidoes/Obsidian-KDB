@@ -5,7 +5,8 @@
     "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty": "gpt-5.4-mini-2026-07-20T23-52-49_EDT",
     "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty": "qwen3.6-flash-us-2026-07-21T00-51-24_EDT",
     "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty": "glm-5-turbo-2026-07-21T10-45-04_EDT",
-    "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT"
+    "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT",
+    "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323": "gpt-5.4-mini-2026-07-22T14-48-09_EDT"
   },
   "board_scope": "pass1",
   "effective_top_weights": {
@@ -17,15 +18,15 @@
   "ranking": [
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323",
-      "composite": 68.33333333333333,
-      "composite_pre_penalty": 68.33333333333333,
+      "composite": 66.66666666666666,
+      "composite_pre_penalty": 66.66666666666666,
       "penalty": 0.0,
-      "weakest_kpi": "latency",
+      "weakest_kpi": "quarantine_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.7,
-        "recovery_rate": 0.7,
-        "latency": 0.6
+        "quarantine_rate": 0.6666666666666666,
+        "recovery_rate": 0.6666666666666666,
+        "latency": 0.6666666666666666
       },
       "rank": 1,
       "measurement_source": "run_state_recomputed",
@@ -40,15 +41,15 @@
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
-      "composite": 63.0,
-      "composite_pre_penalty": 65.0,
-      "penalty": 1.9999999999999998,
+      "composite": 63.888888888888886,
+      "composite_pre_penalty": 63.888888888888886,
+      "penalty": 0.0,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.7,
-        "recovery_rate": 0.7,
-        "latency": 0.4
+        "quarantine_rate": 0.6666666666666666,
+        "recovery_rate": 0.6666666666666666,
+        "latency": 0.5
       },
       "rank": 2,
       "measurement_source": "run_state_recomputed",
@@ -63,15 +64,15 @@
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 55.666666666666664,
-      "composite_pre_penalty": 61.66666666666667,
-      "penalty": 6.0,
+      "composite": 57.77777777777777,
+      "composite_pre_penalty": 61.11111111111111,
+      "penalty": 3.333333333333334,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.7,
-        "recovery_rate": 0.7,
-        "latency": 0.2
+        "quarantine_rate": 0.6666666666666666,
+        "recovery_rate": 0.6666666666666666,
+        "latency": 0.3333333333333333
       },
       "rank": 3,
       "measurement_source": "run_state_recomputed",
@@ -85,18 +86,41 @@
       }
     },
     {
+      "model": "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323",
+      "composite": 51.66666666666667,
+      "composite_pre_penalty": 58.333333333333336,
+      "penalty": 6.666666666666668,
+      "weakest_kpi": "latency",
+      "graph_score": null,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.6666666666666666,
+        "recovery_rate": 0.6666666666666666,
+        "latency": 0.16666666666666666
+      },
+      "rank": 4,
+      "measurement_source": "run_state_recomputed",
+      "raw_values": {
+        "quarantine_rate_pass1": 0.0,
+        "recovery_rate_pass1": 0.0,
+        "latency_pass1": 306125.0761665279,
+        "retry_load_pass1": 0.0,
+        "cost_usd_pass1": 0.30622725,
+        "cost_unknown_calls_pass1": 0
+      }
+    },
+    {
       "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
-      "composite": 40.0,
-      "composite_pre_penalty": 50.0,
+      "composite": 37.22222222222222,
+      "composite_pre_penalty": 47.22222222222222,
       "penalty": 10.0,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.7,
-        "recovery_rate": 0.2,
+        "quarantine_rate": 0.6666666666666666,
+        "recovery_rate": 0.16666666666666666,
         "latency": 0.0
       },
-      "rank": 4,
+      "rank": 5,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass1": 0.0,
@@ -109,17 +133,17 @@
     },
     {
       "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
-      "composite": 18.333333333333332,
-      "composite_pre_penalty": 28.333333333333332,
+      "composite": 17.777777777777786,
+      "composite_pre_penalty": 27.777777777777786,
       "penalty": 10.0,
       "weakest_kpi": "quarantine_rate",
       "graph_score": null,
       "per_kpi_borda": {
         "quarantine_rate": 0.0,
-        "recovery_rate": 0.7,
+        "recovery_rate": 0.6666666666666666,
         "latency": 1.0
       },
-      "rank": 5,
+      "rank": 6,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass1": 2.9183447148777213,
@@ -132,17 +156,17 @@
     },
     {
       "model": "gemini/gemini-3.5-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 16.66666666666667,
-      "composite_pre_penalty": 26.66666666666667,
+      "composite": 15.000000000000005,
+      "composite_pre_penalty": 25.000000000000007,
       "penalty": 10.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.2,
+        "quarantine_rate": 0.16666666666666666,
         "recovery_rate": 0.0,
-        "latency": 0.8
+        "latency": 0.8333333333333334
       },
-      "rank": 6,
+      "rank": 7,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass1": 2.37706983355757,
@@ -171,5 +195,5 @@
     "threshold": 0.5,
     "cap": 0.1
   },
-  "updated_at": "2026-07-22T14:28:08-04:00"
+  "updated_at": "2026-07-22T14:58:20-04:00"
 }
