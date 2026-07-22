@@ -1,116 +1,48 @@
 {
-  "source_name": "Canonical Ontology for Financial Reports GPT5.2.md",
-  "summary_slug": "summary-canonical-ontology-for-financial-reports-gpt5-2",
-  "concept_slugs": [
-    "canonical-financial-data",
-    "canonical-financial-ontology",
-    "financial-mapping-decision-tree",
-    "canonical-coverage-metrics",
-    "financial-reconciliation-engine"
-  ],
-  "article_slugs": [
-    "transition-from-canonical-data-to-semantic-ontology"
-  ],
   "pages": [
     {
       "slug": "summary-canonical-ontology-for-financial-reports-gpt5-2",
       "page_type": "summary",
       "title": "Canonical Ontology for Financial Reports GPT5.2 (Summary)",
-      "body": "This document outlines a structural transition from simple [[canonical-financial-data|canonical data mapping]] to a robust [[canonical-financial-ontology|semantic financial ontology]]. It addresses the challenges of lexically unstable and hierarchical financial statements (using Apple Inc. as a case study) by introducing a multi-layered [[financial-mapping-decision-tree|mapping decision tree]], a structured framework for [[canonical-coverage-metrics|canonical coverage metrics]], and an automated, rules-based [[financial-reconciliation-engine]]. Synthesizing these structural layers completes the [[transition-from-canonical-data-to-semantic-ontology|transition from flat data to a financial knowledge graph]].",
-      "status": "active",
-      "outgoing_links": [
-        "canonical-financial-data",
-        "canonical-financial-ontology",
-        "financial-mapping-decision-tree",
-        "canonical-coverage-metrics",
-        "financial-reconciliation-engine",
-        "transition-from-canonical-data-to-semantic-ontology"
-      ],
-      "confidence": "high"
+      "body": "This document outlines a structural transition from simple [[canonical-financial-data|canonical data mapping]] to a robust [[canonical-financial-ontology|semantic financial ontology]]. It addresses the challenges of lexically unstable and hierarchical financial statements (using Apple Inc. as a case study) by introducing a multi-layered [[financial-mapping-decision-tree|mapping decision tree]], a structured framework for [[canonical-coverage-metrics|canonical coverage metrics]], and an automated, rules-based [[financial-reconciliation-engine]]. Synthesizing these structural layers completes the [[transition-from-canonical-data-to-semantic-ontology|transition from flat data to a financial knowledge graph]]."
     },
     {
       "slug": "canonical-financial-data",
       "page_type": "concept",
       "title": "Canonical Financial Data",
-      "body": "Canonical financial data represents the first-pass standardization of raw financial statements by mapping exact or fuzzy string synonyms to consistent labels (such as mapping 'Net Sales' to 'revenues'). While necessary, naive string normalization alone is structurally underpowered for wild financial statements because it assumes flat lists and lexical stability, leading to low match rates for composite or aggregated disclosures (e.g., Apple's composite cash line). Standardizing these terms is a baseline that is best leveraged when entering a [[canonical-financial-ontology]].",
-      "status": "active",
-      "outgoing_links": [
-        "canonical-financial-ontology"
-      ],
-      "confidence": "high"
+      "body": "Canonical financial data represents the first-pass standardization of raw financial statements by mapping exact or fuzzy string synonyms to consistent labels (such as mapping 'Net Sales' to 'revenues'). While necessary, naive string normalization alone is structurally underpowered for wild financial statements because it assumes flat lists and lexical stability, leading to low match rates for composite or aggregated disclosures (e.g., Apple's composite cash line). Standardizing these terms is a baseline that is best leveraged when entering a [[canonical-financial-ontology]]."
     },
     {
       "slug": "canonical-financial-ontology",
       "page_type": "concept",
       "title": "Canonical Financial Ontology",
-      "body": "A canonical financial ontology is a typed, relational model of financial meaning that explicitly declares structural relationships, temporal behaviors, and accounting constraints rather than relying on flat lists or naming conventions. By separating 'presentation' (surface text variants) from 'meaning' (underlying economic concepts), an ontology maps inputs to semantic roles (such as operating assets, direct costs, or non-cash items). This structured paradigm enables complex downstream operations like automatic EBITDA derivation and cross-statement integrity verification via a [[financial-reconciliation-engine]].",
-      "status": "active",
-      "outgoing_links": [
-        "financial-reconciliation-engine"
-      ],
-      "confidence": "high"
+      "body": "A canonical financial ontology is a typed, relational model of financial meaning that explicitly declares structural relationships, temporal behaviors, and accounting constraints rather than relying on flat lists or naming conventions. By separating 'presentation' (surface text variants) from 'meaning' (underlying economic concepts), an ontology maps inputs to semantic roles (such as operating assets, direct costs, or non-cash items). This structured paradigm enables complex downstream operations like automatic EBITDA derivation and cross-statement integrity verification via a [[financial-reconciliation-engine]]."
     },
     {
       "slug": "financial-mapping-decision-tree",
       "page_type": "concept",
       "title": "Financial Mapping Decision Tree",
-      "body": "A financial mapping decision tree is a deterministic, explainable multi-gate pipeline designed to maximize financial statement mapping coverage and correctness. Rather than starting with string comparisons, it prioritizes structural context and constraints. The gates include:\n\n1. **Gate 0 (Preprocessing):** Text normalization and sign preservation.\n2. **Gate 1 (Exact Match):** Direct lookup against canonical terms or synonyms.\n3. **Gate 2 (Section Constraints):** Filtering candidate concepts by statement type and section.\n4. **Gate 3 (Structural Inference):** Analyzing parent-child rollups and indentation.\n5. **Gate 4 (Decomposition):** Explicitly splitting composite items (e.g., separating Cash and Short Term Investments).\n6. **Gate 5 (Semantic Fallback):** Safe, constrained AI fallback for remaining items.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "A financial mapping decision tree is a deterministic, explainable multi-gate pipeline designed to maximize financial statement mapping coverage and correctness. Rather than starting with string comparisons, it prioritizes structural context and constraints. The gates include:\n\n1. **Gate 0 (Preprocessing):** Text normalization and sign preservation.\n2. **Gate 1 (Exact Match):** Direct lookup against canonical terms or synonyms.\n3. **Gate 2 (Section Constraints):** Filtering candidate concepts by statement type and section.\n4. **Gate 3 (Structural Inference):** Analyzing parent-child rollups and indentation.\n5. **Gate 4 (Decomposition):** Explicitly splitting composite items (e.g., separating Cash and Short Term Investments).\n6. **Gate 5 (Semantic Fallback):** Safe, constrained AI fallback for remaining items."
     },
     {
       "slug": "canonical-coverage-metrics",
       "page_type": "concept",
       "title": "Canonical Coverage Metrics",
-      "body": "Traditional metrics like '% of rows mapped' are misleading for financial data ETL due to the high volume of non-economic disclosure rows in corporate filings. Instead, a robust framework uses three semantic coverage metrics:\n\n1. **Canonical Value Coverage (CVC):** The percentage of total financial statement value represented by mapped canonical items.\n2. **Canonical Model Coverage (CMC):** The percentage of expected canonical concepts that are actually populated with values.\n3. **Decision-Weighted Coverage (DWC):** A weighted metric assigning higher relevance to core financial items (e.g., revenue, net income) over minor disclosures.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Traditional metrics like '% of rows mapped' are misleading for financial data ETL due to the high volume of non-economic disclosure rows in corporate filings. Instead, a robust framework uses three semantic coverage metrics:\n\n1. **Canonical Value Coverage (CVC):** The percentage of total financial statement value represented by mapped canonical items.\n2. **Canonical Model Coverage (CMC):** The percentage of expected canonical concepts that are actually populated with values.\n3. **Decision-Weighted Coverage (DWC):** A weighted metric assigning higher relevance to core financial items (e.g., revenue, net income) over minor disclosures."
     },
     {
       "slug": "financial-reconciliation-engine",
       "page_type": "concept",
       "title": "Financial Reconciliation Engine",
-      "body": "A financial reconciliation engine is an automated validation pipeline that verifies the mathematical and structural integrity of financial facts against accounting invariants. Operating over a flat database of canonical facts, it executes rules across several categories, including balance sheet equations (Assets = Liabilities + Equity), cash roll-forwards, and net income-to-retained earnings bridges. It produces auditable validation outputs featuring pass/warn/fail indicators, calculated deltas, and tolerance checks to diagnose mapping quality.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "A financial reconciliation engine is an automated validation pipeline that verifies the mathematical and structural integrity of financial facts against accounting invariants. Operating over a flat database of canonical facts, it executes rules across several categories, including balance sheet equations (Assets = Liabilities + Equity), cash roll-forwards, and net income-to-retained earnings bridges. It produces auditable validation outputs featuring pass/warn/fail indicators, calculated deltas, and tolerance checks to diagnose mapping quality."
     },
     {
       "slug": "transition-from-canonical-data-to-semantic-ontology",
       "page_type": "article",
       "title": "Transitioning from Canonical Data to Semantic Ontology",
-      "body": "Moving from flat [[canonical-financial-data|canonical data]] to a [[canonical-financial-ontology|semantic financial ontology]] represents a paradigm shift from simple vocabulary parsing to operating on a financial knowledge graph. Under a naive data mapping framework, processing financial reports from complex companies like Apple fails because string-matching tools cannot resolve composite line items, hierarchies, or missing discrete disclosures.\n\nApplying a [[financial-mapping-decision-tree|layered decision tree]] resolves first-pass ingestion, while the ontology layers meaning onto the normalized output. Rather than rebuilding the mapper, the pipeline is augmented downstream. After mapping is completed, an ontology layer can compute derived concepts, evaluate [[canonical-coverage-metrics|economic value coverage]], and execute a [[financial-reconciliation-engine|reconciliation engine]] to validate cross-statement consistency (Income Statement → Cash Flow → Balance Sheet). Ultimately, ontology makes data validation automatic, metrics portable, and AI fallbacks structurally constrained and safe.",
-      "status": "active",
-      "outgoing_links": [
-        "canonical-financial-data",
-        "canonical-financial-ontology",
-        "financial-mapping-decision-tree",
-        "canonical-coverage-metrics",
-        "financial-reconciliation-engine"
-      ],
-      "confidence": "high"
+      "body": "Moving from flat [[canonical-financial-data|canonical data]] to a [[canonical-financial-ontology|semantic financial ontology]] represents a paradigm shift from simple vocabulary parsing to operating on a financial knowledge graph. Under a naive data mapping framework, processing financial reports from complex companies like Apple fails because string-matching tools cannot resolve composite line items, hierarchies, or missing discrete disclosures.\n\nApplying a [[financial-mapping-decision-tree|layered decision tree]] resolves first-pass ingestion, while the ontology layers meaning onto the normalized output. Rather than rebuilding the mapper, the pipeline is augmented downstream. After mapping is completed, an ontology layer can compute derived concepts, evaluate [[canonical-coverage-metrics|economic value coverage]], and execute a [[financial-reconciliation-engine|reconciliation engine]] to validate cross-statement consistency (Income Statement → Cash Flow → Balance Sheet). Ultimately, ontology makes data validation automatic, metrics portable, and AI fallbacks structurally constrained and safe."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Created the core semantic representation for the financial ontology discussion. Decided to keep the canonical terms verbatim as requested (e.g. operating_income_loss, depreciation_amortization_cf) inside the detailed concepts.",
-      "related_slugs": [
-        "canonical-financial-data",
-        "canonical-financial-ontology"
-      ]
-    },
-    {
-      "level": "info",
-      "message": "Synthesized the transition architecture into a specialized article detailing the pipeline design changes (before/after).",
-      "related_slugs": [
-        "transition-from-canonical-data-to-semantic-ontology"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }
   warnings": []

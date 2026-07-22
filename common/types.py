@@ -17,9 +17,9 @@ ScanAction = Literal["NEW", "CHANGED", "UNCHANGED", "MOVED"]  # DELETED lives in
 ReconcileType = Literal["MOVED", "DELETED"]
 SymlinkPolicy = Literal["skip", "follow"]
 PageType = Literal["summary", "concept", "article"]
-PageStatus = Literal["active", "stale", "orphan_candidate", "archived"]
-Confidence = Literal["low", "medium", "high"]
 SourceRefRole = Literal["primary", "supporting", "historical"]
+# #115: PageStatus / Confidence aliases deleted — orphaned with the fields
+# (status is prose-stamped, confidence logically deprecated).
 
 
 # ---------- source-file frontmatter ----------
@@ -205,19 +205,22 @@ class ScanResult:
         }
 
 
-# ---------- compile artifact shapes (unchanged) ----------
+# ---------- compile artifact shapes ----------
 
 @dataclass
 class PageIntent:
-    """One page the LLM wants to create or replace. Full-body model (D18)."""
+    """One page the LLM wants to create or replace. Full-body model (D18).
+
+    #115 wiki-native contract: the LLM authors slug/page_type/title/body only.
+    `status` is Python-owned (page_writer stamps 'active' when absent); graph
+    edges derive from body wikilinks (no outgoing_links field); `confidence`
+    is logically deprecated (D-115-12, Entity scope).
+    """
     slug: str
     page_type: PageType
     title: str
     body: str
-    status: PageStatus = "active"
     supports_page_existence: list[str] = field(default_factory=list)
-    outgoing_links: list[str] = field(default_factory=list)
-    confidence: Confidence = "medium"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -242,21 +245,16 @@ class CompileMeta:
 
 @dataclass
 class CompiledSource:
-    """LLM output for one source."""
+    """LLM output for one source (#115: no summary_slug / slug lists —
+    Python derives the summary identity via compiler.summary_slug)."""
     source_id: str
-    summary_slug: str
     pages: list[PageIntent]
-    concept_slugs: list[str] = field(default_factory=list)
-    article_slugs: list[str] = field(default_factory=list)
     compile_meta: Optional[CompileMeta] = None
     source_meta: Optional[dict] = None  # D-89-17: Pass-1 frontmatter projection
 
     def to_dict(self) -> dict:
         d: dict[str, Any] = {
             "source_id": self.source_id,
-            "summary_slug": self.summary_slug,
-            "concept_slugs": list(self.concept_slugs),
-            "article_slugs": list(self.article_slugs),
             "pages": [p.to_dict() for p in self.pages],
         }
         if self.compile_meta is not None:
@@ -286,33 +284,22 @@ class CompileSourceResult:
 
 
 @dataclass
-class LogEntry:
-    level: Literal["info", "notice", "contradiction", "warning"]
-    message: str
-    related_slugs: list[str] = field(default_factory=list)
-    related_source_ids: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return asdict(self)
-
-
-@dataclass
 class CompileResult:
+    """#115: `warnings` renamed to `compilation_notes`; `log_entries` and
+    `LogEntry` deleted (the LLM contract no longer carries them)."""
     run_id: str
     success: bool
     compiled_sources: list[CompiledSource] = field(default_factory=list)
-    log_entries: list[LogEntry] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    compilation_notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "run_id": self.run_id,
             "success": self.success,
             "compiled_sources": [cs.to_dict() for cs in self.compiled_sources],
-            "log_entries": [le.to_dict() for le in self.log_entries],
             "errors": list(self.errors),
-            "warnings": list(self.warnings),
+            "compilation_notes": list(self.compilation_notes),
         }
 
 
@@ -359,15 +346,19 @@ class CompileJob:
 @dataclass
 class ParsedSummary:
     """Lossy reduction of a parsed per-source response. Stored in every
-    resp-stats record (when parse succeeded) as a body-free shape digest."""
+    resp-stats record (when parse succeeded) as a body-free shape digest.
+
+    #115 (D-115-15): `summary_slug` is emitted ONLY when exactly one
+    well-formed summary page is observable (else None);
+    `outgoing_link_count` derives from body wikilinks (pure extraction);
+    `compilation_note_count` renamed from warning_count; log_entry_count
+    and source_id_echoed dropped."""
     summary_slug: Optional[str]
     page_count: int
     page_types: dict[str, int]
     slugs: list[str]
     outgoing_link_count: int
-    log_entry_count: int
-    warning_count: int
-    source_id_echoed: Optional[str]
+    compilation_note_count: int
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -393,11 +384,16 @@ class RespStatsRecord:
     Task #25 failure_* triplet: when the compile halts at a non-validation
     stage (source_read | prompt_build | model_call | truncation | extract
     | parse), all three fields are populated together; otherwise all three
-    are None. Schema/semantic failures keep using schema_errors /
-    semantic_errors — those have structured list surfaces and are out of
-    the failure_* triplet's scope. exception_type is the Python class name
-    (or the synthetic "TokenOverrun" for truncation); message is the
-    exception's str(e), truncated to 2000 chars + '...[truncated]'.
+    are None. Schema failures keep using schema_errors — a structured list
+    surface, out of the failure_* triplet's scope. #115: VALIDATION-stage
+    rejections also populate the triplet with stage "validate" — the
+    pre-call underivable-stem route (PathError) and the terminal post-call
+    semantic rejection (synthetic "SemanticCheckError"); semantic_errors
+    remains the structured detail surface. exception_type is the Python
+    class name (or the synthetic "TokenOverrun" for truncation /
+    "SemanticCheckError" for terminal semantic rejection); message is the
+    exception's str(e) or the first gate error, truncated to 2000 chars +
+    '...[truncated]'.
     """
     run_id: str
     source_id: str
@@ -455,3 +451,28 @@ class RespStatsRecord:
         if self.parsed_summary is not None:
             d["parsed_summary"] = self.parsed_summary.to_dict()
         return d
+
+
+# ---------- serialized CompiledSource helpers (#115) ----------
+
+class SummaryPageError(ValueError):
+    """Raised by summary_page() when the page set has no unique summary."""
+
+
+def summary_page(source: "Mapping[str, Any]") -> "Mapping[str, Any]":
+    """Return the one page with page_type == 'summary' from a serialized
+    CompiledSource-shaped mapping. FAIL CLOSED (#115): raises
+    SummaryPageError on zero or multiple summary pages — the summary
+    identity is never guessed."""
+    from collections.abc import Mapping as _Mapping
+    pages = source.get("pages") or []
+    summaries = [
+        p for p in pages
+        if isinstance(p, _Mapping) and p.get("page_type") == "summary"
+    ]
+    if len(summaries) != 1:
+        raise SummaryPageError(
+            f"expected exactly one summary page, got {len(summaries)} "
+            f"(source_id={source.get('source_id')!r})"
+        )
+    return summaries[0]

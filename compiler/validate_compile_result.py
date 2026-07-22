@@ -86,11 +86,13 @@ HARD_ZERO_FINDING_TYPES: frozenset[str] = frozenset({
     "duplicate_slug",
     "summary_slug_missing",
     "summary_slug_wrong_type",
+    "summary_slug_mismatch",
+    "summary_slug_underivable",
     "reserved_slug",
 })
-# Task #65 / D45: `pairing_type_mismatch` is no longer hard-zero — it is
-# reconcilable (measure severity); `reconcile_slug_lists()` rebuilds the
-# slug lists from the authoritative `pages[].page_type`.
+# Task #65 / D45: `pairing_type_mismatch` was reconcilable (measure severity).
+# #115: the pairing defect CLASS is structurally impossible — concept_slugs /
+# article_slugs / summary_slug left the LLM contract; the checks are deleted.
 
 
 # -------------------------------------------------------------------------
@@ -158,6 +160,7 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
 
     summary_slug = src.get("summary_slug")
     if isinstance(summary_slug, str):
+        # LEGACY mode (historical payload): referential + page-type checks.
         pt = page_types.get(summary_slug)
         if pt is None:
             result.gate_errors.append(ValidationFinding(
@@ -176,58 +179,49 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
                 page_type=pt,
                 slug=summary_slug,
             ))
+    else:
+        # NEW mode (#115): the summary identity is DERIVED, never emitted —
+        # exactly one summary page AND its slug equals expected_summary_slug.
+        from compiler.summary_slug import expected_summary_slug
+        summaries = [p for p in pages
+                     if isinstance(p, dict) and p.get("page_type") == "summary"]
+        if len(summaries) != 1:
+            result.gate_errors.append(ValidationFinding(
+                type="summary_slug_missing",
+                severity="gate",
+                detail=f"[{loc}.pages] expected exactly one page with "
+                       f"page_type='summary', got {len(summaries)}",
+                source_id=source_id,
+            ))
+        elif isinstance(source_id, str):
+            try:
+                expected = expected_summary_slug(source_id)
+            except PathError as e:
+                # Codex Gate-2 F5: fail CLOSED (gate finding), never raise
+                # out of validation — same underivable-stem boundary that
+                # compile_one and kdb-validate-response already handle.
+                result.gate_errors.append(ValidationFinding(
+                    type="summary_slug_underivable",
+                    severity="gate",
+                    detail=f"[{loc}.pages] cannot derive expected summary "
+                           f"slug from source_id {source_id!r}: {e}",
+                    source_id=source_id,
+                ))
+            else:
+                actual = summaries[0].get("slug")
+                if actual != expected:
+                    result.gate_errors.append(ValidationFinding(
+                        type="summary_slug_mismatch",
+                        severity="gate",
+                        detail=f"[{loc}.pages] summary slug {actual!r} != derived "
+                               f"expected {expected!r}",
+                        source_id=source_id,
+                        slug=actual,
+                    ))
 
-    for field_name, expected in (("concept_slugs", "concept"), ("article_slugs", "article")):
-        items = src.get(field_name) or []
-        if not isinstance(items, list):
-            continue
-        items_set: set[str] = set()
-        for j, slug in enumerate(items):
-            if not isinstance(slug, str):
-                continue
-            items_set.add(slug)
-            pt = page_types.get(slug)
-            if pt is None:
-                # Slug in list with no matching page of any type — reconcilable
-                # by deletion. Measure: surfaces for quality scoring, doesn't
-                # block the run. reconcile.py will fix this before downstream.
-                result.measure_findings.append(ValidationFinding(
-                    type="pairing_commission",
-                    severity="measure",
-                    detail=f"[{loc}.{field_name}[{j}]] {slug!r} not found in pages[]",
-                    source_id=source_id,
-                    page_type=expected,
-                    slug=slug,
-                ))
-            elif pt != expected:
-                # Slug matches a page, but the page's page_type disagrees.
-                # The page object is authoritative (Task #65 / D45):
-                # reconcile_slug_lists() rebuilds the slug lists from
-                # pages[], and the pairing_type_mismatch reconcile rule is
-                # the finding-driven safety net. Measure, not gate.
-                result.measure_findings.append(ValidationFinding(
-                    type="pairing_type_mismatch",
-                    severity="measure",
-                    detail=f"[{loc}.{field_name}[{j}]] {slug!r} is page_type={pt!r}, expected {expected!r}",
-                    source_id=source_id,
-                    page_type=pt,
-                    slug=slug,
-                ))
-
-        # Omission direction — for every concept/article page in pages[], its
-        # slug must appear in the matching slug list. Reconcilable by addition.
-        for page_slug, pt in page_types.items():
-            if pt != expected:
-                continue
-            if page_slug not in items_set:
-                result.measure_findings.append(ValidationFinding(
-                    type="pairing_omission",
-                    severity="measure",
-                    detail=f"[{loc}.{field_name}] missing slug {page_slug!r} ({expected} page exists in pages[])",
-                    source_id=source_id,
-                    page_type=expected,
-                    slug=page_slug,
-                ))
+    # #115: list-pairing checks (concept_slugs / article_slugs commission /
+    # omission / type_mismatch) are DELETED — the fields left the contract,
+    # so the defect class is structurally impossible.
 
     def _reserved_check(slug_value: Any, where: str) -> None:
         if not isinstance(slug_value, str):
@@ -245,11 +239,6 @@ def _check_source(src: dict, idx: int, result: ValidationResult) -> None:
                 ))
 
     _reserved_check(summary_slug, f"{loc}.summary_slug")
-    for field_name in ("concept_slugs", "article_slugs"):
-        items = src.get(field_name) or []
-        if isinstance(items, list):
-            for j, slug in enumerate(items):
-                _reserved_check(slug, f"{loc}.{field_name}[{j}]")
     for j, p in enumerate(pages):
         if isinstance(p, dict):
             _reserved_check(p.get("slug"), f"{loc}.pages[{j}].slug")
@@ -267,15 +256,14 @@ def check_compiled_source(parsed_json: dict) -> list[str]:
     """Return hard-zero finding types emitted for a single parsed source.
 
     `parsed_json` must have the same shape as one entry of
-    `compile_result.compiled_sources[]` (i.e. fields `source_id`,
-    `summary_slug`, `concept_slugs`, `article_slugs`, `pages`).
+    `compile_result.compiled_sources[]`. Post-#115 the summary identity is
+    derived when top-level `summary_slug` is absent (dual-mode, T2.2).
 
-    The 5 hard-zero types currently checked: `duplicate_slug`,
+    The hard-zero types currently checked: `duplicate_slug`,
     `summary_slug_missing`, `summary_slug_wrong_type`,
-    `pairing_type_mismatch`, `reserved_slug` (per
-    `HARD_ZERO_FINDING_TYPES`). Measure-severity findings
-    (`pairing_commission`, `pairing_omission`) are intentionally
-    excluded — they are reconcilable, not hard-zero.
+    `summary_slug_mismatch`, `summary_slug_underivable`, `reserved_slug`
+    (per `HARD_ZERO_FINDING_TYPES`). The retired pairing defect class
+    (commission / omission / type_mismatch) is gone with the slug-list fields.
     """
     return [f.type for f in check_compiled_source_findings(parsed_json)]
 

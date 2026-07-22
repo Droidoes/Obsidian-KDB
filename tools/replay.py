@@ -32,7 +32,7 @@ from compiler.response_recovery import recover_json_response
 @dataclass
 class ReplayFixture:
     case_id: str
-    source_name: str
+    source_id: str
     stored_response_text: str
     expected_extract_ok: bool
     expected_parse_ok: bool
@@ -74,7 +74,9 @@ def load_fixtures(fixtures_dir: Path) -> list[ReplayFixture]:
         cases.append(
             ReplayFixture(
                 case_id=entry.name,
-                source_name=meta["source_name"],
+                # #115 T2.2: fixtures key on source_id (source_name tolerated
+                # for unmigrated historical cases)
+                source_id=meta.get("source_id") or meta["source_name"],
                 stored_response_text=response_txt.read_text(encoding="utf-8"),
                 expected_extract_ok=bool(meta["expected_extract_ok"]),
                 expected_parse_ok=bool(meta["expected_parse_ok"]),
@@ -121,8 +123,19 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
         error_detail = "semantic: payload is not an object"
         return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
 
+    # #115 T2.2: the expected summary slug is derived from the source id,
+    # never taken from the payload. Codex Gate-2 F5: an underivable stem
+    # fails CLOSED (semantic_ok=False) instead of aborting the replay run.
+    from compiler.summary_slug import expected_summary_slug
+    from common.paths import PathError
+    try:
+        expected_slug = expected_summary_slug(fixture.source_id)
+    except PathError as e:
+        error_detail = f"semantic: cannot derive expected summary slug: {e}"
+        return _result(fixture, extract_ok, parse_ok, schema_ok, False, error_detail)
     semantic_errors = validate_source_response.semantic_check(
-        parsed, source_name=fixture.source_name
+        parsed,
+        expected_summary_slug=expected_slug,
     )
     semantic_ok = semantic_errors == []
     if not semantic_ok:

@@ -21,6 +21,32 @@ _DEFAULT_ENTITY_STATUS = "active"
 _DEFAULT_CONFIDENCE = "medium"
 
 
+# --- body wikilink extraction (#115 T2.4 — graph-owned edge derivation) ---
+# Mirrored from compiler.validate_source_response.body_wikilink_slugs:
+# kdb_graph imports NO sibling package (B.3), so the extractor is mirrored
+# here. Keep the regexes byte-identical to the compiler's.
+
+import re as _re
+
+_SLUG_RE = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_WIKILINK_RE = _re.compile(
+    rf"(?<!\\)\[\[({_SLUG_RE})(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]"
+)
+_FENCED_CODE_RE = _re.compile(r"```.*?```", _re.DOTALL)
+_INLINE_CODE_RE = _re.compile(r"`[^`\n]*`")
+
+
+def _strip_code(text: str) -> str:
+    return _INLINE_CODE_RE.sub("", _FENCED_CODE_RE.sub("", text))
+
+
+def body_wikilink_slugs(body: str) -> set[str]:
+    """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]] tokens
+    in `body`, after stripping code spans. Mirror of the compiler's
+    body_wikilink_slugs — the two must not drift."""
+    return set(_WIKILINK_RE.findall(_strip_code(body)))
+
+
 def apply_compile_result(
     cr: dict,
     scan_dict: dict,
@@ -325,9 +351,17 @@ def _replace_outgoing_links(
         "MATCH (a:Entity {slug: $slug})-[r:LINKS_TO]->() DELETE r",
         {"slug": slug},
     )
-    # 2. Recreate per outgoing_links entry. The MATCH-with-two-patterns
+    # 2. Recreate per link target. #115 T2.4: the legacy `outgoing_links`
+    # key is preferred when present (historical payloads); new-shape pages
+    # derive the target set from body wikilinks. The delete-then-recreate
+    # contract is unchanged — only the target-set SOURCE changed, so a
+    # recompiled body-only page keeps its edges. The MATCH-with-two-patterns
     # form silently skips when target doesn't exist.
-    for target in page.get("outgoing_links", []):
+    targets = page.get("outgoing_links")
+    if targets is None:
+        body = page.get("body")
+        targets = sorted(body_wikilink_slugs(body)) if isinstance(body, str) else []
+    for target in targets:
         conn.execute(
             """
             MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b})

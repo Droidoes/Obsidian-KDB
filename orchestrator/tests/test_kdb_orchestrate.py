@@ -44,22 +44,19 @@ def _vault(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _two_page_response() -> dict:
-    # Summary page wikilinks a concept → reconcile_body_links keeps the edge in
-    # outgoing_links. Both pages live in one source, so a LINKS_TO edge is
-    # wireable — proving _commit_source's wire_links=False genuinely skips it.
+def _two_page_response(source_id: str) -> dict:
+    # New #115 shape: 4-field pages; the summary slug derives from the source;
+    # the summary body wikilinks a concept so a LINKS_TO edge is wireable —
+    # proving _commit_source's wire_links=False genuinely skips it (T2.4
+    # derives edges from bodies).
+    from compiler.summary_slug import expected_summary_slug
     return {
-        "source_name": "s.md", "summary_slug": "summary-foo",
-        "concept_slugs": ["concept-b"], "article_slugs": [],
         "pages": [
-            {"slug": "summary-foo", "page_type": "summary", "title": "Foo",
-             "body": "See [[concept-b]].", "status": "active",
-             "outgoing_links": ["concept-b"], "confidence": "medium"},
+            {"slug": expected_summary_slug(source_id), "page_type": "summary",
+             "title": "Foo", "body": "See [[concept-b]]."},
             {"slug": "concept-b", "page_type": "concept", "title": "B",
-             "body": "Body.", "status": "active",
-             "outgoing_links": [], "confidence": "medium"},
+             "body": "Body."},
         ],
-        "log_entries": [], "warnings": [],
     }
 
 
@@ -97,7 +94,7 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     post_embed_hash = "sha256:" + "a" * 64
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
-        _fake_model(_two_page_response()))
+        _fake_model(_two_page_response(source_id)))
 
     with GraphDB(tmp_path / "graph") as g:
         produced = compiler.compile_source(
@@ -120,7 +117,7 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
 
     assert result.ok and result.graph_committed
     # wiki pages written (stage 8)
-    assert list((vault / "KDB").rglob("summary-foo.md")), "summary page not written"
+    assert list((vault / "KDB").rglob("summary-s.md")), "summary page not written"
     assert list((vault / "KDB").rglob("concept-b.md")), "concept page not written"
     # graph: SUPPORTS wired per-source; LINKS_TO deferred (wire_links=False)
     assert n_supports == 2
@@ -243,13 +240,11 @@ def _pass1_signal_envelope(model: str = "m") -> dict:
 
 
 def _compiled_response(source_name: str, summary_slug: str) -> dict:
+    # New #115 shape: 4-field pages only. (summary_slug arg retained so each
+    # caller pins the derived slug for its source.)
     return {
-        "source_name": source_name, "summary_slug": summary_slug,
-        "concept_slugs": [], "article_slugs": [],
         "pages": [{"slug": summary_slug, "page_type": "summary", "title": "T",
-                   "body": "Body.", "status": "active", "outgoing_links": [],
-                   "confidence": "medium"}],
-        "log_entries": [], "warnings": [],
+                   "body": "Body."}],
     }
 
 
@@ -578,9 +573,7 @@ def test_finalize_runs_after_later_source_quarantine_and_wires_committed_links(
     def model(req):
         calls["n"] += 1
         if calls["n"] == 1:
-            response = _two_page_response()
-            response["source_name"] = "a.md"
-            return _fake_model(response)(req)
+            return _fake_model(_two_page_response("AIML/a.md"))(req)
         raise RuntimeError("model down")
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
@@ -597,7 +590,7 @@ def test_finalize_runs_after_later_source_quarantine_and_wires_committed_links(
     with GraphDB(tmp_path / "graph") as g:
         assert _count(
             g,
-            "MATCH (:Entity {slug: 'summary-foo'})-[r:LINKS_TO]->"
+            "MATCH (:Entity {slug: 'summary-a'})-[r:LINKS_TO]->"
             "(:Entity {slug: 'concept-b'}) RETURN COUNT(r)",
         ) == 1
     cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))

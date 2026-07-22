@@ -165,19 +165,19 @@ def _combine_crs(crs: list[dict], run_id: str) -> dict:
     the union of aliases_emitted is load-bearing, not cosmetic.
     """
     compiled_sources: list[dict] = []
-    log_entries: list[dict] = []
-    warnings: list[str] = []
+    compilation_notes: list[str] = []
     aliases_emitted: list[dict] = []
     for cr in crs:
         compiled_sources.extend(cr.get("compiled_sources", []))
-        log_entries.extend(cr.get("log_entries", []))
-        warnings.extend(cr.get("warnings", []))
+        # #115: the aggregate field is compilation_notes (was warnings);
+        # log_entries left the contract.
+        compilation_notes.extend(cr.get("compilation_notes", []))
         cm = cr.get("canonical_meta") or {}
         aliases_emitted.extend(cm.get("aliases_emitted") or [])
     combined: dict = {
         "run_id": run_id, "success": True,
         "compiled_sources": compiled_sources,
-        "log_entries": log_entries, "errors": [], "warnings": warnings,
+        "compilation_notes": compilation_notes, "errors": [],
     }
     if aliases_emitted:
         combined["canonical_meta"] = {"aliases_emitted": aliases_emitted}

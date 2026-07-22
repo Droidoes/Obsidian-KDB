@@ -168,7 +168,8 @@
     "recoverable": true,
     "extract_ok": true,
     "prefix_discarded_chars": 0,
-    "tail_discarded_chars": 2
+    "tail_discarded_chars": 2,
+    "legacy_negative": true
   },
   {
     "file": "20.txt",

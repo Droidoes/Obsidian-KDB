@@ -8,21 +8,21 @@ The prompt has two halves:
            SHA-256 run stamp) + a locked response-contract block
            that enforces the shape the Python side actually parses.
 
-  user   — source_name (echoed for semantic check), the verbatim source
-           text, a context snapshot from context_loader,
-           the per-source response schema, and a minimal exemplar.
+  user   — source_name (input framing), the verbatim source text,
+           a context snapshot from context_loader, the per-source
+           response schema, and a minimal exemplar.
 
 `load_system_prompt` and `load_response_schema_text` are memoised so a
 batch of compiles pays the file-read cost once. Both live in the package,
 so neither takes a key.
 
 The response-contract block below is intentionally terse and mirrors the
-semantic rules in validate_compiled_source_response.semantic_check.
-If a rule is added there, it belongs here too — the contract the model
-sees and the contract we enforce must not drift. Source-id-space fields
-(top-level source_id, per-page supports_page_existence, per-log_entry
-related_source_ids) are runner-injected after parse and intentionally
-absent from this contract — see Task #41.
+semantic gate in validate_source_response.semantic_check (exactly one
+summary page whose slug matches the derived expected value). If a rule
+is added there, it belongs here too — the contract the model sees and
+the contract we enforce must not drift. The contract is wiki-native
+(#115): the model authors pages with [[wikilink]] bodies only; Python
+owns derivation, link extraction, status, and provenance.
 """
 from __future__ import annotations
 
@@ -39,7 +39,8 @@ _PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.m
 # Code-owned Pass-2 prompt version (D-115-13). Bumped in the SAME commit as
 # any prompt-content change — content and version never drift. Stamped on
 # every run header alongside the loaded-text SHA-256.
-PASS2_PROMPT_VERSION = "2.0.0"
+# 2.0.0 = repo-packaged prompt (Phase 0); 3.0.0 = wiki-native contract (Phase 1).
+PASS2_PROMPT_VERSION = "3.0.0"
 
 RESPONSE_CONTRACT = """\
 ---
@@ -48,12 +49,13 @@ RESPONSE CONTRACT (non-negotiable):
 - No markdown code fences around the object.
 - No prose before or after the object.
 - The object MUST satisfy the schema provided in the user message exactly.
-- The "source_name" field MUST echo the provided source_name verbatim.
-- Use the "warnings" array for non-fatal observations about the source
-  (ambiguous terms, unresolved references, uncertain categorization). DO NOT
-  fabricate pages to satisfy the schema. If the source genuinely contains
-  nothing knowledge-worthy, emit a single summary page whose body explains
-  that — with honest content — and leave concept/article lists empty."""
+- Every response contains exactly one summary page, whose slug follows the
+  summary-<stem> convention (see the system prompt).
+- The optional "compilation_notes" array carries non-fatal observations
+  (notable reuse decisions, thin sources). DO NOT fabricate pages to
+  satisfy the schema. If the source genuinely contains nothing
+  knowledge-worthy, emit a single summary page whose body explains that —
+  with honest content — and note it in compilation_notes."""
 
 
 @dataclass(frozen=True)
@@ -90,17 +92,15 @@ def load_response_schema_text() -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False)
 
 
-def exemplar_response(source_name: str) -> dict:
-    """Minimal valid per-source response. Satisfies both the JSON-Schema
-    and the semantic rules for the supplied source_name, so the model
-    sees a concrete target rather than guessing shape from the schema
-    alone. Two pages — summary + one concept — so the exemplar
-    demonstrates the body↔outgoing_links bidirectional rule by example."""
+def exemplar_response() -> dict:
+    """Minimal valid per-source response (#115 wiki-native shape). Two
+    4-field pages — summary + one concept — so the model sees a concrete
+    target rather than guessing shape from the schema alone. The summary
+    slug demonstrates the summary-<stem> convention for a hypothetical
+    `example.md` source; the expected value for the REAL source is never
+    injected (D-115 model authorship). `compilation_notes` is omitted to
+    demonstrate its optionality."""
     return {
-        "source_name": source_name,
-        "summary_slug": "summary-example",
-        "concept_slugs": ["example-concept"],
-        "article_slugs": [],
         "pages": [
             {
                 "slug": "summary-example",
@@ -108,22 +108,14 @@ def exemplar_response(source_name: str) -> dict:
                 "title": "Example Summary",
                 "body": "A short summary of what this source is about, "
                         "introducing [[example-concept]] as the central idea.",
-                "status": "active",
-                "outgoing_links": ["example-concept"],
-                "confidence": "medium",
             },
             {
                 "slug": "example-concept",
                 "page_type": "concept",
                 "title": "Example Concept",
                 "body": "Definition and treatment of the concept as the source presents it.",
-                "status": "active",
-                "outgoing_links": [],
-                "confidence": "medium",
             },
         ],
-        "log_entries": [],
-        "warnings": [],
     }
 
 
@@ -190,7 +182,7 @@ def build_prompt(
     system = f"{system_prompt}\n\n{RESPONSE_CONTRACT}"
 
     context_json = json.dumps(context_snapshot.to_dict(), indent=2, ensure_ascii=False)
-    exemplar_json = json.dumps(exemplar_response(source_name), indent=2, ensure_ascii=False)
+    exemplar_json = json.dumps(exemplar_response(), indent=2, ensure_ascii=False)
 
     # Conditionally prepend the Pass-1 metadata block before SOURCE CONTENT
     pass1_section = (

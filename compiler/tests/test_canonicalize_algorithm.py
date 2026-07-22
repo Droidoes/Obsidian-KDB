@@ -22,12 +22,12 @@ import pytest
 from compiler.canonicalize import (
     AliasEntry,
     AliasLedger,
+    CanonicalizationError,
     CanonicalizationResult,
     CircularAliasError,
     _merge_page_intents,
     _normalize_slug,
     _remap_body_wikilinks,
-    _remap_outgoing_and_slug_lists,
     build_resolve_map,
     run,
     write_canonicalized,
@@ -47,32 +47,24 @@ def _ledger(*pairs: tuple[str, str]) -> AliasLedger:
 
 
 def _page(slug: str, body: str = "", **kw) -> dict:
-    """Build a minimal pageIntent dict."""
+    """Build a minimal pageIntent dict (post-#115 shape)."""
     p = {
         "slug": slug,
         "page_type": kw.get("page_type", "concept"),
         "title": kw.get("title", slug),
         "body": body,
     }
-    if "outgoing_links" in kw:
-        p["outgoing_links"] = kw["outgoing_links"]
     if "supports_page_existence" in kw:
         p["supports_page_existence"] = kw["supports_page_existence"]
     return p
 
 
-def _cs(source_id: str, summary_slug: str, pages: list[dict], **kw) -> dict:
-    """Build a minimal compiledSource dict."""
-    cs = {
+def _cs(source_id: str, pages: list[dict]) -> dict:
+    """Build a minimal compiledSource dict (post-#115: no summary_slug/lists)."""
+    return {
         "source_id": source_id,
-        "summary_slug": summary_slug,
         "pages": pages,
     }
-    if "concept_slugs" in kw:
-        cs["concept_slugs"] = kw["concept_slugs"]
-    if "article_slugs" in kw:
-        cs["article_slugs"] = kw["article_slugs"]
-    return cs
 
 
 def _cr(compiled_sources: list[dict], run_id: str = "test-run") -> dict:
@@ -252,6 +244,60 @@ class TestBodyWikilinkRemap:
         new_body2, _ = _remap_body_wikilinks(new_body, resolve)
         assert new_body == new_body2 == body
 
+    # --- Codex Gate-2 F4: token semantics aligned with the extraction
+    # contract (body_wikilink_slugs / graph intake mirror) ---
+
+    def test_heading_suffix_remapped_and_preserved(self):
+        """[[aapl#Revenue]] → [[apple-inc#Revenue]] — the heading form is a
+        link (the extractors count it as an edge), so it MUST be remapped,
+        with the heading suffix preserved verbatim."""
+        resolve = {"aapl": "apple-inc"}
+        new_body, remaps = _remap_body_wikilinks("See [[aapl#Revenue]].", resolve)
+        assert new_body == "See [[apple-inc#Revenue]]."
+        assert remaps == [("aapl", "apple-inc")]
+
+    def test_heading_and_display_preserved(self):
+        resolve = {"aapl": "apple-inc"}
+        new_body, remaps = _remap_body_wikilinks(
+            "See [[aapl#Revenue|the revenue section]].", resolve
+        )
+        assert new_body == "See [[apple-inc#Revenue|the revenue section]]."
+        assert remaps == [("aapl", "apple-inc")]
+
+    def test_escaped_wikilink_not_remapped(self):
+        r"""A backslash-escaped \[[aapl]] is literal text, not a link (the
+        extractors ignore it) — remap must not touch it."""
+        resolve = {"aapl": "apple-inc"}
+        body = r"Literal \[[aapl]] vs real [[aapl]]."
+        new_body, remaps = _remap_body_wikilinks(body, resolve)
+        assert new_body == r"Literal \[[aapl]] vs real [[apple-inc]]."
+        assert remaps == [("aapl", "apple-inc")]
+
+    def test_inline_code_span_not_remapped(self):
+        resolve = {"aapl": "apple-inc"}
+        body = "Example `[[aapl]]` vs real [[aapl]]."
+        new_body, remaps = _remap_body_wikilinks(body, resolve)
+        assert new_body == "Example `[[aapl]]` vs real [[apple-inc]]."
+        assert remaps == [("aapl", "apple-inc")]
+
+    def test_fenced_code_block_not_remapped(self):
+        resolve = {"aapl": "apple-inc"}
+        body = "Before [[aapl]].\n```\n[[aapl]]\n```\nAfter [[aapl]]."
+        new_body, remaps = _remap_body_wikilinks(body, resolve)
+        assert new_body == (
+            "Before [[apple-inc]].\n```\n[[aapl]]\n```\nAfter [[apple-inc]]."
+        )
+        assert remaps == [("aapl", "apple-inc"), ("aapl", "apple-inc")]
+
+    def test_heading_form_edge_consistent_with_extractor(self):
+        """Post-remap, the extractor sees the CANONICAL slug for every link
+        form it recognizes — no alias leaks past canonicalization."""
+        from compiler.validate_source_response import body_wikilink_slugs
+        resolve = {"aapl": "apple-inc"}
+        body = "[[aapl]] / [[aapl#Revenue]] / [[aapl|Apple]]"
+        new_body, _ = _remap_body_wikilinks(body, resolve)
+        assert body_wikilink_slugs(new_body) == {"apple-inc"}
+
 
 # -------------------------------------------------------------------------
 # _merge_page_intents — Pass 2 (OQ-F)
@@ -261,8 +307,8 @@ class TestPageMerge:
     def test_no_collision_no_merge(self):
         resolve = {}
         cr = _cr([
-            _cs("src1", "summary-src1", [_page("foo", "body of foo")]),
-            _cs("src2", "summary-src2", [_page("bar", "body of bar")]),
+            _cs("src1", [_page("foo", "body of foo")]),
+            _cs("src2", [_page("bar", "body of bar")]),
         ])
         merged_log, used = _merge_page_intents(cr, resolve)
         assert merged_log == []
@@ -275,7 +321,7 @@ class TestPageMerge:
         """One source has a page whose slug normalizes to an alias —
         the slug renames to canonical, no body merge."""
         resolve = {"aapl": "apple-inc"}
-        cr = _cr([_cs("src1", "summary-src1", [_page("aapl", "body of aapl")])])
+        cr = _cr([_cs("src1", [_page("aapl", "body of aapl")])])
         merged_log, used = _merge_page_intents(cr, resolve)
         assert cr["compiled_sources"][0]["pages"][0]["slug"] == "apple-inc"
         assert cr["compiled_sources"][0]["pages"][0]["body"] == "body of aapl"
@@ -290,8 +336,8 @@ class TestPageMerge:
         """OQ-F: if canonical-slug page intent exists, its body wins."""
         resolve = {"aapl": "apple-inc"}
         cr = _cr([
-            _cs("src1", "summary-src1", [_page("aapl", "alias body — short")]),
-            _cs("src2", "summary-src2",
+            _cs("src1", [_page("aapl", "alias body — short")]),
+            _cs("src2",
                 [_page("apple-inc", "canonical body — much longer because i ramble")]),
         ])
         merged_log, used = _merge_page_intents(cr, resolve)
@@ -307,8 +353,8 @@ class TestPageMerge:
         """OQ-F fallback: when all contenders are aliases, longest body wins."""
         resolve = {"aapl": "apple-inc", "apple-corp": "apple-inc"}
         cr = _cr([
-            _cs("src1", "summary-src1", [_page("aapl", "short")]),
-            _cs("src2", "summary-src2",
+            _cs("src1", [_page("aapl", "short")]),
+            _cs("src2",
                 [_page("apple-corp", "the much longer body that should win")]),
         ])
         merged_log, _ = _merge_page_intents(cr, resolve)
@@ -317,31 +363,54 @@ class TestPageMerge:
         assert all_pages[0]["body"] == "the much longer body that should win"
         assert {e["merge_strategy"] for e in merged_log} == {"longest-wins"}
 
-    def test_outgoing_links_union_across_contenders(self):
-        """Codex's OQ-F refinement: outgoing_links are UNIONED across all
-        contenders, not just the body-winner. Without union, contributions
-        from the loser sources would be silently dropped."""
+    def test_losing_body_links_are_dropped_with_the_loser(self):
+        """#115 Task 2.1 (body-authority): NO outgoing_links union — edges
+        derive from body wikilinks, so the winner's body is the sole link
+        source. The loser's body (and its links) is dropped with it."""
         resolve = {"aapl": "apple-inc"}
         cr = _cr([
-            _cs("src1", "summary-src1",
-                [_page("aapl", "tiny", outgoing_links=["stocks", "dividend"])]),
-            _cs("src2", "summary-src2",
-                [_page("apple-inc", "the longer canonical body",
-                       outgoing_links=["tech", "hardware"])]),
+            _cs("src1",
+                [_page("aapl", "tiny, links [[stocks]] and [[dividend]]")]),
+            _cs("src2",
+                [_page("apple-inc", "the longer canonical body, links [[tech]]")]),
         ])
         _merge_page_intents(cr, resolve)
         merged = [p for cs in cr["compiled_sources"] for p in cs["pages"]][0]
-        # All four links survive, in seen order (canonical-wins → winner's
-        # outgoing_links come first per the iteration order of contenders).
-        assert merged["outgoing_links"] == ["stocks", "dividend", "tech", "hardware"]
+        assert "outgoing_links" not in merged
+        assert merged["body"] == "the longer canonical body, links [[tech]]"
+
+    def test_summary_merge_group_rejected(self):
+        """#115 Task 2.1: a merge group containing a summary page raises
+        CanonicalizationError — the per-source summary identity is never
+        merged away."""
+        resolve = {"apple": "apple-inc"}
+        cr = _cr([
+            _cs("src1",
+                [_page("apple", "alias summary body", page_type="summary")]),
+            _cs("src2",
+                [_page("apple-inc", "canonical concept body")]),
+        ])
+        with pytest.raises(CanonicalizationError, match="summary"):
+            _merge_page_intents(cr, resolve)
+
+    def test_summary_alias_singleton_rename_rejected(self):
+        """#115 Task 2.1: an alias-singleton rename of a summary page would
+        break the exact-slug gate — raises CanonicalizationError."""
+        resolve = {"summary-old-name": "summary-new-name"}
+        cr = _cr([
+            _cs("src1",
+                [_page("summary-old-name", "summary body", page_type="summary")]),
+        ])
+        with pytest.raises(CanonicalizationError, match="summary"):
+            _merge_page_intents(cr, resolve)
 
     def test_supports_page_existence_union_across_contenders(self):
         """Same UNION discipline for supports_page_existence (Codex refinement)."""
         resolve = {"aapl": "apple-inc"}
         cr = _cr([
-            _cs("src1", "summary-src1",
+            _cs("src1",
                 [_page("aapl", "short", supports_page_existence=["KDB/raw/s1.md"])]),
-            _cs("src2", "summary-src2",
+            _cs("src2",
                 [_page("apple-inc", "longer canonical body",
                        supports_page_existence=["KDB/raw/s2.md"])]),
         ])
@@ -354,8 +423,8 @@ class TestPageMerge:
         is removed from its compiled_source's pages[]."""
         resolve = {"aapl": "apple-inc"}
         cr = _cr([
-            _cs("src1", "summary-src1", [_page("aapl", "alias body")]),
-            _cs("src2", "summary-src2", [_page("apple-inc", "canonical longer body")]),
+            _cs("src1", [_page("aapl", "alias body")]),
+            _cs("src2", [_page("apple-inc", "canonical longer body")]),
         ])
         _merge_page_intents(cr, resolve)
         # canonical-wins → winner is src2's page
@@ -365,48 +434,12 @@ class TestPageMerge:
 
 
 # -------------------------------------------------------------------------
-# _remap_outgoing_and_slug_lists — Pass 3
-# -------------------------------------------------------------------------
-
-class TestOutgoingAndSlugListsRemap:
-    def test_outgoing_links_remap(self):
-        resolve = {"aapl": "apple-inc"}
-        cr = _cr([_cs("src1", "summary-src1", [
-            _page("foo", "", outgoing_links=["aapl", "bar"])
-        ])])
-        link_remaps, used = _remap_outgoing_and_slug_lists(cr, resolve)
-        assert cr["compiled_sources"][0]["pages"][0]["outgoing_links"] == [
-            "apple-inc", "bar"
-        ]
-        assert link_remaps == [("aapl", "apple-inc")]
-        assert used == [("aapl", "apple-inc")]
-
-    def test_concept_slugs_remap_with_dedup(self):
-        """If two slugs in concept_slugs both remap to the same canonical,
-        dedupe (preserving order of first occurrence)."""
-        resolve = {"aapl": "apple-inc", "apple-corp": "apple-inc"}
-        cr = _cr([_cs("src1", "summary-src1", [],
-                      concept_slugs=["aapl", "apple-corp", "other"])])
-        _remap_outgoing_and_slug_lists(cr, resolve)
-        assert cr["compiled_sources"][0]["concept_slugs"] == ["apple-inc", "other"]
-
-    def test_article_slugs_remap(self):
-        resolve = {"aapl": "apple-inc"}
-        cr = _cr([_cs("src1", "summary-src1", [],
-                      article_slugs=["aapl", "other-article"])])
-        _remap_outgoing_and_slug_lists(cr, resolve)
-        assert cr["compiled_sources"][0]["article_slugs"] == [
-            "apple-inc", "other-article"
-        ]
-
-
-# -------------------------------------------------------------------------
 # run() — end-to-end integration
 # -------------------------------------------------------------------------
 
 class TestRunIntegration:
     def test_empty_ledger_is_noop(self):
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         result = run(cr, _ledger(), "run-1")
         assert result.compile_result is cr  # same object (mutated in place)
         assert result.canonical_meta["aliases_emitted"] == []
@@ -417,15 +450,15 @@ class TestRunIntegration:
 
     def test_end_to_end_alias_resolution(self):
         """Full pass: ledger maps AAPL→apple-inc; cr has page intent for
-        AAPL with outgoing_links and body wikilinks both referencing AAPL.
-        After run(): page slug renames to apple-inc; outgoing_links and
-        body both reference apple-inc; canonical_meta records everything."""
+        AAPL whose body wikilinks reference AAPL. After run(): page slug
+        renames to apple-inc; body wikilinks reference apple-inc;
+        canonical_meta records everything (body-authority — no
+        outgoing_links anywhere)."""
         ledger = _ledger(("AAPL", "apple-inc"))
-        cr = _cr([_cs("src1", "summary-src1", [
+        cr = _cr([_cs("src1", [
             _page(
                 "aapl",
-                "Header about [[aapl]] performance.",
-                outgoing_links=["aapl", "stocks"],
+                "Header about [[aapl]] performance, see also [[stocks]].",
             ),
         ])])
         result = run(cr, ledger, "run-1")
@@ -433,10 +466,9 @@ class TestRunIntegration:
         # Page renamed
         page = cr["compiled_sources"][0]["pages"][0]
         assert page["slug"] == "apple-inc"
-        # outgoing_links remapped + deduped
-        assert page["outgoing_links"] == ["apple-inc", "stocks"]
+        assert "outgoing_links" not in page
         # Body wikilink remapped
-        assert page["body"] == "Header about [[apple-inc]] performance."
+        assert page["body"] == "Header about [[apple-inc]] performance, see also [[stocks]]."
 
         # canonical_meta records all three remap events for the same alias
         cm = result.canonical_meta
@@ -462,8 +494,8 @@ class TestRunIntegration:
         slugs. The canonical-named body wins (OQ-F)."""
         ledger = _ledger(("aapl", "apple-inc"))
         cr = _cr([
-            _cs("src-a", "summary-src-a", [_page("aapl", "alias body short")]),
-            _cs("src-b", "summary-src-b",
+            _cs("src-a", [_page("aapl", "alias body short")]),
+            _cs("src-b",
                 [_page("apple-inc", "canonical body — definitive write-up")]),
         ])
         result = run(cr, ledger, "run-2")
@@ -480,7 +512,7 @@ class TestRunIntegration:
         """The fatal failure mode: D-R5-9 — Stage 6 halts the pipeline
         before patch_applier when the ledger contains a cycle."""
         ledger = _ledger(("a", "b"), ("b", "a"))
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         with pytest.raises(CircularAliasError, match="cycle detected"):
             run(cr, ledger, "run-1")
 
@@ -492,7 +524,7 @@ class TestRunIntegration:
             entries=(AliasEntry(surface="aapl", canonical="apple-inc"),),
             snapshot_sha256="deadbeef-test-sha",
         )
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         result = run(cr, ledger, "run-1")
         assert result.canonical_meta["ledger_snapshot_sha256"] == "deadbeef-test-sha"
 
@@ -501,7 +533,7 @@ class TestRunIntegration:
         the literal sentinel "empty" — preserved verbatim into
         canonical_meta so replay knows the original run had no ledger."""
         empty = AliasLedger()  # default snapshot_sha256 = "empty"
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         result = run(cr, empty, "run-1")
         assert result.canonical_meta["ledger_snapshot_sha256"] == "empty"
 
@@ -513,7 +545,7 @@ class TestRunIntegration:
 class TestWriteCanonicalized:
     def test_write_back_round_trips(self, tmp_path: Path):
         """The canonicalized cr is written atomically + can be read back."""
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         run(cr, _ledger(), "run-1")
         target = tmp_path / "compile_result.json"
         write_canonicalized(cr, target)
@@ -528,7 +560,7 @@ class TestWriteCanonicalized:
     def test_write_back_uses_atomic_io(self, tmp_path: Path):
         """Sanity check: writing twice leaves only the final content
         (no .tmp lingering) — atomic_write_json should rename into place."""
-        cr = _cr([_cs("src1", "summary-src1", [_page("foo", "body")])])
+        cr = _cr([_cs("src1", [_page("foo", "body")])])
         run(cr, _ledger(), "run-1")
         target = tmp_path / "compile_result.json"
         write_canonicalized(cr, target)

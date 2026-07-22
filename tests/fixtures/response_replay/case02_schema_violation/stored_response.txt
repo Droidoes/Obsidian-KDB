@@ -1,21 +1,12 @@
 ```json
 {
-  "source_name": "bayes.md",
-  "summary_slug": "Bayes Theorem",
-  "concept_slugs": [],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "Bayes Theorem",
       "page_type": "summary",
       "title": "Bayes' Theorem",
-      "body": "Relates conditional and marginal probabilities of two random events.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Relates conditional and marginal probabilities of two random events."
     }
-  ],
-  "log_entries": [],
-  "warnings": []
+  ]
 }
 ```

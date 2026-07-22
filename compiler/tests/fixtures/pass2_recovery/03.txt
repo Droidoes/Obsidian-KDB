@@ -1,88 +1,35 @@
 {
-  "source_name": "Obsidian CLI Skills for Claude Code.md",
-  "summary_slug": "summary-obsidian-cli-skills-for-claude-code",
-  "concept_slugs": [
-    "obsidian-cli-skills",
-    "obsidian-ensure",
-    "obsidian-cold-start"
-  ],
-  "article_slugs": [
-    "archiving-claude-conv-to-obsidian-vault"
-  ],
   "pages": [
     {
       "slug": "summary-obsidian-cli-skills-for-claude-code",
       "page_type": "summary",
       "title": "Obsidian CLI Skills for Claude Code (Summary)",
-      "body": "This document outlines four custom Obsidian CLI skills developed for integration with Claude Code. Located in `~/.claude/skills/`, these skills provide command execution wrappers, daily note logging structures, knowledge retrieval practices, and graph exploration utilities. The system establishes Obsidian as long-term memory for Claude Code sessions, supported by [[obsidian-cli-skills|CLI command mastery]]. The core integration pattern is detailed in [[obsidian-ensure]] to resolve the [[obsidian-cold-start]] latency issue, and is architected alongside the [[archiving-claude-conv-to-obsidian-vault|session archiving pipeline]].",
-      "status": "active",
-      "outgoing_links": [
-        "obsidian-cli-skills",
-        "obsidian-ensure",
-        "obsidian-cold-start",
-        "archiving-claude-conv-to-obsidian-vault"
-      ],
-      "confidence": "high"
+      "body": "This document outlines four custom Obsidian CLI skills developed for integration with Claude Code. Located in `~/.claude/skills/`, these skills provide command execution wrappers, daily note logging structures, knowledge retrieval practices, and graph exploration utilities. The system establishes Obsidian as long-term memory for Claude Code sessions, supported by [[obsidian-cli-skills|CLI command mastery]]. The core integration pattern is detailed in [[obsidian-ensure]] to resolve the [[obsidian-cold-start]] latency issue, and is architected alongside the [[archiving-claude-conv-to-obsidian-vault|session archiving pipeline]]."
     },
     {
       "slug": "obsidian-cli-skills",
       "page_type": "concept",
       "title": "Obsidian CLI Skills",
-      "body": "Obsidian CLI Skills are a structured suite of shell integrations designed for automated vault interaction via Claude Code. The tools reside in `~/.claude/skills/` and span four core areas:\n1. Shared automation wrappers (`obsidian-shared.md`)\n2. Daily notes automation (`obsidian-daily.md`) to create, read, or append context under target headers like Notes, Decisions, and Tomorrow\n3. Proactive knowledge retrieval (`obsidian-recall.md`) using filesystem search (`grep -ri`) over directories like AI-ML and Equity Research to treat the vault as long-term memory\n4. Graph exploration and structural diagnostic scripts (`obsidian-graph.md`)\nThese commands allow non-interactive shells to manipulate the vault, though direct filesystem operations remain the preferred fallback.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Obsidian CLI Skills are a structured suite of shell integrations designed for automated vault interaction via Claude Code. The tools reside in `~/.claude/skills/` and span four core areas:\n1. Shared automation wrappers (`obsidian-shared.md`)\n2. Daily notes automation (`obsidian-daily.md`) to create, read, or append context under target headers like Notes, Decisions, and Tomorrow\n3. Proactive knowledge retrieval (`obsidian-recall.md`) using filesystem search (`grep -ri`) over directories like AI-ML and Equity Research to treat the vault as long-term memory\n4. Graph exploration and structural diagnostic scripts (`obsidian-graph.md`)\nThese commands allow non-interactive shells to manipulate the vault, though direct filesystem operations remain the preferred fallback."
     },
     {
       "slug": "obsidian-ensure",
       "page_type": "concept",
       "title": "Obsidian Ensure",
-      "body": "The `obsidian_ensure` function is a smart CLI runner designed to manage tool-based calls to the Obsidian application safely. Because the Obsidian CLI relies on a Unix socket connection (`~/.config/obsidian/SingletonSocket`) linked to an active desktop window, executing command actions when the application is shut down causes latency. The helper checks for a live process using `SingletonLock` detection; if active, it runs commands instantly. Otherwise, it triggers an background cold-start sequence, sleeps for eight seconds to allow UI initialization, and then dispatches the queued commands.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The `obsidian_ensure` function is a smart CLI runner designed to manage tool-based calls to the Obsidian application safely. Because the Obsidian CLI relies on a Unix socket connection (`~/.config/obsidian/SingletonSocket`) linked to an active desktop window, executing command actions when the application is shut down causes latency. The helper checks for a live process using `SingletonLock` detection; if active, it runs commands instantly. Otherwise, it triggers an background cold-start sequence, sleeps for eight seconds to allow UI initialization, and then dispatches the queued commands."
     },
     {
       "slug": "obsidian-cold-start",
       "page_type": "concept",
       "title": "Obsidian Cold-Start",
-      "body": "An Obsidian Cold-Start represents the state where CLI execution commands are triggered while the desktop instance of Obsidian is inactive. Under non-interactive environments like WSL/Linux shell loops, running commands through the AppImage directly forces a full-GUI reload, resulting in 10-30s+ timeouts. The cold-start is detected dynamically by parsing the PID inside `~/.config/obsidian/SingletonLock` and verifying its lifecycle using `kill -0`. To bypass this initialization lag, tools are instructed to default to raw filesystem access for markdown read/write actions, invoking `obsidian_ensure` only for actions requiring the live application runtime.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "An Obsidian Cold-Start represents the state where CLI execution commands are triggered while the desktop instance of Obsidian is inactive. Under non-interactive environments like WSL/Linux shell loops, running commands through the AppImage directly forces a full-GUI reload, resulting in 10-30s+ timeouts. The cold-start is detected dynamically by parsing the PID inside `~/.config/obsidian/SingletonLock` and verifying its lifecycle using `kill -0`. To bypass this initialization lag, tools are instructed to default to raw filesystem access for markdown read/write actions, invoking `obsidian_ensure` only for actions requiring the live application runtime."
     },
     {
       "slug": "archiving-claude-conv-to-obsidian-vault",
       "page_type": "article",
       "title": "Archiving Claude Conversations to Obsidian Vault",
-      "body": "The integration of Claude Code with personal knowledge bases establishes a design cycle where real-time CLI skills leverage the local vault as an external cognitive layer. While active operations use [[obsidian-cli-skills]] for fast lookups, daily updates, and relationship mapping, the system depends on a robust pipeline to transition conversational session artifacts into long-term structures. This process is documented as an archive pipeline where conversation outputs are integrated back into the vault. When dealing with complex structures, the system utilizes direct filesystem reads to sidestep [[obsidian-cold-start]] latencies, guaranteeing that the pipeline is decoupled from GUI-specific processes managed by [[obsidian-ensure]].",
-      "status": "active",
-      "outgoing_links": [
-        "obsidian-cli-skills",
-        "obsidian-cold-start",
-        "obsidian-ensure"
-      ],
-      "confidence": "medium"
+      "body": "The integration of Claude Code with personal knowledge bases establishes a design cycle where real-time CLI skills leverage the local vault as an external cognitive layer. While active operations use [[obsidian-cli-skills]] for fast lookups, daily updates, and relationship mapping, the system depends on a robust pipeline to transition conversational session artifacts into long-term structures. This process is documented as an archive pipeline where conversation outputs are integrated back into the vault. When dealing with complex structures, the system utilizes direct filesystem reads to sidestep [[obsidian-cold-start]] latencies, guaranteeing that the pipeline is decoupled from GUI-specific processes managed by [[obsidian-ensure]]."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Initialized new concept pages for obsidian-cli-skills, obsidian-ensure, and obsidian-cold-start to support programmatic integration with Claude Code.",
-      "related_slugs": [
-        "obsidian-cli-skills",
-        "obsidian-ensure",
-        "obsidian-cold-start"
-      ]
-    },
-    {
-      "level": "notice",
-      "message": "Created placeholder article for archiving-claude-conv-to-obsidian-vault to match the design doc referenced in the source text.",
-      "related_slugs": [
-        "archiving-claude-conv-to-obsidian-vault"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }

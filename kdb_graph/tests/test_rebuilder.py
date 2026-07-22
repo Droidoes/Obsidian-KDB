@@ -848,3 +848,88 @@ def test_rebuild_mixed_pre_74_and_post_74_journal_sequence(graph_dir, tmp_path):
     assert alias is not None and alias.canonical_id == "apple-inc"
     assert alias.first_run_id == "2026-05-20T01-00-00Z"
     assert stats["alias_of"] == 1
+
+
+# ---------- #115 T2.5: mixed-shape journal pair (legacy + new) ----------
+
+def _write_run_with_mutation(
+    journals_dir: Path, run_id: str, mutation: dict, scan: dict,
+    *, started_at: str,
+) -> None:
+    """Write one obsidian run tree with an explicit mutation payload."""
+    journals_dir.mkdir(parents=True, exist_ok=True)
+    (journals_dir / f"{run_id}.json").write_text(json.dumps({
+        "schema_version": "2.2", "run_id": run_id, "started_at": started_at,
+        "success": True, "dry_run": False, "replayable_payload": True,
+    }))
+    sidecar = journals_dir / run_id
+    sidecar.mkdir(parents=True, exist_ok=True)
+    (sidecar / "compile_result.json").write_text(json.dumps(mutation))
+    (sidecar / "last_scan.json").write_text(json.dumps(scan))
+
+
+def test_rebuilder_mixed_shape_journal_pair(graph_dir, tmp_path):
+    """#115 T2.5: one OLD-shape journal (legacy outgoing_links stored list)
+    and one NEW-shape journal (body wikilinks, no key) replay through one
+    rebuild — edges derive from the stored list and from bodies respectively.
+    Codex Gate-2 F6: the NEW journal is a VALID new-contract record (exactly
+    one summary page with the derived slug); both payloads pass dual-mode
+    aggregate validation before the rebuild."""
+    journals = tmp_path / "runs"
+    legacy_src = make_compiled_source("KDB/raw/old.md", [
+        make_page("summary-old", page_type="summary",
+                  outgoing_links=["a", "b"]),
+        make_page("a", outgoing_links=["b"]),
+        make_page("b"),
+    ])
+    legacy_src["summary_slug"] = "summary-old"  # legacy-shape key
+    legacy_cr = make_compile_result([legacy_src], run_id="r-old")
+    legacy_scan = make_scan([make_scan_entry("KDB/raw/old.md")])
+    new_pages = [
+        {"slug": "summary-new", "page_type": "summary", "title": "New",
+         "body": "Overview. Links [[c]]."},
+        {"slug": "c", "page_type": "concept", "title": "C",
+         "body": "Links [[d]]."},
+        {"slug": "d", "page_type": "concept", "title": "D", "body": "x"},
+    ]
+    new_cr = make_compile_result(
+        [{"source_id": "KDB/raw/new.md", "pages": new_pages}],
+        run_id="r-new",
+    )
+    new_scan = make_scan([make_scan_entry("KDB/raw/new.md")])
+
+    # Both journals pass dual-mode aggregate validation (legacy referential,
+    # NEW derived) before replay — the compatibility boundary is exercised
+    # on VALID records, not just edge derivation. Validated as fixture-backed
+    # payloads (compile_meta omitted per the aggregate schema's fixture
+    # allowance — the synthetic factory's run_state/hash stub is intake-only).
+    from compiler import validate_compile_result as vcr
+
+    def _fixture_backed(cr: dict) -> dict:
+        import copy
+        c = copy.deepcopy(cr)
+        for src in c["compiled_sources"]:
+            src.pop("compile_meta", None)
+        return c
+
+    assert vcr.validate(_fixture_backed(legacy_cr)).is_valid
+    assert vcr.validate(_fixture_backed(new_cr)).is_valid
+
+    _write_run_with_mutation(journals, "2026-07-21T01-00-00Z", legacy_cr, legacy_scan,
+                             started_at="2026-07-21T01:00:00")
+    _write_run_with_mutation(journals, "2026-07-22T01-00-00Z", new_cr, new_scan,
+                             started_at="2026-07-22T01:00:00")
+
+    adapter = ObsidianRunsAdapter()
+    result = rebuild(graph_dir=graph_dir, adapter=adapter, journals_dir=journals,
+                     confirm=False)
+    assert result.replayed == 2
+    assert result.failed == 0
+    with GraphDB(graph_dir) as gdb:
+        def _edges(a: str, b: str) -> int:
+            r = gdb.conn.execute(
+                "MATCH (:Entity {slug: $a})-[r:LINKS_TO]->(:Entity {slug: $b}) "
+                "RETURN COUNT(r)", {"a": a, "b": b})
+            return int(r.get_next()[0]) if r.has_next() else 0
+        assert _edges("a", "b") == 1   # legacy stored list
+        assert _edges("c", "d") == 1   # body-derived

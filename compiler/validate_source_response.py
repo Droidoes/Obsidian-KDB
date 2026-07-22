@@ -4,16 +4,16 @@ Applied to ONE parsed response object from a single compile call, BEFORE
 it is enriched with runner-injected source-id-space fields and folded
 into compile_result.json. Complements validate_compile_result (which
 validates the aggregate file) by enforcing the stricter per-call
-contract: all 7 LLM-emitted pageIntent fields required, schema-only
-checks that compile_result can't express because compile_result is
-lenient at aggregate level.
+contract: the 4 LLM-emitted pageIntent fields (slug / page_type / title /
+body) required on every page, schema-only checks that compile_result
+can't express because compile_result is lenient at aggregate level.
 
 Two independent layers:
     1. validate(payload)               — JSON-Schema, accumulating
     2. semantic_check(payload, ...)    — post-schema, semantic rules
 
 CLI:
-    kdb-validate-response [path.json] [--source-name <name>]
+    kdb-validate-response [path.json] [--source-id <id>]
     exit 0 — valid; exit 1 — invalid; exit 2 — runtime/config error
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ _SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.sch
 @cache
 def _validator() -> Draft202012Validator:
     """Build the response-schema validator. The schema constrains only
-    LLM-emitted fields (slug-space + a path-free source_name). Source-id-
+    LLM-emitted fields (pages + optional compilation_notes). Source-id-
     space fields are runner-injected post-parse and validated at the
     persistence layer (compile_result.schema.json), not here."""
     with _SCHEMA_PATH.open("r", encoding="utf-8") as f:
@@ -55,43 +55,31 @@ def validate(payload: Any) -> list[str]:
     ]
 
 
-def semantic_check(payload: dict, *, source_name: str) -> list[str]:
+def semantic_check(payload: dict, *, expected_summary_slug: str) -> list[str]:
     """Run AFTER schema validation passes. Returns [] if valid.
 
-    Rules (in evaluation order, accumulating):
-      1. payload['source_name'] == source_name             (echoed verbatim)
-      2. summary_slug appears in [p['slug'] for p in pages]
-      3. exactly one page has page_type='summary' AND slug == summary_slug
+    Rule (#115 D-115): exactly one page has page_type == 'summary' AND its
+    slug equals expected_summary_slug (derived via
+    compiler.summary_slug.expected_summary_slug — NEVER prompt-injected;
+    the model authors it, the gate validates it).
     """
     errors: list[str] = []
 
-    echoed = payload.get("source_name")
-    if echoed != source_name:
-        errors.append(
-            f"[$.source_name] expected {source_name!r}, got {echoed!r} "
-            "(model must echo the provided source_name verbatim)"
-        )
-
     pages = payload.get("pages") or []
-    page_slugs = [p.get("slug") for p in pages if isinstance(p, dict)]
-
-    summary_slug = payload.get("summary_slug")
-    if summary_slug not in page_slugs:
-        errors.append(
-            f"[$.summary_slug] {summary_slug!r} does not appear in pages[].slug"
-        )
-
-    summary_page_matches = [
+    summary_pages = [
         p for p in pages
-        if isinstance(p, dict)
-        and p.get("slug") == summary_slug
-        and p.get("page_type") == "summary"
+        if isinstance(p, dict) and p.get("page_type") == "summary"
     ]
-    if len(summary_page_matches) != 1:
+    if len(summary_pages) != 1:
         errors.append(
-            f"[$.pages] expected exactly one page with "
-            f"page_type='summary' and slug={summary_slug!r}, "
-            f"got {len(summary_page_matches)}"
+            f"[$.pages] expected exactly one page with page_type='summary', "
+            f"got {len(summary_pages)}"
+        )
+    elif summary_pages[0].get("slug") != expected_summary_slug:
+        errors.append(
+            f"[$.pages] summary page slug must equal "
+            f"{expected_summary_slug!r} (derived from the source stem), "
+            f"got {summary_pages[0].get('slug')!r}"
         )
 
     return errors
@@ -132,8 +120,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("path", nargs="?", help="Path to JSON file; reads stdin if omitted")
     p.add_argument(
-        "--source-name",
-        help="If provided, run semantic_check against this source_name too",
+        "--source-id",
+        help="If provided, derive the expected summary slug from this source id "
+             "and run semantic_check too (omitted → schema-only validation)",
     )
     return p
 
@@ -150,8 +139,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     errors = validate(payload)
-    if not errors and args.source_name and isinstance(payload, dict):
-        errors.extend(semantic_check(payload, source_name=args.source_name))
+    if not errors and args.source_id and isinstance(payload, dict):
+        from compiler.summary_slug import expected_summary_slug
+        from common.paths import PathError
+        try:
+            expected = expected_summary_slug(args.source_id)
+        except PathError as e:
+            print(f"ERROR: cannot derive expected summary slug: {e}",
+                  file=sys.stderr)
+            return 2
+        errors.extend(semantic_check(payload, expected_summary_slug=expected))
 
     if errors:
         for msg in errors:

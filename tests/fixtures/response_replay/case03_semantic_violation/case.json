@@ -1,8 +1,8 @@
 {
-  "source_name": "markov.md",
+  "source_id": "KDB/raw/markov.md",
   "expected_extract_ok": true,
   "expected_parse_ok": true,
   "expected_schema_ok": true,
   "expected_semantic_ok": false,
-  "notes": "Schema-valid: all slugs match the pattern. But summary_slug='summary-markov-process' is not in pages[].slug (only 'summary-markov-chain' exists), violating semantic rule 2."
+  "notes": "Schema-valid (#115 shape), but the summary page's slug 'summary-markov-chain' != the derived expected 'summary-markov' \u2014 semantic gate rejects."
 }

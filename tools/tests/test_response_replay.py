@@ -46,7 +46,7 @@ def test_load_fixtures_ignores_incomplete_case_dirs(tmp_path: Path) -> None:
     # Has case.json but no stored_response.txt — should be skipped
     (tmp_path / "bad_case" / "case.json").write_text(
         json.dumps({
-            "source_name": "x.md",
+            "source_id": "KDB/raw/x.md",
             "expected_extract_ok": True,
             "expected_parse_ok": True,
             "expected_schema_ok": True,
@@ -101,7 +101,7 @@ def test_replay_case03_semantic_violation_flags() -> None:
 def _synth(**overrides) -> ReplayFixture:
     base = dict(
         case_id="synth",
-        source_name="x.md",
+        source_id="KDB/raw/x.md",
         stored_response_text="{}",
         expected_extract_ok=True,
         expected_parse_ok=True,
@@ -157,23 +157,14 @@ def test_replay_recovers_trailing_junk_like_compile_one() -> None:
     Pre-#114 replay failed this at parse; now parse_ok=True and the
     schema/semantic stages proceed on the recovered document."""
     payload = json.dumps({
-        "source_name": "x.md",
-        "summary_slug": "summary-x",
-        "concept_slugs": [],
-        "article_slugs": [],
         "pages": [
             {
                 "slug": "summary-x",
                 "page_type": "summary",
                 "title": "X",
                 "body": "Minimal body.",
-                "status": "active",
-                "outgoing_links": [],
-                "confidence": "high",
             }
         ],
-        "log_entries": [],
-        "warnings": [],
     })
     f = _synth(stored_response_text=payload + "\n}")
     r = replay_case(f)
@@ -200,6 +191,31 @@ def test_replay_mismatch_flags_expected() -> None:
     assert r.matches_expected is False
 
 
+def test_replay_underivable_stem_fails_closed() -> None:
+    """Codex Gate-2 F5: a fixture whose source_id stem normalizes to nothing
+    (non-ASCII-only) must NOT raise PathError — it yields semantic_ok=False
+    with a stable error detail and the run continues."""
+    payload = json.dumps({
+        "pages": [
+            {"slug": "summary-x", "page_type": "summary",
+             "title": "X", "body": "Minimal body."}
+        ],
+    })
+    f = _synth(
+        source_id="KDB/raw/日本語.md",
+        stored_response_text=payload,
+        expected_semantic_ok=False,
+    )
+    r = replay_case(f)
+    assert r.extract_ok is True
+    assert r.parse_ok is True
+    assert r.schema_ok is True
+    assert r.semantic_ok is False
+    assert r.error_detail is not None
+    assert "cannot derive expected summary slug" in r.error_detail
+    assert r.matches_expected is True
+
+
 # ---------- CLI ----------
 
 def test_cli_exits_0_on_all_matching(
@@ -221,7 +237,7 @@ def test_cli_exits_1_when_any_case_mismatches(
     )
     (case / "case.json").write_text(
         json.dumps({
-            "source_name": "x.md",
+            "source_id": "KDB/raw/x.md",
             "expected_extract_ok": True,   # wrong — extract will fail
             "expected_parse_ok": True,
             "expected_schema_ok": True,

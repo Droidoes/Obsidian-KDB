@@ -1,80 +1,35 @@
 {
-  "source_name": "Warren Buffett Brian Moynihan -Speak at Georgetown.md",
-  "summary_slug": "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
-  "concept_slugs": [
-    "giving-pledge",
-    "circle-of-competence",
-    "market-cycles",
-    "philanthropic-utility"
-  ],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
       "page_type": "summary",
       "title": "Warren Buffett and Brian Moynihan Speak at Georgetown (Summary)",
-      "body": "At a Georgetown University event, Warren Buffett and Bank of America CEO Brian Moynihan discuss philanthropy, the US economy, and the core principles of value investing. Buffett details his reasons for co-founding the [[giving-pledge]], his optimistic outlook on American economic resiliency and [[market-cycles]], his framework of [[philanthropic-utility]], and his disciplined approach to investing within his [[circle-of-competence]] without swinging at bad pitches.",
-      "status": "active",
-      "outgoing_links": [
-        "giving-pledge",
-        "circle-of-competence",
-        "market-cycles",
-        "philanthropic-utility"
-      ],
-      "confidence": "high"
+      "body": "At a Georgetown University event, Warren Buffett and Bank of America CEO Brian Moynihan discuss philanthropy, the US economy, and the core principles of value investing. Buffett details his reasons for co-founding the [[giving-pledge]], his optimistic outlook on American economic resiliency and [[market-cycles]], his framework of [[philanthropic-utility]], and his disciplined approach to investing within his [[circle-of-competence]] without swinging at bad pitches."
     },
     {
       "slug": "giving-pledge",
       "page_type": "concept",
       "title": "Giving Pledge",
-      "body": "The Giving Pledge is an effort co-founded by Warren Buffett and Bill and Melinda Gates to encourage the world's wealthiest individuals and families to dedicate at least 50% of their net worth to philanthropy. Rather than trying to control wealth from the grave, Buffett advocates that these funds be spent actively and promptly, requiring his own donated Berkshire Hathaway shares to be fully spent within 10 years after his estate is closed. The pledge aims to establish a new societal norm or 'gospel of wealth' modeled after Andrew Carnegie and John D. Rockefeller, influencing younger generations of billionaires to commit their capital to tough, high-impact societal challenges.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The Giving Pledge is an effort co-founded by Warren Buffett and Bill and Melinda Gates to encourage the world's wealthiest individuals and families to dedicate at least 50% of their net worth to philanthropy. Rather than trying to control wealth from the grave, Buffett advocates that these funds be spent actively and promptly, requiring his own donated Berkshire Hathaway shares to be fully spent within 10 years after his estate is closed. The pledge aims to establish a new societal norm or 'gospel of wealth' modeled after Andrew Carnegie and John D. Rockefeller, influencing younger generations of billionaires to commit their capital to tough, high-impact societal challenges."
     },
     {
       "slug": "circle-of-competence",
       "page_type": "concept",
       "title": "Circle of Competence",
-      "body": "The circle of competence is an investing heuristic derived from Benjamin Graham's philosophy, where an investor strictly limits their activity to industries and business models they thoroughly understand. Warren Buffett explains this principle using Ted Williams's 'Science of Hitting' framework, in which a batter only swings at pitches in their sweet spot. In investing, there are no called strikes; an investor can let thousands of opportunities (such as Microsoft or Amazon) pass by without penalty. A strike is only called if the investor swings and misses. Success requires the discipline to define one's boundary, wait for the right pitch, and ignore the urge to form an opinion on every business.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The circle of competence is an investing heuristic derived from Benjamin Graham's philosophy, where an investor strictly limits their activity to industries and business models they thoroughly understand. Warren Buffett explains this principle using Ted Williams's 'Science of Hitting' framework, in which a batter only swings at pitches in their sweet spot. In investing, there are no called strikes; an investor can let thousands of opportunities (such as Microsoft or Amazon) pass by without penalty. A strike is only called if the investor swings and misses. Success requires the discipline to define one's boundary, wait for the right pitch, and ignore the urge to form an opinion on every business."
     },
     {
       "slug": "market-cycles",
       "page_type": "concept",
       "title": "Market Cycles",
-      "body": "Market cycles are driven by the immutable tendencies of human psychology, specifically the transition between greed and fear. Warren Buffett notes that while greed and speculative bubbles build up gradually (such as in housing), fear and panics occur all at once when everyone attempts to exit simultaneously. Despite periodic recessions and severe panics, Buffett emphasizes a long-term optimism in the economic resilience of the United States. He highlights that throughout the 20th century—despite world wars, the Great Depression, and epidemics—the underlying productivity of the American system expanded exponentially, making panics and market corrections the most advantageous times to buy undervalued assets.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Market cycles are driven by the immutable tendencies of human psychology, specifically the transition between greed and fear. Warren Buffett notes that while greed and speculative bubbles build up gradually (such as in housing), fear and panics occur all at once when everyone attempts to exit simultaneously. Despite periodic recessions and severe panics, Buffett emphasizes a long-term optimism in the economic resilience of the United States. He highlights that throughout the 20th century—despite world wars, the Great Depression, and epidemics—the underlying productivity of the American system expanded exponentially, making panics and market corrections the most advantageous times to buy undervalued assets."
     },
     {
       "slug": "philanthropic-utility",
       "page_type": "concept",
       "title": "Philanthropic Utility",
-      "body": "Philanthropic utility is a framework Warren Buffett uses to distinguish between the nominal size of a donation and the actual sacrifice made by the donor. Buffett argues that billionaires who pledge large sums are giving up assets that hold zero practical utility to their lifestyle, as they retain more than enough wealth to buy anything they want. True philanthropic sacrifice, and therefore greater admiration, belongs to average individuals who donate small amounts (such as putting five dollars in a collection plate) that directly impact their families' daily choices or consumption. However, the consolidation of low-utility billionaire assets into highly focused efforts like the [[giving-pledge]] is necessary to tackle massive global problems like disease eradication.",
-      "status": "active",
-      "outgoing_links": [
-        "giving-pledge"
-      ],
-      "confidence": "high"
+      "body": "Philanthropic utility is a framework Warren Buffett uses to distinguish between the nominal size of a donation and the actual sacrifice made by the donor. Buffett argues that billionaires who pledge large sums are giving up assets that hold zero practical utility to their lifestyle, as they retain more than enough wealth to buy anything they want. True philanthropic sacrifice, and therefore greater admiration, belongs to average individuals who donate small amounts (such as putting five dollars in a collection plate) that directly impact their families' daily choices or consumption. However, the consolidation of low-utility billionaire assets into highly focused efforts like the [[giving-pledge]] is necessary to tackle massive global problems like disease eradication."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Compiled summary page and four key concepts: Giving Pledge, Circle of Competence (utilizing the Ted Williams batting analogy from the transcript), Market Cycles (detailing the greed/fear dynamic and American economic history), and Philanthropic Utility (the comparison of billionaire vs. middle-class sacrifice).",
-      "related_slugs": [
-        "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
-        "giving-pledge",
-        "circle-of-competence",
-        "market-cycles",
-        "philanthropic-utility"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }

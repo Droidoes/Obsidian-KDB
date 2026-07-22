@@ -27,6 +27,7 @@ from typing import Any
 from common import paths
 from common.atomic_io import atomic_write_text
 from common.run_context import RunContext
+from common.types import summary_page
 
 
 class PagePatchError(Exception):
@@ -214,11 +215,14 @@ def build_page_patches(
             raise PagePatchError(
                 f"Source {source_id!r} missing from scan"
             )
+        # #115 dual-mode: legacy payloads carry top-level summary_slug; new
+        # payloads derive it via the unique summary page (fail-closed helper).
+        summary_slug = cs.get("summary_slug") or summary_page(cs)["slug"]
         for intent in cs.get("pages", []):
             slug = intent["slug"]
             ptype = intent["page_type"]
             page_key = paths.slug_to_relpath(slug, ptype)
-            role = "primary" if slug == cs["summary_slug"] else "supporting"
+            role = "primary" if slug == summary_slug else "supporting"
             page_refs[page_key].append({
                 "source_id": source_id, "hash": source_hash, "role": role,
             })

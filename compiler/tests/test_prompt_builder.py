@@ -1,24 +1,20 @@
 """Tests for prompt_builder — system/user assembly for one compile call.
 
-Coverage per blueprint §10:
-    - load_system_prompt returns the repo-packaged prompt (post-#115)
-    - the packaged prompt's SHA-256 matches the ratified pre-move anchor
-      (Gate-0 pin: the vault→repo copy is byte-verbatim)
-    - load_response_schema_text returns schema text with the expected keys
+Post-#115 Phase-1 coverage (wiki-native contract):
+    - load_system_prompt returns the repo-packaged prompt
+    - the rewritten prompt carries the new contract and the D-115-7 fixes
+      (the Gate-0 byte-anchor test was retired BY the Phase-1 rewrite —
+      content/version drift is guarded by PASS2_PROMPT_VERSION instead)
+    - load_response_schema_text returns the new-shape schema
     - build_prompt system includes the system prompt + contract lines
     - build_prompt user includes source_name, source_text, context, schema, exemplar
-    - exemplar_response echoes the supplied source_name and is schema+semantic valid
+    - exemplar_response (no args) is schema+semantic valid
     - key contract sentences are present verbatim
 
 Plus a drift-guard: the user section order must match what compile_one reads.
-
-Task #41: source-id-space fields (source_id, supports_page_existence,
-related_source_ids) no longer appear in LLM-emitted shape — runner
-injects them post-parse. Tests use source_name accordingly.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -37,14 +33,6 @@ from compiler.validate_source_response import semantic_check, validate
 
 SOURCE_NAME = "foo.md"
 SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction
-
-# Gate-0 pin (Task #115, blueprint Task 0.1): SHA-256 of the live vault
-# prompt at the moment of the vault→repo copy (2026-07-22). The packaged
-# file must remain byte-identical until Phase 1 deliberately rewrites it.
-PACKAGED_PROMPT_SHA256 = (
-    "dcfa3d1cd9c1e7c543527b5d4357ce46fb9f1e31a766a8127b8565942c11e12a"
-)
-
 
 @pytest.fixture(autouse=True)
 def _clear_caches() -> None:
@@ -76,11 +64,27 @@ def test_load_system_prompt_returns_packaged_file() -> None:
     assert load_system_prompt() == packaged.read_text(encoding="utf-8")
 
 
-def test_packaged_prompt_matches_gate0_anchor_sha256() -> None:
-    """Gate-0 anchor: the repo copy is byte-verbatim against the pre-move
-    vault prompt (defects intact — D-115-7 fixes land in Phase 1)."""
-    digest = hashlib.sha256(load_system_prompt().encode("utf-8")).hexdigest()
-    assert digest == PACKAGED_PROMPT_SHA256
+def test_packaged_prompt_is_the_phase1_wiki_native_contract() -> None:
+    """Phase-1 rewrite (D-115): the packaged prompt speaks wiki-native —
+    no removed fields, and the three D-115-7 defects are fixed."""
+    p = load_system_prompt()
+    assert p.startswith("# KDB Compiler — System Prompt")   # D-115-7a line-1 defect
+    assert "manifest snapshot" not in p                      # D-115-7b
+    assert "graph snapshot" in p
+    assert "aborts the run" not in p                         # D-115-7c
+    assert "quarantined" in p
+    # removed contract fields must not be taught anymore
+    assert "outgoing_links" not in p
+    assert "log_entries" not in p
+    assert '"warnings"' not in p
+    assert "confidence" not in p
+    assert "summary-<stem>" in p                             # convention stated once
+
+
+def test_pass2_prompt_version_is_3() -> None:
+    """Phase-1 bump guard: content and version move together (D-115-13).
+    2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1)."""
+    assert prompt_builder.PASS2_PROMPT_VERSION == "3.0.0"
 
 
 def test_load_system_prompt_missing_raises(
@@ -115,12 +119,15 @@ def test_load_response_schema_text_is_valid_json_with_expected_keys() -> None:
     # Per-source contract has these top-level schema markers
     assert schema.get("title", "").lower().startswith("kdb compiled source response")
     assert schema["type"] == "object"
-    assert "source_name" in schema["properties"]
-    assert "summary_slug" in schema["properties"]
     assert "pages" in schema["properties"]
+    assert "compilation_notes" in schema["properties"]
     assert schema["additionalProperties"] is False
-    # Task #41: source-id-space fields are NOT in the LLM contract
-    assert "source_id" not in schema["properties"]
+    # #115: removed fields are NOT in the LLM contract
+    for removed in ("source_name", "summary_slug", "concept_slugs",
+                    "article_slugs", "log_entries", "warnings"):
+        assert removed not in schema["properties"]
+    page_req = schema["$defs"]["pageIntent"]["required"]
+    assert sorted(page_req) == ["body", "page_type", "slug", "title"]
 
 
 def test_load_response_schema_text_is_pretty_printed() -> None:
@@ -132,20 +139,18 @@ def test_load_response_schema_text_is_pretty_printed() -> None:
 
 # ---------- exemplar_response ----------
 
-def test_exemplar_echoes_source_name() -> None:
-    ex = exemplar_response("other.md")
-    assert ex["source_name"] == "other.md"
-    # Task #41: exemplar must NOT include source-id-space fields
-    assert "source_id" not in ex
-    assert "supports_page_existence" not in ex["pages"][0]
+def test_exemplar_has_only_the_four_page_fields() -> None:
+    ex = exemplar_response()
+    for page in ex["pages"]:
+        assert set(page) == {"slug", "page_type", "title", "body"}
 
 
 def test_exemplar_passes_schema_and_semantic() -> None:
     """The example we send the model must itself satisfy every rule we
     enforce. Otherwise we'd be training the model on invalid shape."""
-    ex = exemplar_response(SOURCE_NAME)
+    ex = exemplar_response()
     assert validate(ex) == []
-    assert semantic_check(ex, source_name=SOURCE_NAME) == []
+    assert semantic_check(ex, expected_summary_slug="summary-example") == []
 
 
 # ---------- build_prompt: system ----------
@@ -159,20 +164,22 @@ def test_system_includes_system_prompt_and_contract() -> None:
     assert bp.system == f"{load_system_prompt()}\n\n{RESPONSE_CONTRACT}"
     assert "RESPONSE CONTRACT (non-negotiable):" in bp.system
     assert "Return EXACTLY ONE JSON object." in bp.system
-    assert 'The "source_name" field MUST echo' in bp.system
+    assert "exactly one summary page" in bp.system
 
 
 def test_system_does_not_include_user_sections() -> None:
+    # The packaged prompt *mentions* the user-section headings in prose (it
+    # must — it describes them), so assert on the actual per-call payloads:
+    # source text, the context JSON dump, and rendered schema must not leak
+    # into the system half.
+    snap = _snapshot()
     bp = build_prompt(
         source_name=SOURCE_NAME,
         source_text="hello",
-        context_snapshot=_snapshot(),
+        context_snapshot=snap,
     )
-    # The packaged prompt *mentions* the user-section headings in prose, so
-    # assert on the actual per-call payloads instead: source text, context
-    # JSON, and rendered schema must not leak into the system half.
     assert "hello" not in bp.system
-    assert "## EXISTING CONTEXT (graph snapshot)" not in bp.system
+    assert json.dumps(snap.to_dict(), indent=2, ensure_ascii=False) not in bp.system
     assert '"$schema"' not in bp.system
 
 
@@ -223,7 +230,7 @@ def test_user_includes_schema_and_exemplar() -> None:
     # Schema section includes a distinctive schema token
     assert "compiled_source_response.schema.json" in bp.user or '"pageIntent"' in bp.user
     # Exemplar section contains the echoed source_name inside the JSON block
-    ex_json = json.dumps(exemplar_response(SOURCE_NAME), indent=2, ensure_ascii=False)
+    ex_json = json.dumps(exemplar_response(), indent=2, ensure_ascii=False)
     assert ex_json in bp.user
 
 
@@ -342,13 +349,13 @@ def test_build_prompt_source_meta_excludes_kdb_signal() -> None:
 
 def test_response_contract_mentions_semantic_rules() -> None:
     """The contract block the model sees must surface every rule enforced
-    by validate_compiled_source_response.semantic_check. If that file grows
-    a new rule, either add it to RESPONSE_CONTRACT too or update this
-    test deliberately."""
+    by validate_source_response.semantic_check (the exact-one-summary
+    gate). If that file grows a new rule, either add it to
+    RESPONSE_CONTRACT too or update this test deliberately."""
     c = RESPONSE_CONTRACT
-    assert "echo the provided source_name verbatim" in c
+    assert "exactly one summary page" in c
     assert "EXACTLY ONE JSON object" in c
     assert "DO NOT" in c and "fabricate pages" in c
-    # Task #41: source-id-space rules are runner-side, not LLM-side
-    assert "supports_page_existence" not in c
-    assert "source_id" not in c
+    # #115: removed rules must not linger in the contract block
+    assert "source_name" not in c
+    assert "warnings" not in c

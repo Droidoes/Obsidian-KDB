@@ -24,6 +24,7 @@ import copy
 from typing import Any
 
 from common.run_context import SCHEMA_VERSION, SOURCE_STATE_SCHEMA_VERSION, RunContext
+from common.types import summary_page
 
 
 PREV_VERSIONS_CAP = 20
@@ -288,7 +289,9 @@ def apply_compile_sources(state: dict, compile_result: dict,
     for cs in compile_result.get("compiled_sources", []):
         source_id = cs["source_id"]
         present.add(source_id)
-        summary_slug = cs["summary_slug"]
+        # #115 dual-mode: legacy payloads carry top-level summary_slug; new
+        # payloads derive it via the unique summary page (fail-closed helper).
+        summary_slug = cs.get("summary_slug") or summary_page(cs)["slug"]
         source_hash = _resolve_source_hash(state, last_scan, source_id)
 
         summary_title = next(
