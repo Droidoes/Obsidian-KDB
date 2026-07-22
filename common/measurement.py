@@ -10,6 +10,7 @@ these structures to compute per-run scoring metrics.
 from __future__ import annotations
 
 import json
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class PassCallMeasurement:
     schema_ok: bool
     semantic_ok: bool | None
     boundary_recovered: bool = False
+    cost_usd: float | None = None
 
     @classmethod
     def from_pass1(cls, sidecar: dict, *, run_id: str) -> "PassCallMeasurement":
@@ -73,6 +75,9 @@ class PassCallMeasurement:
           failures) over `parsed_envelope["model"]` (absent when envelope is None).
         - `prompt_version`: from `parsed_envelope["prompt_version"]` when the envelope
           is present; else "" (failure/quarantine paths have no envelope).
+        - `cost_usd`: sidecar top-level; absent projects as None (#117). The
+          #110-deferred failed-source 0.0 projects as-is — the KPI layer
+          decides what zero means.
         """
         req = sidecar.get("request", {})
         raw = sidecar.get("raw_response", {})
@@ -107,6 +112,7 @@ class PassCallMeasurement:
             schema_ok=not_quarantined,
             semantic_ok=None,      # Pass-1 has no semantic validation gate
             boundary_recovered=False,  # Pass-1 has no parse-stage boundary recovery
+            cost_usd=sidecar.get("cost_usd"),   # top-level; absent → None (#117)
         )
 
     @classmethod
@@ -160,6 +166,7 @@ class PassCallMeasurement:
             semantic_ok=rec.get("semantic_ok"),
             # #114 parse-stage boundary recovery; absent on pre-#114 records.
             boundary_recovered=rec.get("boundary_recovered", False),
+            cost_usd=rec.get("cost_usd"),   # absent on pre-#110 records → None (#117)
         )
 
 
@@ -209,7 +216,12 @@ def load_run_measurements(
     """
     header_path = run_dir / "measurement_header.json"
     header_data = json.loads(header_path.read_text(encoding="utf-8"))
-    header = RunMeasurementHeader(**header_data)
+    # Forward-compat (#117): tolerate header keys newer than this dataclass
+    # (e.g. the #115 pass2 stamp fields) so score-time recompute works across
+    # releases.
+    known = {f.name for f in dataclasses.fields(RunMeasurementHeader)}
+    header = RunMeasurementHeader(
+        **{k: v for k, v in header_data.items() if k in known})
     run_id = header.run_id
 
     # Pass-1: sidecars under pass1/ sub-directory.

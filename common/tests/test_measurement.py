@@ -521,3 +521,53 @@ def test_load_run_measurements_quarantined_included(tmp_path):
     assert len(measurements) == 1
     assert measurements[0].final_status == "quarantined"
     assert measurements[0].parse_ok is False
+
+
+# ---------------------------------------------------------------------------
+# Task #117 — cost_usd projection + forward-compat header loading
+# ---------------------------------------------------------------------------
+
+def test_from_pass1_projects_cost_usd():
+    sidecar = {
+        "source_id": "KDB/raw/a.md",
+        "outcome": "enriched",
+        "request": {"provider": "p", "model": "m"},
+        "raw_response": {"final_status": "clean", "call_count": 1,
+                         "total_input_tokens": 10, "total_output_tokens": 5,
+                         "total_latency_ms": 3},
+        "parsed_envelope": {"prompt_version": "1.2.0"},
+        "cost_usd": 0.0123,
+    }
+    m = PassCallMeasurement.from_pass1(sidecar, run_id="r1")
+    assert m.cost_usd == pytest.approx(0.0123)
+
+
+def test_from_pass1_missing_cost_projects_none():
+    sidecar = {
+        "source_id": "KDB/raw/a.md",
+        "outcome": "enriched",
+        "request": {"provider": "p", "model": "m"},
+        "raw_response": {"final_status": "clean"},
+    }
+    m = PassCallMeasurement.from_pass1(sidecar, run_id="r1")
+    assert m.cost_usd is None
+
+
+def test_from_pass2_projects_cost_usd():
+    rec = {"run_id": "r1", "source_id": "s", "provider": "p", "model": "m",
+           "final_status": "clean", "cost_usd": 0.5}
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.cost_usd == pytest.approx(0.5)
+
+
+def test_load_run_measurements_tolerates_unknown_header_keys(tmp_path):
+    (tmp_path / "measurement_header.json").write_text(json.dumps({
+        "run_id": "r1", "corpus_fingerprint": "fp",
+        "pass1_prompt_version": "1", "pass2_prompt_version": "2.0.0",
+        "scanned": 1, "to_compile": 1, "signal": 1, "noise": 0,
+        "p1_attempted": 1, "p2_attempted": 1,
+        "pass2_system_prompt_sha256": "abc123",   # #115 stamp — unknown pre-merge
+    }))
+    header, calls = load_run_measurements(tmp_path)
+    assert header.run_id == "r1"
+    assert calls == []
