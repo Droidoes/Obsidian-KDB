@@ -41,6 +41,6 @@ Thumbs.db
 # artifacts and ad-hoc inspection snapshots are not)
 benchmark/runs/
 benchmark/inspect/
-# Live leaderboard state (json + rendered md) — machine-local; references
-# gitignored run dirs.
-benchmark/scores/leaderboard.*
+# Leaderboards (main + pass1/pass2, json + rendered md) are TRACKED since
+# 2026-07-22 (#117/#115-baseline decision) — pointers are relative run-dir
+# names, portable on this machine.
