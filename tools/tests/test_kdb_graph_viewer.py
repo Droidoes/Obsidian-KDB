@@ -38,3 +38,50 @@ def test_render_html_missing_token_raises(tmp_path):
         assert False, "expected ValueError for missing token"
     except ValueError:
         pass
+
+
+def test_export_omits_deprecated_entity_confidence(tmp_path):
+    """Codex Gate-3 F1 (#115 D-115-12): the official viewer exporter must
+    NOT return Entity.confidence in props — even when the dead Kuzu column
+    still holds a legacy non-null value."""
+    from kdb_graph.graphdb import GraphDB
+
+    graph_dir = tmp_path / "graph"
+    with GraphDB(graph_dir) as g:
+        g.conn.execute(
+            "CREATE (e:Entity {slug: 'alpha', title: 'Alpha', "
+            "page_type: 'concept', status: 'active', confidence: 'high', "
+            "created_at: 't', updated_at: 't', first_run_id: 'r', "
+            "last_run_id: 'r'})"
+        )
+    data = viewer.export(str(graph_dir))
+    entity_nodes = [n for n in data["nodes"] if n["type"].startswith("Entity")]
+    assert entity_nodes, "seeded Entity must be exported"
+    for n in entity_nodes:
+        assert "confidence" not in n["props"]
+
+
+def test_bakeoff_export_omits_deprecated_entity_confidence(tmp_path):
+    """Same F1 contract for the preserved bake-off fallback exporter."""
+    import importlib.util as _ilu
+
+    _bo = Path(__file__).resolve().parent.parent / "viewer" / "bakeoff" / "export_graph.py"
+    _spec = _ilu.spec_from_file_location("export_graph", _bo)
+    bo = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(bo)
+
+    from kdb_graph.graphdb import GraphDB
+
+    graph_dir = tmp_path / "graph"
+    with GraphDB(graph_dir) as g:
+        g.conn.execute(
+            "CREATE (e:Entity {slug: 'alpha', title: 'Alpha', "
+            "page_type: 'concept', status: 'active', confidence: 'high', "
+            "created_at: 't', updated_at: 't', first_run_id: 'r', "
+            "last_run_id: 'r'})"
+        )
+    data = bo.export(str(graph_dir))
+    entity_nodes = [n for n in data["nodes"] if n["type"] == "Entity"]
+    assert entity_nodes, "seeded Entity must be exported"
+    for n in entity_nodes:
+        assert "confidence" not in n["props"]

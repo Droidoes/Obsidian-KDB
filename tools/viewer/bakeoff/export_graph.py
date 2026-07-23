@@ -65,6 +65,11 @@ def export(graph_path: str) -> dict:
                 nid = node.get("_id")
                 lbl = node.get("_label", tbl)
                 props = {k: v for k, v in node.items() if not k.startswith("_")}
+                # #115 Phase 3 (D-115-12): Entity.confidence is logically
+                # deprecated — never exported, even when the dead Kuzu
+                # column still holds legacy values.
+                if lbl == "Entity":
+                    props.pop("confidence", None)
                 nodes.append({
                     "id": _node_key(nid),
                     "type": lbl,

@@ -20,7 +20,7 @@ from kdb_graph.types import Entity, Source
 
 
 _ENTITY_RETURN_COLS = (
-    "e.slug, e.title, e.page_type, e.status, e.confidence, "
+    "e.slug, e.title, e.page_type, e.status, "
     "e.created_at, e.updated_at, e.first_run_id, e.last_run_id"
 )
 _SOURCE_RETURN_COLS = (
@@ -36,8 +36,8 @@ _SOURCE_RETURN_COLS = (
 def _row_to_entity(row: list[Any]) -> Entity:
     return Entity(
         slug=row[0], title=row[1], page_type=row[2], status=row[3],
-        confidence=row[4], created_at=row[5], updated_at=row[6],
-        first_run_id=row[7], last_run_id=row[8],
+        created_at=row[4], updated_at=row[5],
+        first_run_id=row[6], last_run_id=row[7],
     )
 
 

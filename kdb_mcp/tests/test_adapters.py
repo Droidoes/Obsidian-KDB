@@ -29,6 +29,15 @@ def test_get_entity_returns_card(tmp_path):
     assert card.status == "active"
 
 
+def test_entity_card_model_dump_has_no_confidence(tmp_path):
+    """Codex Gate-3 F2 (#115 D-115-12): the public EntityCard payload must
+    not carry the deprecated confidence field."""
+    gdir = tmp_path / "g"
+    _seed_chain(gdir)
+    card = adapters.get_entity(gdir, "a")
+    assert "confidence" not in card.model_dump()
+
+
 def test_get_entity_missing_raises(tmp_path):
     gdir = tmp_path / "g"
     _seed_chain(gdir)

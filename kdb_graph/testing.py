@@ -13,17 +13,19 @@ def make_page(
     page_type: str = "concept",
     title: str | None = None,
     status: str = "active",
-    confidence: str = "medium",
     outgoing_links: list[str] | None = None,
     body: str = "",
 ) -> dict:
-    """Construct a minimal compile_result page dict."""
+    """Construct a minimal compile_result page dict.
+
+    #115 Phase 3 (D-115-12): no `confidence` key — Entity confidence is
+    logically deprecated; new fixtures never emit it.
+    """
     return {
         "slug": slug,
         "page_type": page_type,
         "title": title if title is not None else f"Title for {slug}",
         "status": status,
-        "confidence": confidence,
         "outgoing_links": outgoing_links or [],
         "body": body,
     }

@@ -55,6 +55,29 @@ async def test_get_entity_round_trip(seeded_graph):
 
 
 @pytest.mark.anyio
+async def test_entity_surfaces_have_no_confidence(seeded_graph):
+    """Codex Gate-3 F2 (#115 D-115-12): the deprecated confidence field must
+    not reappear on ANY Entity-carrying MCP surface."""
+    async with create_connected_server_and_client_session(app._mcp_server) as session:
+        single = await session.call_tool("get_entity", {"slug": "a"})
+        assert single.isError is False
+        assert "confidence" not in single.structuredContent
+
+        hood = await session.call_tool(
+            "graph_neighborhood", {"slug": "a", "direction": "out", "depth": 1}
+        )
+        for n in hood.structuredContent["neighbors"]:
+            assert "confidence" not in n
+
+        prov = await session.call_tool(
+            "entities_for_source", {"source_id": "KDB/raw/s.md"}
+        )
+        assert prov.isError is False
+        for e in prov.structuredContent["entities"]:
+            assert "confidence" not in e
+
+
+@pytest.mark.anyio
 async def test_graph_neighborhood_round_trip(seeded_graph):
     async with create_connected_server_and_client_session(app._mcp_server) as session:
         result = await session.call_tool(

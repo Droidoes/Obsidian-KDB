@@ -159,6 +159,22 @@ def test_attribute_mismatch_detected(graph_dir, tmp_path):
     assert page_type_mm[0].actual_value == "concept"
 
 
+def test_confidence_only_difference_ignored(graph_dir, tmp_path):
+    """Codex Gate-3 F2 (#115 D-115-12): a legacy non-null Entity.confidence
+    in the live graph's dead column must NOT produce a verifier divergence —
+    confidence is no longer compared."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)
+        # Simulate a pre-deprecation graph: the dead column holds a value.
+        gdb.conn.execute(
+            "MATCH (e:Entity {slug: 'alpha'}) SET e.confidence = 'high'"
+        )
+        result = verifier.verify(gdb.conn, journals_dir=journals_dir)
+    assert result.ok, [d for d in result.divergences]
+    assert not any(d.field == "confidence" for d in result.divergences)
+
+
 # ---------- 5. link divergence ----------
 
 def test_link_divergence_detected(graph_dir, tmp_path):

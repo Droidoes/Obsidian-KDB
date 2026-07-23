@@ -10,7 +10,7 @@ class EntityCard(BaseModel):
     title: str
     page_type: str = Field(description="summary | concept | article")
     status: str
-    confidence: str
+    # #115 Phase 3 (D-115-12): confidence removed — logically deprecated.
     canonical_id: str | None = Field(default=None, description="non-null => this is an alias")
 
 
