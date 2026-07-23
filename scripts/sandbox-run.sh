@@ -13,13 +13,13 @@ usage() {
     echo "  --help         Show this help"
     echo ""
     echo "Steps:"
-    echo "  1. Pause OneDrive      — prompts for confirmation before proceeding"
+    echo "  1. Pause Google Drive  — prompts for confirmation before proceeding"
     echo "  2. Reset Sandbox       — wipes graph/wiki/state, keeps config"
     echo "  3. Setup venv          — activates ~/Droidoes/Obsidian-KDB/.venv"
     echo "  4. Kick off the Run    — kdb-orchestrate --emit-kpis (always on)"
     echo "  5. Add to Leaderboard  — prompts to score run into benchmark leaderboard"
     echo "  6. Graph Viewer HTML   — prompts to generate interactive graph HTML"
-    echo "  7. Resume OneDrive     — reminds to re-enable sync"
+    echo "  7. Resume Google Drive — reminds to re-enable sync"
     exit 0
 }
 
@@ -38,18 +38,18 @@ VAULT_ROOT=~/Obsidian/Vault-in-place-test-run
 KDB_DIR="$VAULT_ROOT/KDB"
 PROJECT_DIR=~/Droidoes/Obsidian-KDB
 
-# ── 1. Pause OneDrive ────────────────────────────────────────────────────────
+# ── 1. Pause Google Drive sync ───────────────────────────────────────────────
 echo ""
 echo "══════════════════════════════════════════════════════"
-echo "  1. Pause OneDrive"
+echo "  1. Pause Google Drive sync"
 echo "══════════════════════════════════════════════════════"
 echo ""
-echo "  The test vault lives inside OneDrive. Syncing during a run"
+echo "  The test vault lives inside Google Drive. Syncing during a run"
 echo "  can corrupt the Kuzu graph or source notes."
 echo ""
-echo "  → Pause OneDrive now via the Windows tray icon."
+echo "  → Pause Google Drive sync now via the Windows tray icon."
 echo ""
-read -rp "  OneDrive paused? [Y/n] " yn
+read -rp "  Google Drive sync paused? [Y/n] " yn
 case "${yn:-Y}" in
     [Yy]*) echo "  ✓ Proceeding." ;;
     *)     echo "  Aborted."; exit 0 ;;
@@ -153,11 +153,11 @@ case "${gen:-Y}" in
     *) echo "  Skipped." ;;
 esac
 
-# ── 7. Resume OneDrive ───────────────────────────────────────────────────────
+# ── 7. Resume Google Drive sync ──────────────────────────────────────────────
 echo ""
 echo "══════════════════════════════════════════════════════"
-echo "  7. Resume OneDrive"
+echo "  7. Resume Google Drive sync"
 echo "══════════════════════════════════════════════════════"
 echo ""
-echo "  → Resume OneDrive sync now via the Windows tray icon."
+echo "  → Resume Google Drive sync now via the Windows tray icon."
 echo ""

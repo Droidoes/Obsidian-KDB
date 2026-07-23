@@ -1,0 +1,163 @@
+{
+  "tool": "scripts/cohort_slug_collision_guard.py",
+  "algorithm_version": "expected-summary-slug/1.0",
+  "algorithm": "Path(source_id).stem → common.paths.slugify → 112-char stem budget (trailing-hyphen rstrip) → 'summary-' prefix",
+  "generated_at": "2026-07-23T02:11:18.815226+00:00",
+  "corpus_root": "/mnt/c/Users/fangq/Documents/Obsidian Vault/Vault-in-place-test-run",
+  "excludes": [
+    "KDB/"
+  ],
+  "source_count": 36,
+  "corpus_fingerprint": "a485bcf1ca4e5065eeddb38910a7efb383498bbca95d397da2376810fcad9a88",
+  "collision_count": 0,
+  "collision_groups": [],
+  "underivable_count": 0,
+  "underivable": [],
+  "sources": [
+    {
+      "source_id": "AIML/Claude/Claude Code Buddy System.md",
+      "expected_summary_slug": "summary-claude-code-buddy-system"
+    },
+    {
+      "source_id": "AIML/Claude/Claude Desktop Cowork VM -- Service Failed to Start Fix.md",
+      "expected_summary_slug": "summary-claude-desktop-cowork-vm-service-failed-to-start-fix"
+    },
+    {
+      "source_id": "AIML/Claude/cowork-health-report-2026-03-23.md",
+      "expected_summary_slug": "summary-cowork-health-report-2026-03-23"
+    },
+    {
+      "source_id": "AIML/Graph RAG/GraphRAG for Adaptive KB - GPT5.2.md",
+      "expected_summary_slug": "summary-graphrag-for-adaptive-kb-gpt5-2"
+    },
+    {
+      "source_id": "AIML/Graph RAG/GraphRAG for Adaptive KB - Gemini3.1.md",
+      "expected_summary_slug": "summary-graphrag-for-adaptive-kb-gemini3-1"
+    },
+    {
+      "source_id": "AIML/Obsidian/Archiving Claude Conv to Obsidian Vault.md",
+      "expected_summary_slug": "summary-archiving-claude-conv-to-obsidian-vault"
+    },
+    {
+      "source_id": "AIML/Obsidian/Callouts.md",
+      "expected_summary_slug": "summary-callouts"
+    },
+    {
+      "source_id": "AIML/Obsidian/Obsidian CLI Skills for Claude Code.md",
+      "expected_summary_slug": "summary-obsidian-cli-skills-for-claude-code"
+    },
+    {
+      "source_id": "AIML/Obsidian/Obsidian CLI Skills.md",
+      "expected_summary_slug": "summary-obsidian-cli-skills"
+    },
+    {
+      "source_id": "AIML/Programing-Algorithm/Algorithm/Relative Ranking Methods - Borda, Condorcet, and Aggregation.md",
+      "expected_summary_slug": "summary-relative-ranking-methods-borda-condorcet-and-aggregation"
+    },
+    {
+      "source_id": "AIML/Programing-Algorithm/Vibe Coding/Canonical Ontology for Financial Reports GPT5.2.md",
+      "expected_summary_slug": "summary-canonical-ontology-for-financial-reports-gpt5-2"
+    },
+    {
+      "source_id": "AIML/Programing-Algorithm/Vibe Coding/VS Code system prompts at different levels.md",
+      "expected_summary_slug": "summary-vs-code-system-prompts-at-different-levels"
+    },
+    {
+      "source_id": "AIML/Programing-Algorithm/Vibe Coding/Windows-ports-not-visible-WSL-Ubuntu.md",
+      "expected_summary_slug": "summary-windows-ports-not-visible-wsl-ubuntu"
+    },
+    {
+      "source_id": "AIML/Programing-Algorithm/Vibe Coding/what's React and Tailwind.md",
+      "expected_summary_slug": "summary-what-s-react-and-tailwind"
+    },
+    {
+      "source_id": "Daily Notes/2026-05-25.md",
+      "expected_summary_slug": "summary-2026-05-25"
+    },
+    {
+      "source_id": "Daily Notes/2026-05-26.md",
+      "expected_summary_slug": "summary-2026-05-26"
+    },
+    {
+      "source_id": "Daily Notes/2026-05-27.md",
+      "expected_summary_slug": "summary-2026-05-27"
+    },
+    {
+      "source_id": "Daily Notes/2026-05-28.md",
+      "expected_summary_slug": "summary-2026-05-28"
+    },
+    {
+      "source_id": "Life-Health-Wellbeing/Andrew Weil Breath Method.md",
+      "expected_summary_slug": "summary-andrew-weil-breath-method"
+    },
+    {
+      "source_id": "Life-Health-Wellbeing/Dan-Koe-How-to-Fix-Your-Entire-Life-in-1-Day.md",
+      "expected_summary_slug": "summary-dan-koe-how-to-fix-your-entire-life-in-1-day"
+    },
+    {
+      "source_id": "Life-Health-Wellbeing/How Not to Age.md",
+      "expected_summary_slug": "summary-how-not-to-age"
+    },
+    {
+      "source_id": "Life-Health-Wellbeing/Sleep and Aging - Research on Aging.md",
+      "expected_summary_slug": "summary-sleep-and-aging-research-on-aging"
+    },
+    {
+      "source_id": "NWO/rare-earth-trucks-to-hormuz-leverage.md",
+      "expected_summary_slug": "summary-rare-earth-trucks-to-hormuz-leverage"
+    },
+    {
+      "source_id": "Quotes/Quotes from Napoleon.md",
+      "expected_summary_slug": "summary-quotes-from-napoleon"
+    },
+    {
+      "source_id": "Quotes/The Strong Do What They Can.md",
+      "expected_summary_slug": "summary-the-strong-do-what-they-can"
+    },
+    {
+      "source_id": "Value Investing/Accounting/Buffet style ROE discussion with Gemini 3.md",
+      "expected_summary_slug": "summary-buffet-style-roe-discussion-with-gemini-3"
+    },
+    {
+      "source_id": "Value Investing/Accounting/Negative cash-conversion cycle.md",
+      "expected_summary_slug": "summary-negative-cash-conversion-cycle"
+    },
+    {
+      "source_id": "Value Investing/Accounting/Warren Buffett - How To Analyze a BALANCE SHEET.md",
+      "expected_summary_slug": "summary-warren-buffett-how-to-analyze-a-balance-sheet"
+    },
+    {
+      "source_id": "Value Investing/Buffett Munger/Berkshire Hathaway Annual shareholder meeting - 2023.md",
+      "expected_summary_slug": "summary-berkshire-hathaway-annual-shareholder-meeting-2023"
+    },
+    {
+      "source_id": "Value Investing/Buffett Munger/Warren Buffett Brian Moynihan -Speak at Georgetown.md",
+      "expected_summary_slug": "summary-warren-buffett-brian-moynihan-speak-at-georgetown"
+    },
+    {
+      "source_id": "Value Investing/Buffett Munger/Warren Buffett On Arbitrage.md",
+      "expected_summary_slug": "summary-warren-buffett-on-arbitrage"
+    },
+    {
+      "source_id": "Value Investing/Li Lu/Li Lu 2021 Enoch Wealth Institute Lecture.md",
+      "expected_summary_slug": "summary-li-lu-2021-enoch-wealth-institute-lecture"
+    },
+    {
+      "source_id": "Value Investing/Li Lu/Li Lu Lecture at Columbia Business School 2006.md",
+      "expected_summary_slug": "summary-li-lu-lecture-at-columbia-business-school-2006"
+    },
+    {
+      "source_id": "Value Investing/Monish Pabrai/How share BUYBACKS can 10x - Boston College 2022.md",
+      "expected_summary_slug": "summary-how-share-buybacks-can-10x-boston-college-2022"
+    },
+    {
+      "source_id": "Value Investing/Monish Pabrai/Pabrai interview - August 2025 - 3.md",
+      "expected_summary_slug": "summary-pabrai-interview-august-2025-3"
+    },
+    {
+      "source_id": "Value Investing/Monish Pabrai/Pabrai on Investing -Buffett - Life Lessons 2025.md",
+      "expected_summary_slug": "summary-pabrai-on-investing-buffett-life-lessons-2025"
+    }
+  ],
+  "verdict": "ZERO COLLISIONS — cohort may fire"
+}
