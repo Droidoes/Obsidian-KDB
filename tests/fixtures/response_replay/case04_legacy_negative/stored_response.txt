@@ -1,0 +1,27 @@
+{
+  "source_name": "legacy-note.md",
+  "summary_slug": "summary-legacy-note",
+  "concept_slugs": ["alpha"],
+  "article_slugs": [],
+  "log_entries": [{"level": "info", "message": "legacy log"}],
+  "pages": [
+    {
+      "slug": "summary-legacy-note",
+      "page_type": "summary",
+      "title": "Legacy",
+      "status": "active",
+      "confidence": "high",
+      "outgoing_links": ["alpha"],
+      "body": "Overview linking [[alpha]]."
+    },
+    {
+      "slug": "alpha",
+      "page_type": "concept",
+      "title": "Alpha",
+      "status": "active",
+      "confidence": "medium",
+      "outgoing_links": [],
+      "body": "Alpha body."
+    }
+  ]
+}

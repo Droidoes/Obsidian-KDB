@@ -33,6 +33,7 @@ def test_load_fixtures_returns_three_cases_sorted() -> None:
         "case01_minimal_summary",
         "case02_schema_violation",
         "case03_semantic_violation",
+        "case04_legacy_negative",
     ]
 
 
@@ -94,6 +95,25 @@ def test_replay_case03_semantic_violation_flags() -> None:
     assert r.matches_expected is True
     assert r.error_detail is not None
     assert "semantic:" in r.error_detail
+
+
+def test_replay_case04_legacy_negative_rejects_at_schema() -> None:
+    """#115 Phase 4: a pre-#115 OLD-shape response (source_name / summary_slug /
+    7-field pages) extracts + parses but the NEW schema rejects it
+    (additionalProperties: false); semantic is not reached."""
+    fixtures = {c.case_id: c for c in load_fixtures(_FIXTURES_DIR)}
+    r = replay_case(fixtures["case04_legacy_negative"])
+    assert r.extract_ok is True
+    assert r.parse_ok is True
+    assert r.schema_ok is False
+    assert r.semantic_ok is False
+    assert r.matches_expected is True
+    assert r.error_detail is not None
+    # Codex Gate-4 F3: pin the stated cause, not just the gate — the rejection
+    # is the additionalProperties violation naming the removed contract keys.
+    assert "schema:" in r.error_detail
+    assert "Additional properties are not allowed" in r.error_detail
+    assert "summary_slug" in r.error_detail or "source_name" in r.error_detail
 
 
 # ---------- replay_case: synthetic edge cases ----------
@@ -224,7 +244,7 @@ def test_cli_exits_0_on_all_matching(
     rc = main(["--replay", str(_FIXTURES_DIR)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "3/3 case(s) matched expectations" in out
+    assert "4/4 case(s) matched expectations" in out
 
 
 def test_cli_exits_1_when_any_case_mismatches(

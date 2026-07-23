@@ -36,6 +36,14 @@ from kdb_graph.tests.conftest import (
 # 1. Helpers — synthetic kdb-compile run tree builder
 # ============================================================================
 
+def _rows(conn, query: str) -> list:
+    r = conn.execute(query)
+    out = []
+    while r.has_next():
+        out.append(list(r.get_next()))
+    return out
+
+
 def _write_run(
     journals_dir: Path,
     run_id: str,
@@ -933,3 +941,280 @@ def test_rebuilder_mixed_shape_journal_pair(graph_dir, tmp_path):
             return int(r.get_next()[0]) if r.has_next() else 0
         assert _edges("a", "b") == 1   # legacy stored list
         assert _edges("c", "d") == 1   # body-derived
+
+
+def test_live_vs_rebuild_links_to_equality_new_shape(graph_dir, tmp_path):
+    """#115 Phase 4, PARSER-LEVEL equality (D-115-10), lifecycle-neutral
+    NEW/CHANGED batch: page-body wikilinks == live LINKS_TO == rebuilt
+    LINKS_TO for the new body-only payload, using direct intake. The
+    production-boundary system test (page_writer + deferred wire_links) is
+    `test_system_wiki_body_equals_live_and_rebuilt_links` below."""
+    from kdb_graph.intake import body_wikilink_slugs
+
+    one_pages = [
+        {"slug": "summary-one", "page_type": "summary", "title": "One",
+         "body": "Overview: [[concept-x#Deep Dive]] and [[concept-y]]."},
+        {"slug": "concept-x", "page_type": "concept", "title": "X",
+         "body": "Links [[concept-y]]. Example in code: `[[concept-z]]`."},
+        {"slug": "concept-y", "page_type": "concept", "title": "Y",
+         "body": "Leaf."},
+    ]
+    two_pages = [
+        {"slug": "summary-two", "page_type": "summary", "title": "Two",
+         "body": "Overview: [[concept-x]]."},
+        {"slug": "concept-z", "page_type": "concept", "title": "Z",
+         "body": "Links [[concept-x|the X page]]; literal \\[[concept-y]] not a link."},
+    ]
+    cr1 = make_compile_result(
+        [{"source_id": "KDB/raw/one.md", "pages": one_pages}], run_id="r-1")
+    cr2 = make_compile_result(
+        [{"source_id": "KDB/raw/two.md", "pages": two_pages}], run_id="r-2")
+    scan1 = make_scan([make_scan_entry("KDB/raw/one.md")])
+    scan2 = make_scan([make_scan_entry("KDB/raw/two.md")])
+
+    # LIVE intake (same payloads that the journals carry).
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan1, "r-1")
+        gdb.apply_compile_result(cr2, scan2, "r-2")
+        live_edges = {
+            (r[0], r[1])
+            for r in _rows(gdb.conn,
+                           "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+                           "RETURN a.slug, b.slug")
+        }
+
+    expected_edges = {
+        ("summary-one", "concept-x"),   # heading form counts
+        ("summary-one", "concept-y"),
+        ("concept-x", "concept-y"),
+        ("summary-two", "concept-x"),
+        ("concept-z", "concept-x"),     # display form counts
+        # concept-x -/-> concept-z (inline code), concept-z -/-> concept-y (escaped)
+    }
+    assert live_edges == expected_edges
+
+    # Final wiki-body wikilinks == live LINKS_TO (targets all exist here).
+    body_edges = set()
+    for pages in (one_pages, two_pages):
+        for p in pages:
+            for tgt in body_wikilink_slugs(p["body"]):
+                body_edges.add((p["slug"], tgt))
+    assert body_edges == live_edges
+
+    # REBUILD from the journals of those exact runs.
+    journals = tmp_path / "runs"
+    _write_run_with_mutation(journals, "2026-07-22T01-00-00Z", cr1, scan1,
+                             started_at="2026-07-22T01:00:00")
+    _write_run_with_mutation(journals, "2026-07-22T02-00-00Z", cr2, scan2,
+                             started_at="2026-07-22T02:00:00")
+    rebuilt_dir = tmp_path / "rebuilt"
+    result = rebuild(graph_dir=rebuilt_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(rebuilt_dir) as gdb:
+        rebuilt_edges = {
+            (r[0], r[1])
+            for r in _rows(gdb.conn,
+                           "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+                           "RETURN a.slug, b.slug")
+        }
+    assert rebuilt_edges == live_edges
+
+
+def test_d115_14_identical_sidecars_through_validate_and_rebuild(graph_dir, tmp_path):
+    """#115 Phase 4 (D-115-14, Codex Gate-4 F4): ONE genuinely historical and
+    ONE genuinely new compile_result — both schema-valid EXACTLY AS WRITTEN
+    (full production compile_meta; the new one carries NO deprecated fields)
+    — are written as journal sidecars, validated from the on-disk bytes via
+    kdb-validate's shared API, and then rebuilt, proving read-compat across
+    BOTH boundaries for the SAME artifacts."""
+    full_meta = {
+        "provider": "p", "model": "m", "input_tokens": 1, "output_tokens": 1,
+        "latency_ms": 1, "attempts": 1, "ok": True, "error": None,
+    }
+    legacy_cr = {
+        "run_id": "r-old", "success": True,
+        "compiled_sources": [{
+            "source_id": "KDB/raw/old.md",
+            "summary_slug": "summary-old",
+            "compile_meta": full_meta,
+            "pages": [
+                {"slug": "summary-old", "page_type": "summary", "title": "Old",
+                 "status": "active", "confidence": "high",
+                 "outgoing_links": ["a", "b"], "body": "Overview."},
+                {"slug": "a", "page_type": "concept", "title": "A",
+                 "status": "active", "confidence": "medium",
+                 "outgoing_links": ["b"], "body": "A body."},
+                {"slug": "b", "page_type": "concept", "title": "B",
+                 "status": "active", "confidence": "medium",
+                 "outgoing_links": [], "body": "B body."},
+            ],
+        }],
+        "errors": [], "warnings": [], "log_entries": [],
+    }
+    new_cr = {
+        "run_id": "r-new", "success": True,
+        "compiled_sources": [{
+            "source_id": "KDB/raw/new.md",
+            "compile_meta": full_meta,
+            "pages": [
+                {"slug": "summary-new", "page_type": "summary", "title": "New",
+                 "body": "Overview. Links [[c]]."},
+                {"slug": "c", "page_type": "concept", "title": "C",
+                 "body": "Links [[d]]."},
+                {"slug": "d", "page_type": "concept", "title": "D", "body": "x"},
+            ],
+        }],
+        "compilation_notes": [], "errors": [],
+    }
+
+    journals = tmp_path / "runs"
+    scan_old = make_scan([make_scan_entry("KDB/raw/old.md")])
+    scan_new = make_scan([make_scan_entry("KDB/raw/new.md")])
+    _write_run_with_mutation(journals, "r-old", legacy_cr, scan_old,
+                             started_at="2026-07-21T01:00:00")
+    _write_run_with_mutation(journals, "r-new", new_cr, scan_new,
+                             started_at="2026-07-22T01:00:00")
+
+    # 1. kdb-validate boundary — on the exact on-disk sidecar bytes.
+    from compiler import validate_compile_result as vcr
+    for run_id in ("r-old", "r-new"):
+        sidecar = json.loads(
+            (journals / run_id / "compile_result.json").read_text(encoding="utf-8"))
+        result = vcr.validate(sidecar)
+        assert result.is_valid, (
+            f"{run_id}: sidecar must be schema-valid as written: "
+            f"{result.detail_strings()}"
+        )
+
+    # 2. Rebuild boundary — same files, legacy stored-list + new body-derived.
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as gdb:
+        def _edges(a: str, b: str) -> int:
+            r = gdb.conn.execute(
+                "MATCH (:Entity {slug: $a})-[r:LINKS_TO]->(:Entity {slug: $b}) "
+                "RETURN COUNT(r)", {"a": a, "b": b})
+            return int(r.get_next()[0]) if r.has_next() else 0
+        assert _edges("summary-old", "a") == 1   # legacy stored list
+        assert _edges("a", "b") == 1             # legacy stored list
+        assert _edges("summary-new", "c") == 1   # new body-derived
+        assert _edges("c", "d") == 1             # new body-derived
+
+
+def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
+    """#115 Phase 4 system test (D-115-10) at the PRODUCTION boundary
+    (Codex Gate-4 F2): pages persist through `page_writer.apply`; each source
+    applies to the graph with DEFERRED wiring (`wire_links=False`); the batch
+    `wire_links` finalizer runs over `_combine_crs`'d output; the combined
+    journal replays through the adapter. A FORWARD cross-source link
+    (concept-a → concept-b, introduced by the SECOND source) makes the
+    deferred finalizer load-bearing. Asserts: persisted wiki-body wikilinks
+    == live graph LINKS_TO == rebuilt graph LINKS_TO."""
+    from common.run_context import SCHEMA_VERSION, RunContext
+    from common import wiki_io
+    from compiler import page_writer
+    from orchestrator.kdb_orchestrate import _combine_crs
+
+    vault = tmp_path / "vault"
+    (vault / "KDB" / "state").mkdir(parents=True)
+    ctx = RunContext(
+        run_id="r-batch", started_at="2026-07-22T03:00:00Z",
+        compiler_version="0.0.0-test", schema_version=SCHEMA_VERSION,
+        dry_run=False, vault_root=vault, kdb_root=vault / "KDB",
+    )
+
+    one_pages = [
+        {"slug": "summary-one", "page_type": "summary", "title": "One",
+         "body": "Overview: [[concept-a]]."},
+        {"slug": "concept-a", "page_type": "concept", "title": "A",
+         "body": "Links [[concept-b]] and code `[[summary-b]]`."},
+    ]
+    two_pages = [
+        {"slug": "summary-b", "page_type": "summary", "title": "B",
+         "body": "Overview: [[concept-a]]."},
+        {"slug": "concept-b", "page_type": "concept", "title": "B",
+         "body": "Links [[concept-a|the A concept]]; literal \\[[concept-b]]."},
+    ]
+    cr1 = make_compile_result(
+        [{"source_id": "KDB/raw/one.md", "pages": one_pages}], run_id="r-batch")
+    cr2 = make_compile_result(
+        [{"source_id": "KDB/raw/two.md", "pages": two_pages}], run_id="r-batch")
+
+    def _scan(sid: str) -> dict:
+        # page_writer requires a numeric current_mtime (the factory omits it).
+        return make_scan([
+            {**make_scan_entry(sid), "current_mtime": 1700000000.0}
+        ])
+
+    scan1 = _scan("KDB/raw/one.md")
+    scan2 = _scan("KDB/raw/two.md")
+
+    expected_edges = {
+        ("summary-one", "concept-a"),
+        ("concept-a", "concept-b"),     # FORWARD cross-source link
+        ("summary-b", "concept-a"),
+        ("concept-b", "concept-a"),     # display form counts
+        # concept-a -/-> summary-b (inline code), concept-b -/-> concept-b (escaped)
+    }
+
+    with GraphDB(graph_dir) as gdb:
+        # Production commit sequence per source: page_writer FIRST, then
+        # graph apply with deferred wiring.
+        page_writer.apply(vault, compile_result=cr1, last_scan=scan1,
+                          run_ctx=ctx, write=True)
+        gdb.apply_compile_result(cr1, scan1, "r-batch",
+                                 detect_orphans=False, wire_links=False)
+        page_writer.apply(vault, compile_result=cr2, last_scan=scan2,
+                          run_ctx=ctx, write=True)
+        gdb.apply_compile_result(cr2, scan2, "r-batch",
+                                 detect_orphans=False, wire_links=False)
+
+        # Deferred finalizer is load-bearing: NO edges exist before it runs
+        # (and concept-b's target didn't exist during cr1's apply anyway).
+        assert _rows(gdb.conn, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")[0][0] == 0
+
+        combined = _combine_crs([cr1, cr2], "r-batch")
+        gdb.wire_links(combined, "r-batch")
+
+        live_edges = {
+            (r[0], r[1])
+            for r in _rows(gdb.conn,
+                           "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+                           "RETURN a.slug, b.slug")
+        }
+    assert live_edges == expected_edges
+
+    # PERSISTED wiki bodies (frontmatter stripped from the .md files
+    # page_writer wrote) == live LINKS_TO.
+    from kdb_graph.intake import body_wikilink_slugs
+    persisted_edges = set()
+    for pages in (one_pages, two_pages):
+        for p in pages:
+            body = wiki_io.get_body(p["slug"], p["page_type"], root=vault)
+            for tgt in body_wikilink_slugs(body):
+                persisted_edges.add((p["slug"], tgt))
+    assert persisted_edges == live_edges
+
+    # The combined journal (the production finalize payload) replays to the
+    # same LINKS_TO set.
+    combined_scan = make_scan([
+        make_scan_entry("KDB/raw/one.md"),
+        make_scan_entry("KDB/raw/two.md"),
+    ])
+    journals = tmp_path / "runs"
+    _write_run_with_mutation(journals, "r-batch", combined, combined_scan,
+                             started_at="2026-07-22T03:00:00")
+    rebuilt_dir = tmp_path / "rebuilt"
+    result = rebuild(graph_dir=rebuilt_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 1 and result.failed == 0
+    with GraphDB(rebuilt_dir) as gdb:
+        rebuilt_edges = {
+            (r[0], r[1])
+            for r in _rows(gdb.conn,
+                           "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+                           "RETURN a.slug, b.slug")
+        }
+    assert rebuilt_edges == live_edges
