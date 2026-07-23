@@ -1,69 +1,29 @@
 {
-  "source_name": "Obsidian CLI Skills for Claude Code.md",
-  "summary_slug": "summary-obsidian-cli-skills-for-claude-code",
-  "concept_slugs": [
-    "obsidian-cli-skills",
-    "obsidian-process-management"
-  ],
-  "article_slugs": [
-    "archiving-claude-conv-to-obsidian-vault"
-  ],
   "pages": [
     {
       "slug": "summary-obsidian-cli-skills-for-claude-code",
       "page_type": "summary",
       "title": "Obsidian CLI Skills for Claude Code (Summary)",
-      "body": "This document serves as a technical reference for four custom CLI helper skills integrated into Claude Code to connect with a local Obsidian vault: `obsidian-shared`, `obsidian-daily`, `obsidian-recall`, and `obsidian-graph`. It details [[obsidian-process-management|process management]], smart CLI runners, search strategies, and daily note operations, as well as workflows for when direct filesystem access is preferred over active Obsidian GUI connections. It establishes a foundation for automated capture, described in [[archiving-claude-conv-to-obsidian-vault]], while building upon earlier concepts in [[obsidian-cli-skills]].",
-      "status": "active",
-      "outgoing_links": [
-        "obsidian-cli-skills",
-        "obsidian-process-management",
-        "archiving-claude-conv-to-obsidian-vault"
-      ],
-      "confidence": "high"
+      "body": "This document serves as a technical reference for four custom CLI helper skills integrated into Claude Code to connect with a local Obsidian vault: `obsidian-shared`, `obsidian-daily`, `obsidian-recall`, and `obsidian-graph`. It details [[obsidian-process-management|process management]], smart CLI runners, search strategies, and daily note operations, as well as workflows for when direct filesystem access is preferred over active Obsidian GUI connections. It establishes a foundation for automated capture, described in [[archiving-claude-conv-to-obsidian-vault]], while building upon earlier concepts in [[obsidian-cli-skills]]."
     },
     {
       "slug": "obsidian-cli-skills",
       "page_type": "concept",
       "title": "Obsidian CLI Skills",
-      "body": "Obsidian CLI skills are shell-based tools stored in `~/.claude/skills/` designed to enable Claude Code to interact directly with an Obsidian vault. These skills consist of four primary scripts:\n- `obsidian-shared.md`: Common wrappers and running checks.\n- `obsidian-daily.md`: Command utilities for creating, reading, and appending to daily notes.\n- `obsidian-recall.md`: High-speed knowledge retrieval, utilizing grep for full-text vault searches across key directory trees like AI-ML and Equity Research.\n- `obsidian-graph.md`: File-system operations to parse incoming/outgoing links, find orphan notes, and inspect vault health metrics.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Obsidian CLI skills are shell-based tools stored in `~/.claude/skills/` designed to enable Claude Code to interact directly with an Obsidian vault. These skills consist of four primary scripts:\n- `obsidian-shared.md`: Common wrappers and running checks.\n- `obsidian-daily.md`: Command utilities for creating, reading, and appending to daily notes.\n- `obsidian-recall.md`: High-speed knowledge retrieval, utilizing grep for full-text vault searches across key directory trees like AI-ML and Equity Research.\n- `obsidian-graph.md`: File-system operations to parse incoming/outgoing links, find orphan notes, and inspect vault health metrics."
     },
     {
       "slug": "obsidian-process-management",
       "page_type": "concept",
       "title": "Obsidian Process Management",
-      "body": "Interacting with Obsidian via CLI commands requires managing the running state of the Obsidian application because CLI calls communicate via a Unix socket (`~/.config/obsidian/SingletonSocket`). \n- **Detection:** A process check function `obsidian_running()` reads the `SingletonLock` symlink to find the active PID and verifies its lifecycle using `kill -0`.\n- **Cold-Start Handling:** An wrapper named `obsidian_ensure()` detects when the GUI is absent. If Obsidian is not running, it executes the AppImage in the background, waits for 8 seconds to allow full initialization, and then delivers the command.\n- **Optimizations:** Since a GUI cold-start adds 10 to 30 seconds of overhead, direct filesystem fallback operations (like appending text directly to files with `cat` and `echo`) are preferred for simple read/write operations without launching the GUI.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Interacting with Obsidian via CLI commands requires managing the running state of the Obsidian application because CLI calls communicate via a Unix socket (`~/.config/obsidian/SingletonSocket`). \n- **Detection:** A process check function `obsidian_running()` reads the `SingletonLock` symlink to find the active PID and verifies its lifecycle using `kill -0`.\n- **Cold-Start Handling:** An wrapper named `obsidian_ensure()` detects when the GUI is absent. If Obsidian is not running, it executes the AppImage in the background, waits for 8 seconds to allow full initialization, and then delivers the command.\n- **Optimizations:** Since a GUI cold-start adds 10 to 30 seconds of overhead, direct filesystem fallback operations (like appending text directly to files with `cat` and `echo`) are preferred for simple read/write operations without launching the GUI."
     },
     {
       "slug": "archiving-claude-conv-to-obsidian-vault",
       "page_type": "article",
       "title": "Archiving Claude Conversations to Obsidian Vault",
-      "body": "The integration between Claude Code and Obsidian is designed to bridge active coding sessions with long-term knowledge retention. By establishing specific [[obsidian-cli-skills]] like daily capture, recall, and graph relationship analysis, a foundation is laid for a automated deferred archival pipeline. While individual skills manage immediate capture (e.g., recording a decision or task), this pipeline scales these interactions into systematic archives. The architectural design hinges on robust [[obsidian-process-management]] which ensures that pipeline archival routines are executed over direct filesystem paths when possible, preventing application timeouts while still maintaining live access to vault graphs.",
-      "status": "active",
-      "outgoing_links": [
-        "obsidian-cli-skills",
-        "obsidian-process-management"
-      ],
-      "confidence": "medium"
+      "body": "The integration between Claude Code and Obsidian is designed to bridge active coding sessions with long-term knowledge retention. By establishing specific [[obsidian-cli-skills]] like daily capture, recall, and graph relationship analysis, a foundation is laid for a automated deferred archival pipeline. While individual skills manage immediate capture (e.g., recording a decision or task), this pipeline scales these interactions into systematic archives. The architectural design hinges on robust [[obsidian-process-management]] which ensures that pipeline archival routines are executed over direct filesystem paths when possible, preventing application timeouts while still maintaining live access to vault graphs."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Initialized the summary, concepts for CLI skills, process management, and converted the related note on Archiving into a placeholder article to establish future linkage.",
-      "related_slugs": [
-        "obsidian-cli-skills",
-        "obsidian-process-management",
-        "archiving-claude-conv-to-obsidian-vault"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }

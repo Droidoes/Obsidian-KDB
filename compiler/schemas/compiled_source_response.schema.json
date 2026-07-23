@@ -2,81 +2,43 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
   "title": "KDB Compiled Source Response (per-call model output)",
-  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. Source-id-space fields (top-level source_id, per-page supports_page_existence, per-log_entry related_source_ids) are NOT in this contract — the runner injects them after parse from runtime knowledge + manifest lookup. This separation is structural: the LLM owns slug-space, the runner owns source_id-space. Run-level fields (run_id, success, aggregate errors) are also Python-owned; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 7 LLM-emitted page fields required) so the model must commit to status, links, and confidence on every page rather than relying on Python backfill.",
+  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. The contract is wiki-native: pages with slugs, types, titles, and prose bodies carrying [[wikilinks]]. Everything mechanical is Python-owned — summary-slug derivation, link extraction from bodies, page status, provenance, and run-level fields (run_id, success, aggregate errors; see compile_result.schema.json). The model commits only to what it authors.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["source_name", "summary_slug", "pages", "log_entries", "warnings"],
+  "required": ["pages"],
   "properties": {
-    "source_name": { "$ref": "#/$defs/sourceName" },
-    "summary_slug": { "$ref": "#/$defs/summarySlug" },
-    "concept_slugs": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/slug" }
-    },
-    "article_slugs": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/slug" }
-    },
     "pages": {
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/$defs/pageIntent" }
     },
-    "log_entries": {
+    "compilation_notes": {
       "type": "array",
-      "items": { "$ref": "#/$defs/logEntry" }
-    },
-    "warnings": {
-      "type": "array",
+      "description": "Optional free-text notes about this compile — e.g. a thin source, an unusual structure, or a tradeoff the model wants on record. Pure prose for the operator's eye; Python never acts on these.",
       "items": { "type": "string" }
     }
   },
   "$defs": {
     "slug": {
       "type": "string",
-      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators. The 'summary-' prefix is reserved (see summarySlug).",
+      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators. The 'summary-' prefix is reserved for the per-source summary page: 'summary-' followed by the kebab-cased source filename stem. Exactly one page per response uses that prefix (the summary page); concept and article slugs never do.",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "minLength": 1,
       "maxLength": 120
-    },
-    "summarySlug": {
-      "type": "string",
-      "description": "Slug for the per-source summary page. MUST start with the reserved 'summary-' prefix followed by the kebab-cased source filename stem. Concept and article slugs do NOT use this prefix. Reserving the prefix structurally prevents within-source slug collision between the summary and a concept whose name matches the source's main topic.",
-      "pattern": "^summary-[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "minLength": 9,
-      "maxLength": 120
-    },
-    "sourceName": {
-      "type": "string",
-      "description": "The source filename the LLM was given, echoed verbatim. No path separators — the runner constructs the full source_id from runtime knowledge after parse.",
-      "pattern": "^[^/\\\\]+\\.md$",
-      "minLength": 4,
-      "maxLength": 200
     },
     "pageType": {
       "type": "string",
       "enum": ["summary", "concept", "article"]
     },
-    "pageStatus": {
-      "type": "string",
-      "enum": ["active", "stale", "archived"]
-    },
-    "confidence": {
-      "type": "string",
-      "enum": ["low", "medium", "high"]
-    },
     "pageIntent": {
       "type": "object",
-      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 7 LLM-emitted fields required. Source-id-space field supports_page_existence is runner-injected post-parse.",
+      "description": "One page the LLM wants to create or replace (full-body model, D18). Exactly one page per response has page_type 'summary'; its slug follows the reserved 'summary-' convention (see slug).",
       "additionalProperties": false,
       "required": [
         "slug",
         "page_type",
         "title",
-        "body",
-        "status",
-        "outgoing_links",
-        "confidence"
+        "body"
       ],
       "properties": {
         "slug": { "$ref": "#/$defs/slug" },
@@ -85,31 +47,7 @@
         "body": {
           "type": "string",
           "minLength": 1,
-          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax `[[slug]]` inline whenever you reference another page in this response or in EXISTING CONTEXT — concepts, articles, and the summary all link to each other via `[[slug]]` in body prose, not as separate metadata. Every `[[slug]]` you write here MUST also appear in this page's `outgoing_links`, and conversely every entry in `outgoing_links` MUST appear as `[[slug]]` somewhere in this body. Building outgoing_links without writing the matching `[[slug]]` in the body is a contract violation."
-        },
-        "status": { "$ref": "#/$defs/pageStatus" },
-        "outgoing_links": {
-          "type": "array",
-          "description": "Slugs this page's body links to. Bidirectional with body: every entry MUST appear as `[[slug]]` somewhere in this page's body, and every `[[slug]]` in the body MUST appear here. Build this list by collecting the distinct slugs you wrote in `[[…]]` tokens in the body — not as a separate list of related concepts. Python reconciles incoming_links_known from these.",
-          "items": { "$ref": "#/$defs/slug" }
-        },
-        "confidence": { "$ref": "#/$defs/confidence" }
-      }
-    },
-    "logEntry": {
-      "type": "object",
-      "description": "One structured note about this compile. Source-id-space field related_source_ids is runner-derived post-parse from related_slugs via manifest lookup.",
-      "additionalProperties": false,
-      "required": ["level", "message", "related_slugs"],
-      "properties": {
-        "level": {
-          "type": "string",
-          "enum": ["info", "notice", "contradiction", "warning"]
-        },
-        "message": { "type": "string", "minLength": 1 },
-        "related_slugs": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/slug" }
+          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax `[[slug]]` inline whenever you reference another page in this response or in EXISTING CONTEXT — concepts, articles, and the summary all link to each other via `[[slug]]` in body prose. The graph's edges are derived from these body wikilinks; there is no separate link list to maintain."
         }
       }
     }

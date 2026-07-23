@@ -1,91 +1,42 @@
 {
-  "source_name": "Li Lu 2021 Enoch Wealth Institute Lecture.md",
-  "summary_slug": "summary-li-lu-2021-enoch-wealth-institute-lecture",
-  "concept_slugs": [
-    "globalization-single-market",
-    "value-investing-disposition",
-    "sustainable-competitive-advantage",
-    "cumulative-returns-knowledge",
-    "unethical-wealth-management"
-  ],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "summary-li-lu-2021-enoch-wealth-institute-lecture",
       "page_type": "summary",
       "title": "Li Lu 2021 Enoch Wealth Institute Lecture (Summary)",
-      "body": "In this 2021 Enoch Wealth Institute lecture, value investor Li Lu addresses the structural inevitability of [[globalization-single-market]] and the irreversibility of global economic integration. He transitions to defining his investment principles, asserting that value investing relies primarily on an inborn [[value-investing-disposition]]. Successful long-term investing demands identifying a firm's [[sustainable-competitive-advantage]] to map its cash flow lifecycle. Li Lu illustrates that both wealth and insights compound over time via [[cumulative-returns-knowledge]], and warns against conflicts of interest in [[unethical-wealth-management]], suggesting representative index funds as an honest alternative.",
-      "status": "active",
-      "outgoing_links": [
-        "globalization-single-market",
-        "value-investing-disposition",
-        "sustainable-competitive-advantage",
-        "cumulative-returns-knowledge",
-        "unethical-wealth-management"
-      ],
-      "confidence": "high"
+      "body": "In this 2021 Enoch Wealth Institute lecture, value investor Li Lu addresses the structural inevitability of [[globalization-single-market]] and the irreversibility of global economic integration. He transitions to defining his investment principles, asserting that value investing relies primarily on an inborn [[value-investing-disposition]]. Successful long-term investing demands identifying a firm's [[sustainable-competitive-advantage]] to map its cash flow lifecycle. Li Lu illustrates that both wealth and insights compound over time via [[cumulative-returns-knowledge]], and warns against conflicts of interest in [[unethical-wealth-management]], suggesting representative index funds as an honest alternative."
     },
     {
       "slug": "globalization-single-market",
       "page_type": "concept",
       "title": "Globalization as a Single Market",
-      "body": "Globalization represents an unprecedented economic system involving around 7 billion people. Unlike historic markets created through political unification, modern globalization operates without a single world government to perform secondary political adjustments or social safety net distributions. Despite geopolitical tensions, decoupling or reverting to fragmented economies is structurally impossible because economic efficiency and technological progress naturally peak within a single global market. Rational leadership must coordinate through frameworks like the G20 to manage local friction, while businesses must compete on global standards.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Globalization represents an unprecedented economic system involving around 7 billion people. Unlike historic markets created through political unification, modern globalization operates without a single world government to perform secondary political adjustments or social safety net distributions. Despite geopolitical tensions, decoupling or reverting to fragmented economies is structurally impossible because economic efficiency and technological progress naturally peak within a single global market. Rational leadership must coordinate through frameworks like the G20 to manage local friction, while businesses must compete on global standards."
     },
     {
       "slug": "value-investing-disposition",
       "page_type": "concept",
       "title": "The Value Investing Disposition",
-      "body": "Value investing functions similarly to an inoculation; individuals either absorb the philosophy instantly or reject it permanently. Long-term success is largely a function of an inborn intellectual disposition rather than raw intelligence. This temperament is characterized by relying exclusively on logical facts, ignoring market sentiments, and accepting the discipline of getting rich slowly. Those lacking this disposition are highly susceptible to speculative, shortcut-oriented behaviors that often end in financial ruin.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Value investing functions similarly to an inoculation; individuals either absorb the philosophy instantly or reject it permanently. Long-term success is largely a function of an inborn intellectual disposition rather than raw intelligence. This temperament is characterized by relying exclusively on logical facts, ignoring market sentiments, and accepting the discipline of getting rich slowly. Those lacking this disposition are highly susceptible to speculative, shortcut-oriented behaviors that often end in financial ruin."
     },
     {
       "slug": "sustainable-competitive-advantage",
       "page_type": "concept",
       "title": "Sustainable Competitive Advantage",
-      "body": "The intrinsic value of a business is defined as the sum of all cash profits earned over its lifecycle, discounted to the present. Because highly profitable companies naturally attract aggressive competitors, a company's ability to survive and maintain a high return on investment (ROI) depends entirely on securing a sustainable competitive advantage (or economic moat). These advantages are rare and arise from diverse factors, including leading technology, visionary leadership, corporate culture, business models, or unique consumer characteristics.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The intrinsic value of a business is defined as the sum of all cash profits earned over its lifecycle, discounted to the present. Because highly profitable companies naturally attract aggressive competitors, a company's ability to survive and maintain a high return on investment (ROI) depends entirely on securing a sustainable competitive advantage (or economic moat). These advantages are rare and arise from diverse factors, including leading technology, visionary leadership, corporate culture, business models, or unique consumer characteristics."
     },
     {
       "slug": "cumulative-returns-knowledge",
       "page_type": "concept",
       "title": "Cumulative Returns and Knowledge Compounding",
-      "body": "The mathematical miracle of compounding—which Einstein called the eighth wonder of the world—applies equally to capital and human intellect. In value investing, experiences and insights build progressively over decades. Consistently researching thousands of business models over a 50-to-60-year horizon creates an intangible wealth of knowledge. This compounded intellectual base structurally accelerates a practitioner's judgment skills, business valuations, and future outlooks over time.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The mathematical miracle of compounding—which Einstein called the eighth wonder of the world—applies equally to capital and human intellect. In value investing, experiences and insights build progressively over decades. Consistently researching thousands of business models over a 50-to-60-year horizon creates an intangible wealth of knowledge. This compounded intellectual base structurally accelerates a practitioner's judgment skills, business valuations, and future outlooks over time."
     },
     {
       "slug": "unethical-wealth-management",
       "page_type": "concept",
       "title": "Unethical Wealth Management",
-      "body": "Conventional wealth management often features a fundamental conflict of interest between managers and clients. Unethical structures occur when managers charge standard management fees regardless of investor performance (ROIs) or invest their own personal capital outside the funds they recommend. To combat this, asset managers should act as true partners by aligning incentives—such as waiving fixed management fees in favor of performance-based splits. When trustworthy managers cannot be found, index funds present a superior, low-conflict alternative.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Conventional wealth management often features a fundamental conflict of interest between managers and clients. Unethical structures occur when managers charge standard management fees regardless of investor performance (ROIs) or invest their own personal capital outside the funds they recommend. To combat this, asset managers should act as true partners by aligning incentives—such as waiving fixed management fees in favor of performance-based splits. When trustworthy managers cannot be found, index funds present a superior, low-conflict alternative."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Initialized summary and five core value-investing and globalization concepts based on Li Lu's lecture. Since existing context was empty, established these concepts as a clean foundation for the value-investing domain.",
-      "related_slugs": [
-        "summary-li-lu-2021-enoch-wealth-institute-lecture",
-        "globalization-single-market",
-        "value-investing-disposition",
-        "sustainable-competitive-advantage",
-        "cumulative-returns-knowledge",
-        "unethical-wealth-management"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }
   warnings": []

@@ -43,7 +43,7 @@ from kdb_graph.schema import (
     SCHEMA_VERSION,
 )
 
-SNAPSHOT_FORMAT_VERSION = 6
+SNAPSHOT_FORMAT_VERSION = 7
 # v1: original (entities/sources/links_to/supports + schema.cypher)
 # v2 (#74.7): adds Entity.canonical_id + alias_of.jsonl
 # v3 (#80): adds domain.jsonl + belongs_to.jsonl (Domain nodes + BELONGS_TO
@@ -58,6 +58,11 @@ SNAPSHOT_FORMAT_VERSION = 6
 #           all v4 files still emitted; old rows export NULL for new columns.
 # v6 (D1-A): belongs_to.jsonl replaces sub_domain with support_count
 #           (BELONGS_TO is now a derived projection from Source.domain + SUPPORTS).
+# v7 (#115 D-115-12): entities.jsonl drops `confidence` (Entity confidence
+#           logically deprecated — never written/read). First NON-additive
+#           bump; still write-only by design — NO v6 loader; v6 documented
+#           here for a future reader. The executable read-compat path is
+#           journal REBUILD (D-115-14), not snapshot load.
 
 
 @dataclass(frozen=True)
@@ -272,10 +277,14 @@ def _write_entities(conn: kuzu.Connection, path: Path) -> int:
     Serialized as JSON null vs string. Pre-#74 snapshots always wrote
     every entity without this field; future load-snapshot consumers
     should default missing keys to None for format v1 compatibility.
+
+    #115 Phase 3 / D-115-12 (format v7): `confidence` dropped — logically
+    deprecated (never written/read anymore). v6-and-earlier files still
+    carry it; no v6 loader exists by design (snapshot is write-only).
     """
     query = """
     MATCH (e:Entity)
-    RETURN e.slug, e.title, e.page_type, e.status, e.confidence,
+    RETURN e.slug, e.title, e.page_type, e.status,
            e.created_at, e.updated_at, e.first_run_id, e.last_run_id,
            e.canonical_id
     ORDER BY e.slug
@@ -290,12 +299,11 @@ def _write_entities(conn: kuzu.Connection, path: Path) -> int:
                 "title": row[1],
                 "page_type": row[2],
                 "status": row[3],
-                "confidence": row[4],
-                "created_at": row[5],
-                "updated_at": row[6],
-                "first_run_id": row[7],
-                "last_run_id": row[8],
-                "canonical_id": row[9],   # None ⇒ canonical; str ⇒ alias
+                "created_at": row[4],
+                "updated_at": row[5],
+                "first_run_id": row[6],
+                "last_run_id": row[7],
+                "canonical_id": row[8],   # None ⇒ canonical; str ⇒ alias
             }
             f.write(json.dumps(obj, sort_keys=True) + "\n")
             n += 1

@@ -91,106 +91,9 @@ def test_summary_slug_wrong_page_type() -> None:
     assert any(f.type == "summary_slug_wrong_type" for f in result.gate_errors)
 
 
-def test_concept_slug_missing_from_pages() -> None:
-    result = vcr.validate(_payload(_src(concept_slugs=["ghost"])))
-    errors = _details(result)
-    assert any("concept_slugs[0]" in e and "'ghost' not found in pages[]" in e for e in errors), errors
-    # pairing_commission is MEASURE — reconcilable, doesn't gate the run.
-    assert any(f.type == "pairing_commission" and f.slug == "ghost" for f in result.measure_findings)
-    assert not any(f.type == "pairing_commission" for f in result.gate_errors)
-
-
-def test_concept_slug_points_to_wrong_type() -> None:
-    # 'summary-foo' is the default summary page slug. Listing it in concept_slugs
-    # points at a page whose page_type is 'summary' → pairing_type_mismatch.
-    result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
-    errors = _details(result)
-    assert any("concept_slugs[0]" in e and "expected 'concept'" in e for e in errors), errors
-    # pairing_type_mismatch is a measure finding (Task #65 / D45) — the page
-    # object is authoritative; reconcile_slug_lists() heals it.
-    assert any(f.type == "pairing_type_mismatch" for f in result.measure_findings)
-    assert not any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
-
-
-def test_article_slug_missing_from_pages() -> None:
-    result = vcr.validate(_payload(_src(article_slugs=["ghost-article"])))
-    errors = _details(result)
-    assert any("article_slugs[0]" in e and "'ghost-article' not found in pages[]" in e for e in errors), errors
-    assert any(f.type == "pairing_commission" and f.slug == "ghost-article" for f in result.measure_findings)
-
-
-# ---------- omission direction (page exists, slug missing) ----------
-
-def test_concept_page_missing_from_concept_slugs() -> None:
-    """A concept page in pages[] without a matching entry in concept_slugs is an omission."""
-    src = _src(
-        concept_slugs=[],
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "mencius", "page_type": "concept", "title": "Mencius", "body": "z"},
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    assert result.is_valid, "omission is measure-level — should not gate the run"
-    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
-    assert len(omissions) == 1, result.measure_findings
-    assert omissions[0].slug == "mencius"
-    assert omissions[0].page_type == "concept"
-    assert "concept_slugs" in omissions[0].detail
-
-
-def test_article_page_missing_from_article_slugs() -> None:
-    src = _src(
-        article_slugs=[],
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "some-essay", "page_type": "article", "title": "Essay", "body": "z"},
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    assert result.is_valid
-    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
-    assert len(omissions) == 1
-    assert omissions[0].slug == "some-essay"
-    assert omissions[0].page_type == "article"
-
-
-def test_pairing_omission_and_commission_both_caught_in_one_pass() -> None:
-    """Both directions — page without slug AND slug without page — surface together as measures."""
-    src = _src(
-        concept_slugs=["ghost"],  # ghost has no page (commission)
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "real-concept", "page_type": "concept", "title": "RC", "body": "z"},
-            # real-concept is a concept page but not in concept_slugs (omission)
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    assert result.is_valid, "pairing mismatches are measure, not gate"
-    commissions = [f for f in result.measure_findings if f.type == "pairing_commission"]
-    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
-    assert len(commissions) == 1 and commissions[0].slug == "ghost"
-    assert len(omissions) == 1 and omissions[0].slug == "real-concept"
-
-
-def test_multiple_concept_pages_all_missing_produce_per_page_findings() -> None:
-    src = _src(
-        concept_slugs=[],
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
-            {"slug": "c2", "page_type": "concept", "title": "x", "body": "y"},
-            {"slug": "c3", "page_type": "concept", "title": "x", "body": "y"},
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    assert result.is_valid
-    omissions = [f for f in result.measure_findings if f.type == "pairing_omission"]
-    assert len(omissions) == 3
-    assert {f.slug for f in omissions} == {"c1", "c2", "c3"}
-
-
-def test_pairing_fully_correct_no_findings() -> None:
+def test_legacy_slug_lists_are_ignored_no_findings() -> None:
+    """#115 dual-mode: historical concept/article slug lists are read-tolerated
+    but produce NO findings — the pairing defect class is deleted with the fields."""
     src = _src(
         concept_slugs=["c1"],
         article_slugs=["a1"],
@@ -228,21 +131,6 @@ def test_reserved_slug_in_pages(reserved: str) -> None:
 # Reserved-slug coverage for summary contexts is structurally redundant.
 
 
-def test_reserved_slug_in_concept_slugs() -> None:
-    src = _src(
-        concept_slugs=["log"],
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "log", "page_type": "concept", "title": "x", "body": "y"},
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    errors = _details(result)
-    assert any("concept_slugs[0]" in e and "Reserved" in e for e in errors), errors
-
-
-# ---------- non-dict / malformed payloads ----------
-
 def test_non_dict_payload_caught_by_schema() -> None:
     result = vcr.validate("not a dict")
     assert result.gate_errors
@@ -263,36 +151,6 @@ def test_gate_severity_contract() -> None:
         assert f.severity == "gate", f
     for f in result.measure_findings:
         assert f.severity == "measure", f
-
-
-def test_pairing_mismatches_do_not_gate_the_run() -> None:
-    """pairing_commission + pairing_omission are measure findings — is_valid stays True."""
-    src = _src(
-        concept_slugs=["ghost"],
-        pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "x", "body": "y"},
-            {"slug": "real-concept", "page_type": "concept", "title": "x", "body": "y"},
-        ],
-    )
-    result = vcr.validate(_payload(src))
-    assert result.is_valid
-    assert result.gate_errors == []
-    assert len(result.measure_findings) == 2
-    types = {f.type for f in result.measure_findings}
-    assert types == {"pairing_commission", "pairing_omission"}
-
-
-def test_pairing_type_mismatch_is_measure_not_gate() -> None:
-    """pairing_type_mismatch is reconcilable (Task #65 / D45) — measure
-    severity, does not block the run. The page object is authoritative;
-    reconcile_slug_lists() rebuilds the slug lists from pages[]."""
-    # 'summary-foo' is the default summary page slug; listing it in concept_slugs
-    # points at the summary page → page_type mismatch.
-    result = vcr.validate(_payload(_src(concept_slugs=["summary-foo"])))
-    assert result.is_valid
-    assert any(f.type == "pairing_type_mismatch" and f.severity == "measure"
-               for f in result.measure_findings)
-    assert not any(f.type == "pairing_type_mismatch" for f in result.gate_errors)
 
 
 # ---------- CLI smoke ----------
@@ -324,6 +182,22 @@ def test_cli_missing_file_exits_two(tmp_path: Path) -> None:
     assert result.returncode == 2
 
 
+def test_cli_underivable_stem_exits_one_not_traceback(tmp_path: Path) -> None:
+    """Codex Gate-2 F5: kdb-validate on a NEW-mode payload with an
+    underivable (non-ASCII-only) stem reports the gate finding and exits 1
+    — no traceback."""
+    payload = _payload(_new_src(
+        source_id="KDB/raw/日本語.md",
+        pages=[{"slug": "summary-x", "page_type": "summary", "title": "x", "body": "y"}],
+    ))
+    p = tmp_path / "cr.json"
+    p.write_text(json.dumps(payload), encoding="utf-8")
+    result = _run_cli(str(p))
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "cannot derive expected summary slug" in result.stdout
+    assert "Traceback" not in result.stderr
+
+
 # ---------- HARD_ZERO_FINDING_TYPES + check_compiled_source (Round 4 CW1) ----------
 
 def test_hard_zero_finding_types_set() -> None:
@@ -337,17 +211,40 @@ def test_hard_zero_finding_types_set() -> None:
         "duplicate_slug",
         "summary_slug_missing",
         "summary_slug_wrong_type",
+        "summary_slug_mismatch",
+        "summary_slug_underivable",
         "reserved_slug",
     })
 
 
-def test_check_compiled_source_excludes_pairing_type_mismatch() -> None:
-    """pairing_type_mismatch is measure-severity (Task #65 / D45) — the
-    hard-zero wrapper must not surface it."""
-    src = _src(concept_slugs=["summary-foo"])  # summary page slug mis-filed as concept
-    findings = vcr.check_compiled_source(src)
-    assert "pairing_type_mismatch" not in findings
-    assert findings == [], findings
+def test_all_retained_legacy_fields_annotated() -> None:
+    """Codex Gate-2 round-2 F8 (D-115-14, blueprint T2.2): EVERY contract
+    field removed by #115 but retained optional for historical payloads
+    carries the machine-readable `"deprecated": true` + `"readOnly": true`
+    annotations. Walks the COMPLETE legacy field list (top level, page,
+    source) so a future removal can't miss the annotation."""
+    schema = json.loads(
+        (Path(vcr.__file__).parent / "schemas" / "compile_result.schema.json")
+        .read_text(encoding="utf-8")
+    )
+    legacy = {
+        "top-level": (schema["properties"], {"log_entries", "warnings"}),
+        "page": (
+            schema["$defs"]["pageIntent"]["properties"],
+            {"status", "outgoing_links", "confidence"},
+        ),
+        "source": (
+            schema["$defs"]["compiledSource"]["properties"],
+            {"summary_slug", "concept_slugs", "article_slugs"},
+        ),
+    }
+    for where, (props, fields) in legacy.items():
+        for f in sorted(fields):
+            assert f in props, f"{where}.{f} missing from schema"
+            assert props[f].get("deprecated") is True, \
+                f"{where}.{f} lacks deprecated: true"
+            assert props[f].get("readOnly") is True, \
+                f"{where}.{f} lacks readOnly: true"
 
 
 def test_check_compiled_source_clean_returns_empty_list() -> None:
@@ -366,12 +263,92 @@ def test_check_compiled_source_surfaces_duplicate_slug() -> None:
     assert "duplicate_slug" in findings
 
 
-def test_check_compiled_source_filters_out_measure_findings() -> None:
-    """`pairing_commission` and `pairing_omission` are measure-severity
-    (reconcilable, not hard-zero) — the wrapper must NOT include them.
-    A source with a missing concept slug should produce only the
-    measure-finding internally; the wrapper returns []."""
-    src = _src(concept_slugs=["missing_slug"])  # slug declared but no matching page
-    findings = vcr.check_compiled_source(src)
-    assert "pairing_commission" not in findings
-    assert findings == [], findings  # nothing hard-zero here
+# ---------- NEW mode (#115): derived summary identity ----------
+
+def _new_src(**overrides) -> dict:
+    """NEW-mode compiled source: no summary_slug (derived, never emitted)."""
+    base = {
+        "source_id": "KDB/raw/foo.md",
+        "pages": [
+            {"slug": "summary-foo", "page_type": "summary", "title": "Foo", "body": "x"}
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_new_mode_exactly_one_summary_required() -> None:
+    src = _new_src(pages=[
+        {"slug": "c1", "page_type": "concept", "title": "x", "body": "y"},
+    ])
+    result = vcr.validate(_payload(src))
+    assert not result.is_valid
+    assert any(f.type == "summary_slug_missing" for f in result.gate_errors)
+
+
+def test_new_mode_derived_slug_mismatch_gated() -> None:
+    src = _new_src(pages=[
+        {"slug": "summary-other", "page_type": "summary", "title": "x", "body": "y"},
+    ])
+    result = vcr.validate(_payload(src))
+    assert not result.is_valid
+    mismatches = [f for f in result.gate_errors if f.type == "summary_slug_mismatch"]
+    assert len(mismatches) == 1
+    assert "summary-foo" in mismatches[0].detail  # expected value in the detail
+
+
+def test_new_mode_clean_payload_valid() -> None:
+    result = vcr.validate(_payload(_new_src()))
+    assert result.is_valid, _details(result)
+    assert result.measure_findings == []
+
+
+def test_new_mode_underivable_stem_fails_closed() -> None:
+    """Codex Gate-2 F5: a NEW-mode source whose stem normalizes to nothing
+    (non-ASCII-only) must produce a hard-zero gate finding, NOT raise
+    PathError out of validate()."""
+    src = _new_src(
+        source_id="KDB/raw/日本語.md",
+        pages=[{"slug": "summary-x", "page_type": "summary", "title": "x", "body": "y"}],
+    )
+    result = vcr.validate(_payload(src))
+    assert not result.is_valid
+    underivable = [f for f in result.gate_errors if f.type == "summary_slug_underivable"]
+    assert len(underivable) == 1
+    assert "summary_slug_underivable" in vcr.HARD_ZERO_FINDING_TYPES
+
+
+def test_mixed_legacy_and_new_sources_validate_per_source() -> None:
+    """Codex Gate-2 F6: ONE aggregate payload carrying a LEGACY source
+    (summary_slug present → referential checks) and a NEW source (derived
+    exact match) validates per-source — mode selection is not global."""
+    legacy = _src(source_id="KDB/raw/old.md", summary_slug="summary-old", pages=[
+        {"slug": "summary-old", "page_type": "summary", "title": "Old", "body": "x"},
+        {"slug": "c1", "page_type": "concept", "title": "C1", "body": "y"},
+    ])
+    new = _new_src(source_id="KDB/raw/new.md", pages=[
+        {"slug": "summary-new", "page_type": "summary", "title": "New", "body": "x"},
+        {"slug": "c2", "page_type": "concept", "title": "C2", "body": "y"},
+    ])
+    result = vcr.validate(_payload(legacy, new))
+    assert result.is_valid, _details(result)
+
+    # And a mixed payload where ONLY the new source is broken flags exactly
+    # that source — the legacy source's mode is unaffected.
+    new_bad = _new_src(source_id="KDB/raw/new.md", pages=[
+        {"slug": "summary-wrong", "page_type": "summary", "title": "New", "body": "x"},
+    ])
+    result = vcr.validate(_payload(legacy, new_bad))
+    assert not result.is_valid
+    mismatches = [f for f in result.gate_errors if f.type == "summary_slug_mismatch"]
+    assert len(mismatches) == 1
+    assert mismatches[0].source_id == "KDB/raw/new.md"
+
+
+def test_legacy_mode_referential_still_gated() -> None:
+    """Historical payload (summary_slug present): the referential check
+    still fires (dual-mode read-compat)."""
+    src = _src(summary_slug="summary-ghost")  # not present in pages[]
+    result = vcr.validate(_payload(src))
+    assert not result.is_valid
+    assert any(f.type == "summary_slug_missing" for f in result.gate_errors)

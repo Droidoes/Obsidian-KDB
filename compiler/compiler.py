@@ -28,7 +28,6 @@ from typing import Any, Callable, Literal, NamedTuple
 from compiler import (
     canonicalize,
     prompt_builder,
-    repair,
     validate_compile_result,
     validate_source_response,
 )
@@ -36,9 +35,11 @@ from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
 from common.model_pool import estimate_prompt_tokens, fits_context
+from common.paths import PathError
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
-from compiler.repair import coerce_slugs_and_propagate, reconcile_body_links, reconcile_slug_lists
+from compiler.repair import coerce_slugs_and_propagate
+from compiler.summary_slug import expected_summary_slug
 from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
 from compiler.response_recovery import recover_json_response
@@ -57,6 +58,8 @@ from common.types import (
 FailureStage = Literal[
     "source_read", "prompt_build", "model_call",
     "truncation", "extract", "parse",
+    # #115 Task 1.4: pre-call underivable-stem route (zero API spend)
+    "validate",
 ]
 
 _FAILURE_MSG_CAP = 2000
@@ -72,9 +75,13 @@ class FailureTelemetry(NamedTuple):
     """Task #25 — pre-validation failure capture for RespStatsRecord.
 
     Co-presence enforced by construction: stage / exception_type / message
-    are always all three populated. Schema/semantic validation failures
-    use schema_errors / semantic_errors instead — they have structured
-    list surfaces and are out of scope for the failure_* triplet.
+    are always all three populated. Schema failures use schema_errors
+    instead — they have a structured list surface and are out of scope for
+    the failure_* triplet. #115: VALIDATION-stage rejections DO populate
+    the triplet with stage "validate" — the pre-call underivable-stem
+    route (PathError) and the terminal post-call semantic rejection
+    (synthetic "SemanticCheckError"); semantic_errors remains the
+    structured detail surface for the latter.
     """
     stage: FailureStage
     exception_type: str
@@ -155,18 +162,19 @@ def compile_one(
     ctx_window: int | None = None,
     resp_stats_dir: Path | None = None,
     stats_record_sink: Callable[["RespStatsRecord", Path], None] | None = None,
-) -> tuple[CompiledSource | None, list[dict], list[str], str | None]:
+) -> tuple[CompiledSource | None, list[str], str | None]:
     """Execute one per-source compile call. See blueprint §9.
 
-    Returns (compiled_source | None, log_entries, warnings, error | None).
+    Returns (compiled_source | None, compilation_notes, error | None).
     Always writes exactly one RespStatsRecord in the finally block, regardless
     of which stage (if any) failed.
 
-    Source-id-space split (Task #41): the LLM emits slug-space fields plus a
-    path-free `source_name`; the runner constructs `source_id` from
-    `job.source_id` and injects it into the persisted CompiledSource shape
+    #115 wiki-native contract: the LLM emits pages (4 fields) + optional
+    compilation_notes only; the runner derives the expected summary slug
+    (compiler.summary_slug — validated, never prompt-injected) and injects
+    source_id-space (top-level source_id, per-page supports_page_existence)
     after parse. RespStatsRecord.parsed_json reflects the slim LLM-emitted
-    payload (no source-id-space fields).
+    payload.
     """
     source_id = job.source_id
     # Task #91: derive from source_id, not abs_path — the in-memory orchestrator
@@ -188,8 +196,7 @@ def compile_one(
         "semantic_errors": [],
         "error": None,
         "compiled_source": None,
-        "log_entries": [],
-        "warnings": [],
+        "compilation_notes": [],
         "source_words": 0,
         "failure": None,
         # repair-ladder telemetry (#106)
@@ -209,6 +216,20 @@ def compile_one(
     }
 
     try:
+        # --- #115 Task 1.4: pre-call derivation check (PINNED route) ---
+        # Runs after telemetry state init, before prompt construction/model
+        # call. An underivable summary stem is a typed validation failure:
+        # failure_stage="validate", attempts=0, zero tokens, exactly one
+        # record via the finally block. Never retried, never spends API.
+        try:
+            expected_slug = expected_summary_slug(source_id)
+        except PathError as e:
+            _set_failure(state, "validate", type(e).__name__, str(e))
+            state["error"] = (
+                f"{source_id}: cannot derive expected summary slug: {e}"
+            )
+            return (None, [], state["error"])
+
         # --- read source ---
         try:
             fm, source_text = source_text_for(job)
@@ -217,7 +238,7 @@ def compile_one(
             state["error"] = (
                 f"{source_id}: source read failed: {type(e).__name__}: {e}"
             )
-            return (None, [], [], state["error"])
+            return (None, [], state["error"])
         state["source_words"] = len(source_text.split())
 
         # --- build prompt ---
@@ -238,7 +259,6 @@ def compile_one(
             }
         try:
             state["prompt"] = prompt_builder.build_prompt(
-                vault_root=vault_root,
                 source_name=source_name,
                 source_text=source_text,
                 context_snapshot=job.context_snapshot,
@@ -249,7 +269,7 @@ def compile_one(
             state["error"] = (
                 f"{source_id}: prompt build failed: {type(e).__name__}: {e}"
             )
-            return (None, [], [], state["error"])
+            return (None, [], state["error"])
 
         # --- Task #110 §3.3: PROACTIVE input-side ctx-overrun guard ---
         # Estimate prompt tokens BEFORE any API call; if input + reserved output
@@ -284,7 +304,7 @@ def compile_one(
                     f"(est_input={est_in} + reserved_output={max_tokens}); "
                     f"shorten source or raise ctx_window"
                 )
-                return (None, [], [], state["error"])
+                return (None, [], state["error"])
 
         # --- model call + extract + parse + schema, with a retry on a
         # recoverable bad-JSON emission. Mirrors Pass-1's call_pass1 retry: the
@@ -344,7 +364,7 @@ def compile_one(
                 state["error"] = (
                     f"{source_id}: model call failed: {type(e).__name__}: {e}"
                 )
-                return (None, [], [], state["error"])
+                return (None, [], state["error"])
 
             # --- recovery (#114): unwrap + strict-eval + 5-step ladder ---
             result = recover_json_response(state["raw_response_text"])
@@ -364,7 +384,7 @@ def compile_one(
                         f"{source_id}: truncated at max_tokens={max_tokens} "
                         f"(stop_reason={sr!r}); raise --max-tokens or shorten source"
                     )
-                    return (None, [], [], state["error"])
+                    return (None, [], state["error"])
                 if not last_attempt:
                     log.warning(
                         f"{source_id}: Pass-2 attempt {attempt}/"
@@ -375,7 +395,7 @@ def compile_one(
                 _set_failure(state, "parse", "JSONDecodeError",
                              result.error or "unrecoverable")
                 state["error"] = f"{source_id}: invalid JSON: {result.error}"
-                return (None, [], [], state["error"])
+                return (None, [], state["error"])
 
             state["parsed_json"] = result.parsed
             state["parse_ok"] = True
@@ -416,7 +436,7 @@ def compile_one(
                 state["error"] = (
                     f"{source_id}: schema validation failed: {state['schema_errors'][0]}"
                 )
-                return (None, [], [], state["error"])
+                return (None, [], state["error"])
 
             # --- semantic (now INSIDE the loop; LB2 #106) ---
             # Semantic runs after schema passes so a coercible schema failure
@@ -424,7 +444,7 @@ def compile_one(
             # semantically on the same attempt.  A semantic failure on a
             # non-final attempt retries the full model call before erroring.
             state["semantic_errors"] = validate_source_response.semantic_check(
-                state["parsed_json"], source_name=source_name
+                state["parsed_json"], expected_summary_slug=expected_slug
             )
             state["semantic_ok"] = state["semantic_errors"] == []
             if not state["semantic_ok"]:
@@ -435,52 +455,45 @@ def compile_one(
                         f"{state['semantic_errors'][0]}"
                     )
                     continue
+                # #115 T1.4 (Codex Gate-2 F3): a TERMINAL semantic rejection is
+                # a typed validation failure — stage "validate" on the record
+                # so compile_source maps it to the OUTER stage "validate"
+                # (not generic "compile"). semantic_errors remains the
+                # structured detail surface; "SemanticCheckError" is a
+                # synthetic exception_type (mirrors "TokenOverrun").
+                _set_failure(
+                    state, "validate", "SemanticCheckError",
+                    state["semantic_errors"][0],
+                )
                 state["error"] = (
                     f"{source_id}: semantic check failed: {state['semantic_errors'][0]}"
                 )
-                return (None, [], [], state["error"])
+                return (None, [], state["error"])
 
             state["compile_attempts"] = attempt  # record winning attempt (#106)
             state["_final_attempt_index"] = attempt  # record winning index (#109)
             break  # parse_ok + schema_ok + semantic_ok → proceed
 
-        # --- body-link reconciliation ---
-        reconcile_body_links(state["parsed_json"])
-
-        # --- slug-list reconciliation (Task #65 / D45) ---
-        # Rebuild concept_slugs/article_slugs from pages[].page_type so the
-        # pairing-inconsistency class (commission/omission/type_mismatch)
-        # cannot reach downstream validation. Pages-win, mirroring the
-        # body-wins reconcile_body_links above.
-        reconcile_slug_lists(state["parsed_json"])
-
         # --- success: enrich LLM payload with runner-injected source-id-space ---
-        # Task #41: LLM emits slug-space + source_name only; runner injects
-        # source_id (top-level), supports_page_existence (per page), and
-        # related_source_ids (per log_entry) using job.source_id. Manifest
-        # lookup for prior-support enrichment is the responsibility of
-        # downstream stages (patch_applier) — here we just stamp the current
-        # source_id on every page, matching the today-LLM-emitted behavior.
+        # #115: LLM emits pages (4 fields) + optional compilation_notes only;
+        # runner injects source_id (top-level) and supports_page_existence
+        # (per page) using job.source_id. No reconcile steps remain — the
+        # contract fields they maintained (outgoing_links, slug lists) are
+        # gone, and the graph derives edges from body wikilinks (Task 2.4).
         parsed = state["parsed_json"]
         mr = state["model_response"]
         state["compiled_source"] = CompiledSource(
             source_id=source_id,
-            summary_slug=parsed["summary_slug"],
             pages=[
                 PageIntent(
                     slug=p["slug"],
                     page_type=p["page_type"],
                     title=p["title"],
                     body=p["body"],
-                    status=p["status"],
-                    outgoing_links=list(p.get("outgoing_links", [])),
-                    confidence=p["confidence"],
                     supports_page_existence=[source_id],
                 )
                 for p in parsed["pages"]
             ],
-            concept_slugs=list(parsed.get("concept_slugs", [])),
-            article_slugs=list(parsed.get("article_slugs", [])),
             compile_meta=CompileMeta(
                 provider=mr.provider,
                 model=mr.model,
@@ -505,15 +518,10 @@ def compile_one(
                 "source_type": fm.source_type,
             } if fm is not None else None,
         )
-        state["log_entries"] = [
-            {**le, "related_source_ids": []}
-            for le in parsed.get("log_entries", [])
-        ]
-        state["warnings"] = list(parsed.get("warnings", []))
+        state["compilation_notes"] = list(parsed.get("compilation_notes", []))
         return (
             state["compiled_source"],
-            state["log_entries"],
-            state["warnings"],
+            state["compilation_notes"],
             None,
         )
 
@@ -654,7 +662,7 @@ def compile_source(
         captured["record"] = record
         captured["path"] = path
 
-    cs, logs, warns, err = compile_one(
+    cs, notes, err = compile_one(
         job, vault_root=vault_root, state_root=state_root, ctx=ctx,
         provider=provider, model=model, max_tokens=max_tokens,
         price_in=price_in, price_out=price_out, ctx_window=ctx_window,
@@ -669,15 +677,19 @@ def compile_source(
             artifacts["resp_stats"] = str(captured["path"])
             if getattr(captured["record"], "raw_response_text", None) is not None:
                 artifacts["raw_response"] = str(captured["path"])
+        # #115 Task 1.4: the pre-call underivable-stem route maps to the
+        # OUTER stage "validate" (pinned separately from generic "compile").
+        inner_stage = getattr(captured["record"], "failure_stage", None)
         return CompileSourceResult(
-            cr=None, failure_stage="compile",
+            cr=None,
+            failure_stage="validate" if inner_stage == "validate" else "compile",
             exception_type=getattr(captured["record"], "failure_exception_type", None),
             error=err, artifacts=artifacts)
 
     cr: dict = {
         "run_id": ctx.run_id, "success": True,
         "compiled_sources": [cs.to_dict()],
-        "log_entries": list(logs), "errors": [], "warnings": list(warns),
+        "compilation_notes": list(notes), "errors": [],
     }
 
     # 3. validate (stage 4) — gate
@@ -689,23 +701,39 @@ def compile_source(
             artifacts=({"resp_stats": str(captured["path"])}
                        if captured["path"] is not None else {}))
 
-    # 4. repair (stage 5) — mutates cr in place. Task #91 (m3): wrap so a
-    # RepairError returns case-(a) failure instead of escaping the
-    # CompileSourceResult contract (orchestrator routes it uniformly).
-    try:
-        repair.repair(cr, vres.measure_findings)
-    except repair.RepairError as e:
-        return CompileSourceResult(
-            cr=None, failure_stage="repair",
-            exception_type=type(e).__name__, error=str(e))
-
-    # 5. canonicalize (stage 6) — mutates cr in place, emits canonical_meta
+    # 4. canonicalize (stage 6) — mutates cr in place, emits canonical_meta.
+    # (The #65 Repair stage is deleted whole — Task 2.3.)
     try:
         canonicalize.run(cr, ledger, ctx.run_id)
     except canonicalize.CircularAliasError as e:
         return CompileSourceResult(
             cr=None, failure_stage="canonicalize",
             exception_type=type(e).__name__, error=str(e))
+    except canonicalize.CanonicalizationError as e:
+        return CompileSourceResult(
+            cr=None, failure_stage="canonicalize",
+            exception_type=type(e).__name__, error=str(e))
+
+    # 5. post-canon EXACT summary invariant (#115 Task 2.1): for EVERY
+    # compiled source, exactly one summary page AND its slug equals
+    # expected_summary_slug(source_id) — re-checked after canonicalize,
+    # BEFORE page_writer / manifest / graph intake. A summary→summary or
+    # summary→concept alias rename past the pre-canon gate is a typed
+    # CanonicalizationError (quarantine, no writes).
+    for src in cr["compiled_sources"]:
+        summaries = [p for p in src.get("pages", [])
+                     if p.get("page_type") == "summary"]
+        expected = expected_summary_slug(src["source_id"])
+        if len(summaries) != 1 or summaries[0].get("slug") != expected:
+            return CompileSourceResult(
+                cr=None, failure_stage="canonicalize",
+                exception_type="CanonicalizationError",
+                error=(
+                    f"post-canon summary invariant violated for "
+                    f"{src['source_id']}: expected exactly one summary page "
+                    f"with slug {expected!r}, found "
+                    f"{[p.get('slug') for p in summaries]}"
+                ))
 
     return CompileSourceResult(cr=cr)
 

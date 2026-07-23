@@ -185,6 +185,9 @@ class RunMeasurementHeader:
     p1_attempted: int
     p2_attempted: int
     release_version: str = ""
+    # SHA-256 of the loaded Pass-2 system prompt text (post-#115, D-115-13).
+    # "" on historical (pre-#115) headers — see load_run_measurements.
+    pass2_system_prompt_sha256: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -253,9 +256,11 @@ def _load_run_measurements(
     """
     header_path = run_dir / "measurement_header.json"
     header_data = json.loads(header_path.read_text(encoding="utf-8"))
-    # Forward-compat (#117): tolerate header keys newer than this dataclass
-    # (e.g. the #115 pass2 stamp fields) so score-time recompute works across
-    # releases.
+    # Forward-compat + back-fill (#117/#115): tolerate header keys newer
+    # than this dataclass (e.g. future stamp fields) so score-time recompute
+    # works across releases; fields absent on old headers (release_version
+    # pre-#111, pass2_system_prompt_sha256 pre-#115) fall back to the
+    # dataclass defaults.
     known = {f.name for f in dataclasses.fields(RunMeasurementHeader)}
     header = RunMeasurementHeader(
         **{k: v for k, v in header_data.items() if k in known})

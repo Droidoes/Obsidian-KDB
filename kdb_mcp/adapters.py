@@ -24,7 +24,7 @@ class EntityNotFoundError(Exception):
 def _entity_card(e: Entity) -> EntityCard:
     return EntityCard(
         slug=e.slug, title=e.title, page_type=e.page_type, status=e.status,
-        confidence=e.confidence, canonical_id=e.canonical_id,
+        canonical_id=e.canonical_id,
     )
 
 

@@ -77,7 +77,8 @@ _SOURCE_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 _ENTITY_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
     ("page_type", "page_type"),
     ("status", "status"),
-    ("confidence", "confidence"),
+    # #115 Phase 3 (D-115-12): confidence removed — logically deprecated,
+    # no longer verified.
     ("last_run_id", "last_run_id"),
 )
 
@@ -87,7 +88,7 @@ _ENTITY_DIRECT_FIELDS: tuple[tuple[str, str], ...] = (
 def _graph_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
     r = conn.execute(
         "MATCH (e:Entity) "
-        "RETURN e.slug, e.page_type, e.status, e.confidence, e.last_run_id"
+        "RETURN e.slug, e.page_type, e.status, e.last_run_id"
     )
     out: dict[str, dict[str, Any]] = {}
     while r.has_next():
@@ -96,8 +97,7 @@ def _graph_entities(conn: kuzu.Connection) -> dict[str, dict[str, Any]]:
             "slug": row[0],
             "page_type": row[1],
             "status": row[2],
-            "confidence": row[3],
-            "last_run_id": row[4],
+            "last_run_id": row[3],
         }
     return out
 

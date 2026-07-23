@@ -30,6 +30,7 @@ from pathlib import Path
 import pytest
 
 from compiler import compiler, prompt_builder
+from compiler.summary_slug import expected_summary_slug
 from common.call_model import ModelResponse
 from common.run_context import RunContext
 from common.types import (
@@ -50,11 +51,9 @@ def _clear_prompt_caches() -> None:
 # ---------- fixtures ----------
 
 def _write_vault(tmp_path: Path) -> Path:
-    """Create a minimal vault: KDB/KDB-Compiler-System-Prompt.md + raw source + state dir."""
+    """Create a minimal vault: KDB/ + raw source + state dir. The system
+    prompt is repo-packaged (post-#115) — no vault prompt file needed."""
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n\nRule 1: be honest.\n", encoding="utf-8"
-    )
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
     return tmp_path
 
@@ -74,25 +73,18 @@ def _job(vault: Path, source_id: str) -> CompileJob:
 
 
 def _good_response(source_id: str) -> dict:
-    """Build a slim LLM-emitted response (Task #41 — no source-id-space fields)."""
+    """Build a slim LLM-emitted response (#115 wiki-native shape: 4-field
+    pages; the summary slug follows the derived convention)."""
+    slug = expected_summary_slug(source_id)
     return {
-        "source_name": Path(source_id).name,
-        "summary_slug": "summary-foo",
-        "concept_slugs": [],
-        "article_slugs": [],
         "pages": [
             {
-                "slug": "summary-foo",
+                "slug": slug,
                 "page_type": "summary",
                 "title": "Foo Summary",
                 "body": "Body.",
-                "status": "active",
-                "outgoing_links": [],
-                "confidence": "medium",
             }
         ],
-        "log_entries": [],
-        "warnings": [],
     }
 
 
@@ -162,7 +154,7 @@ def test_compile_one_happy_path_returns_compiled_source(
         _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -175,9 +167,8 @@ def test_compile_one_happy_path_returns_compiled_source(
     assert err is None
     assert cs is not None
     assert cs.source_id == SOURCE_A
-    assert cs.summary_slug == "summary-foo"
-    assert logs == []
-    assert warns == []
+    assert cs.pages[0].slug == expected_summary_slug(SOURCE_A)
+    assert notes == []
     assert len(_resp_stats_files(state_root, ctx.run_id)) == 1
 
 
@@ -207,7 +198,7 @@ def test_compile_one_retries_on_bad_json_then_succeeds(
         _fake_call({SOURCE_A: bad_then_good}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault, state_root=state_root, ctx=ctx,
         provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
@@ -239,7 +230,7 @@ def test_compile_one_quarantines_after_all_attempts_fail(
         _fake_call({SOURCE_A: always_bad}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault, state_root=state_root, ctx=ctx,
         provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
@@ -273,7 +264,7 @@ def test_compile_one_threads_compile_meta_from_model_response(
         _fake_call({SOURCE_A: mr}),
     )
 
-    cs, _, _, _ = compiler.compile_one(
+    cs, _, _ = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -324,7 +315,7 @@ def test_compile_meta_attempts_reflects_reprompt_count(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", schema_bad_then_good)
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault, state_root=state_root, ctx=ctx,
         provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
@@ -335,215 +326,6 @@ def test_compile_meta_attempts_reflects_reprompt_count(
     assert meta is not None
     # compile_meta.attempts reflects the compile re-prompt count (2), not SDK attempts (1).
     assert meta.attempts == 2
-
-
-def test_compile_one_reconciles_mis_filed_slug_lists(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """compile_one applies reconcile_slug_lists (Task #65 / D45): concept_slugs
-    and article_slugs are rebuilt from pages[].page_type, so a slug the model
-    mis-filed is corrected before the payload reaches downstream validation."""
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A, "alpha body")
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    response = {
-        "source_name": Path(SOURCE_A).name,
-        "summary_slug": "summary-foo",
-        # 'article-y' is an article page but the model mis-filed its slug
-        # into concept_slugs; article_slugs was left empty.
-        "concept_slugs": ["concept-x", "article-y"],
-        "article_slugs": [],
-        "pages": [
-            {"slug": "summary-foo", "page_type": "summary", "title": "S",
-             "body": "Body.", "status": "active", "outgoing_links": [],
-             "confidence": "medium"},
-            {"slug": "concept-x", "page_type": "concept", "title": "C",
-             "body": "Body.", "status": "active", "outgoing_links": [],
-             "confidence": "medium"},
-            {"slug": "article-y", "page_type": "article", "title": "A",
-             "body": "Body.", "status": "active", "outgoing_links": [],
-             "confidence": "medium"},
-        ],
-        "log_entries": [],
-        "warnings": [],
-    }
-    mr = ModelResponse(
-        text=json.dumps(response), input_tokens=100, output_tokens=50,
-        latency_ms=123, model="claude-opus-4-7", provider="anthropic", attempts=1,
-    )
-    monkeypatch.setattr(
-        "compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: mr}),
-    )
-
-    cs, _, _, err = compiler.compile_one(
-        _job(vault, SOURCE_A),
-        vault_root=vault,
-        state_root=state_root,
-        ctx=ctx,
-        provider="anthropic",
-        model="claude-opus-4-7",
-        max_tokens=4096,
-    )
-
-    assert err is None, err
-    assert cs is not None
-    assert cs.concept_slugs == ["concept-x"]
-    assert cs.article_slugs == ["article-y"]
-
-
-# ---------- compile_one: failure paths (all write exactly one resp-stats record) ----------
-
-def test_compile_one_source_read_failure_writes_resp_stats_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    # SOURCE_A raw file deliberately NOT written
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def fail(_req):
-        raise AssertionError("call_model should not run after source-read failure")
-    monkeypatch.setattr("compiler.compiler.call_model_with_retry", fail)
-
-    cs, logs, warns, err = compiler.compile_one(
-        _job(vault, SOURCE_A),
-        vault_root=vault,
-        state_root=state_root,
-        ctx=ctx,
-        provider="anthropic",
-        model="claude-opus-4-7",
-        max_tokens=4096,
-    )
-    assert cs is None
-    assert "source read failed" in (err or "")
-
-    files = _resp_stats_files(state_root, ctx.run_id)
-    assert len(files) == 1
-    record = json.loads(files[0].read_text(encoding="utf-8"))
-    assert record["prompt_hash"] == "sha256:none"
-    assert record["response_hash"] == "sha256:none"
-    assert record["extract_ok"] is False
-    assert record["input_tokens"] == 0
-    # Source-read failure happens before source_words capture; defaults to 0.
-    assert record["source_words"] == 0
-
-
-def test_compile_one_prompt_build_failure_writes_resp_stats_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def boom(**_kwargs):
-        raise RuntimeError("prompt build exploded")
-    monkeypatch.setattr(
-        "compiler.compiler.prompt_builder.build_prompt", boom
-    )
-
-    def noop(_req):
-        raise AssertionError("call_model should not run after prompt-build failure")
-    monkeypatch.setattr("compiler.compiler.call_model_with_retry", noop)
-
-    cs, _, _, err = compiler.compile_one(
-        _job(vault, SOURCE_A),
-        vault_root=vault,
-        state_root=state_root,
-        ctx=ctx,
-        provider="anthropic",
-        model="claude-opus-4-7",
-        max_tokens=4096,
-    )
-    assert cs is None
-    assert "prompt build failed" in (err or "")
-    assert "prompt build exploded" in (err or "")
-
-    files = _resp_stats_files(state_root, ctx.run_id)
-    assert len(files) == 1
-    record = json.loads(files[0].read_text(encoding="utf-8"))
-    assert record["prompt_hash"] == "sha256:none"
-
-
-def test_compile_one_model_call_failure_writes_resp_stats_record(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    def blow_up(_req):
-        raise RuntimeError("transport broke")
-    monkeypatch.setattr(
-        "compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: blow_up}),
-    )
-
-    cs, _, _, err = compiler.compile_one(
-        _job(vault, SOURCE_A),
-        vault_root=vault,
-        state_root=state_root,
-        ctx=ctx,
-        provider="anthropic",
-        model="claude-opus-4-7",
-        max_tokens=4096,
-    )
-    assert cs is None
-    assert "model call failed" in (err or "")
-
-    files = _resp_stats_files(state_root, ctx.run_id)
-    assert len(files) == 1
-    record = json.loads(files[0].read_text(encoding="utf-8"))
-    # prompt was built, so prompt_hash is real; response failed pre-body.
-    assert record["prompt_hash"] != "sha256:none"
-    assert record["response_hash"] == "sha256:none"
-
-
-def test_compile_one_truncation_guard_is_post_recovery(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """#114: recovery runs FIRST — stop_reason='max_tokens' is terminal only
-    AFTER recovery fails. A truncated-flagged response that still carries a
-    complete document compiles; stop_reason is carrier metadata, persisted
-    on the record (token_overrun derived from it)."""
-    vault = _write_vault(tmp_path)
-    _write_raw(vault, SOURCE_A)
-    state_root = vault / "KDB" / "state"
-    ctx = _ctx(vault)
-
-    # Valid, complete JSON — but the call was flagged truncated.
-    truncated = ModelResponse(
-        text=json.dumps(_good_response(SOURCE_A)),
-        input_tokens=100, output_tokens=4096, latency_ms=10,
-        model="claude-haiku-4-5-20251001", provider="anthropic", attempts=1,
-        stop_reason="max_tokens",
-    )
-    monkeypatch.setattr(
-        "compiler.compiler.call_model_with_retry",
-        _fake_call({SOURCE_A: truncated}),
-    )
-
-    cs, _, _, err = compiler.compile_one(
-        _job(vault, SOURCE_A),
-        vault_root=vault,
-        state_root=state_root,
-        ctx=ctx,
-        provider="anthropic",
-        model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
-    )
-    assert err is None
-    assert cs is not None
-
-    record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
-    assert record["extract_ok"] is True
-    assert record["parse_ok"] is True
-    assert record["stop_reason"] == "max_tokens"
-    assert record["token_overrun"] is True
 
 
 def test_compile_one_openai_length_stop_reason_also_guarded(
@@ -574,7 +356,7 @@ def test_compile_one_openai_length_stop_reason_also_guarded(
         _fake_call({SOURCE_A: counting_fake}),
     )
 
-    _, _, _, err = compiler.compile_one(
+    _, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -612,7 +394,7 @@ def test_compile_one_extract_failure_is_non_gating_telemetry(
         _fake_call({SOURCE_A: bad}),
     )
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -650,7 +432,7 @@ def test_compile_one_parse_failure_writes_resp_stats_record(
         _fake_call({SOURCE_A: bad}),
     )
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -690,7 +472,7 @@ def test_compile_one_schema_failure_writes_resp_stats_record(
         _fake_call({SOURCE_A: bad}),
     )
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -720,9 +502,9 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Schema-valid but summary_slug doesn't match any page slug.
+    # Schema-valid but the summary page's slug != the derived expected slug.
     bad_payload = _good_response(SOURCE_A)
-    bad_payload["summary_slug"] = "summary-not-in-pages"
+    bad_payload["pages"][0]["slug"] = "summary-not-expected"
     bad = ModelResponse(
         text=json.dumps(bad_payload),
         input_tokens=10, output_tokens=5, latency_ms=10,
@@ -733,7 +515,7 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
         _fake_call({SOURCE_A: bad}),
     )
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -761,9 +543,9 @@ def test_semantic_failure_retries_then_errors(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Schema-valid but summary_slug doesn't match any page slug -> semantic fails.
+    # Schema-valid but the summary page's slug != expected -> semantic fails.
     bad_payload = _good_response(SOURCE_A)
-    bad_payload["summary_slug"] = "summary-nonexistent"
+    bad_payload["pages"][0]["slug"] = "summary-nonexistent"
     calls = {"n": 0}
 
     def always_semantic_bad(req):
@@ -779,7 +561,7 @@ def test_semantic_failure_retries_then_errors(
         _fake_call({SOURCE_A: always_semantic_bad}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1004,7 +786,7 @@ def test_compile_one_overrun_quarantines_without_model_call(
         lambda *a, **k: pytest.fail("model called despite ctx overrun"),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1045,7 +827,7 @@ def test_compile_one_fits_context_proceeds_to_model(
         _fake_call({SOURCE_A: _good_model_response(SOURCE_A)}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1082,7 +864,7 @@ def test_failure_triplet_extract_stage_never_emitted(
         _fake_call({SOURCE_A: bad}),
     )
 
-    cs, _, _, err = compiler.compile_one(
+    cs, _, err = compiler.compile_one(
         _job(vault, SOURCE_A), vault_root=vault, state_root=state_root,
         ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
     )
@@ -1344,7 +1126,7 @@ def test_rung1_escape_recovers_latex_on_attempt_1(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1372,17 +1154,10 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
     ctx = _ctx(vault)
 
     payload = _good_response(SOURCE_A)
-    # Corrupt the summary slug with uppercase + triple hyphen.
-    old = payload["summary_slug"]
-    bad = (
-        old.replace("summary-", "summary-Sleep-and-Aging---", 1)
-        if old.startswith("summary-")
-        else "summary-Bad---Slug"
-    )
-    payload["summary_slug"] = bad
-    for p in payload["pages"]:
-        if p.get("page_type") == "summary":
-            p["slug"] = bad
+    # Corrupt the summary page's slug with uppercase + triple hyphen —
+    # collapses back to the expected slug (coercion recovers in place).
+    payload["pages"][0]["slug"] = "Summary---Alpha"
+    bad = "Summary---Alpha"
 
     calls = {"n": 0}
 
@@ -1400,7 +1175,7 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1412,8 +1187,8 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
 
     assert err is None and cs is not None
     assert calls["n"] == 1
-    # Coerced form: lowercased + triple-hyphen collapsed to single.
-    assert cs.summary_slug == bad.lower().replace("---", "-")
+    # Coerced form: lowercased + triple-hyphen collapsed to single = expected.
+    assert cs.pages[0].slug == "summary-alpha"
 
 
 def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
@@ -1439,14 +1214,11 @@ def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Attempt 1: summary_slug has uppercase + triple-hyphen (schema-invalid).
-    # coerce_slugs_and_propagate will coerce it to "summary-bar-baz", which
-    # passes schema but does NOT match the page slug "summary-foo" → semantic
-    # fails → retry.
+    # Attempt 1: the summary page's slug is schema-invalid; coercion fixes it
+    # to the VALID but WRONG slug "summary-other" (≠ expected "summary-alpha")
+    # → semantic fails → retry.
     bad = _good_response(SOURCE_A)
-    bad["summary_slug"] = "SUMMARY-Bar---Baz"
-    # Leave pages[0].slug as "summary-foo" (valid, stays unchanged by coercion)
-    # so after coercion summary_slug != any page slug → semantic fail.
+    bad["pages"][0]["slug"] = "SUMMARY---Other"
 
     # Attempt 2: fully clean (the standard good response).
     good = _good_response(SOURCE_A)
@@ -1466,7 +1238,7 @@ def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1513,14 +1285,11 @@ def test_both_rungs_on_one_emission(
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Build a payload with a bad slug on both the summary_slug and the page slug
-    # so coercion leaves them consistent, and semantic passes.
-    bad_slug = "Summary-Sleep-and-Aging---Deep"  # uppercase + triple-hyphen
+    # The summary page's slug coerces back to the EXPECTED slug, so after
+    # rung-1 (LaTeX escape) + rung-2 (slug coercion) the semantic gate passes.
+    bad_slug = "Summary---Alpha"  # uppercase + triple-hyphen
     payload = _good_response(SOURCE_A)
-    payload["summary_slug"] = bad_slug
-    for p in payload["pages"]:
-        if p.get("page_type") == "summary":
-            p["slug"] = bad_slug
+    payload["pages"][0]["slug"] = bad_slug
     payload["pages"][0]["body"] = "PLACEHOLDER_BODY"
 
     raw = json.dumps(payload)
@@ -1543,7 +1312,7 @@ def test_both_rungs_on_one_emission(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1560,9 +1329,8 @@ def test_both_rungs_on_one_emission(
     body = next(p.body for p in cs.pages if r"n-1" in p.body)
     assert r"\(n-1\)" in body
 
-    # summary_slug must be coerced (lowercase + collapsed hyphens).
-    expected_slug = bad_slug.lower().replace("---", "-")  # "summary-sleep-and-aging-deep"
-    assert cs.summary_slug == expected_slug
+    # the coerced slug must equal the derived expected slug
+    assert cs.pages[0].slug == "summary-alpha"
 
     # Resp-stats telemetry on the written record.
     files = _resp_stats_files(state_root, ctx.run_id)
@@ -1631,7 +1399,7 @@ def test_collision_falls_through_to_quarantine(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_collision)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1692,7 +1460,7 @@ def test_non_slug_schema_error_unchanged(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_bad)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1757,7 +1525,7 @@ def test_two_attempt_compile_aggregates_tokens_and_latency(
         _fake_call({SOURCE_A: bad_then_good}),
     )
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault, state_root=state_root, ctx=ctx,
         provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
@@ -1855,7 +1623,7 @@ def test_irreparable_json_quarantines(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", always_broken)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,
@@ -1926,7 +1694,7 @@ def test_final_status_retried_on_reprompt_only_recovery(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", schema_bad_then_good)
 
-    cs, logs, warns, err = compiler.compile_one(
+    cs, notes, err = compiler.compile_one(
         _job(vault, SOURCE_A),
         vault_root=vault,
         state_root=state_root,

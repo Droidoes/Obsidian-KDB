@@ -652,3 +652,100 @@ def test_standalone_detect_orphans_marks_after_deferred_apply(graph_dir):
         b = gdb.get_entity("b")
     assert "b" in orphans
     assert b.status == "orphan_candidate"
+
+
+# ---------- 3. #115 T2.4: graph-owned edge derivation from body wikilinks ----------
+
+def _body_page(slug, body, *, page_type="concept", title=None):
+    """New #115 page shape: NO outgoing_links key — links live in the body."""
+    return {"slug": slug, "page_type": page_type,
+            "title": title or f"Title for {slug}", "body": body}
+
+
+class TestBodyWikilinkEdgeDerivation:
+    def test_body_links_become_edges(self, graph_dir):
+        """New-shape page (no outgoing_links key): LINKS_TO edges derive
+        from body wikilinks."""
+        cr = make_compile_result([make_compiled_source("KDB/raw/s.md", [
+            _body_page("a", "Links [[b]] and [[c|see c]]."),
+            _body_page("b", "x"),
+            _body_page("c", "y"),
+        ])])
+        scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+        with GraphDB(graph_dir) as gdb:
+            gdb.apply_compile_result(cr, scan, "run-1")
+            s = gdb.stats()
+        assert s["links_to"] == 2          # a→b, a→c from the body
+
+    def test_legacy_outgoing_links_preferred_over_body(self, graph_dir):
+        """Historical payload (outgoing_links present): the stored list wins
+        over the body — read-compat, never a merge."""
+        cr = make_compile_result([make_compiled_source("KDB/raw/s.md", [
+            make_page("a", outgoing_links=["b"], body="Body mentions [[c]]."),
+            make_page("b"), make_page("c"),
+        ])])
+        scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+        with GraphDB(graph_dir) as gdb:
+            gdb.apply_compile_result(cr, scan, "run-1")
+            s = gdb.stats()
+        assert s["links_to"] == 1          # only a→b (stored list), NOT a→c
+
+    def test_recompile_body_only_page_preserves_edges(self, graph_dir):
+        """R8 regression: a page compiled WITH links (legacy list), then
+        recompiled body-only (new shape), must NOT lose its edges — the old
+        code read page.get('outgoing_links', []) and erased them."""
+        scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+        cr_legacy = make_compile_result([make_compiled_source("KDB/raw/s.md", [
+            make_page("a", outgoing_links=["b"]),
+            make_page("b"),
+        ])])
+        cr_new = make_compile_result([make_compiled_source("KDB/raw/s.md", [
+            _body_page("a", "Still links [[b]]."),
+            _body_page("b", "x"),
+        ])])
+        with GraphDB(graph_dir) as gdb:
+            gdb.apply_compile_result(cr_legacy, scan, "run-1")
+            assert gdb.stats()["links_to"] == 1
+            gdb.apply_compile_result(cr_new, scan, "run-2")
+            s2 = gdb.stats()
+        assert s2["links_to"] == 1         # edge survived the new-shape recompile
+
+    def test_wire_links_covers_body_only_pages(self, graph_dir):
+        """wire_links finalization derives cross-source edges from bodies too."""
+        cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+            _body_page("a", "Points at [[b]].")])])
+        cr2 = make_compile_result([make_compiled_source("KDB/raw/b.md", [
+            _body_page("b", "x")])])
+        scan1 = make_scan([make_scan_entry("KDB/raw/a.md")])
+        scan2 = make_scan([make_scan_entry("KDB/raw/b.md")])
+        edge_q = ("MATCH (:Entity {slug: 'a'})-[r:LINKS_TO]->(:Entity {slug: 'b'}) "
+                  "RETURN COUNT(r)")
+        with GraphDB(graph_dir) as gdb:
+            gdb.apply_compile_result(cr1, scan1, "run-1", wire_links=False)
+            gdb.apply_compile_result(cr2, scan2, "run-1", wire_links=False)
+            before = _count(gdb, edge_q)
+            batch_cr = make_compile_result([
+                make_compiled_source("KDB/raw/a.md", [_body_page("a", "Points at [[b]].")]),
+                make_compiled_source("KDB/raw/b.md", [_body_page("b", "x")]),
+            ])
+            gdb.wire_links(batch_cr, "run-1")
+            after = _count(gdb, edge_q)
+        assert before == 0
+        assert after == 1
+
+
+def test_mirrored_extractor_matches_compiler():
+    """Drift guard: kdb_graph.body_wikilink_slugs must stay byte-equivalent
+    to the compiler's extractor (mirrored, B.3)."""
+    from compiler.validate_source_response import body_wikilink_slugs as comp
+    from kdb_graph.intake import body_wikilink_slugs as graph
+    bodies = [
+        "See [[foo]] and [[bar-baz|Alias]] and [[qux#Heading]].",
+        "Real [[foo]]. ```\nExample [[not-a-link]].\n``` Inline `[[nope]]`.",
+        "Escaped \\[[nope]] and good [[yes]].",
+        "[[Foo Bar]] is out-of-pattern; [[ok-one]] counts.",
+        "",
+        "no links at all",
+    ]
+    for body in bodies:
+        assert comp(body) == graph(body), body

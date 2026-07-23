@@ -1,0 +1,28 @@
+{
+  "run_id": "r-legacy",
+  "success": true,
+  "compiled_sources": [
+    {
+      "source_id": "KDB/raw/legacy.md",
+      "summary_slug": "summary-legacy",
+      "compile_meta": {"run_state": "in_graph_db", "hash": "sha256:legacy"},
+      "source_meta": {"summary": "Legacy source summary.", "author": "Test Author", "domain": "investing", "source_type": "essay"},
+      "pages": [
+        {"slug": "summary-legacy", "page_type": "summary", "title": "Legacy", "status": "active", "confidence": "high", "outgoing_links": ["alpha", "beta"], "body": "Overview of the legacy source."},
+        {"slug": "alpha", "page_type": "concept", "title": "Alpha", "status": "active", "confidence": "low", "outgoing_links": ["beta"], "body": "Alpha concept body."},
+        {"slug": "beta", "page_type": "concept", "title": "Beta", "status": "active", "confidence": "medium", "outgoing_links": [], "body": "Beta concept body."}
+      ]
+    }
+  ],
+  "errors": [],
+  "warnings": [],
+  "canonical_meta": {
+    "algorithm_version": "1",
+    "ledger_snapshot_sha256": "sha256:fixture-ledger",
+    "aliases_emitted": [
+      {"alias_slug": "alpha-alias", "canonical_slug": "alpha", "algorithm": "ledger"}
+    ],
+    "outgoing_link_remaps": [],
+    "merged_pages": []
+  }
+}

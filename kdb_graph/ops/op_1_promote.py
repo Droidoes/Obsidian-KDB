@@ -300,11 +300,13 @@ def _apply_mutation(
     run_id = f"o1-{candidate.candidate_id}"
 
     # Topology layer: ensure subject Entity exists.
+    # #115 Phase 3 (D-115-12): no Entity confidence write (logically
+    # deprecated). Claim-tier computed confidence below is NOT affected.
     conn.execute(
         """
         MERGE (e:Entity {slug: $slug})
         ON CREATE SET e.title = $slug, e.page_type = 'concept', e.status = 'active',
-                      e.confidence = 'high', e.canonical_id = NULL,
+                      e.canonical_id = NULL,
                       e.created_at = $now, e.updated_at = $now,
                       e.first_run_id = $run_id, e.last_run_id = $run_id
         ON MATCH SET e.last_run_id = $run_id, e.updated_at = $now

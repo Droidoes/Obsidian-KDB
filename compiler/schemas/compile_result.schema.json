@@ -19,7 +19,8 @@
     },
     "log_entries": {
       "type": "array",
-      "description": "LLM-emitted log items (contradictions, ambiguities, low-confidence decisions). Persisted in state/runs/<run_id>.json journal.",
+      "deprecated": true, "readOnly": true,
+      "description": "DEPRECATED since #115 — removed from the LLM contract; retained optional for read-compat with historical compile_results (read-only, never copied forward).",
       "items": { "$ref": "#/$defs/logEntry" }
     },
     "errors": {
@@ -28,6 +29,13 @@
     },
     "warnings": {
       "type": "array",
+      "deprecated": true, "readOnly": true,
+      "description": "DEPRECATED since #115 — renamed to compilation_notes; retained optional for read-compat with historical compile_results.",
+      "items": { "type": "string" }
+    },
+    "compilation_notes": {
+      "type": "array",
+      "description": "Optional free-text compile notes (#115 — the renamed warnings field). Pure prose; Python never acts on these.",
       "items": { "type": "string" }
     },
     "canonical_meta": {
@@ -78,7 +86,9 @@
         "slug": { "$ref": "#/$defs/slug" },
         "page_type": { "$ref": "#/$defs/pageType" },
         "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-        "status": { "$ref": "#/$defs/pageStatus" },
+        "status": { "$ref": "#/$defs/pageStatus",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — Python-owned (stamped 'active' when absent); retained optional for historical payloads." },
         "body": {
           "type": "string",
           "description": "Full markdown body, no frontmatter. Python prepends frontmatter during apply."
@@ -90,10 +100,13 @@
         },
         "outgoing_links": {
           "type": "array",
-          "description": "Slugs this page's body links to. Must appear in body as [[slug]]. Python reconciles incoming_links_known from these.",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — graph edges derive from body wikilinks (kdb_graph intake prefers this legacy key when present); retained optional for historical payloads.",
           "items": { "$ref": "#/$defs/slug" }
         },
-        "confidence": { "$ref": "#/$defs/confidence" },
+        "confidence": { "$ref": "#/$defs/confidence",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — logically deprecated (D-115-12, Entity scope); retained optional for historical payloads." },
         "canonical_id": {
           "type": ["string", "null"],
           "description": "Stage 6 (canonicalize) output (#74). NULL means this page is canonical; a non-null slug means this page is an alias of the referenced canonical (D-R5-5). Optional per D-R5-7 — absent on raw extraction; populated post-Stage 6."
@@ -139,16 +152,22 @@
       "type": "object",
       "description": "Output for one source file.",
       "additionalProperties": false,
-      "required": ["source_id", "summary_slug", "pages"],
+      "required": ["source_id", "pages"],
       "properties": {
         "source_id": { "$ref": "#/$defs/sourceId" },
-        "summary_slug": { "$ref": "#/$defs/summarySlug" },
+        "summary_slug": { "$ref": "#/$defs/summarySlug",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — the summary identity is derived (compiler.summary_slug.expected_summary_slug); retained optional for historical payloads (LEGACY mode in validate_compile_result)." },
         "concept_slugs": {
           "type": "array",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — list-pairing died with the field; retained optional for historical payloads.",
           "items": { "$ref": "#/$defs/slug" }
         },
         "article_slugs": {
           "type": "array",
+          "deprecated": true, "readOnly": true,
+          "description": "DEPRECATED since #115 — list-pairing died with the field; retained optional for historical payloads.",
           "items": { "$ref": "#/$defs/slug" }
         },
         "pages": {
@@ -223,7 +242,7 @@
         },
         "outgoing_link_remaps": {
           "type": "array",
-          "description": "Deduped (from, to) pairs of every link-position remap (outgoing_links metadata + body [[wikilink]] tokens).",
+          "description": "Deduped (from, to) pairs of every link-position remap (body [[wikilink]] tokens only — the outgoing_links metadata field left the contract in #115).",
           "items": {
             "type": "object",
             "additionalProperties": false,

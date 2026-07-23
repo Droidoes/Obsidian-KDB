@@ -1,28 +1,16 @@
 {
-  "source_name": "transformer.md",
-  "summary_slug": "summary-transformer",
-  "concept_slugs": ["self-attention"],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "summary-transformer",
       "page_type": "summary",
       "title": "Transformer Architecture",
-      "body": "The transformer replaces recurrence with self-attention, enabling parallel processing of sequences. Introduced by Vaswani et al., 2017.",
-      "status": "active",
-      "outgoing_links": ["self-attention"],
-      "confidence": "high"
+      "body": "The transformer replaces recurrence with [[self-attention]], enabling parallel processing of sequences. Introduced by Vaswani et al., 2017."
     },
     {
       "slug": "self-attention",
       "page_type": "concept",
       "title": "Self-Attention",
-      "body": "Self-attention lets every position in a sequence attend to every other position, replacing recurrence.",
-      "status": "active",
-      "outgoing_links": ["summary-transformer"],
-      "confidence": "high"
+      "body": "Self-attention lets every position in a sequence attend to every other position, replacing recurrence."
     }
-  ],
-  "log_entries": [],
-  "warnings": []
+  ]
 }

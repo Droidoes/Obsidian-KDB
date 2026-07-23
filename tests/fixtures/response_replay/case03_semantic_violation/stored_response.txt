@@ -1,19 +1,10 @@
 {
-  "source_name": "markov.md",
-  "summary_slug": "summary-markov-process",
-  "concept_slugs": [],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "summary-markov-chain",
       "page_type": "summary",
       "title": "Markov Chain",
-      "body": "A stochastic process with the memoryless property.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "medium"
+      "body": "A stochastic process with the memoryless property."
     }
-  ],
-  "log_entries": [],
-  "warnings": []
+  ]
 }

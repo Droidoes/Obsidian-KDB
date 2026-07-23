@@ -1,0 +1,144 @@
+{
+  "description": "#115 Phase 4 (D-115-10) wikilink parity corpus. ONE shared dataset pins token semantics across FOUR consumers: the compiler extractor (compiler.validate_source_response.body_wikilink_slugs), the mirrored graph extractor (kdb_graph.intake.body_wikilink_slugs), the canonicalizer rewrite (compiler.canonicalize._remap_body_wikilinks), and the coercion rewrite (compiler.repair.coerce_slugs_and_propagate). Per case TWO expected outputs: extracted slugs AND post-rewrite body. `resolve` is the canonicalizer's normalized-surface -> canonical map. The coercion rewrite derives its own rename via collapse_slug (lowercase + collapse hyphens + strip edges), so `expected_body_coerce` differs from `expected_body_canonicalize` exactly where alias-vs-collapse semantics differ by design. `page_slug` / `expected_page_slug` / `expect_coerce_changed` drive the coercion payload and pin its changed flag. The escaped/code-span cases deliberately use MALFORMED targets so a coercion regression that scans protected regions FAILS the corpus (Codex Gate-4 F1).",
+  "cases": [
+    {
+      "id": "plain",
+      "body": "Alpha links [[aapl]] and [[msft]].",
+      "expected_slugs": ["aapl", "msft"],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "Alpha links [[apple-inc]] and [[msft]].",
+      "expected_body_coerce": "Alpha links [[aapl]] and [[msft]].",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "display-alias",
+      "body": "Click [[aapl|the stock symbol]] here.",
+      "expected_slugs": ["aapl"],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "Click [[apple-inc|the stock symbol]] here.",
+      "expected_body_coerce": "Click [[aapl|the stock symbol]] here.",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "heading",
+      "body": "See [[aapl#Revenue]].",
+      "expected_slugs": ["aapl"],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "See [[apple-inc#Revenue]].",
+      "expected_body_coerce": "See [[aapl#Revenue]].",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "heading-and-display",
+      "body": "See [[aapl#Revenue|the numbers]].",
+      "expected_slugs": ["aapl"],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "See [[apple-inc#Revenue|the numbers]].",
+      "expected_body_coerce": "See [[aapl#Revenue|the numbers]].",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "escaped",
+      "body": "Literal \\[[Foo--Bar]] and real [[Foo--Bar]].",
+      "expected_slugs": [],
+      "resolve": {"foo-bar": "canonical-foo"},
+      "expected_body_canonicalize": "Literal \\[[Foo--Bar]] and real [[canonical-foo]].",
+      "expected_body_coerce": "Literal \\[[Foo--Bar]] and real [[foo-bar]].",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "fenced-code",
+      "body": "Real [[Foo--Bar]].\n```\n[[Foo--Bar]]\n```",
+      "expected_slugs": [],
+      "resolve": {"foo-bar": "canonical-foo"},
+      "expected_body_canonicalize": "Real [[canonical-foo]].\n```\n[[Foo--Bar]]\n```",
+      "expected_body_coerce": "Real [[foo-bar]].\n```\n[[Foo--Bar]]\n```",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "inline-code",
+      "body": "Real [[Foo--Bar]] vs `[[Foo--Bar]]`.",
+      "expected_slugs": [],
+      "resolve": {"foo-bar": "canonical-foo"},
+      "expected_body_canonicalize": "Real [[canonical-foo]] vs `[[Foo--Bar]]`.",
+      "expected_body_coerce": "Real [[foo-bar]] vs `[[Foo--Bar]]`.",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "duplicates",
+      "body": "[[aapl]] and [[aapl|Apple Inc]].",
+      "expected_slugs": ["aapl"],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "[[apple-inc]] and [[apple-inc|Apple Inc]].",
+      "expected_body_coerce": "[[aapl]] and [[aapl|Apple Inc]].",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "malformed-collapse",
+      "body": "Alias [[Apple---Inc]] noted.",
+      "expected_slugs": [],
+      "resolve": {"apple-inc": "apple-canonical"},
+      "expected_body_canonicalize": "Alias [[apple-canonical]] noted.",
+      "expected_body_coerce": "Alias [[apple-inc]] noted.",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "malformed-space-uncoercible",
+      "body": "Broken [[Foo Bar]] link.",
+      "expected_slugs": [],
+      "resolve": {},
+      "expected_body_canonicalize": "Broken [[Foo Bar]] link.",
+      "expected_body_coerce": "Broken [[Foo Bar]] link.",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "uppercase-alias",
+      "body": "Ticker [[AAPL]] today.",
+      "expected_slugs": [],
+      "resolve": {"aapl": "apple-inc"},
+      "expected_body_canonicalize": "Ticker [[apple-inc]] today.",
+      "expected_body_coerce": "Ticker [[aapl]] today.",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "unclosed-bracket",
+      "body": "Broken [[aapl and real [[msft]].",
+      "expected_slugs": ["msft"],
+      "resolve": {"aapl": "apple-inc", "msft": "microsoft"},
+      "expected_body_canonicalize": "Broken [[aapl and real [[microsoft]].",
+      "expected_body_coerce": "Broken [[aapl and real [[msft]].",
+      "expect_coerce_changed": false
+    },
+    {
+      "id": "malformed-heading-display",
+      "body": "Link [[Foo--Bar#Sec|the alias]].",
+      "expected_slugs": [],
+      "resolve": {"foo-bar": "canonical-foo"},
+      "expected_body_canonicalize": "Link [[canonical-foo#Sec|the alias]].",
+      "expected_body_coerce": "Link [[foo-bar#Sec|the alias]].",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "code-only-uncoercible-does-not-block-repair",
+      "body": "Docs show `[[Foo Bar]]` in code only.",
+      "page_slug": "Good--Slug",
+      "expected_page_slug": "good-slug",
+      "expected_slugs": [],
+      "resolve": {},
+      "expected_body_canonicalize": "Docs show `[[Foo Bar]]` in code only.",
+      "expected_body_coerce": "Docs show `[[Foo Bar]]` in code only.",
+      "expect_coerce_changed": true
+    },
+    {
+      "id": "code-only-collision-does-not-refuse",
+      "body": "`[[foo-bar]] and [[foo--bar]]` collide in code only.",
+      "page_slug": "Good--Slug",
+      "expected_page_slug": "good-slug",
+      "expected_slugs": [],
+      "resolve": {},
+      "expected_body_canonicalize": "`[[foo-bar]] and [[foo--bar]]` collide in code only.",
+      "expected_body_coerce": "`[[foo-bar]] and [[foo--bar]]` collide in code only.",
+      "expect_coerce_changed": true
+    }
+  ]
+}

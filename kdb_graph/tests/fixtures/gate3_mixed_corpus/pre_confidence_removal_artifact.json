@@ -1,0 +1,225 @@
+{
+  "about": [],
+  "alias_of": [
+    {
+      "algorithm": "ledger",
+      "from": "alpha-alias",
+      "run_id": "r-legacy",
+      "to": "alpha"
+    }
+  ],
+  "belongs_to": [
+    {
+      "from": "alpha",
+      "run_id": "r-new",
+      "support_count": 1,
+      "to": "investing"
+    },
+    {
+      "from": "beta",
+      "run_id": "r-new",
+      "support_count": 1,
+      "to": "investing"
+    },
+    {
+      "from": "gamma",
+      "run_id": "r-new",
+      "support_count": 1,
+      "to": "investing"
+    },
+    {
+      "from": "summary-legacy",
+      "run_id": "r-new",
+      "support_count": 1,
+      "to": "investing"
+    },
+    {
+      "from": "summary-new",
+      "run_id": "r-new",
+      "support_count": 1,
+      "to": "investing"
+    }
+  ],
+  "claims": [],
+  "contradicts": [],
+  "domains": [
+    {
+      "first_run_id": "r-new",
+      "name": "investing"
+    }
+  ],
+  "entities": [
+    {
+      "canonical_id": null,
+      "confidence": "low",
+      "first_run_id": "r-legacy",
+      "last_run_id": "r-legacy",
+      "page_type": "concept",
+      "slug": "alpha",
+      "status": "active",
+      "title": "Alpha"
+    },
+    {
+      "canonical_id": "alpha",
+      "confidence": "",
+      "first_run_id": "r-legacy",
+      "last_run_id": "r-legacy",
+      "page_type": "alias",
+      "slug": "alpha-alias",
+      "status": "alias",
+      "title": ""
+    },
+    {
+      "canonical_id": null,
+      "confidence": "medium",
+      "first_run_id": "r-legacy",
+      "last_run_id": "r-legacy",
+      "page_type": "concept",
+      "slug": "beta",
+      "status": "active",
+      "title": "Beta"
+    },
+    {
+      "canonical_id": null,
+      "confidence": "medium",
+      "first_run_id": "r-new",
+      "last_run_id": "r-new",
+      "page_type": "concept",
+      "slug": "gamma",
+      "status": "active",
+      "title": "Gamma"
+    },
+    {
+      "canonical_id": null,
+      "confidence": "high",
+      "first_run_id": "r-legacy",
+      "last_run_id": "r-legacy",
+      "page_type": "summary",
+      "slug": "summary-legacy",
+      "status": "active",
+      "title": "Legacy"
+    },
+    {
+      "canonical_id": null,
+      "confidence": "medium",
+      "first_run_id": "r-new",
+      "last_run_id": "r-new",
+      "page_type": "summary",
+      "slug": "summary-new",
+      "status": "active",
+      "title": "New"
+    }
+  ],
+  "evidences": [],
+  "links_to": [
+    {
+      "from": "alpha",
+      "run_id": "r-legacy",
+      "to": "beta"
+    },
+    {
+      "from": "gamma",
+      "run_id": "r-new",
+      "to": "beta"
+    },
+    {
+      "from": "summary-legacy",
+      "run_id": "r-legacy",
+      "to": "alpha"
+    },
+    {
+      "from": "summary-legacy",
+      "run_id": "r-legacy",
+      "to": "beta"
+    },
+    {
+      "from": "summary-new",
+      "run_id": "r-new",
+      "to": "alpha"
+    },
+    {
+      "from": "summary-new",
+      "run_id": "r-new",
+      "to": "gamma"
+    }
+  ],
+  "qualifies": [],
+  "schema_meta": [
+    {
+      "key": "schema_version",
+      "value": "2.4"
+    }
+  ],
+  "sources": [
+    {
+      "author": "Test Author",
+      "canonical_path": "KDB/raw/legacy.md",
+      "domain": "investing",
+      "file_type": "markdown",
+      "hash": "sha256:legacy",
+      "ingest_count": 1,
+      "ingest_state": "in_graph_db",
+      "last_run_id": "r-legacy",
+      "moved_to": "",
+      "size_bytes": 100,
+      "source_id": "KDB/raw/legacy.md",
+      "source_type": "essay",
+      "status": "active",
+      "summary": "Legacy source summary."
+    },
+    {
+      "author": null,
+      "canonical_path": "KDB/raw/new.md",
+      "domain": "investing",
+      "file_type": "markdown",
+      "hash": "sha256:new",
+      "ingest_count": 1,
+      "ingest_state": "in_graph_db",
+      "last_run_id": "r-new",
+      "moved_to": "",
+      "size_bytes": 120,
+      "source_id": "KDB/raw/new.md",
+      "source_type": "essay",
+      "status": "active",
+      "summary": "New source summary."
+    }
+  ],
+  "supersedes": [],
+  "supports": [
+    {
+      "from": "KDB/raw/legacy.md",
+      "hash_at_time": "sha256:legacy",
+      "role": "primary",
+      "run_id": "r-legacy",
+      "to": "alpha"
+    },
+    {
+      "from": "KDB/raw/legacy.md",
+      "hash_at_time": "sha256:legacy",
+      "role": "primary",
+      "run_id": "r-legacy",
+      "to": "beta"
+    },
+    {
+      "from": "KDB/raw/legacy.md",
+      "hash_at_time": "sha256:legacy",
+      "role": "primary",
+      "run_id": "r-legacy",
+      "to": "summary-legacy"
+    },
+    {
+      "from": "KDB/raw/new.md",
+      "hash_at_time": "sha256:new",
+      "role": "primary",
+      "run_id": "r-new",
+      "to": "gamma"
+    },
+    {
+      "from": "KDB/raw/new.md",
+      "hash_at_time": "sha256:new",
+      "role": "primary",
+      "run_id": "r-new",
+      "to": "summary-new"
+    }
+  ]
+}

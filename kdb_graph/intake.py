@@ -18,7 +18,34 @@ from kdb_graph.types import IntakeResult
 _DEFAULT_SOURCE_TYPE = "obsidian-kdb-raw"
 _DEFAULT_ROLE = "primary"
 _DEFAULT_ENTITY_STATUS = "active"
-_DEFAULT_CONFIDENCE = "medium"
+# #115 Phase 3 (D-115-12): _DEFAULT_CONFIDENCE deleted — Entity.confidence is
+# logically deprecated (never written; dead Kuzu column remains).
+
+
+# --- body wikilink extraction (#115 T2.4 — graph-owned edge derivation) ---
+# Mirrored from compiler.validate_source_response.body_wikilink_slugs:
+# kdb_graph imports NO sibling package (B.3), so the extractor is mirrored
+# here. Keep the regexes byte-identical to the compiler's.
+
+import re as _re
+
+_SLUG_RE = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_WIKILINK_RE = _re.compile(
+    rf"(?<!\\)\[\[({_SLUG_RE})(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]"
+)
+_FENCED_CODE_RE = _re.compile(r"```.*?```", _re.DOTALL)
+_INLINE_CODE_RE = _re.compile(r"`[^`\n]*`")
+
+
+def _strip_code(text: str) -> str:
+    return _INLINE_CODE_RE.sub("", _FENCED_CODE_RE.sub("", text))
+
+
+def body_wikilink_slugs(body: str) -> set[str]:
+    """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]] tokens
+    in `body`, after stripping code spans. Mirror of the compiler's
+    body_wikilink_slugs — the two must not drift."""
+    return set(_WIKILINK_RE.findall(_strip_code(body)))
 
 
 def apply_compile_result(
@@ -280,12 +307,15 @@ def _upsert_entity(
     slug = page.get("slug")
     if not slug:
         return
+    # #115 Phase 3 (D-115-12): Entity.confidence is logically deprecated —
+    # never written (the dead Kuzu column stays until the next destructive
+    # schema change). The deprecated page key is ignored, not read.
     conn.execute(
         """
         MERGE (p:Entity {slug: $slug})
         ON CREATE SET p.created_at=$ts, p.first_run_id=$run_id
         SET p.title=$title, p.page_type=$ptype, p.status=$status,
-            p.confidence=$conf, p.updated_at=$ts, p.last_run_id=$run_id,
+            p.updated_at=$ts, p.last_run_id=$run_id,
             p.canonical_id=NULL
         """,
         {
@@ -295,7 +325,6 @@ def _upsert_entity(
             "title": page.get("title", ""),
             "ptype": page.get("page_type", ""),
             "status": page.get("status", _DEFAULT_ENTITY_STATUS),
-            "conf": page.get("confidence", _DEFAULT_CONFIDENCE),
         },
     )
     # Promotion safety: drop any outgoing ALIAS_OF — this slug is canonical now.
@@ -325,9 +354,17 @@ def _replace_outgoing_links(
         "MATCH (a:Entity {slug: $slug})-[r:LINKS_TO]->() DELETE r",
         {"slug": slug},
     )
-    # 2. Recreate per outgoing_links entry. The MATCH-with-two-patterns
+    # 2. Recreate per link target. #115 T2.4: the legacy `outgoing_links`
+    # key is preferred when present (historical payloads); new-shape pages
+    # derive the target set from body wikilinks. The delete-then-recreate
+    # contract is unchanged — only the target-set SOURCE changed, so a
+    # recompiled body-only page keeps its edges. The MATCH-with-two-patterns
     # form silently skips when target doesn't exist.
-    for target in page.get("outgoing_links", []):
+    targets = page.get("outgoing_links")
+    if targets is None:
+        body = page.get("body")
+        targets = sorted(body_wikilink_slugs(body)) if isinstance(body, str) else []
+    for target in targets:
         conn.execute(
             """
             MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b})
@@ -593,12 +630,12 @@ def _upsert_alias_entities_and_edges(
             continue
 
         # 1. Upsert alias Entity with canonical_id pointing at root canonical.
+        # #115 Phase 3 (D-115-12): no confidence write (logically deprecated).
         conn.execute(
             """
             MERGE (a:Entity {slug: $alias})
             ON CREATE SET a.created_at=$ts, a.first_run_id=$run_id,
-                          a.title='', a.page_type='alias',
-                          a.confidence=''
+                          a.title='', a.page_type='alias'
             SET a.canonical_id=$canonical, a.status='alias',
                 a.updated_at=$ts, a.last_run_id=$run_id
             """,

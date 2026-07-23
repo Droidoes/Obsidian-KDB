@@ -90,19 +90,29 @@ def test_manifest_shape():
     assert len(INCOMPLETE) == 1
     assert 'Negative cash-conversion' in INCOMPLETE[0]['source_id']
     assert sum(1 for e in MANIFEST if not e['extract_ok']) == 2
+    # T1.7: exactly one retained legacy-shape negative (schema rejection)
+    assert [e["file"] for e in MANIFEST if e.get("legacy_negative")] == ["19.txt"]
 
 
-# 1. All 19 positives: schema-clean AND semantic-clean payloads.
+# 1. All 19 positives: 18 migrated new-shape fixtures decode schema+semantic
+#    clean; the one retained legacy-shape negative decodes to schema REJECTION.
 def test_all_19_fixtures_decode_schema_and_semantic_clean():
     from compiler import validate_source_response
     from compiler.response_recovery import recover_json_response
+    from compiler.summary_slug import expected_summary_slug
     for e in RECOVERABLE:
         r = recover_json_response((FIXTURES / e['file']).read_text())
         assert r.recovered, e['source_id']
         errs = validate_source_response.validate(r.parsed)
+        if e.get("legacy_negative"):
+            # T1.7 retained legacy response: carrier recovers, the new
+            # schema rejects the old shape (removed fields present).
+            assert errs != [], f'{e["source_id"]}: legacy negative must fail schema'
+            continue
         assert errs == [], f'{e["source_id"]}: {errs[:1]}'
         sem = validate_source_response.semantic_check(
-            r.parsed, source_name=e['source_name'])
+            r.parsed,
+            expected_summary_slug=expected_summary_slug(e["source_id"]))
         assert sem == [], f'{e["source_id"]}: {sem[:1]}'
         assert r.boundary_recovered, e['source_id']
         assert r.tail_discarded_chars == e['tail_discarded_chars']
@@ -117,8 +127,11 @@ def test_incomplete_fixture_unrecoverable():
     assert not r.recovered and r.error
 
 
-# 3. compile_one e2e over ALL 19 positives (spec §5 acceptance criterion).
-@pytest.mark.parametrize("entry", RECOVERABLE, ids=[e["file"] for e in RECOVERABLE])
+# 3. compile_one e2e over the 18 migrated positives (spec §5 acceptance criterion).
+@pytest.mark.parametrize("entry",
+                         [e for e in RECOVERABLE if not e.get("legacy_negative")],
+                         ids=[e["file"] for e in RECOVERABLE
+                              if not e.get("legacy_negative")])
 def test_compile_one_e2e_recovers_every_positive_fixture(
     entry: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -140,7 +153,7 @@ def test_compile_one_e2e_recovers_every_positive_fixture(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx, source_id)
+    cs, _, err = _compile(vault, state_root, ctx, source_id)
 
     assert err is None
     assert cs is not None
@@ -153,6 +166,34 @@ def test_compile_one_e2e_recovers_every_positive_fixture(
     assert rec["prefix_discarded_chars"] == entry["prefix_discarded_chars"]
     assert rec["tail_discarded_chars"] == entry["tail_discarded_chars"]
     assert rec["extract_ok"] == entry["extract_ok"]
+
+
+def test_compile_one_e2e_legacy_negative_quarantines_at_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The retained legacy-shape fixture recovers at the carrier level but
+    fails the new schema (removed fields) → quarantine, no retry waste."""
+    entry = [e for e in RECOVERABLE if e.get("legacy_negative")][0]
+    source_id = entry["source_id"]
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, source_id, "source body")
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+    text = (FIXTURES / entry["file"]).read_text(encoding="utf-8")
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda req: _model_response(text),
+    )
+
+    cs, _, err = _compile(vault, state_root, ctx, source_id)
+
+    assert cs is None
+    assert "schema validation failed" in (err or "")
+    rec = _single_record(state_root, ctx.run_id)
+    assert rec["parse_ok"] is True          # carrier recovery worked
+    assert rec["schema_ok"] is False        # new schema rejects the old shape
+    assert rec["final_status"] == "quarantined"
 
 
 # 4. Truncation composition: complete doc + stop_reason "length" → compiles.
@@ -174,7 +215,7 @@ def test_truncation_flagged_complete_document_compiles(
         ),
     )
 
-    cs, _, _, err = _compile(vault, state_root, ctx)
+    cs, _, err = _compile(vault, state_root, ctx)
 
     assert err is None
     assert cs is not None
@@ -209,7 +250,7 @@ def test_truncated_unrecoverable_document_is_terminal_no_retry(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx)
+    cs, _, err = _compile(vault, state_root, ctx)
 
     assert cs is None
     assert err is not None
@@ -246,7 +287,7 @@ def test_winning_attempt_resets_boundary_recovery_telemetry(
     ctx = _ctx(vault)
 
     bad = _good_response(SOURCE_A)
-    del bad["summary_slug"]  # schema-invalid (required field)
+    del bad["pages"]  # schema-invalid (required field)
     attempt1_text = json.dumps(bad) + "\n} trailing-carrier-junk"
     attempt2_text = json.dumps(_good_response(SOURCE_A))
     seq = [attempt1_text, attempt2_text]
@@ -256,7 +297,7 @@ def test_winning_attempt_resets_boundary_recovery_telemetry(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx)
+    cs, _, err = _compile(vault, state_root, ctx)
 
     assert cs is not None and err is None  # recovered on attempt 2
 
@@ -295,7 +336,7 @@ def test_decodable_wrong_prefix_still_hits_schema_gate(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx)
+    cs, _, err = _compile(vault, state_root, ctx)
 
     assert cs is None
     assert err is not None
@@ -334,7 +375,7 @@ def test_non_object_payloads_quarantine_without_crash(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx)
+    cs, _, err = _compile(vault, state_root, ctx)
 
     assert cs is None
     assert err is not None
@@ -369,7 +410,7 @@ def test_incomplete_fixture_quarantines_after_exhausting_attempts(
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)
 
-    cs, _, _, err = _compile(vault, state_root, ctx, source_id)
+    cs, _, err = _compile(vault, state_root, ctx, source_id)
 
     assert cs is None
     assert err is not None

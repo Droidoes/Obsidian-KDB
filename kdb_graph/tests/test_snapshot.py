@@ -556,9 +556,36 @@ def test_snapshot_domain_files_empty_for_pre_76_graph(graph_dir, tmp_path):
         assert manifest["counts"][kind] == 0
 
 
-def test_snapshot_format_version_is_v6():
-    """D1-A: snapshot bumped from v5 (Source Pass-1 columns) to v6 (belongs_to support_count)."""
-    assert SNAPSHOT_FORMAT_VERSION == 6
+def test_snapshot_format_version_is_v7():
+    """#115 D-115-12: snapshot bumped from v6 (belongs_to support_count) to
+    v7 (entities.jsonl drops the logically-deprecated `confidence`)."""
+    assert SNAPSHOT_FORMAT_VERSION == 7
+
+
+def test_entities_jsonl_has_no_confidence_key(graph_dir, tmp_path):
+    """#115 D-115-12 (format v7): the entities writer never emits
+    `confidence` — even when the graph's dead column genuinely holds
+    legacy non-null values (Codex Gate-3 F4: seed it directly post-intake,
+    since the new intake deliberately ignores the deprecated page key)."""
+    _seed_graph(graph_dir)
+    from kdb_graph.graphdb import GraphDB
+    with GraphDB(graph_dir) as gdb:
+        gdb.conn.execute(
+            "MATCH (e:Entity) SET e.confidence = 'high'"
+        )
+        r = gdb.conn.execute(
+            "MATCH (e:Entity) WHERE e.confidence IS NOT NULL RETURN COUNT(e)"
+        )
+        n = r.get_next()[0]
+        assert n > 0, "precondition: dead column must be populated"
+    out = tmp_path / "snap"
+    snapshot(graph_dir, out)
+    rows = [
+        json.loads(line)
+        for line in (out / "entities.jsonl").read_text("utf-8").splitlines()
+    ]
+    assert rows, "seeded graph must produce entity rows"
+    assert all("confidence" not in r for r in rows)
 
 
 def _seed_graph_with_claim_layer(graph_dir):

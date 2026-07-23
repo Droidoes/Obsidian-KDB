@@ -33,7 +33,9 @@ class Entity:
     title: str
     page_type: str       # values still Obsidian-flavored: 'summary'|'concept'|'article' (D-A2: rename of values deferred to producer #2); #74.5 adds 'alias' for graph-only alias rows
     status: str
-    confidence: str
+    # #115 Phase 3 (D-115-12): confidence removed — logically deprecated;
+    # never written/read anymore (dead Kuzu column remains until the next
+    # destructive schema change).
     created_at: str
     updated_at: str
     first_run_id: str

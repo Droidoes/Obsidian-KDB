@@ -43,7 +43,7 @@ include = ["kdb_graph*", "kdb_mcp*", "common*", "ingestion*", "compiler*", "orch
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
-compiler      = ["schemas/*.json"]
+compiler      = ["schemas/*.json", "prompts/*.md"]
 tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 

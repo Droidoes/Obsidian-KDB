@@ -1,0 +1,16 @@
+{
+  "run_id": "r-new",
+  "success": true,
+  "compiled_sources": [
+    {
+      "source_id": "KDB/raw/new.md",
+      "compile_meta": {"run_state": "in_graph_db", "hash": "sha256:new"},
+      "source_meta": {"summary": "New source summary.", "author": null, "domain": "investing", "source_type": "essay"},
+      "pages": [
+        {"slug": "summary-new", "page_type": "summary", "title": "New", "body": "Overview. Links [[alpha]] and [[gamma]]."},
+        {"slug": "gamma", "page_type": "concept", "title": "Gamma", "body": "Gamma concept body links [[beta]]."}
+      ]
+    }
+  ],
+  "errors": []
+}

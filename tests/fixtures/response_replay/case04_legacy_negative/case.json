@@ -1,0 +1,8 @@
+{
+  "source_id": "KDB/raw/legacy-note.md",
+  "expected_extract_ok": true,
+  "expected_parse_ok": true,
+  "expected_schema_ok": false,
+  "expected_semantic_ok": false,
+  "notes": "Legacy negative (#115 Phase 4): a pre-#115 OLD-shape response (source_name / summary_slug / concept_slugs / 7-field pages) parses fine but the NEW per-source schema rejects it (additionalProperties: false — removed fields are not in the LLM contract). Expected classification: schema violation; semantic is not reached."
+}

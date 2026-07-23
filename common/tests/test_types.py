@@ -5,7 +5,6 @@ from common.types import (
     CompiledSource,
     CompileResult,
     ErrorEntry,
-    LogEntry,
     PageIntent,
     ReconcileOp,
     RespStatsRecord,
@@ -178,40 +177,50 @@ def test_scan_result_serializes_children() -> None:
 # ---------- PageIntent / CompiledSource (unchanged contracts) ----------
 
 def test_page_intent_to_dict_defaults() -> None:
+    # #115: LLM-authored fields only — status/outgoing_links/confidence gone
     p = PageIntent(slug="attention-paper", page_type="summary", title="Attention Paper", body="Body here.")
     d = p.to_dict()
     assert d["slug"] == "attention-paper"
-    assert d["status"] == "active" and d["confidence"] == "medium"
-    assert d["supports_page_existence"] == [] and d["outgoing_links"] == []
+    assert d["supports_page_existence"] == []
+    assert "status" not in d and "confidence" not in d and "outgoing_links" not in d
 
 
 def test_compiled_source_nests_pages() -> None:
     cs = CompiledSource(
         source_id="sha256:" + "d" * 64,
-        summary_slug="attention-paper",
         pages=[
             PageIntent(slug="attention-paper", page_type="summary", title="X", body="b"),
             PageIntent(slug="attention-mechanism", page_type="concept", title="Y", body="b"),
         ],
-        concept_slugs=["attention-mechanism"],
     )
     d = cs.to_dict()
-    assert d["summary_slug"] == "attention-paper"
+    assert "summary_slug" not in d  # #115: derived, never emitted
     assert len(d["pages"]) == 2
-    assert d["concept_slugs"] == ["attention-mechanism"]
-    assert d["article_slugs"] == []
+    assert "concept_slugs" not in d and "article_slugs" not in d
 
 
-def test_log_entry_to_dict() -> None:
-    le = LogEntry(level="warning", message="ambiguous rename", related_slugs=["x"])
-    d = le.to_dict()
-    assert d["level"] == "warning" and d["related_slugs"] == ["x"]
+def test_summary_page_helper() -> None:
+    # #115: fail-closed unique-summary lookup (dual-mode with legacy summary_slug)
+    from common.types import SummaryPageError, summary_page
+    cs = {"source_id": "s", "pages": [
+        {"slug": "c1", "page_type": "concept"},
+        {"slug": "summary-s", "page_type": "summary", "title": "S"},
+    ]}
+    assert summary_page(cs)["slug"] == "summary-s"
+    import pytest
+    with pytest.raises(SummaryPageError):
+        summary_page({"source_id": "s", "pages": []})
+    with pytest.raises(SummaryPageError):
+        summary_page({"source_id": "s", "pages": [
+            {"slug": "a", "page_type": "summary"},
+            {"slug": "b", "page_type": "summary"},
+        ]})
 
 
 def test_compile_result_to_dict_keys() -> None:
     cr = CompileResult(run_id="r", success=True)
     d = cr.to_dict()
-    assert set(d) == {"run_id", "success", "compiled_sources", "log_entries", "errors", "warnings"}
+    assert set(d) == {"run_id", "success", "compiled_sources", "errors", "compilation_notes"}
 
 
 # ---------- RespStatsRecord (#114 recovery telemetry) ----------

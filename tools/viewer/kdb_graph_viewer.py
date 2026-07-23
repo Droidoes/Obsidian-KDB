@@ -71,6 +71,11 @@ def export(graph_path: str) -> dict:
                 nid = node.get("_id")
                 lbl = node.get("_label", tbl)
                 props = {k: v for k, v in node.items() if not k.startswith("_")}
+                # #115 Phase 3 (D-115-12): Entity.confidence is logically
+                # deprecated — never returned to viewers, even when the
+                # dead Kuzu column still holds legacy values.
+                if lbl == "Entity":
+                    props.pop("confidence", None)
                 node_type = lbl
                 if lbl == "Entity" and props.get("page_type"):
                     node_type = f"Entity:{props['page_type']}"

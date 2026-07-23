@@ -1,80 +1,35 @@
 {
-  "source_name": "Warren Buffett Brian Moynihan -Speak at Georgetown.md",
-  "summary_slug": "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
-  "concept_slugs": [
-    "circle-of-competence",
-    "giving-pledge",
-    "market-cycles",
-    "specialization-of-labor-in-philanthropy"
-  ],
-  "article_slugs": [],
   "pages": [
     {
       "slug": "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
       "page_type": "summary",
       "title": "Warren Buffett and Brian Moynihan Speak at Georgetown (summary)",
-      "body": "At a Georgetown University event, Warren Buffett and Brian Moynihan discuss value investing principles, philanthropy, and the US economy. Buffett outlines his foundational views on sticking to one's [[circle-of-competence]] in investing, the societal obligation of the [[giving-pledge]], how [[specialization-of-labor-in-philanthropy]] allows his capital to be deployed by superior custodians, and why investors should remain optimistic and opportunistic through recurring [[market-cycles]].",
-      "status": "active",
-      "outgoing_links": [
-        "circle-of-competence",
-        "giving-pledge",
-        "market-cycles",
-        "specialization-of-labor-in-philanthropy"
-      ],
-      "confidence": "high"
+      "body": "At a Georgetown University event, Warren Buffett and Brian Moynihan discuss value investing principles, philanthropy, and the US economy. Buffett outlines his foundational views on sticking to one's [[circle-of-competence]] in investing, the societal obligation of the [[giving-pledge]], how [[specialization-of-labor-in-philanthropy]] allows his capital to be deployed by superior custodians, and why investors should remain optimistic and opportunistic through recurring [[market-cycles]]."
     },
     {
       "slug": "circle-of-competence",
       "page_type": "concept",
       "title": "Circle of Competence",
-      "body": "The circle of competence is an investment filter where an investor limits their activities to businesses they understand deeply, ignoring opportunities outside their scope of evaluation. Warren Buffett illustrates this by contrasting his decision to invest in Bank of America or Coca-Cola with his choice to pass on complex, rapidly changing technology businesses like Microsoft or Amazon. He argues that investing does not feature called strikes; investors are not penalized for refusing to swing at pitches outside of their sweet zone, and only need to find a few high-probability ideas within their capacity to build extreme wealth.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The circle of competence is an investment filter where an investor limits their activities to businesses they understand deeply, ignoring opportunities outside their scope of evaluation. Warren Buffett illustrates this by contrasting his decision to invest in Bank of America or Coca-Cola with his choice to pass on complex, rapidly changing technology businesses like Microsoft or Amazon. He argues that investing does not feature called strikes; investors are not penalized for refusing to swing at pitches outside of their sweet zone, and only need to find a few high-probability ideas within their capacity to build extreme wealth."
     },
     {
       "slug": "giving-pledge",
       "page_type": "concept",
       "title": "Giving Pledge",
-      "body": "The Giving Pledge is a moral commitment and effort co-founded by Warren Buffett and Bill and Melinda Gates to encourage the world's wealthiest individuals to donate at least 50% of their net worth to philanthropy. Buffett notes that the pledge establishes new cultural norms for extreme wealth. He emphasizes that while billionaires giving away excess stock certificates are giving up assets with no personal utility to their standard of living, the truest philanthropic sacrifices are made by middle-class and working-class families who donate resources that directly reduce their own day-to-day material utility.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "The Giving Pledge is a moral commitment and effort co-founded by Warren Buffett and Bill and Melinda Gates to encourage the world's wealthiest individuals to donate at least 50% of their net worth to philanthropy. Buffett notes that the pledge establishes new cultural norms for extreme wealth. He emphasizes that while billionaires giving away excess stock certificates are giving up assets with no personal utility to their standard of living, the truest philanthropic sacrifices are made by middle-class and working-class families who donate resources that directly reduce their own day-to-day material utility."
     },
     {
       "slug": "market-cycles",
       "page_type": "concept",
       "title": "Market Cycles",
-      "body": "Market cycles are driven by the persistent and recurring patterns of human behavior—specifically greed and fear. In periods of greed, asset bubbles form gradually through leverage, whereas panics and fear occur suddenly as participants attempt to liquidate assets simultaneously. Warren Buffett argues that these systemic panics (such as the 2008 financial crisis) drive asset values to irrationally low prices, presenting highly advantageous entry points for disciplined investors who possess the correct emotional temperament to ignore popular sentiment and purchase equities when panic peaked.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Market cycles are driven by the persistent and recurring patterns of human behavior—specifically greed and fear. In periods of greed, asset bubbles form gradually through leverage, whereas panics and fear occur suddenly as participants attempt to liquidate assets simultaneously. Warren Buffett argues that these systemic panics (such as the 2008 financial crisis) drive asset values to irrationally low prices, presenting highly advantageous entry points for disciplined investors who possess the correct emotional temperament to ignore popular sentiment and purchase equities when panic peaked."
     },
     {
       "slug": "specialization-of-labor-in-philanthropy",
       "page_type": "concept",
       "title": "Specialization of Labor in Philanthropy",
-      "body": "Applying economic specialization principles to charity, this concept states that individuals with a talent for accumulating capital should delegate its distribution to younger, more energetic, and highly specialized custodians. Rather than establishing his own bespoke foundation, Warren Buffett chose to pledge his Berkshire Hathaway wealth to the Bill and Melinda Gates Foundation and his children's foundations. This ensures that expert, hands-on operators distribute the capital efficiently. Buffett also enforces a spend-out clause, mandating that his accumulated capital be spent down within ten years of his estate's closing to prevent generational control from the grave.",
-      "status": "active",
-      "outgoing_links": [
-        "giving-pledge"
-      ],
-      "confidence": "high"
+      "body": "Applying economic specialization principles to charity, this concept states that individuals with a talent for accumulating capital should delegate its distribution to younger, more energetic, and highly specialized custodians. Rather than establishing his own bespoke foundation, Warren Buffett chose to pledge his Berkshire Hathaway wealth to the Bill and Melinda Gates Foundation and his children's foundations. This ensures that expert, hands-on operators distribute the capital efficiently. Buffett also enforces a spend-out clause, mandating that his accumulated capital be spent down within ten years of his estate's closing to prevent generational control from the grave."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Compiled summary page and four distinct concepts from the Georgetown transcript: circle of competence, the giving pledge, market cycles (panics/bubbles), and specialization of labor in philanthropy.",
-      "related_slugs": [
-        "summary-warren-buffett-brian-moynihan-speak-at-georgetown",
-        "circle-of-competence",
-        "giving-pledge",
-        "market-cycles",
-        "specialization-of-labor-in-philanthropy"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }

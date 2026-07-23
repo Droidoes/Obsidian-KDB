@@ -61,33 +61,23 @@ def _model_response(
 
 
 def _parsed_json() -> dict:
+    """Post-#115 shape: 4-field pages; outgoing links live in bodies."""
     return {
-        "source_id": "KDB/raw/foo.md",
-        "summary_slug": "foo",
         "pages": [
             {
                 "slug": "foo",
                 "page_type": "summary",
                 "title": "Foo",
-                "body": "body-text",
-                "status": "active",
-                "supports_page_existence": ["KDB/raw/foo.md"],
-                "outgoing_links": ["bar", "baz"],
-                "confidence": "medium",
+                "body": "links [[bar]] and [[baz]] and [[qux]]",
             },
             {
                 "slug": "bar",
                 "page_type": "concept",
                 "title": "Bar",
                 "body": "body-text-2",
-                "status": "active",
-                "supports_page_existence": ["KDB/raw/foo.md"],
-                "outgoing_links": ["baz"],
-                "confidence": "high",
             },
         ],
-        "log_entries": [{"level": "info", "message": "ok"}],
-        "warnings": [],
+        "compilation_notes": [],
     }
 
 
@@ -122,14 +112,22 @@ def test_safe_source_id_suffix_disambiguates_collision() -> None:
 
 def test_build_parsed_summary_reduces_full_parsed_json() -> None:
     summary = build_parsed_summary(_parsed_json())
-    assert summary.summary_slug == "foo"
+    assert summary.summary_slug == "foo"          # exactly one summary page → emitted
     assert summary.page_count == 2
     assert summary.page_types == {"summary": 1, "concept": 1}
     assert summary.slugs == ["foo", "bar"]
-    assert summary.outgoing_link_count == 3
-    assert summary.log_entry_count == 1
-    assert summary.warning_count == 0
-    assert summary.source_id_echoed == "KDB/raw/foo.md"
+    assert summary.outgoing_link_count == 3       # from body wikilinks
+    assert summary.compilation_note_count == 0
+
+
+def test_build_parsed_summary_summary_slug_none_on_zero_or_multi() -> None:
+    """D-115-15: summary_slug emitted ONLY for exactly one well-formed summary."""
+    assert build_parsed_summary({"pages": []}).summary_slug is None
+    two = {"pages": [
+        {"slug": "a", "page_type": "summary"},
+        {"slug": "b", "page_type": "summary"},
+    ]}
+    assert build_parsed_summary(two).summary_slug is None
 
 
 def test_build_parsed_summary_tolerates_missing_fields() -> None:
@@ -139,9 +137,7 @@ def test_build_parsed_summary_tolerates_missing_fields() -> None:
     assert summary.page_types == {}
     assert summary.slugs == []
     assert summary.outgoing_link_count == 0
-    assert summary.log_entry_count == 0
-    assert summary.warning_count == 0
-    assert summary.source_id_echoed is None
+    assert summary.compilation_note_count == 0
 
 
 def test_build_parsed_summary_ignores_malformed_pages() -> None:

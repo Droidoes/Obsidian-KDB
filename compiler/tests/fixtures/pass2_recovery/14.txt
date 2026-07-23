@@ -1,84 +1,35 @@
 {
-  "source_name": "Windows-ports-not-visible-WSL-Ubuntu.md",
-  "summary_slug": "summary-windows-ports-not-visible-wsl-ubuntu",
-  "concept_slugs": [
-    "hyper-v-port-exclusion",
-    "wsl2-networking-modes",
-    "stale-service-worker-routing"
-  ],
-  "article_slugs": [
-    "wsl2-localhost-port-conflict-troubleshooting"
-  ],
   "pages": [
     {
       "slug": "summary-windows-ports-not-visible-wsl-ubuntu",
       "page_type": "summary",
       "title": "Windows Ports Not Visible WSL Ubuntu (summary)",
-      "body": "This document outlines troubleshooting steps for local development port conflicts in WSL2, specifically addressing conflicts on ports 8080/8081. The root cause analysis synthesizes issues from [[hyper-v-port-exclusion]] and [[stale-service-worker-routing]]. It details a diagnostic strategy using Windows PowerShell commands, covers [[wsl2-networking-modes]] (NAT vs. mirrored mode), and details a safe port strategy in [[wsl2-localhost-port-conflict-troubleshooting]].",
-      "status": "active",
-      "outgoing_links": [
-        "hyper-v-port-exclusion",
-        "stale-service-worker-routing",
-        "wsl2-networking-modes",
-        "wsl2-localhost-port-conflict-troubleshooting"
-      ],
-      "confidence": "high"
+      "body": "This document outlines troubleshooting steps for local development port conflicts in WSL2, specifically addressing conflicts on ports 8080/8081. The root cause analysis synthesizes issues from [[hyper-v-port-exclusion]] and [[stale-service-worker-routing]]. It details a diagnostic strategy using Windows PowerShell commands, covers [[wsl2-networking-modes]] (NAT vs. mirrored mode), and details a safe port strategy in [[wsl2-localhost-port-conflict-troubleshooting]]."
     },
     {
       "slug": "hyper-v-port-exclusion",
       "page_type": "concept",
       "title": "Hyper-V Port Exclusion",
-      "body": "Hyper-V reserves specific port ranges for its own virtualization stack, acting as administrative or dynamic exclusions. In Windows, these exclusions appear under the System process (PID 4) inside `netstat` and can be checked using the command `netsh interface ipv4 show excludedportrange protocol=tcp`. These reservations are not active TCP sockets but kernel-level placeholders, meaning they prevent any other process from binding to them but cannot be observed by standard guest networking utilities.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "Hyper-V reserves specific port ranges for its own virtualization stack, acting as administrative or dynamic exclusions. In Windows, these exclusions appear under the System process (PID 4) inside `netstat` and can be checked using the command `netsh interface ipv4 show excludedportrange protocol=tcp`. These reservations are not active TCP sockets but kernel-level placeholders, meaning they prevent any other process from binding to them but cannot be observed by standard guest networking utilities."
     },
     {
       "slug": "wsl2-networking-modes",
       "page_type": "concept",
       "title": "WSL2 Networking Modes",
-      "body": "WSL2 supports two primary networking modes:\n1. **NAT Mode (Default):** WSL2 operates with its own virtual network adapter isolated from the Windows host. Linux utilities like `ss` and `lsof` can only enumerate Linux kernel sockets and are blind to host-side sockets and exclusions.\n2. **Mirrored Mode (`networkingMode=mirrored`):** WSL2 shares the same network namespace as the Windows host. This allows Windows-side active sockets to mirror and show up inside WSL2. However, mirrored mode only mirrors actual active bound sockets, not placeholder reservations such as [[hyper-v-port-exclusion]].",
-      "status": "active",
-      "outgoing_links": [
-        "hyper-v-port-exclusion"
-      ],
-      "confidence": "high"
+      "body": "WSL2 supports two primary networking modes:\n1. **NAT Mode (Default):** WSL2 operates with its own virtual network adapter isolated from the Windows host. Linux utilities like `ss` and `lsof` can only enumerate Linux kernel sockets and are blind to host-side sockets and exclusions.\n2. **Mirrored Mode (`networkingMode=mirrored`):** WSL2 shares the same network namespace as the Windows host. This allows Windows-side active sockets to mirror and show up inside WSL2. However, mirrored mode only mirrors actual active bound sockets, not placeholder reservations such as [[hyper-v-port-exclusion]]."
     },
     {
       "slug": "stale-service-worker-routing",
       "page_type": "concept",
       "title": "Stale Service Worker Routing",
-      "body": "A registered service worker under an origin like `localhost:8080` can intercept and hijack browser requests, returning cached or routing responses (e.g. React Router errors) even when the backend files have changed. Hard refreshes do not clear a registered service worker; they must be manually unregistered in browser DevTools under the Application or Service Workers tab.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "high"
+      "body": "A registered service worker under an origin like `localhost:8080` can intercept and hijack browser requests, returning cached or routing responses (e.g. React Router errors) even when the backend files have changed. Hard refreshes do not clear a registered service worker; they must be manually unregistered in browser DevTools under the Application or Service Workers tab."
     },
     {
       "slug": "wsl2-localhost-port-conflict-troubleshooting",
       "page_type": "article",
       "title": "WSL2 Localhost Port Conflict Troubleshooting",
-      "body": "A confounding issue occurs when a local development port in WSL2 appears completely available inside Linux, yet acts abnormally or fails to respond in a browser. This usually points to a multi-layered failure involving both the host and the browser environment. In this scenario, [[hyper-v-port-exclusion]] blocks ports from the Windows side (making them appear bound or inaccessible to external browsers), while a [[stale-service-worker-routing]] interceptor in the browser returns cached assets or mock routing paths (such as a router 404 block) rather than communicating with the active WSL2 server. Because WSL2 defaults to NAT in its [[wsl2-networking-modes]], running commands like `ss` or `lsof` inside WSL will fail to show host port issues. Diagnostics must be run from Windows PowerShell using `netstat -ano` and `netsh` to identify administrative reservations. Resolving this conflict requires selecting a safe, non-excluded port (such as 8082) and unregistering conflicting service workers inside browser DevTools.",
-      "status": "active",
-      "outgoing_links": [
-        "hyper-v-port-exclusion",
-        "stale-service-worker-routing",
-        "wsl2-networking-modes"
-      ],
-      "confidence": "high"
+      "body": "A confounding issue occurs when a local development port in WSL2 appears completely available inside Linux, yet acts abnormally or fails to respond in a browser. This usually points to a multi-layered failure involving both the host and the browser environment. In this scenario, [[hyper-v-port-exclusion]] blocks ports from the Windows side (making them appear bound or inaccessible to external browsers), while a [[stale-service-worker-routing]] interceptor in the browser returns cached assets or mock routing paths (such as a router 404 block) rather than communicating with the active WSL2 server. Because WSL2 defaults to NAT in its [[wsl2-networking-modes]], running commands like `ss` or `lsof` inside WSL will fail to show host port issues. Diagnostics must be run from Windows PowerShell using `netstat -ano` and `netsh` to identify administrative reservations. Resolving this conflict requires selecting a safe, non-excluded port (such as 8082) and unregistering conflicting service workers inside browser DevTools."
     }
-  ],
-  "log_entries": [
-    {
-      "level": "info",
-      "message": "Synthesized technical documentation of WSL2 ports and service worker troubleshooting into dedicated concepts and a summary-linked article.",
-      "related_slugs": [
-        "hyper-v-port-exclusion",
-        "wsl2-networking-modes",
-        "stale-service-worker-routing",
-        "wsl2-localhost-port-conflict-troubleshooting"
-      ]
-    }
-  ],
-  "warnings": []
+  ]
 }
 }

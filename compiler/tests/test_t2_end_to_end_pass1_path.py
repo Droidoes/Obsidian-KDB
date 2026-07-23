@@ -11,9 +11,6 @@ Run E.2 (in normal suite):
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from compiler.prompt_builder import build_prompt
 from common.types import ContextSnapshot
@@ -22,16 +19,7 @@ from common.types import ContextSnapshot
 # ─── E.2 — Non-live: empty-context prompt plumbing (Deepseek F-5) ──────────
 
 
-def _write_vault_with_stub_system_prompt(tmp_path: Path) -> Path:
-    vault = tmp_path / "vault"
-    (vault / "KDB").mkdir(parents=True, exist_ok=True)
-    (vault / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants (test stub)\n", encoding="utf-8"
-    )
-    return vault
-
-
-def test_pass2_plumbing_on_empty_context_state_c(tmp_path: Path) -> None:
+def test_pass2_plumbing_on_empty_context_state_c() -> None:
     """E.2 — Verify Pass-2 prompt construction gracefully handles
     ContextSnapshot.pages=[] (the State C production state).
 
@@ -39,12 +27,12 @@ def test_pass2_plumbing_on_empty_context_state_c(tmp_path: Path) -> None:
     never verified. This test exercises build_prompt directly to confirm:
     (a) no exception, (b) prompt assembled, (c) the EXISTING CONTEXT block
     renders as a valid JSON envelope with empty pages array. No LLM cost.
+
+    The system prompt is repo-packaged (post-#115) — no vault fixture.
     """
-    vault_root = _write_vault_with_stub_system_prompt(tmp_path)
     empty_snapshot = ContextSnapshot(source_id="KDB/raw/stub.md", pages=[])
 
     built = build_prompt(
-        vault_root=vault_root,
         source_name="stub.md",
         source_text="A trivial note with no substantive content.",
         context_snapshot=empty_snapshot,

@@ -51,6 +51,7 @@ from common.version import release_version
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
+from compiler.prompt_builder import PASS2_PROMPT_VERSION, load_system_prompt
 
 MANIFEST_NAME = "manifest.json"
 
@@ -164,19 +165,19 @@ def _combine_crs(crs: list[dict], run_id: str) -> dict:
     the union of aliases_emitted is load-bearing, not cosmetic.
     """
     compiled_sources: list[dict] = []
-    log_entries: list[dict] = []
-    warnings: list[str] = []
+    compilation_notes: list[str] = []
     aliases_emitted: list[dict] = []
     for cr in crs:
         compiled_sources.extend(cr.get("compiled_sources", []))
-        log_entries.extend(cr.get("log_entries", []))
-        warnings.extend(cr.get("warnings", []))
+        # #115: the aggregate field is compilation_notes (was warnings);
+        # log_entries left the contract.
+        compilation_notes.extend(cr.get("compilation_notes", []))
         cm = cr.get("canonical_meta") or {}
         aliases_emitted.extend(cm.get("aliases_emitted") or [])
     combined: dict = {
         "run_id": run_id, "success": True,
         "compiled_sources": compiled_sources,
-        "log_entries": log_entries, "errors": [], "warnings": warnings,
+        "compilation_notes": compilation_notes, "errors": [],
     }
     if aliases_emitted:
         combined["canonical_meta"] = {"aliases_emitted": aliases_emitted}
@@ -963,15 +964,19 @@ def run(
             quarantined_sources=quarantined_sources,
             **alarm_counts)
         # B1 delta #3 — write measurement_header.json to the run dir.
-        # Pass-2 has no named prompt-version constant (uses prompt_hash at runtime);
-        # pass2_prompt_version is "" per the PassCallMeasurement.from_pass2() contract.
+        # Post-#115 (D-115-13): pass2 stamps come from the code-owned
+        # PASS2_PROMPT_VERSION constant + the loaded prompt text's SHA-256 —
+        # content, version, and hash can never drift apart.
         signal = counts["sources_enriched"] - counts["sources_noise"]
         header = RunMeasurementHeader(
             run_id=ctx.run_id,
             release_version=release_version(),
             corpus_fingerprint=_corpus_fingerprint(scan.files),
             pass1_prompt_version=PASS1_PROMPT_VERSION,
-            pass2_prompt_version="",
+            pass2_prompt_version=PASS2_PROMPT_VERSION,
+            pass2_system_prompt_sha256=hashlib.sha256(
+                load_system_prompt().encode("utf-8")
+            ).hexdigest(),
             scanned=counts["sources_scanned"],
             to_compile=len(scan.to_compile),
             signal=signal,

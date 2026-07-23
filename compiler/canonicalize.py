@@ -184,16 +184,18 @@ def load_or_empty(path: Path | str) -> AliasLedger:
 # Algorithm — Stage [6] canonicalize.run() (Task #74.3)
 # =========================================================================
 #
-# Five passes per blueprint §7:
+# Four passes per blueprint §7 (post-#115 Task 2.1):
 #   1. Build slug→canonical resolve map from the ledger (chain-flattened
 #      per D-R5-13, cycle-checked).
 #   2. Canonicalize page intents across all compiled_sources; merge
 #      collisions per OQ-F (canonical-wins + longest-body fallback) with
-#      UNION of outgoing_links + supports_page_existence across all
-#      contenders (Codex's refinement).
-#   3. Remap outgoing_links metadata + per-source slug lists
-#      (summary_slug / concept_slugs / article_slugs).
-#   4. Remap [[wikilink]] tokens in page bodies (D-R5-11).
+#      UNION of supports_page_existence across all contenders — NO
+#      outgoing_links union (the field is gone from the contract; edges
+#      derive from body wikilinks). Summary-containing merge groups and
+#      summary alias-singleton renames raise CanonicalizationError.
+#   4. Remap [[wikilink]] tokens in page bodies (D-R5-11) — BODY-AUTHORITY:
+#      the old Pass-3 metadata remap (outgoing_links + slug lists) is
+#      deleted with the contract fields it maintained.
 #   5. Emit canonical_meta block + (caller-driven) atomic write-back.
 #
 # All mutation is in-place on the supplied cr dict — the same object is
@@ -208,12 +210,28 @@ class CircularAliasError(RuntimeError):
     """
 
 
-# Wikilink syntax: [[target]] or [[target|display]]. Anchor links
-# ([[target#section]]) are out of scope for v1 — the LLM is not instructed
-# to emit them and the schema's outgoing_links pattern (kebab slugs)
-# disallows them at the metadata level. If they appear in body text we
-# leave them untouched.
-_WIKILINK_RE = re.compile(r"\[\[([^\[\]|#]+?)(?:\|([^\[\]]+?))?\]\]")
+class CanonicalizationError(RuntimeError):
+    """#115 Task 2.1: a canonicalization that would violate the per-source
+    summary invariant — summary/non-summary cross-type merge, or an
+    alias-singleton rename of a summary page. compile_source catches this
+    and returns CompileSourceResult(failure_stage="canonicalize", ...)
+    (quarantine, no writes).
+    """
+
+
+# Wikilink token semantics mirror the extraction contract used by the
+# compiler's body_wikilink_slugs and the graph intake mirror (heading
+# suffixes allowed, escaped \[[...]] and fenced/inline code spans are NOT
+# links). The TARGET class stays broader than the extractor's strict
+# kebab _SLUG_RE on purpose: remap normalizes arbitrary alias surface
+# forms (e.g. [[Apple Inc]]) to canonical kebab slugs.
+_WIKILINK_RE = re.compile(
+    r"(?<!\\)\[\[([^\[\]|#]+?)(#[^|\]]*)?(?:\|([^\]]*))?\]\]"
+)
+# Same pair as validate_source_response._strip_code, applied in the same
+# order (fenced first, then inline within non-fenced segments).
+_FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 
 
 def _normalize_slug(s: str) -> str:
@@ -309,14 +327,18 @@ def _remap_body_wikilinks(
     body: str, resolve: dict[str, str]
 ) -> tuple[str, list[tuple[str, str]]]:
     """Pass 4: rewrite `[[alias]]` tokens in markdown body to `[[canonical]]`.
-    Preserves `[[target|display]]` display text. Returns the new body
-    plus the list of `(original_target, canonical)` pairs that changed
-    (one per replacement; caller deduplicates)."""
+    Preserves `[[target|display]]` display text and `[[target#heading]]`
+    heading suffixes. Escaped `\\[[...]]` and fenced/inline code spans are
+    not links (same token semantics as the compiler/graph extractors) and
+    are left byte-identical. Returns the new body plus the list of
+    `(original_target, canonical)` pairs that changed (one per replacement;
+    caller deduplicates)."""
     remaps: list[tuple[str, str]] = []
 
     def replace(match: re.Match) -> str:
         target = match.group(1).strip()
-        display = match.group(2)
+        heading = match.group(2) or ""
+        display = match.group(3)
         normalized = _normalize_slug(target)
         canonical = resolve.get(normalized, normalized)
         if canonical == normalized:
@@ -325,12 +347,34 @@ def _remap_body_wikilinks(
             # etc. that the human wants visible in Obsidian).
             return match.group(0)
         remaps.append((target, canonical))
+        out = f"[[{canonical}{heading}"
         if display is not None:
-            return f"[[{canonical}|{display}]]"
-        return f"[[{canonical}]]"
+            out += f"|{display}"
+        return out + "]]"
 
-    new_body = _WIKILINK_RE.sub(replace, body)
-    return new_body, remaps
+    # Segment on code spans (fenced first, then inline within non-fenced
+    # segments — mirroring _strip_code's two-pass order) and remap only
+    # outside them; code spans pass through verbatim.
+    out: list[str] = []
+    fpos = 0
+    for fm in _FENCED_CODE_RE.finditer(body):
+        segment = body[fpos:fm.start()]
+        ipos = 0
+        for im in _INLINE_CODE_RE.finditer(segment):
+            out.append(_WIKILINK_RE.sub(replace, segment[ipos:im.start()]))
+            out.append(im.group(0))
+            ipos = im.end()
+        out.append(_WIKILINK_RE.sub(replace, segment[ipos:]))
+        out.append(fm.group(0))
+        fpos = fm.end()
+    tail = body[fpos:]
+    ipos = 0
+    for im in _INLINE_CODE_RE.finditer(tail):
+        out.append(_WIKILINK_RE.sub(replace, tail[ipos:im.start()]))
+        out.append(im.group(0))
+        ipos = im.end()
+    out.append(_WIKILINK_RE.sub(replace, tail[ipos:]))
+    return "".join(out), remaps
 
 
 def _merge_page_intents(
@@ -349,9 +393,11 @@ def _merge_page_intents(
           contender's body wins (`canonical-wins`); first match wins
           deterministically when multiple canonicals were emitted (rare).
         - otherwise, the longest body wins (`longest-wins`).
-      In both cases the merged page UNIONs `outgoing_links` and
-      `supports_page_existence` across all contenders (Codex's refinement),
-      preserving emission order with dedup.
+      In both cases the merged page UNIONs `supports_page_existence`
+      across all contenders, preserving emission order with dedup.
+      (#115: no `outgoing_links` union — the field left the contract;
+      the winner's body is authoritative and losing bodies' links are
+      dropped with them.)
     - The merged page is placed at the body-winner's original
       `(compiled_source_idx, page_idx)` position; other contenders are
       removed from their respective `pages[]` lists.
@@ -379,7 +425,14 @@ def _merge_page_intents(
         if len(contenders) == 1:
             cs_idx, p_idx, page = contenders[0]
             if _normalize_slug(page["slug"]) != canonical:
-                # alias singleton — rename to canonical
+                # alias singleton — rename to canonical. #115 Task 2.1:
+                # NEVER rename a summary page past the exact-slug gate.
+                if page.get("page_type") == "summary":
+                    raise CanonicalizationError(
+                        f"alias-singleton rename of summary page "
+                        f"{page['slug']!r} → {canonical!r} would break the "
+                        f"per-source summary invariant"
+                    )
                 new_page = dict(page)
                 new_page["slug"] = canonical
                 pages_to_replace[(cs_idx, p_idx)] = new_page
@@ -390,6 +443,18 @@ def _merge_page_intents(
                 })
                 used_aliases.append((_normalize_slug(page["slug"]), canonical))
             continue
+
+        # Multiple contenders — #115 Task 2.1: a merge group containing a
+        # summary page is HARD-REJECTED (the semantic gate guarantees one
+        # summary per source, so any such group is cross-type by
+        # construction); the per-source summary identity is never merged away.
+        types_in_group = {t[2].get("page_type") for t in contenders}
+        if "summary" in types_in_group:
+            raise CanonicalizationError(
+                f"merge involving summary page(s) at canonical "
+                f"{canonical!r}: types {sorted(types_in_group)} — refusing "
+                f"to merge away a per-source summary identity"
+            )
 
         # Multiple contenders — apply OQ-F.
         canonical_named = [
@@ -407,15 +472,9 @@ def _merge_page_intents(
         merged = dict(winner_page)
         merged["slug"] = canonical
 
-        # UNION outgoing_links (Codex's refinement)
-        all_outgoing: list[str] = []
-        for _, _, p in contenders:
-            all_outgoing.extend(p.get("outgoing_links", []))
-        merged_outgoing = _dedupe(all_outgoing)
-        if merged_outgoing:
-            merged["outgoing_links"] = merged_outgoing
-        elif "outgoing_links" in merged:
-            del merged["outgoing_links"]
+        # #115 Task 2.1: NO outgoing_links union — the field is gone from
+        # the contract; edges derive from body wikilinks (the winner's body
+        # is authoritative; losing bodies' links are dropped with them).
 
         # UNION supports_page_existence
         all_supports: list[str] = []
@@ -460,60 +519,6 @@ def _merge_page_intents(
         cs["pages"] = new_pages
 
     return merged_log, used_aliases
-
-
-def _remap_outgoing_and_slug_lists(
-    cr: dict, resolve: dict[str, str]
-) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    """Pass 3: remap `outgoing_links` plus per-source `summary_slug`,
-    `concept_slugs`, `article_slugs` lists.
-
-    Returns:
-        - link_remaps: list of `(from, to)` pairs for canonical_meta.outgoing_link_remaps
-          (outgoing_links only; slug-list renames are not "link" remaps)
-        - used_aliases: same `(normalized_alias, canonical)` shape as
-          Pass 2 — for aliases_emitted
-    """
-    link_remaps: list[tuple[str, str]] = []
-    used_aliases: list[tuple[str, str]] = []
-
-    for cs in cr.get("compiled_sources", []):
-        # summary_slug — usually starts with "summary-", but defensive
-        # in case the ledger ever points one elsewhere.
-        old = cs.get("summary_slug")
-        if old:
-            new = _canonical_of(old, resolve)
-            if new != _normalize_slug(old) and new:
-                cs["summary_slug"] = new
-                used_aliases.append((_normalize_slug(old), new))
-
-        # concept_slugs / article_slugs — remap + dedupe (collisions
-        # arise when two aliases in the same list resolve to one canonical)
-        for key in ("concept_slugs", "article_slugs"):
-            if key in cs:
-                new_list: list[str] = []
-                for slug in cs[key]:
-                    canonical = _canonical_of(slug, resolve)
-                    if canonical != _normalize_slug(slug) and canonical:
-                        used_aliases.append((_normalize_slug(slug), canonical))
-                    new_list.append(canonical)
-                cs[key] = _dedupe(new_list)
-
-        # Page outgoing_links — these are link remaps that feed into
-        # canonical_meta.outgoing_link_remaps.
-        for page in cs.get("pages", []):
-            if "outgoing_links" not in page:
-                continue
-            new_links: list[str] = []
-            for link in page["outgoing_links"]:
-                canonical = _canonical_of(link, resolve)
-                if canonical != _normalize_slug(link) and canonical:
-                    link_remaps.append((link, canonical))
-                    used_aliases.append((_normalize_slug(link), canonical))
-                new_links.append(canonical)
-            page["outgoing_links"] = _dedupe(new_links)
-
-    return link_remaps, used_aliases
 
 
 def _remap_all_bodies(
@@ -573,12 +578,14 @@ def run(
     Steps:
         Pass 1 — build resolve map from ledger (chain-flatten, cycle-check)
         Pass 2 — page-intent canonicalization + OQ-F merging
-        Pass 3 — outgoing_links + per-source slug list remap
-        Pass 4 — body `[[wikilink]]` remap
+                 (summary merge groups / summary alias renames rejected)
+        Pass 4 — body `[[wikilink]]` remap (body-authority, #115)
         Pass 5 — emit `canonical_meta` into the cr payload
 
     Raises:
         CircularAliasError — if the ledger closure contains a cycle.
+        CanonicalizationError — summary merge / summary rename violation
+            (#115 Task 2.1).
 
     The atomic write-back of the canonicalized `state/compile_result.json`
     is the caller's responsibility (see `write_canonicalized()`). Tests
@@ -590,20 +597,18 @@ def run(
     # Pass 2
     merged_log, used_aliases_2 = _merge_page_intents(cr, resolve)
 
-    # Pass 3
-    link_remaps_3, used_aliases_3 = _remap_outgoing_and_slug_lists(cr, resolve)
-
-    # Pass 4
+    # Pass 4 (body wikilinks ONLY — #115 Task 2.1: alias rewriting is
+    # body-authority; the outgoing_links/slug-list metadata remap is deleted
+    # with the contract fields it maintained)
     link_remaps_4, used_aliases_4 = _remap_all_bodies(cr, resolve)
 
-    # Combine link remaps with stable order: Pass 3 (metadata) then Pass 4
-    # (body), each deduped separately first then combined dedup'd to give
-    # metadata-first ordering on first-seen.
-    all_link_remaps = _dedupe_tuples(list(link_remaps_3) + list(link_remaps_4))
+    # Link remaps come from body wikilinks only (canonical_meta field name
+    # `outgoing_link_remaps` retained for read-compat — T2.2)
+    all_link_remaps = _dedupe_tuples(list(link_remaps_4))
 
-    # Combine used aliases across all passes — same dedup discipline.
+    # Combine used aliases across the remaining passes — same dedup discipline.
     all_used_aliases = _dedupe_tuples(
-        list(used_aliases_2) + list(used_aliases_3) + list(used_aliases_4)
+        list(used_aliases_2) + list(used_aliases_4)
     )
 
     aliases_emitted = [

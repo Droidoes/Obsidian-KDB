@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from compiler import compiler, prompt_builder
+from compiler.summary_slug import expected_summary_slug
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
 from common.run_context import RunContext
@@ -32,24 +33,21 @@ def _fm() -> SourceFrontmatter:
 
 
 def _vault(tmp_path: Path) -> Path:
+    # The system prompt is repo-packaged (post-#115) — no vault prompt file.
     (tmp_path / "KDB").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "KDB" / "KDB-Compiler-System-Prompt.md").write_text(
-        "# KDB invariants\n", encoding="utf-8")
     (tmp_path / "KDB" / "state").mkdir(parents=True, exist_ok=True)
     return tmp_path
 
 
-def _good_response(source_name: str, *, summary_slug="summary-foo",
-                   concept_slugs=None, pages=None) -> dict:
+def _good_response(source_name: str, *, pages=None) -> dict:
+    """New #115 shape: pages (4 fields); the summary slug follows the
+    derived convention (expected_summary_slug)."""
+    slug = expected_summary_slug(f"KDB/raw/{source_name}")
     return {
-        "source_name": source_name, "summary_slug": summary_slug,
-        "concept_slugs": concept_slugs or [], "article_slugs": [],
         "pages": pages or [{
-            "slug": summary_slug, "page_type": "summary", "title": "Foo",
-            "body": "Body.", "status": "active", "outgoing_links": [],
-            "confidence": "medium",
+            "slug": slug, "page_type": "summary", "title": "Foo",
+            "body": "Body.",
         }],
-        "log_entries": [], "warnings": [],
     }
 
 
@@ -238,14 +236,12 @@ def test_compile_source_alias_singleton_rename(tmp_path, monkeypatch):
     ledger = load_or_empty(ledger_dir / "aliases.json")
 
     resp = _good_response(
-        "s.md", concept_slugs=["aapl"],
+        "s.md",
         pages=[
-            {"slug": "summary-foo", "page_type": "summary", "title": "Foo",
-             "body": "About [[aapl]].", "status": "active",
-             "outgoing_links": ["aapl"], "confidence": "medium"},
+            {"slug": "summary-s", "page_type": "summary", "title": "Foo",
+             "body": "About [[aapl]]."},
             {"slug": "aapl", "page_type": "concept", "title": "AAPL",
-             "body": "Apple Inc.", "status": "active",
-             "outgoing_links": [], "confidence": "medium"},
+             "body": "Apple Inc."},
         ])
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry", _fake_model(resp))
@@ -352,20 +348,21 @@ def test_compile_source_gate_error(tmp_path, monkeypatch):
     assert result.failure_stage == "validate" and "forced for test" in result.error
 
 
-def test_compile_source_reconcile_error(tmp_path, monkeypatch):
-    # Task #91 (m3): a ReconcileError must surface as a case-(a) failure result,
-    # not escape the CompileSourceResult contract.
+def test_compile_source_canonicalize_error(tmp_path, monkeypatch):
+    # A CanonicalizationError must surface as a case-(a) failure result,
+    # not escape the CompileSourceResult contract (replaces the deleted
+    # Repair-stage routing test — repair is gone, T2.3).
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
 
-    from compiler import repair as _rec
+    from compiler import canonicalize as _canon
 
-    def boom(cr, findings):
-        raise _rec.RepairError("forced reconcile failure")
-    monkeypatch.setattr("compiler.compiler.repair.repair", boom)
+    def boom(cr, ledger, run_id):
+        raise _canon.CanonicalizationError("forced canonicalization failure")
+    monkeypatch.setattr("compiler.compiler.canonicalize.run", boom)
 
     with GraphDB(tmp_path / "graph") as g:
         result = compiler.compile_source(
@@ -375,5 +372,127 @@ def test_compile_source_reconcile_error(tmp_path, monkeypatch):
             provider="p", model="m", max_tokens=4096,
         )
     assert not result.ok and result.cr is None
-    assert result.failure_stage == "repair"
-    assert result.exception_type == "RepairError"
+    assert result.failure_stage == "canonicalize"
+    assert result.exception_type == "CanonicalizationError"
+
+
+# ---------- #115 Task 1.4: pre-call underivable-stem route ----------
+
+def test_precall_underivable_stem_inner_and_outer_validate(tmp_path, monkeypatch):
+    """Pinned route (R13 F4/R14): inner record AND outer result both carry
+    stage 'validate'; attempts=0, zero tokens/cost, exactly one record,
+    no model call, no retry."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    calls = {"n": 0}
+
+    def counting(req):
+        calls["n"] += 1
+        raise AssertionError("model must NOT be called on the pre-call route")
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", counting)
+
+    result = compiler.compile_source(
+        source_id="KDB/raw/日本語.md", body="Body.", frontmatter=_fm(), conn=None,
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096,
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/日本語.md", pages=[]))
+
+    # OUTER stage pinned (≠ generic "compile")
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "validate"
+    assert result.exception_type == "PathError"
+    assert calls["n"] == 0
+
+    # INNER record: exactly one, attempts=0, zero tokens/cost
+    records = list((state_root / "runs" / ctx.run_id / "pass2").glob("*.json"))
+    assert len(records) == 1
+    rec = json.loads(records[0].read_text(encoding="utf-8"))
+    assert rec["failure_stage"] == "validate"
+    assert rec["attempts"] == 0
+    assert rec["input_tokens"] == 0 and rec["output_tokens"] == 0
+    assert rec["total_input_tokens"] == 0 and rec["total_output_tokens"] == 0
+    assert rec["cost_usd"] == 0.0
+    assert rec["final_status"] == "quarantined"
+    assert rec["call_count"] == 1  # sentinel for pre-model failures (never 0)
+
+
+def test_postcall_semantic_failure_inner_and_outer_validate(tmp_path, monkeypatch):
+    """Codex Gate-2 F3: a TERMINAL post-call semantic rejection (schema-valid
+    payload, wrong derived summary slug) carries stage 'validate' on BOTH the
+    inner record and the outer result — not generic 'compile'. semantic_errors
+    remains the structured detail surface."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    bad = _good_response("s.md")
+    bad["pages"][0]["slug"] = "summary-not-expected"
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(bad))
+
+    result = compiler.compile_source(
+        source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=None,
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096,
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]))
+
+    # OUTER stage pinned (≠ generic "compile")
+    assert not result.ok and result.cr is None
+    assert result.failure_stage == "validate"
+    assert result.exception_type == "SemanticCheckError"
+
+    # INNER record: typed validate failure + structured semantic_errors kept
+    records = list((state_root / "runs" / ctx.run_id / "pass2").glob("*.json"))
+    assert len(records) == 1
+    rec = json.loads(records[0].read_text(encoding="utf-8"))
+    assert rec["failure_stage"] == "validate"
+    assert rec["failure_exception_type"] == "SemanticCheckError"
+    assert rec["failure_exception_message"]
+    assert rec["schema_ok"] is True
+    assert rec["semantic_ok"] is False
+    assert rec["semantic_errors"]
+
+
+_REMOVED_KEYS = {
+    "source_name", "summary_slug", "concept_slugs", "article_slugs",
+    "log_entries", "warnings", "status", "outgoing_links", "confidence",
+}
+
+
+def test_compile_source_payload_contains_no_removed_keys(tmp_path, monkeypatch):
+    """T1.5 recursive assertion: NO new page/aggregate payload contains ANY
+    of the removed contract fields; a historical payload WITH them still
+    validates (T2.2 bridge)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096)
+    assert result.ok, (result.failure_stage, result.error)
+
+    def walk(obj, path="$"):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                assert k not in _REMOVED_KEYS, f"removed key {path}.{k}"
+                walk(v, f"{path}.{k}")
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                walk(v, f"{path}[{i}]")
+
+    walk(result.cr)
+
+    # Historical payload WITH the removed fields still validates (dual-mode).
+    from compiler import validate_compile_result as vcr
+    legacy = json.loads(
+        Path("tests/fixtures/compile_result.minimal.valid.json").read_text(encoding="utf-8"))
+    assert vcr.validate(legacy).is_valid
