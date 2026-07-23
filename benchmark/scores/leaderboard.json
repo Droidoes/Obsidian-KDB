@@ -6,134 +6,172 @@
     "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty": "qwen3.6-flash-us-2026-07-21T00-51-24_EDT",
     "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty": "glm-5-turbo-2026-07-21T10-45-04_EDT",
     "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT",
-    "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323": "gpt-5.4-mini-2026-07-22T14-48-09_EDT"
+    "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323": "gpt-5.4-mini-2026-07-22T14-48-09_EDT",
+    "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty": "deepseek-v4-flash-2026-07-22T22-27-32_EDT",
+    "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7": "gpt-5.4-mini-2026-07-22T23-10-03_EDT"
   },
   "ranking": [
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323",
-      "composite": 78.83333333333334,
-      "composite_pre_penalty": 78.83333333333334,
+      "composite": 78.75000000000001,
+      "composite_pre_penalty": 78.75000000000001,
       "penalty": 0.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.9083333333333334,
+      "graph_score": 0.8437500000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.75,
+        "quarantine_rate": 0.8125,
         "recovery_rate": 0.75,
         "latency": 0.5,
-        "entity_reuse": 0.8333333333333334,
-        "graph_connectivity": 1.0,
-        "link_density": 0.8333333333333334,
-        "supports_density": 0.9166666666666666
+        "entity_reuse": 0.75,
+        "graph_connectivity": 0.875,
+        "link_density": 0.875,
+        "supports_density": 0.8125
       },
       "rank": 1
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
-      "composite": 77.16666666666667,
-      "composite_pre_penalty": 77.16666666666667,
+      "composite": 78.25000000000001,
+      "composite_pre_penalty": 78.25000000000001,
       "penalty": 0.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.8250000000000002,
+      "graph_score": 0.8,
       "per_kpi_borda": {
-        "quarantine_rate": 0.75,
+        "quarantine_rate": 0.8125,
         "recovery_rate": 0.75,
-        "latency": 0.6666666666666666,
+        "latency": 0.625,
         "entity_reuse": 1.0,
-        "graph_connectivity": 0.8333333333333334,
-        "link_density": 0.6666666666666666,
-        "supports_density": 0.9166666666666666
+        "graph_connectivity": 0.75,
+        "link_density": 0.75,
+        "supports_density": 0.8125
       },
       "rank": 2
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323",
-      "composite": 56.50000000000001,
-      "composite_pre_penalty": 59.833333333333336,
-      "penalty": 3.333333333333334,
+      "composite": 61.0,
+      "composite_pre_penalty": 63.5,
+      "penalty": 2.5,
       "weakest_kpi": "latency",
-      "graph_score": 0.475,
+      "graph_score": 0.4937500000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.75,
+        "quarantine_rate": 0.8125,
         "recovery_rate": 0.75,
-        "latency": 0.3333333333333333,
-        "entity_reuse": 0.3333333333333333,
+        "latency": 0.375,
+        "entity_reuse": 0.375,
         "graph_connectivity": 0.5,
-        "link_density": 0.5,
-        "supports_density": 0.5
+        "link_density": 0.625,
+        "supports_density": 0.375
       },
       "rank": 3
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 53.16666666666667,
-      "composite_pre_penalty": 59.833333333333336,
-      "penalty": 6.666666666666668,
+      "composite": 53.25000000000002,
+      "composite_pre_penalty": 60.750000000000014,
+      "penalty": 7.500000000000001,
       "weakest_kpi": "latency",
-      "graph_score": 0.5166666666666667,
+      "graph_score": 0.4875000000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.75,
+        "quarantine_rate": 0.8125,
         "recovery_rate": 0.75,
-        "latency": 0.16666666666666666,
-        "entity_reuse": 0.6666666666666666,
-        "graph_connectivity": 0.6666666666666666,
-        "link_density": 0.16666666666666666,
-        "supports_density": 0.6666666666666666
+        "latency": 0.125,
+        "entity_reuse": 0.625,
+        "graph_connectivity": 0.625,
+        "link_density": 0.25,
+        "supports_density": 0.5
       },
       "rank": 4
     },
     {
-      "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
-      "composite": 26.0,
-      "composite_pre_penalty": 32.666666666666664,
-      "penalty": 6.666666666666668,
+      "model": "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7",
+      "composite": 49.50000000000001,
+      "composite_pre_penalty": 57.00000000000001,
+      "penalty": 7.500000000000001,
       "weakest_kpi": "recovery_rate",
-      "graph_score": 0.19166666666666668,
+      "graph_score": 0.83125,
       "per_kpi_borda": {
-        "quarantine_rate": 0.3333333333333333,
-        "recovery_rate": 0.16666666666666666,
-        "latency": 1.0,
-        "entity_reuse": 0.5,
-        "graph_connectivity": 0.3333333333333333,
-        "link_density": 0.0,
-        "supports_density": 0.0
+        "quarantine_rate": 0.5,
+        "recovery_rate": 0.125,
+        "latency": 0.25,
+        "entity_reuse": 0.875,
+        "graph_connectivity": 1.0,
+        "link_density": 0.5,
+        "supports_density": 1.0
       },
       "rank": 5
     },
     {
-      "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
-      "composite": 18.000000000000004,
-      "composite_pre_penalty": 28.000000000000004,
-      "penalty": 10.0,
-      "weakest_kpi": "latency",
-      "graph_score": 0.45000000000000007,
+      "model": "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty",
+      "composite": 38.75000000000001,
+      "composite_pre_penalty": 42.50000000000001,
+      "penalty": 3.7500000000000004,
+      "weakest_kpi": "graph",
+      "graph_score": 0.3125,
       "per_kpi_borda": {
-        "quarantine_rate": 0.16666666666666666,
-        "recovery_rate": 0.3333333333333333,
-        "latency": 0.0,
-        "entity_reuse": 0.16666666666666666,
-        "graph_connectivity": 0.16666666666666666,
-        "link_density": 1.0,
-        "supports_density": 0.3333333333333333
+        "quarantine_rate": 0.375,
+        "recovery_rate": 0.75,
+        "latency": 0.75,
+        "entity_reuse": 0.125,
+        "graph_connectivity": 0.375,
+        "link_density": 0.125,
+        "supports_density": 0.625
       },
       "rank": 6
     },
     {
+      "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
+      "composite": 22.250000000000004,
+      "composite_pre_penalty": 29.000000000000004,
+      "penalty": 6.75,
+      "weakest_kpi": "graph",
+      "graph_score": 0.1625,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.25,
+        "recovery_rate": 0.25,
+        "latency": 1.0,
+        "entity_reuse": 0.5,
+        "graph_connectivity": 0.25,
+        "link_density": 0.0,
+        "supports_density": 0.0
+      },
+      "rank": 7
+    },
+    {
+      "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
+      "composite": 16.0,
+      "composite_pre_penalty": 26.0,
+      "penalty": 10.0,
+      "weakest_kpi": "latency",
+      "graph_score": 0.43125,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.125,
+        "recovery_rate": 0.375,
+        "latency": 0.0,
+        "entity_reuse": 0.25,
+        "graph_connectivity": 0.125,
+        "link_density": 1.0,
+        "supports_density": 0.25
+      },
+      "rank": 8
+    },
+    {
       "model": "gemini/gemini-3.5-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 3.666666666666668,
-      "composite_pre_penalty": 13.666666666666668,
+      "composite": 4.250000000000001,
+      "composite_pre_penalty": 14.250000000000002,
       "penalty": 10.0,
       "weakest_kpi": "quarantine_rate",
-      "graph_score": 0.13333333333333336,
+      "graph_score": 0.1375,
       "per_kpi_borda": {
         "quarantine_rate": 0.0,
         "recovery_rate": 0.0,
-        "latency": 0.8333333333333334,
+        "latency": 0.875,
         "entity_reuse": 0.0,
         "graph_connectivity": 0.0,
-        "link_density": 0.3333333333333333,
-        "supports_density": 0.16666666666666666
+        "link_density": 0.375,
+        "supports_density": 0.125
       },
-      "rank": 7
+      "rank": 9
     }
   ],
   "top_weights": {
@@ -152,5 +190,5 @@
     "threshold": 0.5,
     "cap": 0.1
   },
-  "updated_at": "2026-07-22T14:58:20-04:00"
+  "updated_at": "2026-07-23T00:35:48-04:00"
 }
