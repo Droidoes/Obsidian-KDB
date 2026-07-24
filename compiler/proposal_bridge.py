@@ -18,7 +18,7 @@ from typing import Any, NamedTuple
 
 from common.paths import collapse_slug
 from compiler import validate_source_response
-from compiler.summary_slug import expected_summary_slug
+from compiler.summary_slug import SUMMARY_PREFIX, expected_summary_slug
 
 
 class RejectClass(StrEnum):
@@ -259,6 +259,17 @@ def normalize_proposal(parsed: dict, *, source_id: str) -> BridgeResult:
         final = next((op.canonical for op in ops
                       if op.kind is OpKind.SLUG_FORM_COERCION
                       and op.page_index == i), p["slug"])
+        # D5 (#120 spec v1.4): the summary- namespace is system-owned (Python
+        # stamps summary identity); a model-owned summary-* slug can collide
+        # with a FUTURE source's derived identity at graph level. Checked on
+        # the PLANNED (post-coercion) slug — SUMMARY--Foo must not slip.
+        if final.startswith(SUMMARY_PREFIX):
+            return BridgeReject(
+                RejectClass.SLUG_COLLISION,
+                f"pages[{i}].slug {final!r} collides with the system-owned "
+                f"{SUMMARY_PREFIX!r} namespace (reserved for Python-stamped "
+                f"summary pages)",
+                _decisions_from_ops(ops))
         if final in planned:
             return BridgeReject(
                 RejectClass.SLUG_COLLISION,

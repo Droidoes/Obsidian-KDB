@@ -72,5 +72,10 @@
    "proposal": {"pages": [
      {"page_type": "summary", "title": "T", "body": "B."},
      {"page_type": "concept", "slug": "Foo Bar", "title": "A", "body": "B."}]},
-   "expect": {"kind": "reject", "reject_class": "uncoercible_slug"}}
+   "expect": {"kind": "reject", "reject_class": "uncoercible_slug"}},
+  {"id": "summary-prefix-concept-rejected", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "B."},
+     {"page_type": "concept", "slug": "summary-foo", "title": "A", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "slug_collision"}}
 ]

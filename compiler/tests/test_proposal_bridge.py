@@ -129,6 +129,44 @@ def test_derived_slug_collision_rejected():
             and r.reject_class == RejectClass.SLUG_COLLISION)
 
 
+def test_summary_prefix_concept_rejected():
+    """D5 (#120): the summary- namespace is system-owned (post-coercion)."""
+    r = normalize_proposal({"pages": [
+        _summary(),
+        {"page_type": "concept", "slug": "summary-foo", "title": "A", "body": "B."},
+    ]}, source_id="KDB/raw/x.md")
+    assert (isinstance(r, BridgeReject)
+            and r.reject_class == RejectClass.SLUG_COLLISION)
+    assert r.retriable
+
+
+def test_summary_prefix_article_rejected():
+    r = normalize_proposal({"pages": [
+        _summary(),
+        {"page_type": "article", "slug": "summary-foo", "title": "A", "body": "B."},
+    ]}, source_id="KDB/raw/x.md")
+    assert (isinstance(r, BridgeReject)
+            and r.reject_class == RejectClass.SLUG_COLLISION)
+
+
+def test_summary_prefix_rejected_post_coercion():
+    """D5 post-coercion pin: SUMMARY--Foo coerces to summary-foo — must reject."""
+    r = normalize_proposal({"pages": [
+        _summary(),
+        {"page_type": "concept", "slug": "SUMMARY--Foo", "title": "A", "body": "B."},
+    ]}, source_id="KDB/raw/x.md")
+    assert (isinstance(r, BridgeReject)
+            and r.reject_class == RejectClass.SLUG_COLLISION)
+
+
+def test_summary_prefix_stray_on_summary_page_still_tolerated():
+    """D-119 unaffected: a summary- stray ON the summary page is dropped+stamped."""
+    r = normalize_proposal({"pages": [
+        _summary(slug="summary-foo")]}, source_id="KDB/raw/x.md")
+    assert isinstance(r, BridgeSuccess)
+    assert r.canonical["pages"][0]["slug"] == "summary-x"
+
+
 def test_alias_resolvable_token_preserved_for_canonicalize():
     r = normalize_proposal({"pages": [
         _summary(body="Alias [[apple-inc]] noted."),

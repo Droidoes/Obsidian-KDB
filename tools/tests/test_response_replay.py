@@ -250,6 +250,21 @@ def test_v4_fixture_passes_new_stack():
     assert r.schema_ok and r.semantic_ok and r.error_detail is None
 
 
+def test_v4_summary_prefix_concept_fails_semantic():
+    """D5 retrospective (#120): a 4.0.0-era response with a summary-* concept
+    slug passes the proposal schema but fails bridge normalization — the
+    namespace was always system-owned (validator bugfix, not a new era)."""
+    import json as _json
+    fx = _synth(prompt_version="4.0.0", stored_response_text=_json.dumps({
+        "pages": [
+            {"page_type": "summary", "title": "T", "body": "B."},
+            {"page_type": "concept", "slug": "summary-foo", "title": "A",
+             "body": "B."}]}))
+    r = replay_case(fx)
+    assert r.schema_ok is True and r.semantic_ok is False
+    assert "slug_collision" in (r.error_detail or "")
+
+
 def test_v2_version_fails_closed():
     fx = _synth(prompt_version="2.0.0")
     r = replay_case(fx)
