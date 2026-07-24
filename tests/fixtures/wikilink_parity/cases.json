@@ -192,6 +192,15 @@
       "expected_body_canonicalize": "Ticker [[apple-inc]] today.",
       "response_pages": ["AAPL"],
       "expected_body_bridge": "Ticker [[aapl]] today."
+    },
+    {
+      "id": "two-malformed-pages-authority-valid",
+      "body": "See [[Foo--Bar]] and [[Baz--Qux]].",
+      "expected_slugs": [],
+      "resolve": {"foo-bar": "canonical-foo", "baz-qux": "canonical-baz"},
+      "expected_body_canonicalize": "See [[canonical-foo]] and [[canonical-baz]].",
+      "response_pages": ["Foo--Bar", "Baz--Qux"],
+      "expected_body_bridge": "See [[foo-bar]] and [[baz-qux]]."
     }
   ]
 }

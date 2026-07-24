@@ -17,7 +17,7 @@ Two more blocks appear in the user message:
 
 ## 2. Example of what you return
 
-The example below is the canonical shape. Every rule in the sections that follow refers back to it.
+The example below is the proposal response shape. Every rule in the sections that follow refers back to it.
 
 Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
 
@@ -136,7 +136,7 @@ Reference any page by writing `[[slug]]` inline in a body. The knowledge graph's
 
 Return one JSON object matching the schema in the user message. Nothing before it, nothing after it, no markdown fences around it, no prose explaining it.
 
-The top-level object has these fields (see §2 for the canonical shape):
+The top-level object has these fields (see §2 for the proposal response shape):
 
 - `pages[]` — one entry per page you are returning, each with the fields shown in the example (`page_type`, `title`, `body`, plus `slug` for concept and article pages — never for the summary page).
 - `compilation_notes[]` — **optional**. Free-text notes about this compile: notable slug-reuse or sibling decisions, contradictions between sources, anything the operator should see. Pure prose — nothing parses or acts on these. Omit the field entirely when you have nothing to say.

@@ -63,10 +63,13 @@ def test_bridge_body_projection_matches_corpus(case: dict) -> None:
              "title": "T", "body": body}
         ],
     }
-    ops = [
-        NormalizationOp(OpKind.BODY_REFERENCE_REWRITE, "response-local",
-                        0, "body", n, raw_tok, canon_tok)
-        for n, (raw_tok, canon_tok) in enumerate(_iter_mapped_tokens(body, rename))
-    ]
+    counts: dict[str, int] = {}
+    ops = []
+    for raw_tok, canon_tok in _iter_mapped_tokens(body, rename):
+        n = counts.get(raw_tok, 0)
+        counts[raw_tok] = n + 1
+        ops.append(NormalizationOp(OpKind.BODY_REFERENCE_REWRITE,
+                                   "response-local", 0, "body", n,
+                                   raw_tok, canon_tok))
     canonical = _apply_normalization_plan(proposal, ops)
     assert canonical["pages"][0]["body"] == case["expected_body_bridge"]

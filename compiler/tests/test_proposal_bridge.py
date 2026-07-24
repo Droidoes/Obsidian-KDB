@@ -332,3 +332,107 @@ def test_validate_plan_rejects_unknown_field():
             NormalizationOp(OpKind.SLUG_FORM_COERCION, "form-rule", 1,
                             "title", 0, "a", "b"),
         ], summary_index=0, page_count=2)
+
+
+# --- type-faithful freezing + JSON equality (Codex R1 F1) ---
+
+from compiler.proposal_bridge import _freeze, _json_equal
+
+
+def test_freeze_distinguishes_object_from_nested_array():
+    assert _freeze({"a": 1}) != _freeze([["a", 1]])
+    assert not _json_equal({"a": 1}, [["a", 1]])
+
+
+def test_freeze_distinguishes_bool_from_number():
+    assert _freeze(True) != _freeze(1)
+    assert hash(_freeze(True)) != hash(_freeze(1))
+    assert not _json_equal(True, 1)
+
+
+def test_freeze_distinguishes_array_from_tuple():
+    assert _freeze([1]) != _freeze((1,))
+    assert not _json_equal([1], (1,))
+
+
+def test_freeze_distinguishes_absent_null_and_absent_string():
+    assert _freeze(ABSENT) != _freeze(None)
+    assert _freeze(ABSENT) != _freeze("absent")
+    assert _freeze(None) != _freeze("absent")
+
+
+def test_freeze_json_equal_positive_cases():
+    assert _json_equal({"b": [1, None], "a": True}, {"a": True, "b": [1, None]})
+    assert _json_equal(ABSENT, ABSENT)
+    assert _json_equal(None, None)
+    assert not _json_equal(ABSENT, None)
+
+
+def test_apply_rejects_type_loose_raw_match():
+    """Codex R1 F1 fault injection: an op claiming raw=1 must NOT match a
+    real summary stray of True (Python's True == 1 let it slip before)."""
+    raw = {"pages": [{"page_type": "summary", "slug": True,
+                      "title": "T", "body": "B."}]}
+    op = NormalizationOp(OpKind.SUMMARY_IDENTITY_RESOLUTION,
+                         "role+source_id", 0, "slug", 0, 1, "summary-x")
+    with pytest.raises(CanonicalInvariantError):
+        _apply_normalization_plan(raw, [op])
+
+
+def test_conservation_rejects_type_loose_op():
+    """Codex R1 F1 fault injection: the True-vs-1 op must also fail the
+    conservation bijection, not just the apply raw-match."""
+    raw = {"pages": [{"page_type": "summary", "slug": True,
+                      "title": "T", "body": "B."}]}
+    canon = {"pages": [{"page_type": "summary", "slug": "summary-x",
+                        "title": "T", "body": "B."}]}
+    op = NormalizationOp(OpKind.SUMMARY_IDENTITY_RESOLUTION,
+                         "role+source_id", 0, "slug", 0, 1, "summary-x")
+    with pytest.raises(CanonicalInvariantError):
+        _check_conservation(raw, canon, [op])
+
+
+def test_normalize_proposal_list_stray_slug_bounded_capture():
+    """Legit path: a non-string (array) stray summary slug is still dropped
+    and telemetered with bounded capture (raw_type 'array')."""
+    r = normalize_proposal({"pages": [_summary(slug=[1, 2])]},
+                           source_id="KDB/raw/x.md")
+    assert isinstance(r, BridgeSuccess)
+    assert r.canonical["pages"][0]["slug"] == "summary-x"
+    ignored = [d for d in r.decisions if d.rule == "summary_slug_ignored"][0]
+    assert ignored.raw_type == "array"
+    assert ignored.raw_value is None
+    assert ignored.raw_preview is not None and len(ignored.raw_preview) <= 120
+    assert ignored.raw_sha256 is not None
+
+
+# --- slug ops pin occurrence == 0 (Codex R1 F2) ---
+
+def test_validate_plan_rejects_slug_coercion_nonzero_occurrence():
+    with pytest.raises(CanonicalInvariantError):
+        _validate_plan([
+            _resolution_op(ABSENT, "summary-x"),
+            NormalizationOp(OpKind.SLUG_FORM_COERCION, "form-rule", 1,
+                            "slug", 1, "foo--bar", "foo-bar"),
+        ], summary_index=0, page_count=2)
+
+
+def test_validate_plan_rejects_resolution_nonzero_occurrence():
+    with pytest.raises(CanonicalInvariantError):
+        _validate_plan([
+            NormalizationOp(OpKind.SUMMARY_IDENTITY_RESOLUTION,
+                            "role+source_id", 0, "slug", 99,
+                            "stray", "summary-x"),
+        ], summary_index=0, page_count=1)
+
+
+def test_validate_plan_rejects_noop_resolution_nonzero_occurrence():
+    """The already-canonical no-op case (raw == canonical) is still a slug
+    op — occurrence 99 must be rejected even though the plan is otherwise
+    valid (exactly one resolution at the summary page, page_count=1)."""
+    with pytest.raises(CanonicalInvariantError):
+        _validate_plan([
+            NormalizationOp(OpKind.SUMMARY_IDENTITY_RESOLUTION,
+                            "role+source_id", 0, "slug", 99,
+                            "summary-x", "summary-x"),
+        ], summary_index=0, page_count=1)

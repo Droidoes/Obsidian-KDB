@@ -646,7 +646,10 @@ def compile_source(
 ) -> CompileSourceResult:
     """Per-source Pass-2 PRODUCE core (spec stages 3->6) on in-memory inputs.
 
-    Writes NOTHING. Returns the compiled `cr`; the orchestrator owns stage-8
+    Writes no product state (no wiki pages, no compile_result.json, no
+    manifest); it MAY persist per-source resp-stats telemetry under
+    `runs/<run_id>/pass2/` in its finally path. Returns the compiled `cr`;
+    the orchestrator owns stage-8
     apply-pages, provenance, manifest commit, and graph-sync at the commit
     boundary (Task #91 produce-don't-write decision). All pre-commit failures
     return CompileSourceResult(cr=None, failure_stage=..., error=...) so the

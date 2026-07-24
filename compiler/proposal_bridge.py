@@ -346,7 +346,7 @@ def _apply_normalization_plan(parsed: dict, ops: list[NormalizationOp]) -> dict:
         page = canonical["pages"][op.page_index]
         if op.field == "slug":
             current = page.get("slug", ABSENT)
-            if current != op.raw:
+            if not _json_equal(current, op.raw):
                 raise CanonicalInvariantError(
                     f"spurious op at pages[{op.page_index}].slug: "
                     f"op raw {op.raw!r} != current {current!r}")
@@ -459,8 +459,11 @@ def _validate_plan(ops: list[NormalizationOp], *, summary_index: int,
             raise CanonicalInvariantError(f"op page_index out of range: {op!r}")
         if op.field == "body" and op.occurrence < 0:
             raise CanonicalInvariantError(f"invalid occurrence: {op!r}")
+        if op.field == "slug" and op.occurrence != 0:
+            raise CanonicalInvariantError(
+                f"slug op with nonzero occurrence: {op!r}")
         if op.kind is not OpKind.SUMMARY_IDENTITY_RESOLUTION \
-                and op.raw == op.canonical:
+                and _json_equal(op.raw, op.canonical):
             raise CanonicalInvariantError(
                 f"no-op op outside summary resolution: {op!r}")
     resolutions = [op for op in ops
@@ -472,15 +475,36 @@ def _validate_plan(ops: list[NormalizationOp], *, summary_index: int,
 
 
 def _freeze(value: Any) -> Any:
-    """Hash-stable form of a JSON value for multiset keys (a stray summary
-    slug may be arbitrary JSON — dicts/lists are unhashable; items arrive as
-    tuples, so tuples recurse too). JSON object key order is normalized by
-    sorting, so JSON equality == frozen equality."""
+    """Type-faithful, hash-stable form of a JSON value (+ ABSENT sentinel and
+    internal tuples) for multiset keys and raw-value comparisons. Every JSON
+    type gets a distinct tag — frozen equality == JSON equality, exactly
+    (Codex R1 F1: untagged freezing collided dicts with nested arrays and
+    booleans with numbers, and Python's True == 1 let a fault-injected op
+    slip both apply and conservation). JSON object key order normalized by
+    sorting; keys are strings post-parse so the sort is total."""
+    if value is ABSENT:
+        return ("absent",)
+    if isinstance(value, bool):          # before int — bool subclasses int
+        return ("boolean", value)
     if isinstance(value, dict):
-        return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze(v) for v in value)
-    return value
+        return ("object", tuple(sorted((k, _freeze(v)) for k, v in value.items())))
+    if isinstance(value, list):
+        return ("array", tuple(_freeze(v) for v in value))
+    if isinstance(value, tuple):         # internal containers only — JSON has none
+        return ("tuple", tuple(_freeze(v) for v in value))
+    if isinstance(value, str):
+        return ("string", value)
+    if value is None:
+        return ("null",)
+    if isinstance(value, (int, float)):
+        return ("number", value)
+    raise CanonicalInvariantError(
+        f"unfreezable value type: {type(value).__name__}")
+
+
+def _json_equal(a: Any, b: Any) -> bool:
+    """Type-faithful JSON equality (True != 1, {"a":1} != [["a",1]])."""
+    return _freeze(a) == _freeze(b)
 
 
 def _multiset(items: list[tuple]) -> dict[tuple, int]:
@@ -510,7 +534,7 @@ def _check_conservation(raw: dict, canonical: dict,
             if r.get(f) != c.get(f):
                 raise CanonicalInvariantError(f"pages[{i}].{f} changed")
         rs, cs = r.get("slug", ABSENT), c.get("slug", ABSENT)
-        if rs != cs:
+        if not _json_equal(rs, cs):
             diffs.append((i, "slug", 0, rs, cs))
         rb, cb = r.get("body"), c.get("body")
         if rb != cb:
@@ -521,7 +545,7 @@ def _check_conservation(raw: dict, canonical: dict,
         raise CanonicalInvariantError("compilation_notes changed")
 
     op_keys = [(op.page_index, op.field, op.occurrence, op.raw, op.canonical)
-               for op in ops if op.raw != op.canonical]
+               for op in ops if not _json_equal(op.raw, op.canonical)]
     if _multiset(diffs) != _multiset(op_keys):
         raise CanonicalInvariantError(
             f"diff/op mismatch: diffs={diffs!r} ops={op_keys!r}")
