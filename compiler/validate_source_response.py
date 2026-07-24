@@ -1,19 +1,19 @@
-"""validate_source_response — per-source model output gate (M2).
+"""validate_source_response — canonical contract gate (#115; re-roled #119).
 
-Applied to ONE parsed response object from a single compile call, BEFORE
-it is enriched with runner-injected source-id-space fields and folded
-into compile_result.json. Complements validate_compile_result (which
-validates the aggregate file) by enforcing the stricter per-call
-contract: the 4 LLM-emitted pageIntent fields (slug / page_type / title /
-body) required on every page, schema-only checks that compile_result
-can't express because compile_result is lenient at aggregate level.
+The CANONICAL contract (#119): the only shape allowed to reach
+canonicalization, persistence, wiki, manifest, run journal, graph. Model
+output never touches this shape directly — the normalization bridge's
+output must satisfy it. Validation shape unchanged since #115; re-roled
+from per-call model output to canonical artifact.
 
 Two independent layers:
     1. validate(payload)               — JSON-Schema, accumulating
     2. semantic_check(payload, ...)    — post-schema, semantic rules
 
 CLI:
-    kdb-validate-response [path.json] [--source-id <id>]
+    kdb-validate-response [path.json] [--canonical] [--source-id <id>]
+    default — proposal contract (compiler.validate_proposal_response);
+    --canonical — canonical shape (+ --source-id semantic mode)
     exit 0 — valid; exit 1 — invalid; exit 2 — runtime/config error
 """
 from __future__ import annotations
@@ -119,6 +119,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     "against compiled_source_response.schema.json + semantic rules.",
     )
     p.add_argument("path", nargs="?", help="Path to JSON file; reads stdin if omitted")
+    p.add_argument("--canonical", action="store_true", help="Validate against the canonical contract instead of the default proposal contract")
     p.add_argument(
         "--source-id",
         help="If provided, derive the expected summary slug from this source id "
@@ -131,6 +132,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    if args.source_id and not args.canonical:
+        print("ERROR: --source-id requires --canonical "
+              "(semantic mode lives on the canonical contract)", file=sys.stderr)
+        return 2
+
     try:
         raw = Path(args.path).read_text(encoding="utf-8") if args.path else sys.stdin.read()
         payload = json.loads(raw)
@@ -138,17 +144,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 2
 
-    errors = validate(payload)
-    if not errors and args.source_id and isinstance(payload, dict):
-        from compiler.summary_slug import expected_summary_slug
-        from common.paths import PathError
-        try:
-            expected = expected_summary_slug(args.source_id)
-        except PathError as e:
-            print(f"ERROR: cannot derive expected summary slug: {e}",
-                  file=sys.stderr)
-            return 2
-        errors.extend(semantic_check(payload, expected_summary_slug=expected))
+    if args.canonical:
+        errors = validate(payload)
+        if not errors and args.source_id and isinstance(payload, dict):
+            from compiler.summary_slug import expected_summary_slug
+            from common.paths import PathError
+            try:
+                expected = expected_summary_slug(args.source_id)
+            except PathError as e:
+                print(f"ERROR: cannot derive expected summary slug: {e}",
+                      file=sys.stderr)
+                return 2
+            errors.extend(semantic_check(payload, expected_summary_slug=expected))
+    else:
+        from compiler.validate_proposal_response import validate as validate_proposal
+        errors = validate_proposal(payload)
 
     if errors:
         for msg in errors:

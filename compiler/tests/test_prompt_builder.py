@@ -117,7 +117,7 @@ def test_load_response_schema_text_is_valid_json_with_expected_keys() -> None:
     text = load_response_schema_text()
     schema = json.loads(text)
     # Per-source contract has these top-level schema markers
-    assert schema.get("title", "").lower().startswith("kdb compiled source response")
+    assert schema.get("title", "").lower().startswith("kdb canonical compile response")
     assert schema["type"] == "object"
     assert "pages" in schema["properties"]
     assert "compilation_notes" in schema["properties"]

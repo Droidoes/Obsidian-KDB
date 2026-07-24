@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
-  "title": "KDB Compiled Source Response (per-call model output)",
-  "description": "Exactly one source -> exactly one response object. The LLM emits this shape per compile call. The contract is wiki-native: pages with slugs, types, titles, and prose bodies carrying [[wikilinks]]. Everything mechanical is Python-owned — summary-slug derivation, link extraction from bodies, page status, provenance, and run-level fields (run_id, success, aggregate errors; see compile_result.schema.json). The model commits only to what it authors.",
+  "$id": "https://obsidian-kdb.local/schemas/canonical_response.schema.json",
+  "title": "KDB Canonical Compile Response (post-normalization canonical contract)",
+  "description": "The CANONICAL contract (#119): the only shape allowed to reach canonicalization, persistence, wiki, manifest, run journal, graph. Model output never touches this directly — the proposal bridge's output must satisfy it. Validation shape unchanged since #115; re-roled from per-call model output to canonical artifact.",
   "type": "object",
   "additionalProperties": false,
   "required": ["pages"],

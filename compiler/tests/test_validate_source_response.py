@@ -119,3 +119,33 @@ def test_body_wikilink_slugs_basic() -> None:
 def test_body_wikilink_slugs_strips_code_spans() -> None:
     body = "Real [[foo]]. ```\nExample [[not-a-link]].\n``` Inline `[[nope]]`."
     assert V.body_wikilink_slugs(body) == {"foo"}
+
+
+# ---------- CLI routing (#119): proposal by default, --canonical for canonical ----------
+
+def test_cli_default_is_proposal(tmp_path, capsys):
+    from compiler.validate_source_response import main
+    f = tmp_path / "p.json"
+    f.write_text('{"pages": [{"page_type": "summary", "title": "T", "body": "B."}]}')
+    assert main([str(f)]) == 0
+
+
+def test_cli_canonical_requires_summary_slug(tmp_path, capsys):
+    from compiler.validate_source_response import main
+    f = tmp_path / "p.json"
+    f.write_text('{"pages": [{"page_type": "summary", "title": "T", "body": "B."}]}')
+    assert main([str(f), "--canonical"]) == 1
+
+
+def test_cli_canonical_source_id_semantic(tmp_path, capsys):
+    from compiler.validate_source_response import main
+    f = tmp_path / "p.json"
+    f.write_text('{"pages": [{"page_type": "summary", "slug": "summary-x", "title": "T", "body": "B."}]}')
+    assert main([str(f), "--canonical", "--source-id", "KDB/raw/x.md"]) == 0
+
+
+def test_cli_source_id_requires_canonical(tmp_path, capsys):
+    from compiler.validate_source_response import main
+    f = tmp_path / "p.json"
+    f.write_text('{"pages": [{"page_type": "summary", "title": "T", "body": "B."}]}')
+    assert main([str(f), "--source-id", "KDB/raw/x.md"]) == 2
