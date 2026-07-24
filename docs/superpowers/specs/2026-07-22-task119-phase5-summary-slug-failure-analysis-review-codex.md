@@ -4,7 +4,7 @@
 
 **Reviewer:** Codex
 
-**Reviewed document:** `docs/superpowers/specs/2026-07-22-task115-phase5-summary-slug-failure-analysis.md`
+**Reviewed document:** `docs/superpowers/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis.md`
 
 **Verdict:** Revise before ratification — the root issue is broader than the
 summary slug

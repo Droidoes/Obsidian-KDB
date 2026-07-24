@@ -1,20 +1,23 @@
 """Tests for prompt_builder — system/user assembly for one compile call.
 
-Post-#115 Phase-1 coverage (wiki-native contract):
+Post-#115 Phase-1 coverage (wiki-native contract), updated #119 Phase 3
+(proposal contract, prompt 4.0.0):
     - load_system_prompt returns the repo-packaged prompt
     - the rewritten prompt carries the new contract and the D-115-7 fixes
       (the Gate-0 byte-anchor test was retired BY the Phase-1 rewrite —
       content/version drift is guarded by PASS2_PROMPT_VERSION instead)
-    - load_response_schema_text returns the new-shape schema
+    - load_response_schema_text returns the proposal-shape schema
     - build_prompt system includes the system prompt + contract lines
     - build_prompt user includes source_name, source_text, context, schema, exemplar
-    - exemplar_response (no args) is schema+semantic valid
+    - exemplar_response (no args) is proposal-schema valid — summary WITHOUT
+      a slug (Python assigns its identity via the normalization bridge)
     - key contract sentences are present verbatim
 
 Plus a drift-guard: the user section order must match what compile_one reads.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -29,7 +32,7 @@ from compiler.prompt_builder import (
     load_system_prompt,
 )
 from common.types import ContextPage, ContextSnapshot
-from compiler.validate_source_response import semantic_check, validate
+from compiler.validate_proposal_response import validate as validate_proposal
 
 SOURCE_NAME = "foo.md"
 SOURCE_ID = "KDB/raw/foo.md"  # used only for ContextSnapshot construction
@@ -66,7 +69,9 @@ def test_load_system_prompt_returns_packaged_file() -> None:
 
 def test_packaged_prompt_is_the_phase1_wiki_native_contract() -> None:
     """Phase-1 rewrite (D-115): the packaged prompt speaks wiki-native —
-    no removed fields, and the three D-115-7 defects are fixed."""
+    no removed fields, and the three D-115-7 defects are fixed. #119 Phase 3
+    (4.0.0): the summary-slug convention is gone — the model is told NOT to
+    emit a summary slug (Python assigns its identity)."""
     p = load_system_prompt()
     assert p.startswith("# KDB Compiler — System Prompt")   # D-115-7a line-1 defect
     assert "manifest snapshot" not in p                      # D-115-7b
@@ -78,13 +83,28 @@ def test_packaged_prompt_is_the_phase1_wiki_native_contract() -> None:
     assert "log_entries" not in p
     assert '"warnings"' not in p
     assert "confidence" not in p
-    assert "summary-<stem>" in p                             # convention stated once
+    # #119 4.0.0: summary identity is Python-assigned, never model-authored
+    assert "Do NOT emit a `slug` for the summary page" in p
+    assert "summary-<stem>" in p                             # Python's derived form noted
 
 
-def test_pass2_prompt_version_is_3() -> None:
-    """Phase-1 bump guard: content and version move together (D-115-13).
-    2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1)."""
-    assert prompt_builder.PASS2_PROMPT_VERSION == "3.0.0"
+def test_pass2_prompt_version_is_4() -> None:
+    """Phase-3 bump guard: content and version move together (D-115-13).
+    2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1);
+    4.0.0 = proposal contract (#119 Phase 3) — the summary page carries no
+    slug; Python assigns its identity via the normalization bridge.
+    4.0.1 = wording-only patch (Codex exec-review R1 F5); era unchanged."""
+    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.1"
+
+
+def test_packaged_prompt_matches_golden_sha() -> None:
+    # D-115-13 — changing prompt bytes requires bumping PASS2_PROMPT_VERSION
+    # AND updating this golden SHA in the same commit; an unversioned content
+    # change fails here.
+    assert (
+        hashlib.sha256(prompt_builder.load_system_prompt().encode()).hexdigest()
+        == "afeff429761a98b71eadccfc3ca5b067d542d7e37764a8b4a90ae2192a8e5e1b"
+    )
 
 
 def test_load_system_prompt_missing_raises(
@@ -116,8 +136,8 @@ def test_load_system_prompt_cached(
 def test_load_response_schema_text_is_valid_json_with_expected_keys() -> None:
     text = load_response_schema_text()
     schema = json.loads(text)
-    # Per-source contract has these top-level schema markers
-    assert schema.get("title", "").lower().startswith("kdb compiled source response")
+    # #119: the injected schema is the PROPOSAL contract
+    assert schema.get("title", "").lower().startswith("kdb pass-2 proposal response")
     assert schema["type"] == "object"
     assert "pages" in schema["properties"]
     assert "compilation_notes" in schema["properties"]
@@ -126,8 +146,11 @@ def test_load_response_schema_text_is_valid_json_with_expected_keys() -> None:
     for removed in ("source_name", "summary_slug", "concept_slugs",
                     "article_slugs", "log_entries", "warnings"):
         assert removed not in schema["properties"]
-    page_req = schema["$defs"]["pageIntent"]["required"]
-    assert sorted(page_req) == ["body", "page_type", "slug", "title"]
+    # proposal shape: only page_type/title/body required — `slug` is optional
+    # (concept/article REQUIRE it via the discriminated allOf; the summary
+    # page must NOT carry one)
+    page_req = schema["$defs"]["pageProposal"]["required"]
+    assert sorted(page_req) == ["body", "page_type", "title"]
 
 
 def test_load_response_schema_text_is_pretty_printed() -> None:
@@ -139,18 +162,20 @@ def test_load_response_schema_text_is_pretty_printed() -> None:
 
 # ---------- exemplar_response ----------
 
-def test_exemplar_has_only_the_four_page_fields() -> None:
+def test_exemplar_summary_has_no_slug_concept_has_four_fields() -> None:
+    """#119 4.0.0: the exemplar's summary page carries NO slug (Python
+    assigns its identity); the concept page carries the four fields."""
     ex = exemplar_response()
-    for page in ex["pages"]:
-        assert set(page) == {"slug", "page_type", "title", "body"}
+    by_type = {p["page_type"]: p for p in ex["pages"]}
+    assert set(by_type["summary"]) == {"page_type", "title", "body"}
+    assert set(by_type["concept"]) == {"slug", "page_type", "title", "body"}
 
 
-def test_exemplar_passes_schema_and_semantic() -> None:
+def test_exemplar_passes_proposal_schema() -> None:
     """The example we send the model must itself satisfy every rule we
     enforce. Otherwise we'd be training the model on invalid shape."""
     ex = exemplar_response()
-    assert validate(ex) == []
-    assert semantic_check(ex, expected_summary_slug="summary-example") == []
+    assert validate_proposal(ex) == []
 
 
 # ---------- build_prompt: system ----------
@@ -164,7 +189,7 @@ def test_system_includes_system_prompt_and_contract() -> None:
     assert bp.system == f"{load_system_prompt()}\n\n{RESPONSE_CONTRACT}"
     assert "RESPONSE CONTRACT (non-negotiable):" in bp.system
     assert "Return EXACTLY ONE JSON object." in bp.system
-    assert "exactly one summary page" in bp.system
+    assert 'exactly one page with page_type "summary"' in bp.system
 
 
 def test_system_does_not_include_user_sections() -> None:
@@ -227,8 +252,9 @@ def test_user_includes_schema_and_exemplar() -> None:
         source_text="hi",
         context_snapshot=_snapshot(),
     )
-    # Schema section includes a distinctive schema token
-    assert "compiled_source_response.schema.json" in bp.user or '"pageIntent"' in bp.user
+    # Schema section includes a distinctive schema token — #119: the
+    # injected schema is the PROPOSAL schema
+    assert "proposal_response.schema.json" in bp.user or '"pageProposal"' in bp.user
     # Exemplar section contains the echoed source_name inside the JSON block
     ex_json = json.dumps(exemplar_response(), indent=2, ensure_ascii=False)
     assert ex_json in bp.user
@@ -347,13 +373,17 @@ def test_build_prompt_source_meta_excludes_kdb_signal() -> None:
 
 # ---------- drift guard ----------
 
-def test_response_contract_mentions_semantic_rules() -> None:
+def test_response_contract_mentions_proposal_rules() -> None:
     """The contract block the model sees must surface every rule enforced
-    by validate_source_response.semantic_check (the exact-one-summary
-    gate). If that file grows a new rule, either add it to
-    RESPONSE_CONTRACT too or update this test deliberately."""
+    by the proposal contract (#119: proposal schema + bridge reject
+    classes). If those grow a new rule, either add it to RESPONSE_CONTRACT
+    too or update this test deliberately."""
     c = RESPONSE_CONTRACT
-    assert "exactly one summary page" in c
+    assert 'exactly one page with page_type "summary"' in c
+    # #119 4.0.0: summary identity is Python-assigned — the model must NOT
+    # author a summary slug; concept/article slugs stay required
+    assert 'Do NOT emit a "slug" for the summary page' in c
+    assert 'Concept and article pages REQUIRE a "slug"' in c
     assert "EXACTLY ONE JSON object" in c
     assert "DO NOT" in c and "fabricate pages" in c
     # #115: removed rules must not linger in the contract block

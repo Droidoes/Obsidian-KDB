@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://obsidian-kdb.local/schemas/proposal_response.schema.json",
+  "title": "KDB Pass-2 Proposal Response (per-call model output, pre-normalization)",
+  "description": "The PROPOSAL contract (prompt 4.0.0+): structural sufficiency only. Python's normalization bridge converts a proposal to the canonical contract (compiled_source_response.schema.json). Summary pages carry no slug — Python owns summary identity; a stray slug is tolerated and dropped with telemetry. Concept/article pages require slug; slug FORM is the bridge's job, not this schema's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pages"],
+  "properties": {
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pageProposal" }
+    },
+    "compilation_notes": {
+      "type": "array",
+      "description": "Optional free-text notes about this compile. Pure prose for the operator's eye; Python never acts on these.",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "pageProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_type", "title", "body"],
+      "properties": {
+        "page_type": { "type": "string", "enum": ["summary", "concept", "article"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "body": { "type": "string", "minLength": 1 },
+        "slug": {
+          "description": "concept/article: REQUIRED string (1-512, defensive raw cap — canonical 120 enforced post-coercion). summary: IGNORED — any value tolerated, dropped by the bridge with telemetry."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "page_type": { "const": "summary" } },
+            "required": ["page_type"]
+          },
+          "then": true,
+          "else": {
+            "required": ["slug"],
+            "properties": {
+              "slug": { "type": "string", "minLength": 1, "maxLength": 512 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -344,8 +344,9 @@ def _replace_outgoing_links(
 ) -> None:
     """Phase 3: drop+recreate LINKS_TO edges from this page (current-state
     replacement). If a target slug doesn't yet exist as an Entity node, the
-    CREATE is silently skipped — dangling outgoing_links are a validator
-    catch upstream, not the intake's job."""
+    CREATE is silently skipped — dangling targets are KPI-visible
+    (`dangling_link_rate`), not gate-rejected — post-#115 no upstream gate
+    checks body-target existence."""
     slug = page.get("slug")
     if not slug:
         return

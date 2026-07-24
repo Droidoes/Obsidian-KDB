@@ -17,12 +17,13 @@ batch of compiles pays the file-read cost once. Both live in the package,
 so neither takes a key.
 
 The response-contract block below is intentionally terse and mirrors the
-semantic gate in validate_source_response.semantic_check (exactly one
-summary page whose slug matches the derived expected value). If a rule
-is added there, it belongs here too — the contract the model sees and
-the contract we enforce must not drift. The contract is wiki-native
-(#115): the model authors pages with [[wikilink]] bodies only; Python
-owns derivation, link extraction, status, and provenance.
+PROPOSAL contract (#119): exactly one summary page, NO model-authored
+summary slug (Python assigns its identity via the normalization bridge),
+concept/article slugs required. If a rule is added to the proposal
+schema or the bridge's reject classes, it belongs here too — the contract
+the model sees and the contract we enforce must not drift. The contract
+is wiki-native (#115): the model authors pages with [[wikilink]] bodies
+only; Python owns derivation, link extraction, status, and provenance.
 """
 from __future__ import annotations
 
@@ -33,14 +34,19 @@ from pathlib import Path
 
 from common.types import ContextSnapshot
 
-_SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
+_SCHEMA_PATH = Path(__file__).parent / "schemas" / "proposal_response.schema.json"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.md"
 
 # Code-owned Pass-2 prompt version (D-115-13). Bumped in the SAME commit as
 # any prompt-content change — content and version never drift. Stamped on
 # every run header alongside the loaded-text SHA-256.
-# 2.0.0 = repo-packaged prompt (Phase 0); 3.0.0 = wiki-native contract (Phase 1).
-PASS2_PROMPT_VERSION = "3.0.0"
+# 2.0.0 = repo-packaged prompt (Phase 0); 3.0.0 = wiki-native contract
+# (Phase 1); 4.0.0 = proposal contract (#119 Phase 3): the summary page
+# carries NO slug — Python assigns its identity via the normalization bridge.
+# 4.0.1 = wording-only patch ("canonical shape" → "proposal response shape",
+# Codex exec-review R1 F5); the proposal CONTRACT era is unchanged
+# (4.x — replay dispatch accepts all 4.x).
+PASS2_PROMPT_VERSION = "4.0.1"
 
 RESPONSE_CONTRACT = """\
 ---
@@ -49,8 +55,9 @@ RESPONSE CONTRACT (non-negotiable):
 - No markdown code fences around the object.
 - No prose before or after the object.
 - The object MUST satisfy the schema provided in the user message exactly.
-- Every response contains exactly one summary page, whose slug follows the
-  summary-<stem> convention (see the system prompt).
+- Every response contains exactly one page with page_type "summary".
+  Do NOT emit a "slug" for the summary page — Python assigns its identity.
+  Concept and article pages REQUIRE a "slug".
 - The optional "compilation_notes" array carries non-fatal observations
   (notable reuse decisions, thin sources). DO NOT fabricate pages to
   satisfy the schema. If the source genuinely contains nothing
@@ -93,17 +100,15 @@ def load_response_schema_text() -> str:
 
 
 def exemplar_response() -> dict:
-    """Minimal valid per-source response (#115 wiki-native shape). Two
-    4-field pages — summary + one concept — so the model sees a concrete
-    target rather than guessing shape from the schema alone. The summary
-    slug demonstrates the summary-<stem> convention for a hypothetical
-    `example.md` source; the expected value for the REAL source is never
-    injected (D-115 model authorship). `compilation_notes` is omitted to
+    """Minimal valid per-source PROPOSAL (#119 prompt 4.0.0 shape). Two
+    pages — a summary WITHOUT a `slug` (Python assigns its identity via
+    the normalization bridge; the model never authors it) and one concept
+    with a slug — so the model sees a concrete target rather than guessing
+    shape from the schema alone. `compilation_notes` is omitted to
     demonstrate its optionality."""
     return {
         "pages": [
             {
-                "slug": "summary-example",
                 "page_type": "summary",
                 "title": "Example Summary",
                 "body": "A short summary of what this source is about, "

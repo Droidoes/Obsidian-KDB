@@ -188,6 +188,36 @@ def test_from_pass2_old_record_defaults_false():
 
 
 # ---------------------------------------------------------------------------
+# #119 normalization watched diagnostics (D-BQ-3 — projected, never scored)
+# ---------------------------------------------------------------------------
+
+def test_measurement_projects_persisted_count_and_flag():
+    # a record carrying the persisted fields projects them verbatim
+    rec = _make_resp_stats_dict(normalization_decisions=[{"rule": "slug_form_coercion"}],
+                                normalization_decision_count=1,
+                                summary_identity_derived=True)
+    m = PassCallMeasurement.from_pass2(rec)
+    assert m.normalization_decision_count == 1
+    assert m.summary_identity_derived is True
+
+
+def test_measurement_falls_back_to_list_length_for_old_records():
+    # records without the persisted count (pre-#119 or capped-write-older)
+    rec = _make_resp_stats_dict(normalization_decisions=[{"rule": "a"}, {"rule": "b"}],
+                                normalization_decision_count=None)
+    assert PassCallMeasurement.from_pass2(rec).normalization_decision_count == 2
+
+
+def test_measurement_uses_persisted_count_not_sample_length():
+    # Codex PR5 F3: after truncation the list holds ≤50 samples but the
+    # persisted count must project the TRUE total
+    rec = _make_resp_stats_dict(normalization_decisions=[{"rule": "a"}] * 50,
+                                normalization_decision_count=63,
+                                normalization_decisions_overflow_sha256="f" * 64)
+    assert PassCallMeasurement.from_pass2(rec).normalization_decision_count == 63
+
+
+# ---------------------------------------------------------------------------
 # Fix 1 (#111 retry-telemetry): from_pass2 attempts = final_attempt_index ONLY
 # (compile re-prompt count; SDK transient retries deliberately excluded).
 # ---------------------------------------------------------------------------

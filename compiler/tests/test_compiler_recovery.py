@@ -12,7 +12,8 @@ Contract under test (spec §3.3):
     emitted.
   * Winning-attempt semantics: boundary_recovered + discard counts reset
     per attempt and are assigned directly from the attempt's RecoveryResult.
-  * Coercion guarded: coerce_slugs_and_propagate only runs on dict payloads.
+  * #119: the proposal-schema gate arbitrates recovered payloads (incl.
+    non-dict payloads — the bridge only runs on schema-valid proposals).
 
 Harness mirrors compiler/tests/test_compiler.py (imported helpers + the
 same monkeypatched ``compiler.compiler.call_model_with_retry`` seam).
@@ -189,7 +190,7 @@ def test_compile_one_e2e_legacy_negative_quarantines_at_schema(
     cs, _, err = _compile(vault, state_root, ctx, source_id)
 
     assert cs is None
-    assert "schema validation failed" in (err or "")
+    assert "proposal validation failed" in (err or "")
     rec = _single_record(state_root, ctx.run_id)
     assert rec["parse_ok"] is True          # carrier recovery worked
     assert rec["schema_ok"] is False        # new schema rejects the old shape
@@ -317,9 +318,10 @@ def test_decodable_wrong_prefix_still_hits_schema_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Selection-first recovery accepts the FIRST complete document in the
-    carrier — even when the real payload follows it. The schema gate is the
-    content arbiter: the wrong (small) object fails schema, retries, and
-    quarantines. Recovery selection never bypasses content gates."""
+    carrier — even when the real payload follows it. The proposal-schema
+    gate (#119) is the content arbiter: the wrong (small) object fails
+    schema, retries, and quarantines. Recovery selection never bypasses
+    content gates."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
     state_root = vault / "KDB" / "state"
@@ -340,7 +342,7 @@ def test_decodable_wrong_prefix_still_hits_schema_gate(
 
     assert cs is None
     assert err is not None
-    assert "schema validation failed" in err
+    assert "proposal validation failed" in err
     assert calls["n"] == 2  # schema failure retries, then quarantines
 
     rec = _single_record(state_root, ctx.run_id)
@@ -351,8 +353,9 @@ def test_decodable_wrong_prefix_still_hits_schema_gate(
 
 
 # 8. Non-object payloads never crash (Codex round-2 F1+F3): top-level list,
-#    scalar string, JSON null. Each recovers, fails the schema gate,
-#    coercion is SKIPPED (no AttributeError), retries → quarantines.
+#    scalar string, JSON null. Each recovers, fails the proposal-schema gate
+#    (#119 — the bridge only runs on schema-valid proposals, no AttributeError),
+#    retries → quarantines.
 @pytest.mark.parametrize(
     "payload_text",
     [
@@ -379,14 +382,14 @@ def test_non_object_payloads_quarantine_without_crash(
 
     assert cs is None
     assert err is not None
-    assert "schema validation failed" in err  # schema-class, no crash
+    assert "proposal validation failed" in err  # schema-class, no crash
 
     rec = _single_record(state_root, ctx.run_id)
     # recovered=True (branch on .recovered — 'null' parses to None, which is
     # still a recovered value) → parse_ok True, then the schema gate rejects.
     assert rec["parse_ok"] is True
     assert rec["schema_ok"] is False
-    assert rec["slug_coerced"] is False  # coercion skipped for non-dicts
+    assert rec["slug_coerced"] is False  # bridge never runs on non-dicts
     assert rec["final_status"] == "quarantined"
 
 

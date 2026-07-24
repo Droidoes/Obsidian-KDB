@@ -236,6 +236,58 @@ def test_replay_underivable_stem_fails_closed() -> None:
     assert r.matches_expected is True
 
 
+# ---------- replay_case: prompt_version dispatch (#119, D-BQ-1) ----------
+
+def test_v4_fixture_passes_new_stack():
+    # 4.x case: summary WITHOUT slug → clean pass through proposal+bridge
+    import json as _json
+    fx = _synth(prompt_version="4.0.0", stored_response_text=_json.dumps({
+        "pages": [
+            {"page_type": "summary", "title": "T", "body": "See [[a]]."},
+            {"page_type": "concept", "slug": "a", "title": "A", "body": "A."},
+        ]}))
+    r = replay_case(fx)
+    assert r.schema_ok and r.semantic_ok and r.error_detail is None
+
+
+def test_v2_version_fails_closed():
+    fx = _synth(prompt_version="2.0.0")
+    r = replay_case(fx)
+    assert "unsupported prompt_version" in (r.error_detail or "")
+    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (
+        False, False, False, False)
+    assert r.matches_expected is False
+
+
+def test_unknown_version_fails_closed():
+    fx = _synth(prompt_version="9.9.9")
+    r = replay_case(fx)
+    assert "unsupported prompt_version" in (r.error_detail or "")
+    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (
+        False, False, False, False)
+    assert r.matches_expected is False
+
+
+def test_v4_underivable_source_id_is_case_error_not_traceback():
+    import json as _json
+    fx = _synth(prompt_version="4.0.0", source_id="KDB/raw/日本語.md",
+                stored_response_text=_json.dumps(
+                    {"pages": [{"page_type": "summary", "title": "T",
+                                "body": "B."}]}))
+    r = replay_case(fx)
+    assert "summary slug" in (r.error_detail or "")
+
+
+def test_v4_preserves_boundary_recovery_extract_flag():
+    """Prose-wrapped 4.x payload: extract_ok=False (strict) while recovery
+    succeeds — replay must propagate result.extract_ok, not hardcode True."""
+    fx = _synth(prompt_version="4.0.0",
+                stored_response_text='Note: {"pages": [{"page_type": "summary", "title": "T", "body": "B."}]} -- end',
+                expected_extract_ok=False)
+    r = replay_case(fx)
+    assert r.extract_ok is False and r.parse_ok is True
+
+
 # ---------- CLI ----------
 
 def test_cli_exits_0_on_all_matching(

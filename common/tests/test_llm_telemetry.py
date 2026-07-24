@@ -125,3 +125,58 @@ def test_build_resp_stats_boundary_fields_land(tmp_path: Path) -> None:
     assert rec.boundary_recovered is True
     assert rec.prefix_discarded_chars == 2
     assert rec.tail_discarded_chars == 20
+
+
+def test_build_resp_stats_normalization_fields_land(tmp_path: Path) -> None:
+    """#119 bridge telemetry: the four normalization kwargs flow through to
+    the returned record (additive/optional — defaults stay None)."""
+    ctx = _ctx(tmp_path)
+    decisions = [{"rule": "slug_form_coercion", "authority": "form-rule",
+                  "location": "pages[1].slug", "raw_type": "string",
+                  "raw_value": "Foo--Bar", "raw_preview": None,
+                  "raw_sha256": None, "canonical_value": "foo-bar"}]
+    rec = resp_stats_writer.build_resp_stats(
+        ctx=ctx,
+        source_id="KDB/raw/foo.md",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True,
+        parse_ok=True,
+        parsed_json={},
+        schema_ok=True,
+        schema_errors=[],
+        semantic_ok=True,
+        semantic_errors=[],
+        normalization_decisions=decisions,
+        normalization_decision_count=63,
+        normalization_decisions_overflow_sha256="f" * 64,
+        summary_identity_derived=True,
+    )
+    assert rec.normalization_decisions == decisions
+    assert rec.normalization_decision_count == 63
+    assert rec.normalization_decisions_overflow_sha256 == "f" * 64
+    assert rec.summary_identity_derived is True
+
+    rec_defaults = resp_stats_writer.build_resp_stats(
+        ctx=ctx,
+        source_id="KDB/raw/foo.md",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        prompt=_FakePrompt(system="S", user="U"),
+        raw_response_text="{}",
+        model_response=_model_response(),
+        extract_ok=True,
+        parse_ok=True,
+        parsed_json={},
+        schema_ok=True,
+        schema_errors=[],
+        semantic_ok=True,
+        semantic_errors=[],
+    )
+    assert rec_defaults.normalization_decisions is None
+    assert rec_defaults.normalization_decision_count is None
+    assert rec_defaults.normalization_decisions_overflow_sha256 is None
+    assert rec_defaults.summary_identity_derived is None

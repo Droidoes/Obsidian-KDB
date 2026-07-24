@@ -376,8 +376,9 @@ def test_compile_one_extract_failure_is_non_gating_telemetry(
 ) -> None:
     """#114: extract_ok is non-gating telemetry. Prose around the object
     fails the STRICT shape check (extract_ok=False) but the recovery ladder
-    still selects the embedded document (parse_ok=True) — the schema gate,
-    not extraction, arbitrates the undersized payload → quarantine."""
+    still selects the embedded document (parse_ok=True) — the proposal-schema
+    gate (#119), not extraction, arbitrates the undersized payload →
+    quarantine."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
@@ -404,7 +405,7 @@ def test_compile_one_extract_failure_is_non_gating_telemetry(
         max_tokens=4096,
     )
     assert cs is None
-    assert "schema validation failed" in (err or "")
+    assert "proposal validation failed" in (err or "")
 
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["extract_ok"] is False   # strict-shape verdict, telemetry only
@@ -454,13 +455,17 @@ def test_compile_one_parse_failure_writes_resp_stats_record(
 def test_compile_one_schema_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """#119: a proposal-schema violation (here an unknown top-level field)
+    writes schema_ok=False with parsed_summary still populated."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
     bad_payload = _good_response(SOURCE_A)
-    bad_payload["pages"][0]["slug"] = "INVALID SLUG"  # breaks slug pattern
+    # unknown top-level field — additionalProperties:false rejects (the
+    # summary page's own stray slug would be TOLERATED post-#119, so the
+    # top-level field is the violation driver)
     bad_payload["summary_slug"] = "INVALID SLUG"
     bad = ModelResponse(
         text=json.dumps(bad_payload),
@@ -482,12 +487,13 @@ def test_compile_one_schema_failure_writes_resp_stats_record(
         max_tokens=4096,
     )
     assert cs is None
-    assert "schema validation failed" in (err or "")
+    assert "proposal validation failed" in (err or "")
 
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["parse_ok"] is True
     assert record["schema_ok"] is False
     assert record["semantic_ok"] is False
+    assert record["failure_exception_type"] == "StructuralInsufficiency"
     # parsed_summary populated from the parsed (even if schema-invalid) payload
     assert record["parsed_summary"] is not None
     assert record["parsed_summary"]["page_count"] == 1
@@ -497,14 +503,20 @@ def test_compile_one_schema_failure_writes_resp_stats_record(
 def test_compile_one_semantic_failure_writes_resp_stats_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """#119: the semantic class is now a BRIDGE reject — a schema-valid
+    proposal with no summary page rejects (ProposalReject:no_summary);
+    the record carries schema_ok=True, semantic_ok=False."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Schema-valid but the summary page's slug != the derived expected slug.
-    bad_payload = _good_response(SOURCE_A)
-    bad_payload["pages"][0]["slug"] = "summary-not-expected"
+    # Proposal-schema-valid but no summary page → bridge reject (the
+    # post-#119 semantic failure class).
+    bad_payload = {"pages": [
+        {"slug": "concept-a", "page_type": "concept", "title": "A",
+         "body": "Body."},
+    ]}
     bad = ModelResponse(
         text=json.dumps(bad_payload),
         input_tokens=10, output_tokens=5, latency_ms=10,
@@ -525,27 +537,33 @@ def test_compile_one_semantic_failure_writes_resp_stats_record(
         max_tokens=4096,
     )
     assert cs is None
-    assert "semantic check failed" in (err or "")
+    assert "proposal rejected: no_summary" in (err or "")
 
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["schema_ok"] is True
     assert record["semantic_ok"] is False
+    assert record["failure_stage"] == "validate"
+    assert record["failure_exception_type"] == "ProposalReject:no_summary"
+    assert record["semantic_errors"]
 
 
 def test_semantic_failure_retries_then_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LB2 (#106): a semantic failure on a non-final attempt retries (consumes
-    the 2nd model call) before erroring on the final attempt.  Pre-LB2, semantic
-    ran post-loop (1 call total); post-LB2, it runs inside the loop (2 calls)."""
+    """LB2 (#106): a semantic-class failure on a non-final attempt retries
+    (consumes the 2nd model call) before erroring on the final attempt.
+    #119: the semantic class is a bridge reject (here no_summary) — the
+    retry-inside-the-loop semantics are unchanged."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Schema-valid but the summary page's slug != expected -> semantic fails.
-    bad_payload = _good_response(SOURCE_A)
-    bad_payload["pages"][0]["slug"] = "summary-nonexistent"
+    # Proposal-schema-valid but no summary page → bridge reject, retriable.
+    bad_payload = {"pages": [
+        {"slug": "concept-a", "page_type": "concept", "title": "A",
+         "body": "Body."},
+    ]}
     calls = {"n": 0}
 
     def always_semantic_bad(req):
@@ -572,7 +590,7 @@ def test_semantic_failure_retries_then_errors(
     )
 
     assert cs is None
-    assert "semantic" in (err or "")
+    assert "no_summary" in (err or "")
     assert calls["n"] == 2   # LB2: retried before erroring (was 1 pre-LB2)
 
 
@@ -846,9 +864,9 @@ def test_failure_triplet_extract_stage_never_emitted(
 ) -> None:
     """#114: failure_stage="extract" is never emitted. The prose-wrapped
     payload below fails the strict shape check (extract_ok=False, telemetry
-    only) but recovery still selects the embedded object; the SCHEMA gate
-    rejects the undersized payload — and schema failures carry no failure
-    triplet (they have the structured schema_errors surface instead)."""
+    only) but recovery still selects the embedded object; the proposal-schema
+    gate (#119) rejects the undersized payload — a TERMINAL validation
+    rejection, so the triplet carries stage "validate" (never "extract")."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
@@ -869,9 +887,9 @@ def test_failure_triplet_extract_stage_never_emitted(
         ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
     )
     assert cs is None
-    assert "schema validation failed" in (err or "")
+    assert "proposal validation failed" in (err or "")
     stage, etype, msg = _failure_fields(state_root, ctx.run_id)
-    assert stage is None and etype is None and msg is None
+    assert stage == "validate" and etype == "StructuralInsufficiency" and msg
 
 
 def test_failure_triplet_parse_populates_jsondecodeerror(
@@ -924,19 +942,23 @@ def test_failure_triplet_all_none_on_happy_path(
     assert stage is None and etype is None and msg is None
 
 
-def test_failure_triplet_stays_none_for_schema_failure(
+def test_failure_triplet_populates_for_terminal_schema_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Schema validation has its own structured surface (schema_errors).
-    The failure_* triplet is scoped to non-validation halts and must NOT
-    overlap with schema/semantic — they're querying different things."""
+    """#119: a TERMINAL proposal-schema rejection is a typed validation
+    failure — the triplet populates (stage "validate", synthetic
+    "StructuralInsufficiency") AND the structured schema_errors surface is
+    kept on the same record. (Pre-#119 schema failures carried no triplet;
+    D-119 makes the terminal proposal gate a first-class validate-stage
+    failure, mirroring the underivable-stem route.)"""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A)
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
     bad_payload = _good_response(SOURCE_A)
-    bad_payload["pages"][0]["slug"] = "INVALID SLUG"
+    # unknown top-level field — additionalProperties:false rejects (the
+    # violation driver; a stray summary slug alone would be tolerated)
     bad_payload["summary_slug"] = "INVALID SLUG"
     bad = ModelResponse(
         text=json.dumps(bad_payload),
@@ -953,7 +975,7 @@ def test_failure_triplet_stays_none_for_schema_failure(
         ctx=ctx, provider="anthropic", model="claude-opus-4-7", max_tokens=4096,
     )
     stage, etype, msg = _failure_fields(state_root, ctx.run_id)
-    assert stage is None and etype is None and msg is None
+    assert stage == "validate" and etype == "StructuralInsufficiency" and msg
     # schema_errors still populated on the same record.
     record = json.loads(_resp_stats_files(state_root, ctx.run_id)[0].read_text())
     assert record["schema_ok"] is False
@@ -1143,21 +1165,23 @@ def test_rung1_escape_recovers_latex_on_attempt_1(
     assert r"\(n-1\)" in body
 
 
-def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
+def test_malformed_summary_slug_stamped_not_coerced(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rung-2: uppercase + triple-hyphen slug is coerced (lowercase + collapse)
-    in-place without a model re-call; cs.summary_slug reflects the coerced form."""
+    """#119 (§3.5 truth table): a malformed STRAY summary slug
+    ("Summary---Alpha") is ignored and the derived identity stamped — NOT
+    coerced. 1 call, success, slug_coerced stays False, final_status
+    "clean" (stamping is not a recovery). Supersedes the rung-2 in-place
+    coercion test (repair.py retired)."""
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
     payload = _good_response(SOURCE_A)
-    # Corrupt the summary page's slug with uppercase + triple hyphen —
-    # collapses back to the expected slug (coercion recovers in place).
+    # Corrupt the summary page's slug with uppercase + triple hyphen — a
+    # stray the bridge ignores; Python stamps "summary-alpha".
     payload["pages"][0]["slug"] = "Summary---Alpha"
-    bad = "Summary---Alpha"
 
     calls = {"n": 0}
 
@@ -1187,38 +1211,56 @@ def test_rung2_coerce_recovers_bad_slug_on_attempt_1(
 
     assert err is None and cs is not None
     assert calls["n"] == 1
-    # Coerced form: lowercased + triple-hyphen collapsed to single = expected.
+    # Stamped identity: the derived expected slug, not a coerced form.
     assert cs.pages[0].slug == "summary-alpha"
 
+    files = _resp_stats_files(state_root, ctx.run_id)
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    # §3.5 truth table: stamping/ignoring never set slug_coerced, never
+    # change final_status; the stamp decision is telemetered.
+    assert rec["slug_coerced"] is False
+    assert rec["final_status"] == "clean"
+    assert rec["summary_identity_derived"] is True
+    rules = [d["rule"] for d in rec["normalization_decisions"]]
+    assert "summary_slug_ignored" in rules
+    assert "summary_identity_stamp" in rules
 
-def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
+
+def test_final_status_retried_when_attempt1_rejected_but_attempt2_is_clean(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Regression guard for #106 + Fix 2 (#111 retry-telemetry):
-    repair flags reset per attempt so attempt-2 winning cleanly is NOT
-    mis-labelled 'retried-and-repaired', AND Fix 2 ensures a re-prompt sequence
-    is labelled 'retried' (not 'clean' as the pre-#111 bug produced).
+    """Regression guard for #106 + Fix 2 (#111 retry-telemetry), re-cased
+    #119: bridge telemetry resets per attempt so attempt-2 winning cleanly
+    is NOT mis-labelled 'retried-and-repaired', AND Fix 2 ensures a
+    re-prompt sequence is labelled 'retried' (not 'clean' as the pre-#111
+    bug produced).
 
     Sequence:
-      Attempt 1 — rung-2 fires (bad summary_slug coerced → slug_coerced=True),
-                  but semantic still fails (coerced slug doesn't match any page)
-                  → continue.  slug_coerced is reset to False for attempt 2.
+      Attempt 1 — a concept slug coerces onto the DERIVED summary slug:
+                  the bridge records a slug_form_coercion decision, then
+                  rejects (slug_collision) → continue. The coercion
+                  decision + slug_coerced are reset for attempt 2.
       Attempt 2 — fully clean response → succeeds.
 
-    #106 guarantee: slug_coerced stays False from the per-attempt reset →
-    attempt-2 win is NOT labelled 'retried-and-repaired'.
-    Fix 2 (#111): _compile_attempts==2, no repair flags → 'retried' (was 'clean').
+    #106/#119 guarantee: slug_coerced + normalization_decisions reflect the
+    WINNING attempt (reset per attempt) → attempt-2 win is NOT labelled
+    'retried-and-repaired' and carries no attempt-1 coercion decision.
+    Fix 2 (#111): _compile_attempts==2, no repair flags → 'retried'.
     """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # Attempt 1: the summary page's slug is schema-invalid; coercion fixes it
-    # to the VALID but WRONG slug "summary-other" (≠ expected "summary-alpha")
-    # → semantic fails → retry.
+    # Attempt 1: concept slug "Summary---Alpha" coerces to "summary-alpha"
+    # == the derived summary slug → bridge records the coercion, then
+    # rejects (slug_collision) → retriable → retry.
     bad = _good_response(SOURCE_A)
-    bad["pages"][0]["slug"] = "SUMMARY---Other"
+    bad["pages"].append({
+        "slug": "Summary---Alpha", "page_type": "concept",
+        "title": "Collide", "body": "Body.",
+    })
 
     # Attempt 2: fully clean (the standard good response).
     good = _good_response(SOURCE_A)
@@ -1251,42 +1293,47 @@ def test_final_status_retried_when_attempt1_repaired_but_attempt2_is_clean(
     assert cs is not None and err is None   # recovered on attempt 2
 
     # Read the on-disk resp-stats record and assert telemetry reflects the
-    # winning attempt 2, not the repaired-but-failed attempt 1.
+    # winning attempt 2, not the coerced-then-rejected attempt 1.
     files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     rec = json.loads(files[0].read_text(encoding="utf-8"))
-    # #106: repair flags reset per attempt — winning attempt 2 is clean of repairs.
+    # #106/#119: repair + bridge flags reset per attempt — winning attempt 2
+    # is clean of repairs and of attempt-1's coercion decision.
     assert rec["syntax_repaired"] is False
     assert rec["slug_coerced"] is False
+    assert rec["summary_identity_derived"] is True
+    assert not any(d["rule"] == "slug_form_coercion"
+                   for d in rec["normalization_decisions"])
     # Fix 2 (#111): re-prompt sequence → "retried", not "clean" or "retried-and-repaired".
     assert rec["final_status"] == "retried"
 
 
 # ---------- ladder edge cases (#106 Task 7) ----------
 
-def test_both_rungs_on_one_emission(
+def test_syntax_repair_and_summary_stamp_on_one_emission(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Both rung-1 (syntax) and rung-2 (slug) fire on the same attempt-1 emission.
+    """Syntax repair (recovery) and summary stamping fire on the same
+    attempt-1 emission (#119 re-case of the retired both-rungs test).
 
-    The payload has BOTH a stray LaTeX backslash in the body AND an uppercase +
-    triple-hyphen summary slug (and matching page slug). The pipeline must:
-      - escape the backslash (parse_ok), then
-      - coerce both slugs (schema_ok), then
-      - pass semantic (coerced summary_slug matches coerced page slug).
+    The payload has BOTH a stray LaTeX backslash in the body AND an
+    uppercase + triple-hyphen STRAY summary slug. The pipeline must:
+      - escape the backslash (parse_ok, syntax_repaired), then
+      - IGNORE the stray summary slug and stamp the derived identity
+        (summary_slug_ignored + summary_identity_stamp decisions).
 
     Expected: recovers on attempt 1 (calls["n"]==1), err is None, the LaTeX
-    survives verbatim in the compiled page body, summary_slug is coerced
-    (lowercase + hyphen-collapsed), and the resp-stats record shows
-    syntax_repaired=True, slug_coerced=True, final_status="repaired".
+    survives verbatim in the compiled page body, the summary slug is the
+    STAMPED derived slug, and the resp-stats record shows
+    syntax_repaired=True, slug_coerced=False (§3.5: stamping is not
+    coercion), final_status="repaired" (syntax repair alone drives it).
     """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # The summary page's slug coerces back to the EXPECTED slug, so after
-    # rung-1 (LaTeX escape) + rung-2 (slug coercion) the semantic gate passes.
+    # The stray summary slug is ignored; Python stamps the EXPECTED slug.
     bad_slug = "Summary---Alpha"  # uppercase + triple-hyphen
     payload = _good_response(SOURCE_A)
     payload["pages"][0]["slug"] = bad_slug
@@ -1322,14 +1369,14 @@ def test_both_rungs_on_one_emission(
         max_tokens=4096,
     )
 
-    assert err is None and cs is not None      # both rungs recovered
+    assert err is None and cs is not None      # recovered on attempt 1
     assert calls["n"] == 1                     # deterministic — no retry
 
     # LaTeX backslash must survive into the compiled page body.
     body = next(p.body for p in cs.pages if r"n-1" in p.body)
     assert r"\(n-1\)" in body
 
-    # the coerced slug must equal the derived expected slug
+    # the stamped slug must equal the derived expected slug
     assert cs.pages[0].slug == "summary-alpha"
 
     # Resp-stats telemetry on the written record.
@@ -1337,22 +1384,27 @@ def test_both_rungs_on_one_emission(
     assert len(files) == 1
     rec = json.loads(files[0].read_text(encoding="utf-8"))
     assert rec["syntax_repaired"] is True
-    assert rec["slug_coerced"] is True
+    # §3.5 truth table: stamping/ignoring never set slug_coerced.
+    assert rec["slug_coerced"] is False
+    assert rec["summary_identity_derived"] is True
     assert rec["final_status"] == "repaired"
 
 
 def test_collision_falls_through_to_quarantine(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rung-2 refuses when two distinct slugs collapse to the same value (collision).
+    """Two distinct slugs collapse to the same value → the bridge rejects
+    (ProposalReject:slug_collision).
 
-    Two concept pages have slugs 'Foo--Bar' and 'Foo----Bar'. Both collapse to
-    'foo-bar' via coerce_slugs_and_propagate, which detects the collision and
-    returns False (no mutation). Schema stays invalid, both attempts fail, and
-    the source is quarantined.
+    Two concept pages have slugs 'Foo--Bar' and 'Foo----Bar'. Both collapse
+    to 'foo-bar' under the bridge's typed pure coercion; the collision is
+    detected on the PLANNED final slugs and rejected (retriable once, then
+    terminal). Both attempts fail identically → quarantined.
 
-    Expected: calls["n"]==2, cs is None, err mentions schema, resp-stats
-    final_status=="quarantined", slug_coerced==False.
+    Expected: calls["n"]==2, cs is None, err mentions the slug_collision
+    reject, resp-stats final_status=="quarantined", slug_coerced==False
+    (a rejected attempt never sets the winning flag), and the partial
+    coercion decisions persist on the terminal record (F5).
     """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
@@ -1361,25 +1413,18 @@ def test_collision_falls_through_to_quarantine(
 
     # Build payload with two concept pages whose slugs collide on coercion.
     payload = _good_response(SOURCE_A)
-    payload["concept_slugs"] = ["Foo--Bar", "Foo----Bar"]
     payload["pages"] += [
         {
             "slug": "Foo--Bar",
             "page_type": "concept",
             "title": "Foo Bar A",
             "body": "Body A.",
-            "status": "active",
-            "outgoing_links": [],
-            "confidence": "medium",
         },
         {
             "slug": "Foo----Bar",
             "page_type": "concept",
             "title": "Foo Bar B",
             "body": "Body B.",
-            "status": "active",
-            "outgoing_links": [],
-            "confidence": "medium",
         },
     ]
 
@@ -1412,35 +1457,43 @@ def test_collision_falls_through_to_quarantine(
     assert calls["n"] == 2                    # exhausted both attempts
     assert cs is None
     assert err is not None
-    assert "schema" in err                    # schema validation failed
+    assert "slug_collision" in err            # bridge reject, terminal
 
     files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["failure_exception_type"] == "ProposalReject:slug_collision"
     assert rec["slug_coerced"] is False
     assert rec["final_status"] == "quarantined"
+    # partial decisions persist on the terminal-reject path (F5)
+    assert any(d["rule"] == "slug_form_coercion"
+               for d in rec["normalization_decisions"])
 
 
 def test_non_slug_schema_error_unchanged(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Rung-2 is a safe no-op on schema errors that are not slug problems.
+    """A non-slug structural violation is proposal-stage structural
+    insufficiency — the bridge never runs, nothing is coerced.
 
-    A response with an int summary_slug (wrong type) makes schema validation
-    fail. coerce_slugs_and_propagate has nothing to fix (the slug field isn't
-    a str); it returns False unchanged. Both attempts fail → quarantined.
+    A response with an unknown top-level field (int summary_slug, wrong
+    type AND not in the proposal schema) fails the proposal-schema gate.
+    The bridge only runs on schema-valid proposals, so there is nothing to
+    normalize; both attempts fail → quarantined.
 
-    Expected: calls["n"]==2, cs is None, schema error, slug_coerced==False.
-    This proves rung-2's class-agnostic "attempt on any schema failure, let
-    re-validation decide" is harmless on non-slug errors.
+    Expected: calls["n"]==2, cs is None, "proposal validation failed",
+    failure_exception_type "StructuralInsufficiency", slug_coerced==False.
+    (Contrast: an int slug ON the summary page is now TOLERATED — stray
+    ignore + stamp, clean, 1 call; covered by the boundary matrix's
+    nonstring-summary-slug case.)
     """
     vault = _write_vault(tmp_path)
     _write_raw(vault, SOURCE_A, "alpha body")
     state_root = vault / "KDB" / "state"
     ctx = _ctx(vault)
 
-    # summary_slug is an int — wrong type, not a slug pattern error, so
-    # collapse_slug gets None back (non-str) and coerce returns False immediately.
+    # unknown top-level field — additionalProperties:false rejects; not a
+    # slug-form problem, so there is nothing for the bridge to normalize.
     payload = _good_response(SOURCE_A)
     payload["summary_slug"] = 42  # type: ignore[assignment]  # int, not str
 
@@ -1473,11 +1526,12 @@ def test_non_slug_schema_error_unchanged(
     assert calls["n"] == 2                    # retried then quarantined
     assert cs is None
     assert err is not None
-    assert "schema" in err
+    assert "proposal validation failed" in err
 
     files = _resp_stats_files(state_root, ctx.run_id)
     assert len(files) == 1
     rec = json.loads(files[0].read_text(encoding="utf-8"))
+    assert rec["failure_exception_type"] == "StructuralInsufficiency"
     assert rec["slug_coerced"] is False
     assert rec["final_status"] == "quarantined"
 
@@ -1654,11 +1708,12 @@ def test_final_status_retried_on_reprompt_only_recovery(
     repair) must be labelled final_status='retried', NOT 'clean'.
 
     Sequence:
-      Attempt 1 — schema invalid: response includes an unknown extra top-level
-                  field ('description') that additionalProperties:false rejects.
-                  coerce_slugs_and_propagate returns False (slugs are already
-                  valid — nothing to coerce).  No syntax repair fires (JSON is
-                  well-formed).  Loop continues to attempt 2.
+      Attempt 1 — proposal-schema invalid (#119): response includes an
+                  unknown extra top-level field ('description') that
+                  additionalProperties:false rejects. The bridge never runs
+                  on a schema-invalid payload (nothing to normalize). No
+                  syntax repair fires (JSON is well-formed). Loop continues
+                  to attempt 2.
       Attempt 2 — fully clean response → succeeds.
 
     Pre-fix: compile_attempts=2, _syntax_repaired=False, _slug_coerced=False

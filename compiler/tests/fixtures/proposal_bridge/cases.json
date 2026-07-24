@@ -1,0 +1,76 @@
+[
+  {"id": "phase5-gemini31-positive", "source_id": "KDB/raw/GraphRAG for Adaptive KB - Gemini3.1.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "GraphRAG for Adaptive KB", "body": "GraphRAG adapts knowledge bases; see [[graphrag]]."},
+     {"page_type": "concept", "slug": "graphrag", "title": "GraphRAG", "body": "GraphRAG overview. Links to [[unregistered-concept]]."}]},
+   "expect": {"kind": "success", "summary_slug": "summary-graphrag-for-adaptive-kb-gemini3-1",
+              "decisions_include": ["summary_identity_stamp"], "body_preserved": ["[[unregistered-concept]]"]}},
+  {"id": "phase5-whats-positive", "source_id": "KDB/raw/what's React and Tailwind.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "What's React and Tailwind", "body": "React + Tailwind notes; see [[react]]."},
+     {"page_type": "concept", "slug": "react", "title": "React", "body": "React overview."}]},
+   "expect": {"kind": "success", "summary_slug": "summary-what-s-react-and-tailwind",
+              "decisions_include": ["summary_identity_stamp"]}},
+  {"id": "stray-slug-deviating", "source_id": "KDB/raw/GraphRAG for Adaptive KB - Gemini3.1.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "slug": "summary-graphrag-for-adaptive-kb-gemini31", "title": "T", "body": "B."}]},
+   "expect": {"kind": "success", "summary_slug": "summary-graphrag-for-adaptive-kb-gemini3-1",
+              "decisions_include": ["summary_slug_ignored", "summary_identity_stamp"]}},
+  {"id": "stray-slug-malformed", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [{"page_type": "summary", "slug": "SUMMARY--X", "title": "T", "body": "B."}]},
+   "expect": {"kind": "success", "summary_slug": "summary-x", "decisions_include": ["summary_slug_ignored"]}},
+  {"id": "stray-slug-nonstring", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [{"page_type": "summary", "slug": {"unexpected": "object"}, "title": "T", "body": "B."}]},
+   "expect": {"kind": "success", "summary_slug": "summary-x", "decisions_include": ["summary_slug_ignored"]}},
+  {"id": "raw-length-collapsible", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "See [[Alpha------------------------------------------------------------------------------------------------------------------------Beta]]."},
+     {"page_type": "concept", "slug": "Alpha------------------------------------------------------------------------------------------------------------------------Beta", "title": "AB", "body": "AB."}]},
+   "expect": {"kind": "success", "decisions_include": ["slug_form_coercion", "body_reference_rewrite"]}},
+  {"id": "body-only-token-preserved", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "Ticker [[AAPL]] today and [[Foo--Bar]]."},
+     {"page_type": "concept", "slug": "real-page", "title": "RP", "body": "RP."}]},
+   "expect": {"kind": "success", "body_preserved": ["[[AAPL]]", "[[Foo--Bar]]"]}},
+  {"id": "alias-token-preserved-for-canonicalize", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "Alias [[apple-inc]] noted."},
+     {"page_type": "concept", "slug": "real-page", "title": "RP", "body": "RP."}]},
+   "expect": {"kind": "success", "body_preserved": ["[[apple-inc]]"]}},
+  {"id": "page-mapped-rewrite", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "See [[Foo--Bar#Sec|the alias]] and [[Foo Bar]]."},
+     {"page_type": "concept", "slug": "Foo--Bar", "title": "FB", "body": "FB."}]},
+   "expect": {"kind": "success", "decisions_include": ["slug_form_coercion", "body_reference_rewrite"],
+              "body_preserved": ["[[Foo Bar]]"]}},
+  {"id": "no-summary", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [{"page_type": "concept", "slug": "a", "title": "T", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "no_summary"}},
+  {"id": "two-summaries", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T1", "body": "B."},
+     {"page_type": "summary", "title": "T2", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "multiple_summaries"}},
+  {"id": "concept-slug-collapse-collision", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "B."},
+     {"page_type": "concept", "slug": "Foo--Bar", "title": "A", "body": "B."},
+     {"page_type": "concept", "slug": "foo-bar", "title": "C", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "slug_collision"}},
+  {"id": "duplicate-page-slugs", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "B."},
+     {"page_type": "concept", "slug": "dup", "title": "A", "body": "B."},
+     {"page_type": "article", "slug": "dup", "title": "C", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "slug_collision"}},
+  {"id": "derived-slug-collision", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "B."},
+     {"page_type": "concept", "slug": "summary-x", "title": "A", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "slug_collision"}},
+  {"id": "uncoercible-slug", "source_id": "KDB/raw/x.md",
+   "proposal": {"pages": [
+     {"page_type": "summary", "title": "T", "body": "B."},
+     {"page_type": "concept", "slug": "Foo Bar", "title": "A", "body": "B."}]},
+   "expect": {"kind": "reject", "reject_class": "uncoercible_slug"}}
+]

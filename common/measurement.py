@@ -41,6 +41,13 @@ class PassCallMeasurement:
     semantic_ok: bool | None
     boundary_recovered: bool = False
     cost_usd: float | None = None
+    # #119 watched diagnostics (D-BQ-3): projected from the normalization
+    # boundary's telemetry; NEVER scored axes. None only for Pass-1
+    # projections (no normalization data); Pass-2 records without either
+    # field (pre-#119 records without decision lists) project a
+    # compatibility count of 0 (the len(... or []) fallback in from_pass2).
+    normalization_decision_count: int | None = None
+    summary_identity_derived: bool | None = None
 
     @classmethod
     def from_pass1(cls, sidecar: dict, *, run_id: str) -> "PassCallMeasurement":
@@ -78,6 +85,8 @@ class PassCallMeasurement:
         - `cost_usd`: sidecar top-level; absent projects as None (#117). The
           #110-deferred failed-source 0.0 projects as-is — the KPI layer
           decides what zero means.
+        - `normalization_decision_count` / `summary_identity_derived`: always
+          None — the #119 normalization boundary is Pass-2-only.
         """
         req = sidecar.get("request", {})
         raw = sidecar.get("raw_response", {})
@@ -125,7 +134,16 @@ class PassCallMeasurement:
         Back-compat: records persisted before Task #109 (missing total_input_tokens,
         total_output_tokens, total_latency_ms, call_count, final_attempt_index) fall
         back to the single-attempt per-call values so older runs still project cleanly.
+
+        #119 watched diagnostics (D-BQ-3, never scored axes):
+        normalization_decision_count projects the PERSISTED
+        RespStatsRecord.normalization_decision_count when present (the true
+        total, intact even when the decision sample list is truncated at the
+        50-entry cap), falling back to len(normalization_decisions or []) for
+        pre-#119 records without the persisted count.
+        summary_identity_derived projects the flag; both are None-tolerant.
         """
+        persisted_count = rec.get("normalization_decision_count")
         return cls(
             run_id=rec["run_id"],
             source_id=rec["source_id"],
@@ -167,6 +185,13 @@ class PassCallMeasurement:
             # #114 parse-stage boundary recovery; absent on pre-#114 records.
             boundary_recovered=rec.get("boundary_recovered", False),
             cost_usd=rec.get("cost_usd"),   # absent on pre-#110 records → None (#117)
+            # #119 watched diagnostics: persisted count wins over the (possibly
+            # capped) decision-sample list length; absent count → list length
+            # (pre-#119 records); absent list too → 0. Flag projects as-is.
+            normalization_decision_count=(
+                persisted_count if persisted_count is not None
+                else len(rec.get("normalization_decisions") or [])),
+            summary_identity_derived=rec.get("summary_identity_derived"),
         )
 
 

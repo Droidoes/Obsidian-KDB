@@ -1,9 +1,9 @@
 # Task #115 Phase-5 finding — summary-slug gate failures: first-principle analysis + root-cause proposal
 
-**Date:** 2026-07-22 (v1.0) · revised 2026-07-23 (v1.1) · **Author:** Kimi (for Joseph + Codex design review)
-**Status (v1.1):** **Disposition RATIFIED by Joseph 2026-07-23 — close #115 with an explicit Phase-5 waiver; the root-cause fix ships as #119** (normalization-boundary design, scope seed in §5). The *design* itself is NOT ratified — #119 gets its own architecture cycle. Codex R1 absorbed (§6); v1.0 errors corrected (§2, §4).
+**Date:** 2026-07-22 (v1.0) · revised 2026-07-23 (v1.1, v1.2) · **Author:** Kimi (for Joseph + Codex design review)
+**Status (v1.2):** **Disposition RATIFIED by Joseph 2026-07-23 — close #115 with an explicit Phase-5 waiver; the root-cause fix ships as #119** (normalization-boundary design, scope seed in §5). The *design* itself is NOT ratified — #119 gets its own architecture cycle. Codex R1 absorbed (§6); v1.0 errors corrected (§2, §4). Codex R2 (GO-WITH-ONE-CHANGE) absorbed in v1.2 — the acceptance gate is now an executable comparison (§5 item 9; §6.1).
 **Evidence:** Phase-5 comparison cohort (anchor `782120b`, Gate 4) vs Phase-0 baseline (`e9ca323`), corpus 36 sources, models deepseek-v4-flash + gpt-5.4-mini.
-**Review:** Codex R1 `docs/superpowers/specs/2026-07-22-task115-phase5-summary-slug-failure-analysis-review-codex.md` (verdict: revise before ratification — root issue broader than the summary slug).
+**Review:** Codex R1 `docs/superpowers/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis-review-codex.md` (verdict: revise before ratification — root issue broader than the summary slug) · Codex R2 `docs/superpowers/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis-review-codex-v2.md` (verdict: GO-WITH-ONE-CHANGE — R1 fully absorbed; one Medium on the acceptance gate, fixed in v1.2 §5 item 9).
 
 ---
 
@@ -94,7 +94,13 @@ The full root-cause fix, per Codex R1 (all items required for #119's architectur
 6. **Exact canonical invariants kept:** normalized object must still contain exactly one summary whose slug equals `expected_summary_slug(source_id)`; post-canonicalization re-validation stays load-bearing. Decide: system-resolved summary identities bypass alias resolution entirely, or remain fail-closed against any alias-ledger operation. Body-link resolution follows the same deterministic identity policy (§3 Option A annotation).
 7. **Telemetry:** every normalization decision records the rule applied, the raw value (when safely capturable), the canonical value, and the authority used — in telemetry / the archived raw response, never in the canonical product contract. The `summary_slug_deviation` metric is the summary-field instance.
 8. **Regression fixtures:** the two Phase-5 quarantined sources (`…Gemini3.1.md`, `what's React and Tailwind.md`) as positives, plus ambiguity and collision negatives.
-9. **Acceptance gate (inherits the one #115 waived):** new clean comparison anchor + re-fire BOTH complete cohorts (deepseek-v4-flash + gpt-5.4-mini); #119 closes only when quarantine/retry/recovery KPIs are stable vs the new baseline — the original Phase-5 gate, satisfied for real.
+9. **Acceptance gate (inherits the one #115 waived) — executable comparison, per Codex R2 F1.** Comparison strategy: **inherited Phase-0 baseline** (R2 Strategy A; R2 Strategy B — paired pre/post #119 cohorts — considered and rejected: it re-measures the already-measured pre-#119 state at double run cost, and its directional content is preserved in the named-source criterion below). #119 closes only when **all** hold:
+   - a clean post-#119 anchor exists, and **one** comparison cohort is fired from it (deepseek-v4-flash + gpt-5.4-mini are two models in **one** cohort; same `sandbox-run.sh` mechanics as #115 Phase 5);
+   - quarantine/retry/recovery KPIs satisfy the **original Phase-5 stability gate vs the Phase-0 baseline** (`e9ca323`, zero-quarantine) — the identical gate #115 waived, satisfied for real;
+   - the two Phase-5 quarantined sources (`…Gemini3.1.md`, `what's React and Tailwind.md`) compile **without retry or quarantine**, with normalization telemetry recording the deterministic resolution (the item-8 positive fixtures, live);
+   - graph-KPI deltas are enumerated, not hidden; every cohort failure is classified fixed-by-#119 vs unrelated stochastic/provider failure.
+
+   Pins: same corpus + corpus fingerprint; model/provider configuration; prompt-version + SHA stamps on every run.
 
 **Sequencing relative to #116:** independent. #116 owns cross-source reservation/lifecycle; #119 owns the intra-source proposal→canonical boundary. A stamped/resolved deterministic summary slug makes #116's reservation simpler, not harder.
 
@@ -114,6 +120,16 @@ Every load-bearing citation verified against code/docs before absorption (receiv
 | Accuracy 2 | Slug = wiki filename, graph identity, wikilink target, manifest identity, replay identity — not "uniqueness only" | **Accurate** — §2.3 corrected |
 | Accuracy 3 | Measured = 1/36 = 2.8% per run in this cohort; general prevalence unestimated | **Accurate** — §2.2 corrected |
 | North Star | `CODEBASE_OVERVIEW.md` records "fully model-authored including its slug" — update before code | **Accurate** — milestone entry 2026-07-22 (l.15) verified verbatim |
+
+## 6.1 Codex R2 — verification record (2026-07-23)
+
+R2 verdict: **GO-WITH-ONE-CHANGE** (`…-review-codex-v2.md`) — all six R1 blocking + three accuracy findings confirmed absorbed; one Medium finding. Verified before absorption (same discipline as §6).
+
+| Finding | Claim | Verification |
+|---|---|---|
+| F1 (Medium) | §5 item 9's "re-fire BOTH complete cohorts … stable vs the new baseline" is not an executable comparison: (a) the two models are members of **one** cohort, not two; (b) "new baseline" is undefined; (c) undirected stability vs a pre-#119 (defective) baseline would preserve the very quarantine/retry #119 must prove fixed | **Accurate on all three** — the phrase was inherited verbatim from R1 line 316-317 ("re-fire both complete cohorts"; R2 owns its own imprecision); the doc itself says "cohort" singular at §Evidence, §4, §7; "new baseline" appeared nowhere else; the actual Phase-5 baseline was Phase-0 (`e9ca323`, zero-quarantine). Absorbed in §5 item 9 as **Strategy A** — the faithful executable reading of "the original gate" (R1 item 11) |
+
+R2's additional verifications confirmed: the three implementation options remain architecturally distinct; audit/telemetry/fixture items present; North-Star-first correctly required; renamed `task119` artifact references internally consistent. Strategy A is recorded as the precise form of the already-ratified "identical gate" (§4, §7) — if Joseph prefers Strategy B (paired pre/post cohorts) at the #119 architecture pick, item 9 flips; everything else stands.
 
 ## 7. What this is NOT
 
