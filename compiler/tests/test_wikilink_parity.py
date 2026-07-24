@@ -3,9 +3,10 @@
 ONE shared dataset (tests/fixtures/wikilink_parity/cases.json) pins the token
 semantics (plain / |alias / #heading / escaped / fenced-code / inline-code /
 duplicates / malformed) across the compiler extractor, the canonicalizer
-rewrite, and the coercion rewrite. The mirrored graph extractor runs the same
-corpus in kdb_graph/tests/test_wikilink_parity_graph.py — test-only shared
-data does not violate the import boundary.
+rewrite, and — post-#119 Phase 3 (repair.py retired) — the normalization
+bridge's response-local body policy. The mirrored graph extractor runs the
+same corpus in kdb_graph/tests/test_wikilink_parity_graph.py — test-only
+shared data does not violate the import boundary.
 """
 from __future__ import annotations
 
@@ -14,8 +15,14 @@ from pathlib import Path
 
 import pytest
 
+from common.paths import collapse_slug
 from compiler.canonicalize import _remap_body_wikilinks
-from compiler.repair import coerce_slugs_and_propagate
+from compiler.proposal_bridge import (
+    NormalizationOp,
+    OpKind,
+    _apply_normalization_plan,
+    _iter_mapped_tokens,
+)
 from compiler.validate_source_response import body_wikilink_slugs
 
 CASES: list[dict] = json.loads(
@@ -37,15 +44,29 @@ def test_canonicalizer_rewrite_matches_corpus(case: dict) -> None:
 
 
 @pytest.mark.parametrize("case", CASES, ids=_IDS)
-def test_coercion_rewrite_matches_corpus(case: dict) -> None:
-    payload = {
+def test_bridge_body_projection_matches_corpus(case: dict) -> None:
+    """#119 bridge projection (Codex PR4 F4): the response-local rename
+    derives from the case's `response_pages` via collapse_slug; ops are built
+    per mapped-token OCCURRENCE (`_iter_mapped_tokens`) and the body is
+    produced via `_apply_normalization_plan` on a synthetic one-page
+    proposal. Without `response_pages` nothing is mapped — the body is
+    preserved verbatim (the new authority behavior, R6 F2)."""
+    body = case["body"]
+    rename: dict[str, str] = {}
+    for raw in case.get("response_pages", []):
+        coerced = collapse_slug(raw)
+        if coerced is not None and coerced != raw:
+            rename[raw] = coerced
+    proposal = {
         "pages": [
-            {"slug": case.get("page_slug", "test-page"), "page_type": "concept",
-             "title": "T", "body": case["body"]}
+            {"slug": "test-page", "page_type": "concept",
+             "title": "T", "body": body}
         ],
     }
-    changed = coerce_slugs_and_propagate(payload)
-    assert payload["pages"][0]["body"] == case["expected_body_coerce"]
-    assert changed == case["expect_coerce_changed"]
-    if "expected_page_slug" in case:
-        assert payload["pages"][0]["slug"] == case["expected_page_slug"]
+    ops = [
+        NormalizationOp(OpKind.BODY_REFERENCE_REWRITE, "response-local",
+                        0, "body", n, raw_tok, canon_tok)
+        for n, (raw_tok, canon_tok) in enumerate(_iter_mapped_tokens(body, rename))
+    ]
+    canonical = _apply_normalization_plan(proposal, ops)
+    assert canonical["pages"][0]["body"] == case["expected_body_bridge"]

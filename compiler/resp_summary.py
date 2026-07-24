@@ -9,6 +9,13 @@ common.llm_telemetry.build_resp_stats.
 including schema/semantic-rejected responses. `summary_slug` is emitted
 ONLY when exactly one well-formed summary page is observable (else None);
 `outgoing_link_count` derives from body wikilinks via the pure extractor.
+
+#119 (prompt 4.0.0): `slugs` / `summary_slug` are RAW model-supplied slug
+evidence — a compliant 4.0 proposal carries no summary slug at all, so
+both are None/absent for compliant proposals (a stray summary slug the
+bridge would ignore still shows up here as evidence). `page_count`
+counts well-formed page DICTS, not slug-bearing pages — a slugless 4.0
+summary page must still count (Codex PR3 F2).
 """
 from __future__ import annotations
 
@@ -29,6 +36,7 @@ def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
     if not isinstance(pages, list):
         pages = []
 
+    page_dicts = 0
     page_slugs: list[str] = []
     page_types: Counter[str] = Counter()
     outgoing_link_count = 0
@@ -36,6 +44,7 @@ def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
     for p in pages:
         if not isinstance(p, dict):
             continue
+        page_dicts += 1
         slug = p.get("slug")
         if isinstance(slug, str):
             page_slugs.append(slug)
@@ -53,7 +62,9 @@ def build_parsed_summary(parsed_json: dict) -> ParsedSummary:
     return ParsedSummary(
         # emitted ONLY when exactly one well-formed summary page is observable
         summary_slug=summary_slugs[0] if len(summary_slugs) == 1 else None,
-        page_count=len(page_slugs),
+        # #119 (Codex PR3 F2): well-formed page DICTS — a slugless 4.0
+        # summary page still counts
+        page_count=page_dicts,
         page_types=dict(page_types),
         slugs=page_slugs,
         outgoing_link_count=outgoing_link_count,

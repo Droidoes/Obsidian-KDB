@@ -385,15 +385,18 @@ class RespStatsRecord:
     stage (source_read | prompt_build | model_call | truncation | extract
     | parse), all three fields are populated together; otherwise all three
     are None. Schema failures keep using schema_errors — a structured list
-    surface, out of the failure_* triplet's scope. #115: VALIDATION-stage
+    surface, out of the failure_* triplet's scope. #115/#119: VALIDATION-stage
     rejections also populate the triplet with stage "validate" — the
-    pre-call underivable-stem route (PathError) and the terminal post-call
-    semantic rejection (synthetic "SemanticCheckError"); semantic_errors
-    remains the structured detail surface. exception_type is the Python
-    class name (or the synthetic "TokenOverrun" for truncation /
-    "SemanticCheckError" for terminal semantic rejection); message is the
-    exception's str(e) or the first gate error, truncated to 2000 chars +
-    '...[truncated]'.
+    pre-call underivable-stem route (PathError), the terminal post-call
+    proposal-schema rejection (synthetic "StructuralInsufficiency"), the
+    terminal bridge rejection (synthetic "ProposalReject:<class>"), and the
+    canonical self-check failure ("CanonicalInvariantError"); semantic_errors
+    remains the structured detail surface for bridge rejects.
+    exception_type is the Python class name (or the synthetic "TokenOverrun"
+    for truncation / "StructuralInsufficiency" for terminal proposal-schema
+    rejection / "ProposalReject:<class>" for terminal bridge rejection);
+    message is the exception's str(e) or the first gate error, truncated to
+    2000 chars + '...[truncated]'.
     """
     run_id: str
     source_id: str
@@ -430,7 +433,7 @@ class RespStatsRecord:
     # `attempts` above is SDK-level retry count; these describe the Pass-2 ladder.
     compile_attempts: Optional[int] = None      # loop attempt (1 or 2) that produced final parsed_json
     syntax_repaired: bool = False               # rung-1 escaping rescued a parse
-    slug_coerced: bool = False                  # rung-2 coercion rescued schema/semantic
+    slug_coerced: bool = False                  # #119: bridge applied slug_form_coercion (page-slug form)
     # #114 recovery telemetry (Pass-2 only; always serialized, False/0 default).
     boundary_recovered: bool = False            # selection recovered a document amid carrier noise
     prefix_discarded_chars: int = 0             # carrier noise before the selected root boundary
@@ -445,6 +448,14 @@ class RespStatsRecord:
     total_latency_ms: int = 0
     call_count: int = 1                         # number of model calls made in the Pass-2 loop
     final_attempt_index: int = 1                # loop attempt number that produced the winning record
+    # #119 normalization-bridge telemetry (optional/additive — pre-#119
+    # records read fine as None). Persisted on BOTH success and terminal
+    # bridge-reject paths; the decision list is aggregate-capped (≤50 located
+    # samples + TRUE total count + overflow sha256 of the truncated tail).
+    normalization_decisions: Optional[list] = None        # capped samples (list of decision dicts)
+    normalization_decision_count: Optional[int] = None    # TRUE total decisions, pre-truncation
+    normalization_decisions_overflow_sha256: Optional[str] = None  # digest of the truncated tail
+    summary_identity_derived: Optional[bool] = None       # bridge stamped the summary identity
 
     def to_dict(self) -> dict:
         d = asdict(self)

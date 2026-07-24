@@ -58,10 +58,12 @@ def validate(payload: Any) -> list[str]:
 def semantic_check(payload: dict, *, expected_summary_slug: str) -> list[str]:
     """Run AFTER schema validation passes. Returns [] if valid.
 
-    Rule (#115 D-115): exactly one page has page_type == 'summary' AND its
-    slug equals expected_summary_slug (derived via
-    compiler.summary_slug.expected_summary_slug — NEVER prompt-injected;
-    the model authors it, the gate validates it).
+    CANONICAL-mode rule (#115 D-115, re-roled #119): exactly one page has
+    page_type == 'summary' AND its slug equals expected_summary_slug
+    (derived via compiler.summary_slug.expected_summary_slug — NEVER
+    prompt-injected). Post-#119 the invariant checks PYTHON's stamp: the
+    normalization bridge assigns the summary identity; this gate verifies
+    the canonical artifact carries it.
     """
     errors: list[str] = []
 
@@ -115,15 +117,19 @@ def body_wikilink_slugs(body: str) -> set[str]:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="kdb-validate-response",
-        description="Validate a single per-source compile response JSON "
-                    "against compiled_source_response.schema.json + semantic rules.",
+        description="Validate a single per-source compile response JSON. "
+                    "Default validates the PROPOSAL contract "
+                    "(proposal_response.schema.json); --canonical selects "
+                    "the canonical contract "
+                    "(compiled_source_response.schema.json + semantic rules).",
     )
     p.add_argument("path", nargs="?", help="Path to JSON file; reads stdin if omitted")
     p.add_argument("--canonical", action="store_true", help="Validate against the canonical contract instead of the default proposal contract")
     p.add_argument(
         "--source-id",
         help="If provided, derive the expected summary slug from this source id "
-             "and run semantic_check too (omitted → schema-only validation)",
+             "and run semantic_check too (omitted → schema-only validation). "
+             "Requires --canonical",
     )
     return p
 

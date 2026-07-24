@@ -420,15 +420,18 @@ def test_precall_underivable_stem_inner_and_outer_validate(tmp_path, monkeypatch
 
 
 def test_postcall_semantic_failure_inner_and_outer_validate(tmp_path, monkeypatch):
-    """Codex Gate-2 F3: a TERMINAL post-call semantic rejection (schema-valid
-    payload, wrong derived summary slug) carries stage 'validate' on BOTH the
-    inner record and the outer result — not generic 'compile'. semantic_errors
-    remains the structured detail surface."""
+    """Codex Gate-2 F3, re-cased #119: a TERMINAL post-call semantic rejection
+    (proposal-schema-valid payload that the bridge rejects — here no summary
+    page) carries stage 'validate' on BOTH the inner record and the outer
+    result — not generic 'compile'. semantic_errors remains the structured
+    detail surface; the exception_type is the synthetic ProposalReject class."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
-    bad = _good_response("s.md")
-    bad["pages"][0]["slug"] = "summary-not-expected"
+    bad = {"pages": [
+        {"slug": "concept-a", "page_type": "concept", "title": "A",
+         "body": "Body."},
+    ]}
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry", _fake_model(bad))
 
@@ -442,14 +445,14 @@ def test_postcall_semantic_failure_inner_and_outer_validate(tmp_path, monkeypatc
     # OUTER stage pinned (≠ generic "compile")
     assert not result.ok and result.cr is None
     assert result.failure_stage == "validate"
-    assert result.exception_type == "SemanticCheckError"
+    assert result.exception_type == "ProposalReject:no_summary"
 
     # INNER record: typed validate failure + structured semantic_errors kept
     records = list((state_root / "runs" / ctx.run_id / "pass2").glob("*.json"))
     assert len(records) == 1
     rec = json.loads(records[0].read_text(encoding="utf-8"))
     assert rec["failure_stage"] == "validate"
-    assert rec["failure_exception_type"] == "SemanticCheckError"
+    assert rec["failure_exception_type"] == "ProposalReject:no_summary"
     assert rec["failure_exception_message"]
     assert rec["schema_ok"] is True
     assert rec["semantic_ok"] is False

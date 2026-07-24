@@ -14,7 +14,6 @@ from orchestrator import kdb_orchestrate
 import orchestrator.emit_kpis as _emit_kpis_mod
 from common.call_model import ModelResponse
 from compiler.canonicalize import load_or_empty
-from compiler.prompt_builder import PASS2_PROMPT_VERSION, load_system_prompt
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from common.run_context import RunContext
@@ -1068,10 +1067,12 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert all(c in "0123456789abcdef" for c in fp)
     # prompt versions
     assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
-    assert hdr["pass2_prompt_version"] == PASS2_PROMPT_VERSION
+    # #119 Phase 3 (Codex PR2 F6): pin the 4.0.0 proposal-contract stamp —
+    # version AND the loaded-prompt SHA, verified through a real dry run
+    assert hdr["pass2_prompt_version"] == prompt_builder.PASS2_PROMPT_VERSION == "4.0.0"
     # post-#115 stamp: SHA-256 of the loaded (packaged) Pass-2 system prompt
     assert hdr["pass2_system_prompt_sha256"] == hashlib.sha256(
-        load_system_prompt().encode("utf-8")
+        prompt_builder.load_system_prompt().encode("utf-8")
     ).hexdigest()
 
 

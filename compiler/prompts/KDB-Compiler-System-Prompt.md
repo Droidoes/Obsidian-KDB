@@ -27,13 +27,12 @@ Imagine the user message carries a source named `attention-is-all-you-need.md` (
 {
   "pages": [
     {
-      "slug": "summary-attention-is-all-you-need",      // <kebab-case-lowercase> only — never sentence-case, PascalCase, or language type names like `String`
       "title": "Attention Is All You Need (summary)",
-      "page_type": "summary",                           // one of: summary | concept | article
+      "page_type": "summary",                           // one of: summary | concept | article — the summary page carries NO slug: Python assigns its identity after you return
       "body": "Vaswani et al. propose a sequence model built entirely from [[attention-mechanism|attention]]. They introduce [[self-attention]] as its core operation and [[positional-encoding]] to recover token order lost by dropping recurrence. The paper's unifying argument is synthesized in [[transformer-attention-only-architecture]]."  // wikilink slugs inside [[…]] are <kebab-case-lowercase> — `[[Attention-mechanism]]` does not match `attention-mechanism`
     },
     {
-      "slug": "attention-mechanism",
+      "slug": "attention-mechanism",                    // <kebab-case-lowercase> only — never sentence-case, PascalCase, or language type names like `String`
       "title": "Attention Mechanism",
       "page_type": "concept",
       "body": "An attention mechanism computes a weighted sum over a set of value vectors, where the weights come from a compatibility score between a query and a set of keys, normalized by [[softmax]]. Originally introduced for neural machine translation to align source and target sequences, it has since generalized beyond alignment — see [[self-attention]] for the variant that drops recurrence entirely."
@@ -71,7 +70,7 @@ Treat the example above as the behavioral model. Treat the schema in the user me
 
 Identify the wiki pages this source should produce. A "wiki page" is one of three kinds:
 
-- **`summary`** — one per source. A short overview of what this source is about and what concepts it introduces or reinforces. **The summary's slug is always `summary-<stem>`, where `<stem>` is derived from the source file's stem by a fixed rule: kebab-case it (lowercase, accents folded to ASCII, every run of non-alphanumeric characters collapsed to a single `-`, edge `-` stripped), then take at most the first 112 characters (dropping any trailing `-`).** Preserve meaningful numeric or identifier prefixes that survive that rule. Examples: `KDB/raw/attention-is-all-you-need.md` → `summary-attention-is-all-you-need`; `KDB/raw/EP1 - The Journey of China.md` → `summary-ep1-the-journey-of-china`; `KDB/raw/04-research-debt.md` → `summary-04-research-debt`. The `summary-` prefix is reserved — it MUST appear on every summary slug and MUST NOT appear on concept or article slugs. Every compile returns exactly one summary page.
+- **`summary`** — one per source. A short overview of what this source is about and what concepts it introduces or reinforces. **Do NOT emit a `slug` for the summary page — Python assigns its identity after you return (always `summary-<stem>`, derived from the source file's stem). If you emit one anyway, it is ignored.** The `summary-` prefix is reserved — it MUST NOT appear on concept or article slugs. Every compile returns exactly one summary page.
 - **`concept`** — one per atomic idea. A concept is a reusable building block of the ontology; it may be supported by many sources over time. Prefer many small concept pages (one idea, one page) over few large ones. Use short, semantic, kebab-case slugs **that do not start with the reserved `summary-` prefix**. In the example: `attention-mechanism`, `self-attention`, `positional-encoding`.
 - **`article`** — a narrative that ties several concepts together into a cohesive whole. An article is 1+1=3: its meaning is more than the sum of the concept pages it references — it captures something about how the source *uses those concepts together* that no single concept page, and no addition of concept pages, would carry on its own. In the example, `transformer-attention-only-architecture` is an article because the paper's claim is the combination — self-attention paired with positional encoding, as a standalone sequence model — and that claim is not on any of the individual concept pages.
 
@@ -139,7 +138,7 @@ Return one JSON object matching the schema in the user message. Nothing before i
 
 The top-level object has these fields (see §2 for the canonical shape):
 
-- `pages[]` — one entry per page you are returning, each with exactly the four fields shown in the example (`slug`, `page_type`, `title`, `body`).
+- `pages[]` — one entry per page you are returning, each with the fields shown in the example (`page_type`, `title`, `body`, plus `slug` for concept and article pages — never for the summary page).
 - `compilation_notes[]` — **optional**. Free-text notes about this compile: notable slug-reuse or sibling decisions, contradictions between sources, anything the operator should see. Pure prose — nothing parses or acts on these. Omit the field entirely when you have nothing to say.
 
 ### Thin or trivial sources
@@ -152,7 +151,7 @@ Malformed output gets the source quarantined and the run continues with the next
 
 ## Self-check before returning
 
-- [ ] Exactly one `summary` page; its slug follows the `summary-<stem>` convention (§3) and no other slug uses the reserved `summary-` prefix.
+- [ ] Exactly one `summary` page, carrying NO `slug` (Python assigns its identity); no concept or article slug uses the reserved `summary-` prefix.
 - [ ] Every `[[slug]]` in every body exists in this response's `pages[]` or in EXISTING CONTEXT.
 - [ ] No invented citations, URLs, dates, or author names.
 - [ ] No YAML frontmatter inside any `body` field.

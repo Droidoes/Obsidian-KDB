@@ -28,8 +28,9 @@ from typing import Any, Callable, Literal, NamedTuple
 from compiler import (
     canonicalize,
     prompt_builder,
+    proposal_bridge,
     validate_compile_result,
-    validate_source_response,
+    validate_proposal_response,
 )
 from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
@@ -38,7 +39,6 @@ from common.model_pool import estimate_prompt_tokens, fits_context
 from common.paths import PathError
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
-from compiler.repair import coerce_slugs_and_propagate
 from compiler.summary_slug import expected_summary_slug
 from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
@@ -77,11 +77,13 @@ class FailureTelemetry(NamedTuple):
     Co-presence enforced by construction: stage / exception_type / message
     are always all three populated. Schema failures use schema_errors
     instead — they have a structured list surface and are out of scope for
-    the failure_* triplet. #115: VALIDATION-stage rejections DO populate
-    the triplet with stage "validate" — the pre-call underivable-stem
-    route (PathError) and the terminal post-call semantic rejection
-    (synthetic "SemanticCheckError"); semantic_errors remains the
-    structured detail surface for the latter.
+    the failure_* triplet. #115/#119: VALIDATION-stage rejections DO populate
+    the triplet with stage "validate" — the pre-call underivable-stem route
+    (PathError), the terminal post-call proposal-schema rejection (synthetic
+    "StructuralInsufficiency"), the terminal bridge rejection (synthetic
+    "ProposalReject:<class>"), and the canonical self-check failure
+    ("CanonicalInvariantError"); semantic_errors remains the structured
+    detail surface for bridge rejects.
     """
     stage: FailureStage
     exception_type: str
@@ -169,12 +171,16 @@ def compile_one(
     Always writes exactly one RespStatsRecord in the finally block, regardless
     of which stage (if any) failed.
 
-    #115 wiki-native contract: the LLM emits pages (4 fields) + optional
-    compilation_notes only; the runner derives the expected summary slug
-    (compiler.summary_slug — validated, never prompt-injected) and injects
-    source_id-space (top-level source_id, per-page supports_page_existence)
-    after parse. RespStatsRecord.parsed_json reflects the slim LLM-emitted
-    payload.
+    #119 proposal contract (prompt 4.0.0): the LLM emits a PROPOSAL — pages
+    (summary without a slug; concept/article with a raw slug) + optional
+    compilation_notes. The proposal-schema gate arbitrates structural
+    sufficiency; the normalization bridge (compiler.proposal_bridge) then
+    produces the CANONICAL object (summary identity stamped from the
+    derived expected slug — validated, never prompt-injected — page-slug
+    form coerced, response-local body references rewritten). The runner
+    injects source_id-space (top-level source_id, per-page
+    supports_page_existence) on the canonical object. RespStatsRecord.
+    parsed_json reflects the slim LLM-emitted proposal (pre-bridge).
     """
     source_id = job.source_id
     # Task #91: derive from source_id, not abs_path — the in-memory orchestrator
@@ -203,6 +209,12 @@ def compile_one(
         "compile_attempts": None,
         "syntax_repaired": False,
         "slug_coerced": False,
+        # normalization-bridge telemetry (#119) — capped decision samples,
+        # true total, overflow digest, and the summary-identity stamp flag
+        "normalization_decisions": [],
+        "normalization_decision_count": 0,
+        "normalization_decisions_overflow_sha256": None,
+        "summary_identity_derived": False,
         # recovery telemetry (#114) — winning-attempt values
         "boundary_recovered": False,
         "prefix_discarded_chars": 0,
@@ -331,6 +343,12 @@ def compile_one(
             state["boundary_recovered"] = False
             state["prefix_discarded_chars"] = 0
             state["tail_discarded_chars"] = 0
+            # #119: a retry must never read stale bridge telemetry from a
+            # prior attempt (decisions persist even on terminal rejects).
+            state["normalization_decisions"] = []
+            state["normalization_decision_count"] = 0
+            state["normalization_decisions_overflow_sha256"] = None
+            state["summary_identity_derived"] = False
 
             # --- model call ---
             try:
@@ -404,83 +422,76 @@ def compile_one(
             state["prefix_discarded_chars"] = result.prefix_discarded_chars
             state["tail_discarded_chars"] = result.tail_discarded_chars
 
-            # --- schema (+ rung-2: slug coercion on failure, #106) ---
-            state["schema_errors"] = validate_source_response.validate(
-                state["parsed_json"]
-            )
+            # --- proposal validate (#119) ---
+            state["schema_errors"] = validate_proposal_response.validate(
+                state["parsed_json"])
             state["schema_ok"] = state["schema_errors"] == []
             if not state["schema_ok"]:
-                # Coercion guarded (#114): non-dict payloads (list / scalar /
-                # JSON null recovered by the ladder) skip coercion — the
-                # schema gate alone arbitrates them, no AttributeError.
-                if isinstance(state["parsed_json"], dict) and \
-                        coerce_slugs_and_propagate(state["parsed_json"]):
-                    state["schema_errors"] = validate_source_response.validate(
-                        state["parsed_json"]
-                    )
-                    state["schema_ok"] = state["schema_errors"] == []
-                    if state["schema_ok"]:
-                        state["slug_coerced"] = True
-                        log.info(
-                            f"{source_id}: Pass-2 attempt {attempt} "
-                            f"slug-coerced, proceeding"
-                        )
-            if not state["schema_ok"]:
                 if not last_attempt:
                     log.warning(
                         f"{source_id}: Pass-2 attempt {attempt}/"
-                        f"{_MAX_COMPILE_ATTEMPTS} schema invalid, retrying: "
-                        f"{state['schema_errors'][0]}"
-                    )
+                        f"{_MAX_COMPILE_ATTEMPTS} proposal invalid, retrying: "
+                        f"{state['schema_errors'][0]}")
                     continue
+                _set_failure(state, "validate", "StructuralInsufficiency",
+                             state["schema_errors"][0])
                 state["error"] = (
-                    f"{source_id}: schema validation failed: {state['schema_errors'][0]}"
-                )
+                    f"{source_id}: proposal validation failed: "
+                    f"{state['schema_errors'][0]}")
                 return (None, [], state["error"])
 
-            # --- semantic (now INSIDE the loop; LB2 #106) ---
-            # Semantic runs after schema passes so a coercible schema failure
-            # (rung-2, Task 6) that fixes the payload can still be re-checked
-            # semantically on the same attempt.  A semantic failure on a
-            # non-final attempt retries the full model call before erroring.
-            state["semantic_errors"] = validate_source_response.semantic_check(
-                state["parsed_json"], expected_summary_slug=expected_slug
-            )
-            state["semantic_ok"] = state["semantic_errors"] == []
-            if not state["semantic_ok"]:
+            # --- normalization bridge (#119) ---
+            try:
+                bridge = proposal_bridge.normalize_proposal(
+                    state["parsed_json"], source_id=source_id)
+            except proposal_bridge.CanonicalInvariantError as e:
+                _set_failure(state, "validate", "CanonicalInvariantError", str(e))
+                state["error"] = f"{source_id}: canonical invariant: {e}"
+                return (None, [], state["error"])
+            if isinstance(bridge, proposal_bridge.BridgeReject):
+                state["semantic_errors"] = [
+                    f"{bridge.reject_class.value}: {bridge.detail}"]
+                # terminal-reject decisions persist too (partial telemetry —
+                # Codex plan-review F5); cleared per attempt by the reset below
+                (state["normalization_decisions"],
+                 state["normalization_decision_count"],
+                 state["normalization_decisions_overflow_sha256"]) = \
+                    proposal_bridge._cap_decisions(bridge.decisions)
                 if not last_attempt:
                     log.warning(
                         f"{source_id}: Pass-2 attempt {attempt}/"
-                        f"{_MAX_COMPILE_ATTEMPTS} semantic invalid, retrying: "
-                        f"{state['semantic_errors'][0]}"
-                    )
+                        f"{_MAX_COMPILE_ATTEMPTS} bridge reject "
+                        f"({bridge.reject_class.value}), retrying")
                     continue
-                # #115 T1.4 (Codex Gate-2 F3): a TERMINAL semantic rejection is
-                # a typed validation failure — stage "validate" on the record
-                # so compile_source maps it to the OUTER stage "validate"
-                # (not generic "compile"). semantic_errors remains the
-                # structured detail surface; "SemanticCheckError" is a
-                # synthetic exception_type (mirrors "TokenOverrun").
-                _set_failure(
-                    state, "validate", "SemanticCheckError",
-                    state["semantic_errors"][0],
-                )
+                _set_failure(state, "validate",
+                             f"ProposalReject:{bridge.reject_class.value}",
+                             bridge.detail)
                 state["error"] = (
-                    f"{source_id}: semantic check failed: {state['semantic_errors'][0]}"
-                )
+                    f"{source_id}: proposal rejected: "
+                    f"{bridge.reject_class.value}: {bridge.detail}")
                 return (None, [], state["error"])
+
+            state["semantic_ok"] = True
+            (state["normalization_decisions"],
+             state["normalization_decision_count"],
+             state["normalization_decisions_overflow_sha256"]) = \
+                proposal_bridge._cap_decisions(bridge.decisions)
+            state["summary_identity_derived"] = any(
+                d.rule == "summary_identity_stamp" for d in bridge.decisions)
+            state["slug_coerced"] = any(
+                d.rule == "slug_form_coercion" for d in bridge.decisions)
+            canonical = bridge.canonical
 
             state["compile_attempts"] = attempt  # record winning attempt (#106)
             state["_final_attempt_index"] = attempt  # record winning index (#109)
             break  # parse_ok + schema_ok + semantic_ok → proceed
 
-        # --- success: enrich LLM payload with runner-injected source-id-space ---
-        # #115: LLM emits pages (4 fields) + optional compilation_notes only;
-        # runner injects source_id (top-level) and supports_page_existence
-        # (per page) using job.source_id. No reconcile steps remain — the
-        # contract fields they maintained (outgoing_links, slug lists) are
-        # gone, and the graph derives edges from body wikilinks (Task 2.4).
-        parsed = state["parsed_json"]
+        # --- success: build the CompiledSource from the CANONICAL object ---
+        # #119: the bridge's canonical output (summary identity stamped, page
+        # slugs coerced, response-local body references rewritten) is the only
+        # shape allowed downstream; runner injects source_id (top-level) and
+        # supports_page_existence (per page) using job.source_id. No reconcile
+        # steps remain — the graph derives edges from body wikilinks (Task 2.4).
         mr = state["model_response"]
         state["compiled_source"] = CompiledSource(
             source_id=source_id,
@@ -492,7 +503,7 @@ def compile_one(
                     body=p["body"],
                     supports_page_existence=[source_id],
                 )
-                for p in parsed["pages"]
+                for p in canonical["pages"]
             ],
             compile_meta=CompileMeta(
                 provider=mr.provider,
@@ -518,7 +529,7 @@ def compile_one(
                 "source_type": fm.source_type,
             } if fm is not None else None,
         )
-        state["compilation_notes"] = list(parsed.get("compilation_notes", []))
+        state["compilation_notes"] = list(canonical.get("compilation_notes", []))
         return (
             state["compiled_source"],
             state["compilation_notes"],
@@ -584,6 +595,10 @@ def compile_one(
             compile_attempts=_compile_attempts,
             syntax_repaired=_syntax_repaired,
             slug_coerced=_slug_coerced,
+            normalization_decisions=state["normalization_decisions"],
+            normalization_decision_count=state["normalization_decision_count"],
+            normalization_decisions_overflow_sha256=state["normalization_decisions_overflow_sha256"],
+            summary_identity_derived=state["summary_identity_derived"],
             boundary_recovered=_boundary_recovered,
             prefix_discarded_chars=state["prefix_discarded_chars"],
             tail_discarded_chars=state["tail_discarded_chars"],
