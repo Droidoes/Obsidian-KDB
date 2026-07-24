@@ -47,11 +47,16 @@ def test_resolve_unknown_id_errors_with_id_list():
         resolve_models_json("no-such-model")
     assert "deepseek-v4-flash" in str(e.value)  # lists available ids
 
-def test_resolve_alibaba_thinking_disable_generated_from_field():
-    # alibaba's disable param is enable_thinking:False, generated from `thinking`.
-    spec = resolve_models_json("qwen3.5-flash")
-    assert spec.provider == "alibaba"
-    assert spec.extra_body == {"enable_thinking": False}
+def test_resolve_thinking_disable_generated_from_field():
+    # qwen3.5-flash was the alibaba fixture until the 2026-07-24 qwen-family
+    # drop; deepseek-v4-flash is an active entry exercising the same mechanism
+    # (`thinking` field → the provider's verified disable param).
+    spec = resolve_models_json("deepseek-v4-flash")
+    assert spec.provider == "deepseek"
+    assert spec.extra_body == {"thinking": {"type": "disabled"}}
+    # alibaba's verified param stays pinned (no active alibaba entries today).
+    from common.model_pool import _THINKING_DISABLE_EXTRA_BODY
+    assert _THINKING_DISABLE_EXTRA_BODY["alibaba"] == {"enable_thinking": False}
 
 
 def test_resolve_undropped_deepseek_pro_returns_modelspec():
