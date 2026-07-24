@@ -8,170 +8,208 @@
     "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323": "deepseek-v4-flash-2026-07-22T14-07-55_EDT",
     "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323": "gpt-5.4-mini-2026-07-22T14-48-09_EDT",
     "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty": "deepseek-v4-flash-2026-07-22T22-27-32_EDT",
-    "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7": "gpt-5.4-mini-2026-07-22T23-10-03_EDT"
+    "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7": "gpt-5.4-mini-2026-07-22T23-10-03_EDT",
+    "deepseek/deepseek-v4-flash@v0.5.7-58-g0690e8b": "deepseek-v4-flash-2026-07-24T12-03-08_EDT",
+    "openai/gpt-5.4-mini@v0.5.7-58-g0690e8b-dirty": "gpt-5.4-mini-2026-07-24T12-14-00_EDT"
   },
   "ranking": [
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323",
-      "composite": 78.75000000000001,
-      "composite_pre_penalty": 78.75000000000001,
+      "composite": 76.70000000000002,
+      "composite_pre_penalty": 76.70000000000002,
       "penalty": 0.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.8437500000000001,
+      "graph_score": 0.8550000000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8125,
+        "quarantine_rate": 0.75,
         "recovery_rate": 0.75,
         "latency": 0.5,
-        "entity_reuse": 0.75,
-        "graph_connectivity": 0.875,
-        "link_density": 0.875,
-        "supports_density": 0.8125
+        "entity_reuse": 0.8,
+        "graph_connectivity": 0.9,
+        "link_density": 0.9,
+        "supports_density": 0.75
       },
       "rank": 1
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
-      "composite": 78.25000000000001,
-      "composite_pre_penalty": 78.25000000000001,
+      "composite": 76.30000000000001,
+      "composite_pre_penalty": 76.30000000000001,
       "penalty": 0.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.8,
+      "graph_score": 0.8200000000000002,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8125,
+        "quarantine_rate": 0.75,
         "recovery_rate": 0.75,
-        "latency": 0.625,
+        "latency": 0.6,
         "entity_reuse": 1.0,
-        "graph_connectivity": 0.75,
-        "link_density": 0.75,
-        "supports_density": 0.8125
+        "graph_connectivity": 0.8,
+        "link_density": 0.8,
+        "supports_density": 0.75
       },
       "rank": 2
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323",
-      "composite": 61.0,
-      "composite_pre_penalty": 63.5,
-      "penalty": 2.5,
+      "composite": 61.7,
+      "composite_pre_penalty": 63.7,
+      "penalty": 1.9999999999999998,
       "weakest_kpi": "latency",
-      "graph_score": 0.4937500000000001,
+      "graph_score": 0.555,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8125,
+        "quarantine_rate": 0.75,
         "recovery_rate": 0.75,
-        "latency": 0.375,
-        "entity_reuse": 0.375,
-        "graph_connectivity": 0.5,
-        "link_density": 0.625,
-        "supports_density": 0.375
+        "latency": 0.4,
+        "entity_reuse": 0.5,
+        "graph_connectivity": 0.6,
+        "link_density": 0.7,
+        "supports_density": 0.3
       },
       "rank": 3
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 53.25000000000002,
-      "composite_pre_penalty": 60.750000000000014,
-      "penalty": 7.500000000000001,
+      "composite": 54.30000000000001,
+      "composite_pre_penalty": 60.30000000000002,
+      "penalty": 6.0,
       "weakest_kpi": "latency",
-      "graph_score": 0.4875000000000001,
+      "graph_score": 0.5200000000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.8125,
+        "quarantine_rate": 0.75,
         "recovery_rate": 0.75,
-        "latency": 0.125,
-        "entity_reuse": 0.625,
-        "graph_connectivity": 0.625,
-        "link_density": 0.25,
-        "supports_density": 0.5
+        "latency": 0.2,
+        "entity_reuse": 0.7,
+        "graph_connectivity": 0.7,
+        "link_density": 0.3,
+        "supports_density": 0.4
       },
       "rank": 4
     },
     {
-      "model": "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7",
-      "composite": 49.50000000000001,
-      "composite_pre_penalty": 57.00000000000001,
-      "penalty": 7.500000000000001,
-      "weakest_kpi": "recovery_rate",
-      "graph_score": 0.83125,
+      "model": "openai/gpt-5.4-mini@v0.5.7-58-g0690e8b-dirty",
+      "composite": 47.000000000000014,
+      "composite_pre_penalty": 55.000000000000014,
+      "penalty": 8.000000000000002,
+      "weakest_kpi": "latency",
+      "graph_score": 0.5000000000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.5,
-        "recovery_rate": 0.125,
-        "latency": 0.25,
-        "entity_reuse": 0.875,
-        "graph_connectivity": 1.0,
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.4,
+        "latency": 0.1,
+        "entity_reuse": 0.2,
+        "graph_connectivity": 0.4,
         "link_density": 0.5,
-        "supports_density": 1.0
+        "supports_density": 0.9
       },
       "rank": 5
     },
     {
-      "model": "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty",
-      "composite": 38.75000000000001,
-      "composite_pre_penalty": 42.50000000000001,
-      "penalty": 3.7500000000000004,
-      "weakest_kpi": "graph",
-      "graph_score": 0.3125,
+      "model": "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7",
+      "composite": 46.600000000000016,
+      "composite_pre_penalty": 54.600000000000016,
+      "penalty": 8.000000000000002,
+      "weakest_kpi": "recovery_rate",
+      "graph_score": 0.8650000000000001,
       "per_kpi_borda": {
-        "quarantine_rate": 0.375,
-        "recovery_rate": 0.75,
-        "latency": 0.75,
-        "entity_reuse": 0.125,
-        "graph_connectivity": 0.375,
-        "link_density": 0.125,
-        "supports_density": 0.625
+        "quarantine_rate": 0.4,
+        "recovery_rate": 0.1,
+        "latency": 0.3,
+        "entity_reuse": 0.9,
+        "graph_connectivity": 1.0,
+        "link_density": 0.6,
+        "supports_density": 1.0
       },
       "rank": 6
     },
     {
-      "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
-      "composite": 22.250000000000004,
-      "composite_pre_penalty": 29.000000000000004,
-      "penalty": 6.75,
+      "model": "deepseek/deepseek-v4-flash@v0.5.7-58-g0690e8b",
+      "composite": 45.100000000000016,
+      "composite_pre_penalty": 51.90000000000001,
+      "penalty": 6.799999999999999,
       "weakest_kpi": "graph",
-      "graph_score": 0.1625,
+      "graph_score": 0.16000000000000003,
       "per_kpi_borda": {
-        "quarantine_rate": 0.25,
-        "recovery_rate": 0.25,
-        "latency": 1.0,
-        "entity_reuse": 0.5,
-        "graph_connectivity": 0.25,
+        "quarantine_rate": 0.75,
+        "recovery_rate": 0.75,
+        "latency": 0.8,
+        "entity_reuse": 0.4,
+        "graph_connectivity": 0.0,
         "link_density": 0.0,
-        "supports_density": 0.0
+        "supports_density": 0.5
       },
       "rank": 7
     },
     {
-      "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
-      "composite": 16.0,
-      "composite_pre_penalty": 26.0,
-      "penalty": 10.0,
-      "weakest_kpi": "latency",
-      "graph_score": 0.43125,
+      "model": "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty",
+      "composite": 37.3,
+      "composite_pre_penalty": 41.300000000000004,
+      "penalty": 4.000000000000001,
+      "weakest_kpi": "quarantine_rate",
+      "graph_score": 0.37000000000000005,
       "per_kpi_borda": {
-        "quarantine_rate": 0.125,
-        "recovery_rate": 0.375,
-        "latency": 0.0,
-        "entity_reuse": 0.25,
-        "graph_connectivity": 0.125,
-        "link_density": 1.0,
-        "supports_density": 0.25
+        "quarantine_rate": 0.3,
+        "recovery_rate": 0.75,
+        "latency": 0.7,
+        "entity_reuse": 0.1,
+        "graph_connectivity": 0.5,
+        "link_density": 0.2,
+        "supports_density": 0.6
       },
       "rank": 8
     },
     {
+      "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
+      "composite": 23.000000000000004,
+      "composite_pre_penalty": 29.000000000000004,
+      "penalty": 6.0,
+      "weakest_kpi": "quarantine_rate",
+      "graph_score": 0.22500000000000003,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.2,
+        "recovery_rate": 0.2,
+        "latency": 1.0,
+        "entity_reuse": 0.6,
+        "graph_connectivity": 0.3,
+        "link_density": 0.1,
+        "supports_density": 0.0
+      },
+      "rank": 9
+    },
+    {
+      "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
+      "composite": 15.200000000000005,
+      "composite_pre_penalty": 25.200000000000006,
+      "penalty": 10.0,
+      "weakest_kpi": "latency",
+      "graph_score": 0.45500000000000007,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.1,
+        "recovery_rate": 0.3,
+        "latency": 0.0,
+        "entity_reuse": 0.3,
+        "graph_connectivity": 0.2,
+        "link_density": 1.0,
+        "supports_density": 0.2
+      },
+      "rank": 10
+    },
+    {
       "model": "gemini/gemini-3.5-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 4.250000000000001,
-      "composite_pre_penalty": 14.250000000000002,
+      "composite": 6.000000000000003,
+      "composite_pre_penalty": 16.000000000000004,
       "penalty": 10.0,
       "weakest_kpi": "quarantine_rate",
-      "graph_score": 0.1375,
+      "graph_score": 0.17500000000000002,
       "per_kpi_borda": {
         "quarantine_rate": 0.0,
         "recovery_rate": 0.0,
-        "latency": 0.875,
+        "latency": 0.9,
         "entity_reuse": 0.0,
-        "graph_connectivity": 0.0,
-        "link_density": 0.375,
-        "supports_density": 0.125
+        "graph_connectivity": 0.1,
+        "link_density": 0.4,
+        "supports_density": 0.1
       },
-      "rank": 9
+      "rank": 11
     }
   ],
   "top_weights": {
@@ -190,5 +228,5 @@
     "threshold": 0.5,
     "cap": 0.1
   },
-  "updated_at": "2026-07-23T00:35:48-04:00"
+  "updated_at": "2026-07-24T12:23:55-04:00"
 }
