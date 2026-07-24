@@ -33,3 +33,25 @@ def test_case_shape(case):
     assert case["expect"]["kind"] in ("success", "reject")
     if case["expect"]["kind"] == "reject":
         assert "reject_class" in case["expect"]
+
+
+from compiler.proposal_bridge import BridgeReject, BridgeSuccess, normalize_proposal
+
+
+@pytest.mark.parametrize("case", load_cases(), ids=lambda c: c["id"])
+def test_corpus_execution(case):
+    r = normalize_proposal(case["proposal"], source_id=case["source_id"])
+    exp = case["expect"]
+    if exp["kind"] == "reject":
+        assert isinstance(r, BridgeReject), case["id"]
+        assert r.reject_class.value == exp["reject_class"], case["id"]
+        assert r.retriable
+        return
+    assert isinstance(r, BridgeSuccess), case["id"]
+    if "summary_slug" in exp:
+        summaries = [p for p in r.canonical["pages"] if p["page_type"] == "summary"]
+        assert summaries[0]["slug"] == exp["summary_slug"], case["id"]
+    for rule in exp.get("decisions_include", []):
+        assert any(d.rule == rule for d in r.decisions), (case["id"], rule)
+    for token in exp.get("body_preserved", []):
+        assert any(token in p["body"] for p in r.canonical["pages"]), (case["id"], token)
