@@ -1,6 +1,10 @@
-"""response_replay — run stored model responses through the compile validator
-stack (recover → schema → semantic) and compare the observed
-flags against each fixture's expected flags.
+"""response_replay — run stored model responses through the era-correct
+compile validator stack and compare the observed flags against each
+fixture's expected flags (#119, D-BQ-1):
+
+    3.x  → legacy stack: recover → schema → semantic
+    4.x  → new stack:    recover → proposal validate → normalization bridge
+    else → fail closed:  all flags False + "unsupported prompt_version"
 
 Complements the live resp-stats records written by `compile_one` (blueprint
 §7). Replay fixtures pin down regressions in the extractor, schema, and
@@ -13,7 +17,8 @@ Each fixture directory contains:
     stored_response.txt  — verbatim model output (may include fences/prose)
     case.json            — { source_id, expected_extract_ok,
                              expected_parse_ok, expected_schema_ok,
-                             expected_semantic_ok, notes }
+                             expected_semantic_ok, notes,
+                             prompt_version? (default "3.0.0") }
 
 `main` exits 0 iff every case's observed flags match expected; 1 otherwise.
 """
@@ -39,6 +44,9 @@ class ReplayFixture:
     expected_schema_ok: bool
     expected_semantic_ok: bool
     notes: str
+    # #119 (D-BQ-1): contract era of the stored response; the default covers
+    # all pre-#119 fixtures. Placed last (dataclass defaults after non-defaults).
+    prompt_version: str = "3.0.0"
 
 
 @dataclass
@@ -83,12 +91,30 @@ def load_fixtures(fixtures_dir: Path) -> list[ReplayFixture]:
                 expected_schema_ok=bool(meta["expected_schema_ok"]),
                 expected_semantic_ok=bool(meta["expected_semantic_ok"]),
                 notes=meta.get("notes", ""),
+                # #119: absent on pre-#119 case.json files → legacy 3.x era.
+                prompt_version=str(meta.get("prompt_version", "3.0.0")),
             )
         )
     return cases
 
 
 def replay_case(fixture: ReplayFixture) -> ReplayResult:
+    """Dispatch one fixture through the era-correct validator stack (#119,
+    D-BQ-1). Unknown eras fail CLOSED — all flags False, matches_expected
+    False, error_detail set — so a misstamped fixture can never pass."""
+    if fixture.prompt_version.startswith("3."):
+        return _replay_case_v3(fixture)   # today's body, moved verbatim
+    if fixture.prompt_version.startswith("4."):
+        return _replay_case_v4(fixture)
+    return ReplayResult(case_id=fixture.case_id, extract_ok=False,
+                        parse_ok=False, schema_ok=False, semantic_ok=False,
+                        matches_expected=False,
+                        error_detail=(
+                            f"unsupported prompt_version "
+                            f"{fixture.prompt_version!r}"))
+
+
+def _replay_case_v3(fixture: ReplayFixture) -> ReplayResult:
     """Run one fixture through the full validator stack.
 
     Uses the shared recovery ladder (#114) so a captured response yields
@@ -142,6 +168,51 @@ def replay_case(fixture: ReplayFixture) -> ReplayResult:
         error_detail = f"semantic: {semantic_errors[0]}"
 
     return _result(fixture, extract_ok, parse_ok, schema_ok, semantic_ok, error_detail)
+
+
+def _flag_result(fixture: ReplayFixture, *, extract_ok: bool, parse_ok: bool,
+                 schema_ok: bool = False, semantic_ok: bool = False,
+                 error_detail: str | None) -> ReplayResult:
+    observed = (extract_ok, parse_ok, schema_ok, semantic_ok)
+    expected = (fixture.expected_extract_ok, fixture.expected_parse_ok,
+                fixture.expected_schema_ok, fixture.expected_semantic_ok)
+    return ReplayResult(case_id=fixture.case_id, extract_ok=extract_ok,
+                        parse_ok=parse_ok, schema_ok=schema_ok,
+                        semantic_ok=semantic_ok,
+                        matches_expected=observed == expected,
+                        error_detail=error_detail)
+
+
+def _replay_case_v4(fixture: ReplayFixture) -> ReplayResult:
+    from common.paths import PathError
+    from compiler import proposal_bridge, validate_proposal_response
+    result = recover_json_response(fixture.stored_response_text)
+    if not result.recovered:
+        return _flag_result(fixture, extract_ok=result.extract_ok,
+                            parse_ok=False, error_detail=result.error)
+    schema_errors = validate_proposal_response.validate(result.parsed)
+    if schema_errors:
+        return _flag_result(fixture, extract_ok=result.extract_ok,
+                            parse_ok=True, schema_ok=False,
+                            error_detail=schema_errors[0])
+    try:
+        bridge = proposal_bridge.normalize_proposal(
+            result.parsed, source_id=fixture.source_id)
+    except proposal_bridge.CanonicalInvariantError as e:
+        return _flag_result(fixture, extract_ok=result.extract_ok,
+                            parse_ok=True, schema_ok=True, semantic_ok=False,
+                            error_detail=f"CanonicalInvariantError: {e}")
+    except PathError as e:  # underivable source_id — case error, not a defect
+        return _flag_result(fixture, extract_ok=result.extract_ok,
+                            parse_ok=True, schema_ok=True, semantic_ok=False,
+                            error_detail=f"cannot derive expected summary slug: {e}")
+    if isinstance(bridge, proposal_bridge.BridgeReject):
+        return _flag_result(
+            fixture, extract_ok=result.extract_ok, parse_ok=True,
+            schema_ok=True, semantic_ok=False,
+            error_detail=f"{bridge.reject_class.value}: {bridge.detail}")
+    return _flag_result(fixture, extract_ok=result.extract_ok, parse_ok=True,
+                        schema_ok=True, semantic_ok=True, error_detail=None)
 
 
 def _result(
