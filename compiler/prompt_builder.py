@@ -46,7 +46,11 @@ _PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.m
 # 4.0.1 = wording-only patch ("canonical shape" → "proposal response shape",
 # Codex exec-review R1 F5); the proposal CONTRACT era is unchanged
 # (4.x — replay dispatch accepts all 4.x).
-PASS2_PROMPT_VERSION = "4.0.1"
+# 4.0.2 = schema link-surface restoration (#120 D1, spec v1.4): the proposal
+# schema regains the 3.0.0-era wiki-native clause + body-field wikilink
+# instruction (constrained to authoritative targets, Codex R1–R5);
+# system-prompt bytes unchanged.
+PASS2_PROMPT_VERSION = "4.0.2"
 
 RESPONSE_CONTRACT = """\
 ---

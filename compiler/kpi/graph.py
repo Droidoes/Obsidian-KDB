@@ -159,10 +159,16 @@ def compute_graph(
         n_orphans / total_entities if total_entities else None
     )
 
-    # entity_search_key_resolution: alias-aware fraction of Pass-1
-    # entity_search_keys that resolve to an active canonical entity.
-    # Keys are kebab-case slugs (same anchor space as link targets) so the
-    # same resolve_to_canonical_slugs + active_canonical membership pattern
+    # entity_search_key_resolution (#120 D3, spec v1.4): the MIXED downstream
+    # final-graph realization rate of Pass-1 entity_search_keys — the
+    # alias-aware fraction resolving to an active canonical entity in the
+    # FINAL post-intake graph. Influenced by Pass-1 key selection, Pass-2
+    # materialization, and canonicalization; it is NOT a reuse/maturity
+    # measure and NOT an extraction-quality measure. Cross-model comparison
+    # is valid only for controlled runs (same corpus fingerprint + equivalent
+    # initial graph state). Watched, never scored. Keys are kebab-case slugs
+    # (same anchor space as link targets) so the same
+    # resolve_to_canonical_slugs + active_canonical membership pattern
     # applies.  None when pass1_search_keys is None or empty — don't conflate
     # no-keys with zero-resolution.
     if not pass1_search_keys:

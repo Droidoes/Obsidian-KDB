@@ -1067,9 +1067,9 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert all(c in "0123456789abcdef" for c in fp)
     # prompt versions
     assert hdr["pass1_prompt_version"] == PASS1_PROMPT_VERSION
-    # #119 Phase 3 (Codex PR2 F6): pin the 4.0.1 proposal-contract stamp —
+    # #119 Phase 3 (Codex PR2 F6): pin the proposal-contract stamp —
     # version AND the loaded-prompt SHA, verified through a real dry run
-    assert hdr["pass2_prompt_version"] == prompt_builder.PASS2_PROMPT_VERSION == "4.0.1"
+    assert hdr["pass2_prompt_version"] == prompt_builder.PASS2_PROMPT_VERSION == "4.0.2"
     # post-#115 stamp: SHA-256 of the loaded (packaged) Pass-2 system prompt
     assert hdr["pass2_system_prompt_sha256"] == hashlib.sha256(
         prompt_builder.load_system_prompt().encode("utf-8")

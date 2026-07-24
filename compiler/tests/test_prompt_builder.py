@@ -93,8 +93,9 @@ def test_pass2_prompt_version_is_4() -> None:
     2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1);
     4.0.0 = proposal contract (#119 Phase 3) — the summary page carries no
     slug; Python assigns its identity via the normalization bridge.
-    4.0.1 = wording-only patch (Codex exec-review R1 F5); era unchanged."""
-    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.1"
+    4.0.1 = wording-only patch (Codex exec-review R1 F5); era unchanged.
+    4.0.2 = schema link-surface restoration (#120 D1, spec v1.4)."""
+    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.2"
 
 
 def test_packaged_prompt_matches_golden_sha() -> None:
@@ -104,6 +105,25 @@ def test_packaged_prompt_matches_golden_sha() -> None:
     assert (
         hashlib.sha256(prompt_builder.load_system_prompt().encode()).hexdigest()
         == "afeff429761a98b71eadccfc3ca5b067d542d7e37764a8b4a90ae2192a8e5e1b"
+    )
+
+
+def test_proposal_schema_link_surface_canary() -> None:
+    """#120 canary (spec v1.4 D1/F4): the injected proposal schema MUST carry
+    the wiki-native link surface — the 4.0.1 silent removal (deepseek concept
+    emission collapse) must never pass silently again."""
+    schema = json.loads(prompt_builder.load_response_schema_text())
+    top = schema["description"]
+    assert "wiki-native" in top and "[[wikilinks]]" in top
+    body = schema["$defs"]["pageProposal"]["properties"]["body"]["description"]
+    assert (
+        "Use Obsidian wikilink syntax [[slug]] inline whenever you reference "
+        "another page" in body
+    )
+    assert "already has a page in this response or in EXISTING CONTEXT" in body
+    assert (
+        "Do not invent a target, self-link, or link to the current source's "
+        "summary" in body
     )
 
 
