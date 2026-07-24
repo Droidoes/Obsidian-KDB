@@ -6,7 +6,9 @@
     "ctx_window": 400000,
     "max_output_tokens": 128000,
     "use_completion_tokens": true,
-    "extra_body": { "reasoning_effort": "low" },
+    "extra_body": {
+      "reasoning_effort": "low"
+    },
     "temperature": null,
     "price_in": 0.75,
     "price_out": 4.5
@@ -28,7 +30,7 @@
     "ctx_window": 1048576,
     "max_output_tokens": 65536,
     "price_in": 0.25,
-    "price_out": 1.50
+    "price_out": 1.5
   },
   {
     "id": "gemini-3.6-flash",
@@ -38,16 +40,6 @@
     "max_output_tokens": 65536,
     "price_in": 1.5,
     "price_out": 7.5
-  },
-  {
-    "id": "qwen3.6-flash",
-    "provider": "alibaba",
-    "model": "qwen3.6-flash",
-    "ctx_window": 1000000,
-    "max_output_tokens": 65536,
-    "price_in": 0.25,
-    "price_out": 1.50,
-    "thinking": "disabled"
   },
   {
     "id": "deepseek-v4-flash",

@@ -97,6 +97,18 @@
     "dropped_reason": "Retired 2026-07-21 (Joseph) hours after being added, on its first cohort run (2026-07-21T00-51-24_EDT): 3/36 sources quarantined — 2 structured-contract failures at compile (summary_slug absent from pages[].slug on Obsidian CLI Skills; pages[3].status='high' — a confidence value in the status enum — on Quotes from Napoleon) + 1 DashScope content-filter 400 (data_inspection_failed) at pass1 on the Li Lu lecture (provider moderation false positive; gpt-5.4-mini + deepseek-v4-flash compiled the same source cleanly that night). Bottom board score 6.00 (rank 7/7); weak graph KPIs (link_density 0.863, entity_search_key_resolution 0.179, graph_score 0.192). Consistent with the qwen-flash family pattern (qwen-flash-us dropped 2026-05-10; qwen3.5-flash bottom-tier 2026-06-07). n=1 stochastic caveat on the 2 compile failures; the provider content-filter class is the durable concern for vault-scale ingest. Kept as audit trail; run dir benchmark/runs/qwen3.6-flash-us-2026-07-21T00-51-24_EDT retained."
   },
   {
+    "id": "qwen3.6-flash",
+    "provider": "alibaba",
+    "model": "qwen3.6-flash",
+    "ctx_window": 1000000,
+    "max_output_tokens": 65536,
+    "price_in": 0.25,
+    "price_out": 1.5,
+    "thinking": "disabled",
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-24 (Joseph) on the revived-#118 model-fit trial (2026-07-24T17-52-02_EDT, prompt 4.0.2): weakest link quality of the four-model cohort by a wide margin — overall resolved density 0.368 (deepseek 0.883, gpt 1.521, gemini 1.621), concept 0.110, dangling 33.3% (32/96 — fabricated generic single-word slugs), eliminating it from the Pass-2 seat; 1 Pass-1 compliance block (DashScope moderation, Li Lu Columbia lecture — the provider-level class flagged at qwen3.6-flash-us's 2026-07-21 retirement). The #119/#120 boundary absorbed its July contract failures cleanly (0 Pass-2 quarantines, 0 retries, both named sources clean) — the failure mode is link/graph quality, not contract compliance. Family pattern holds across qwen-flash-us (2026-05-10), qwen3.5-flash (2026-06-07), qwen3.6-flash-us (2026-07-21). Run dir retained: benchmark/runs/qwen3.6-flash-2026-07-24T17-52-02_EDT. Evaluation: docs/superpowers/evaluations/2026-07-24-task118-qwen3.6-flash-2026-07-24T17-52-02_EDT.md."
+  },
+  {
     "id": "gemini-3.5-flash",
     "provider": "gemini",
     "model": "gemini-3.5-flash",
