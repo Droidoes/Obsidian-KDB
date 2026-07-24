@@ -43,7 +43,10 @@ _PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.m
 # 2.0.0 = repo-packaged prompt (Phase 0); 3.0.0 = wiki-native contract
 # (Phase 1); 4.0.0 = proposal contract (#119 Phase 3): the summary page
 # carries NO slug — Python assigns its identity via the normalization bridge.
-PASS2_PROMPT_VERSION = "4.0.0"
+# 4.0.1 = wording-only patch ("canonical shape" → "proposal response shape",
+# Codex exec-review R1 F5); the proposal CONTRACT era is unchanged
+# (4.x — replay dispatch accepts all 4.x).
+PASS2_PROMPT_VERSION = "4.0.1"
 
 RESPONSE_CONTRACT = """\
 ---

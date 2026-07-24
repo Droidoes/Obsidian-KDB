@@ -42,9 +42,10 @@ class PassCallMeasurement:
     boundary_recovered: bool = False
     cost_usd: float | None = None
     # #119 watched diagnostics (D-BQ-3): projected from the normalization
-    # boundary's telemetry; NEVER scored axes. None when the source record
-    # carries no normalization data (Pass-1, or pre-#119 records without
-    # decision lists).
+    # boundary's telemetry; NEVER scored axes. None only for Pass-1
+    # projections (no normalization data); Pass-2 records without either
+    # field (pre-#119 records without decision lists) project a
+    # compatibility count of 0 (the len(... or []) fallback in from_pass2).
     normalization_decision_count: int | None = None
     summary_identity_derived: bool | None = None
 

@@ -17,6 +17,7 @@ Plus a drift-guard: the user section order must match what compile_one reads.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -91,8 +92,19 @@ def test_pass2_prompt_version_is_4() -> None:
     """Phase-3 bump guard: content and version move together (D-115-13).
     2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1);
     4.0.0 = proposal contract (#119 Phase 3) — the summary page carries no
-    slug; Python assigns its identity via the normalization bridge."""
-    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.0"
+    slug; Python assigns its identity via the normalization bridge.
+    4.0.1 = wording-only patch (Codex exec-review R1 F5); era unchanged."""
+    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.1"
+
+
+def test_packaged_prompt_matches_golden_sha() -> None:
+    # D-115-13 — changing prompt bytes requires bumping PASS2_PROMPT_VERSION
+    # AND updating this golden SHA in the same commit; an unversioned content
+    # change fails here.
+    assert (
+        hashlib.sha256(prompt_builder.load_system_prompt().encode()).hexdigest()
+        == "afeff429761a98b71eadccfc3ca5b067d542d7e37764a8b4a90ae2192a8e5e1b"
+    )
 
 
 def test_load_system_prompt_missing_raises(

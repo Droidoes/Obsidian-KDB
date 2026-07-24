@@ -346,7 +346,11 @@ def test_freeze_distinguishes_object_from_nested_array():
 
 def test_freeze_distinguishes_bool_from_number():
     assert _freeze(True) != _freeze(1)
-    assert hash(_freeze(True)) != hash(_freeze(1))
+    # distinct-keys proof: unequal values may share a hash, so prove the
+    # frozen forms act as SEPARATE dict keys rather than asserting hash !=
+    d = {_freeze(True): "bool"}
+    d[_freeze(1)] = "num"
+    assert len(d) == 2 and d[_freeze(True)] == "bool" and d[_freeze(1)] == "num"
     assert not _json_equal(True, 1)
 
 

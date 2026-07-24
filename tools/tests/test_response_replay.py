@@ -254,12 +254,18 @@ def test_v2_version_fails_closed():
     fx = _synth(prompt_version="2.0.0")
     r = replay_case(fx)
     assert "unsupported prompt_version" in (r.error_detail or "")
+    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (
+        False, False, False, False)
+    assert r.matches_expected is False
 
 
 def test_unknown_version_fails_closed():
     fx = _synth(prompt_version="9.9.9")
     r = replay_case(fx)
     assert "unsupported prompt_version" in (r.error_detail or "")
+    assert (r.extract_ok, r.parse_ok, r.schema_ok, r.semantic_ok) == (
+        False, False, False, False)
+    assert r.matches_expected is False
 
 
 def test_v4_underivable_source_id_is_case_error_not_traceback():
