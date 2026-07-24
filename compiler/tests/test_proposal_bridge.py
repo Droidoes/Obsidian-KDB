@@ -109,6 +109,17 @@ def test_stray_nonstring_summary_slug_bounded_capture():
     assert ignored.raw_sha256 is not None
 
 
+def test_stray_bool_summary_slug_succeeds():
+    """D-119 type matrix: a bool stray is tolerated like any other JSON type."""
+    r = normalize_proposal({"pages": [
+        _summary(slug=True)]}, source_id="KDB/raw/x.md")
+    assert isinstance(r, BridgeSuccess)
+    assert r.canonical["pages"][0]["slug"] == "summary-x"
+    ignored = [d for d in r.decisions if d.rule == "summary_slug_ignored"][0]
+    assert ignored.raw_type == "boolean"
+    assert ignored.raw_value is None and ignored.raw_preview == "true"
+
+
 def test_derived_slug_collision_rejected():
     r = normalize_proposal({"pages": [
         _summary(),

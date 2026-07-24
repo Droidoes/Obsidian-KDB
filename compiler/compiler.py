@@ -234,7 +234,8 @@ def compile_one(
         # failure_stage="validate", attempts=0, zero tokens, exactly one
         # record via the finally block. Never retried, never spends API.
         try:
-            expected_slug = expected_summary_slug(source_id)
+            # PathError fail-closed check; the bridge re-derives internally.
+            expected_summary_slug(source_id)
         except PathError as e:
             _set_failure(state, "validate", type(e).__name__, str(e))
             state["error"] = (
@@ -452,7 +453,8 @@ def compile_one(
                 state["semantic_errors"] = [
                     f"{bridge.reject_class.value}: {bridge.detail}"]
                 # terminal-reject decisions persist too (partial telemetry —
-                # Codex plan-review F5); cleared per attempt by the reset below
+                # Codex plan-review F5); cleared per attempt by the reset at
+                # the loop head above
                 (state["normalization_decisions"],
                  state["normalization_decision_count"],
                  state["normalization_decisions_overflow_sha256"]) = \

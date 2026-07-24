@@ -133,7 +133,9 @@ class NormalizationOp(NamedTuple):
 def _decisions_from_ops(ops: list[NormalizationOp]) -> list[NormalizationDecision]:
     """Bounded telemetry projection (aggregate-capped at the compile_one
     boundary via `_cap_decisions`). One resolution op derives an ignore
-    decision (when a stray existed) + a stamp decision."""
+    decision (when a stray existed) + a stamp decision. Body-rewrite
+    locations carry a PER-PAGE running index (`pages[i].body#n` = the n-th
+    rewrite op on that page, in scan order) — not a per-token occurrence."""
     out: list[NormalizationDecision] = []
     occurrence: dict[int, int] = {}
     for op in ops:
@@ -202,26 +204,6 @@ def _outside_code_spans(text: str) -> list[tuple[bool, str]]:
         ipos = im.end()
     parts.append((False, tail[ipos:]))
     return parts
-
-
-def _rewrite_body(body: str, rename: dict[str, str]) -> tuple[str, list[tuple[str, str]]]:
-    """Rewrite ONLY wikilink targets exactly present in `rename` (raw page
-    slugs), outside code spans, preserving #anchor and |display. Returns the
-    new body + per-token (raw, canonical) rewrites. Unmapped tokens pass
-    through byte-identical."""
-    rewrites: list[tuple[str, str]] = []
-
-    def _rw(m: re.Match) -> str:
-        tgt, anchor, disp = m.group(1), m.group(2) or "", m.group(3) or ""
-        if tgt in rename:
-            rewrites.append((tgt, rename[tgt]))
-            return f"[[{rename[tgt]}{anchor}{disp}]]"
-        return m.group(0)
-
-    return "".join(
-        seg if is_code else _COERCE_WIKILINK_RE.sub(_rw, seg)
-        for is_code, seg in _outside_code_spans(body)
-    ), rewrites
 
 
 def _iter_mapped_tokens(body: str, rename: dict[str, str]) -> list[tuple[str, str]]:

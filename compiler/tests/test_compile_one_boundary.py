@@ -1,7 +1,8 @@
 """#119 boundary behavior end-to-end inside compile_one (mocked model)."""
 import json
-from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from common.types import CompileJob, ContextSnapshot
 from compiler.compiler import compile_one
@@ -149,9 +150,6 @@ def test_canonical_invariant_failure_captured(tmp_path, monkeypatch):
     # failed-response raw capture fires even without capture-full
     # (raw_response_text kept when failed_after_response, llm_telemetry.py:199-201)
     assert rec.raw_response_text == payload
-
-
-import pytest
 
 
 _MATRIX = [
