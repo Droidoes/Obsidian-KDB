@@ -4,7 +4,7 @@ Schema is documented at docs/task-graphdb-kdb-blueprint.md §4 (#63 baseline),
 docs/task74-canonicalization-blueprint.md §5 (#74 canonicalization delta),
 docs/task76-domain-field-blueprint.md §6 (#76 domain field delta),
 docs/task83-84-promotion-contract-belief-revision-blueprint.md §6 (#83/#84
-Claim layer delta), and docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md
+Claim layer delta), and docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md
 (#89 Pass-1 ingestion delta).
 
 Tables:
@@ -323,7 +323,7 @@ def _migrate_2_2_to_2_3(conn) -> None:
         re-derivation). Existing Source rows get NULL until next compile run.
       - `_SchemaMeta.schema_version` updated to "2.3".
 
-    Anchor: docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md
+    Anchor: docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md
     Task B.1, D-89-17 (#89 Pass-1 ingestion schema delta).
     """
     conn.execute("ALTER TABLE Source ADD summary STRING")

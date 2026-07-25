@@ -1,7 +1,7 @@
 # Task #89 Pass-1 — Pre-implementation vault alias scan
 
 **Date:** 2026-05-26
-**Purpose:** Per Task 0.1 of `docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md` + Qwen O-3 from NW-7 v0.1 review. Scan the user's Obsidian vault for any pre-existing `source_type:` or `domain:` frontmatter values that would need alias-or-re-enrich handling at Pass-1 deployment.
+**Purpose:** Per Task 0.1 of `docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md` + Qwen O-3 from NW-7 v0.1 review. Scan the user's Obsidian vault for any pre-existing `source_type:` or `domain:` frontmatter values that would need alias-or-re-enrich handling at Pass-1 deployment.
 
 ## Method
 

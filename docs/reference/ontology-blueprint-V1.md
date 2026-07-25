@@ -70,7 +70,7 @@ Domain is a retrieval **coordinate, not a gate** (5/5 reject hard gate). Impleme
 > query-time, whole-graph). The gate touches only context-scoping, so the panel's
 > Discover objection does not bite. Priority: full same-domain context > short/empty
 > same-domain context > off-domain-padded context. Spec:
-> `docs/superpowers/specs/2026-05-31-t2-t3-domain-scoping-design.md`.
+> `docs/superpowers/archive/specs/2026-05-31-t2-t3-domain-scoping-design.md`.
 
 **Downstream sequence (→ 0.5.0):** producer (Pass-2) rebuild implementing D1 →
 consumer (T2/T3) implementing D3 → stdout messaging → **run-4** (the 0.5.0 gate).

@@ -1,6 +1,6 @@
 # Task #91 Plan 1 — Review Synthesis & Decisions (2026-05-29)
 
-Two review passes on `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md`:
+Two review passes on `docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md`:
 1. **Workflow** (4 Claude-subagent lenses → adversarial verify): code-grounding + TDD-executability succeeded (9 verified findings, 0 false positives — caught the `single_scan` `PagePatchError` crash + provenance gap); spec-fidelity + architectural-risk lenses **failed** (agents didn't emit structured output). Folded into Plan 1 already.
 2. **External panel** (Codex · Deepseek · Qwen · Grok · Gemini-agy), scoped to the two dimensions the workflow couldn't cover. Reviews: `docs/task91-plan1-review-{codex,deepseek,qwen,grok,gemini}.md`. All five verdicts: **proceed-with-changes**.
 

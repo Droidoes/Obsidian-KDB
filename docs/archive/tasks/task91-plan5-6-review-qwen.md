@@ -1,7 +1,7 @@
 # Task #91 Plan 5+6 Review — Qwen CLI (qwen3.7-max)
 
 **Reviewer:** Qwen CLI / qwen3.7-max
-**Plan reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
+**Plan reviewed:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
 **Date:** 2026-05-27
 **Guardrail compliance:** Single review file produced; no other repo files modified.
 

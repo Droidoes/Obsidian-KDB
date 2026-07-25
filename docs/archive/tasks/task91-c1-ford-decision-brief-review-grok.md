@@ -4,9 +4,9 @@
 **Date:** 2026-05-29  
 **Artifact reviewed:** `docs/task91-c1-ford-decision-brief.md` (the focused decision brief)  
 **Primary context:**  
-- Plan 5+6: `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`  
+- Plan 5+6: `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`  
 - Panel synthesis (Plan 5+6): `docs/task91-plan5-6-review-synthesis.md`  
-- Design spec: `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (orchestrator loop + per-source commit)  
+- Design spec: `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (orchestrator loop + per-source commit)  
 - Ratified decisions: `docs/task91-kdb-orchestrate-blueprint.md` (D-91-8, D-91-13)  
 - Code evidence: `graphdb_kdb/ingestor.py:_replace_outgoing_links`, `graphdb_kdb/rebuilder.py:rebuild`, `apply_compile_result` behavior, single read-write connection model
 

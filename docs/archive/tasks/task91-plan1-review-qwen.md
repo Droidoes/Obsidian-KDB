@@ -1,7 +1,7 @@
 # Task #91 Plan 1 Review (Revised) — Qwen CLI (qwen3.7-max)
 
 **Reviewer:** Qwen CLI / qwen3.7-max
-**Plan reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md` (revised — produce-don't-write, commit `23ba054`)
+**Plan reviewed:** `docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md` (revised — produce-don't-write, commit `23ba054`)
 **Date:** 2026-05-27
 **Guardrail compliance:** Single review file produced; no other repo files modified.
 **Previous review:** superseded — all four original findings resolved by the produce-don't-write revision (see §3 table).

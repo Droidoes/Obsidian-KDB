@@ -8,8 +8,8 @@
 Independent senior architect reviewing an implementation plan before execution. Be skeptical and specific; ground every finding in the plan text, the spec, or the actual code.
 
 ## Artifacts to read (repo root: `/home/ftu/Droidoes/Obsidian-KDB`)
-1. **Plan under review:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
-2. **Spec:** `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` — "Component: Orchestrator loop", "Pass-2 ingress", "Pass-1 egress" (embed-during-enrich + post-embed hash), the per-source routing branches, fail-fast (D-91-8/13).
+1. **Plan under review:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
+2. **Spec:** `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md` — "Component: Orchestrator loop", "Pass-2 ingress", "Pass-1 egress" (embed-during-enrich + post-embed hash), the per-source routing branches, fail-fast (D-91-8/13).
 3. **Ratified decisions:** `docs/task91-kdb-orchestrate-blueprint.md` (D-91-1..14).
 4. **The four SHIPPED foundations the loop composes** (already built + tested — review how the loop *uses* them, not the foundations themselves):
    - `kdb_compiler/compiler.py::compile_source` (produce-don't-write; returns `cr`)

@@ -149,4 +149,4 @@ generations silently distorts the composite.
 → set the parked weights (and τ) from the observed cross-model spread → run the
 watched-diagnostic promotion rule (`tools/benchmark/promotion.py`). See
 [[project_benchmark_redesign_architecture]], the design specs under
-`docs/superpowers/specs/2026-06-0*-benchmark-*`.
+`docs/superpowers/archive/specs/2026-06-0*-benchmark-*`.

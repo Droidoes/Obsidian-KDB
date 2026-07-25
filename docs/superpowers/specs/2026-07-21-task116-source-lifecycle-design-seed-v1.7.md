@@ -14,7 +14,7 @@
 # Task #115 — Pass-2 Contract Revision — Implementation Blueprint (v1.7)
 
 > Architecture basis: decisions D-115-1..15, spec v1.5 at
-> `docs/superpowers/specs/2026-07-21-task115-pass2-contract-audit-findings.md`.
+> `docs/superpowers/archive/specs/2026-07-21-task115-pass2-contract-audit-findings.md`.
 > Execute with superpowers:subagent-driven-development or executing-plans.
 > Test runner: `.venv/bin/python -m pytest` (bare `pytest` for counts).
 > **Every commit gate requires Joseph's explicit approval — no gate is

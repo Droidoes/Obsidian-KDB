@@ -6,7 +6,7 @@
 
 Design-only session (no code). We resumed the benchmark-redesign brainstorm and **closed the architecture + locked the vocabulary**. The one remaining substantive thread — the **complete KPI list** — Joseph deliberately split into its **own next session**.
 
-**THE resume artifact:** `docs/superpowers/specs/2026-06-03-benchmark-redesign-directions.md` — now carries an authoritative **`⭐ Convergence 2026-06-04`** block at the top. Read that block first; the old "inversion" section below it is struck-through/superseded.
+**THE resume artifact:** `docs/superpowers/archive/specs/2026-06-03-benchmark-redesign-directions.md` — now carries an authoritative **`⭐ Convergence 2026-06-04`** block at the top. Read that block first; the old "inversion" section below it is struck-through/superseded.
 
 ### What converged today
 
@@ -51,7 +51,7 @@ Design-only session (no code). We resumed the benchmark-redesign brainstorm and 
 - [ ] Carry-over (untouched today): **#108**, **#107**, the 0.6→1.0 ingestion arc.
 
 ## Pointers
-- Resume artifact: `docs/superpowers/specs/2026-06-03-benchmark-redesign-directions.md` (read the `⭐ Convergence 2026-06-04` block first).
+- Resume artifact: `docs/superpowers/archive/specs/2026-06-03-benchmark-redesign-directions.md` (read the `⭐ Convergence 2026-06-04` block first).
 - Old engine + KPI/Borda machinery: `tools/benchmark/` (`scorer.py` has S0/M1–M7 defs); North Star §7 (`docs/CODEBASE_OVERVIEW.md`).
 - Test-run procedure: `docs/reference/test-run-procedure.md`. Sandbox: `~/Obsidian/Vault-in-place-test-run/` (36 sources).
 - Task ledger: `docs/TASKS.md`. North Star: `docs/CODEBASE_OVERVIEW.md`. Journey: `docs/JOURNEY.md`.

@@ -85,8 +85,8 @@ deepseek + qwen were already optimal (#110), so they're unchanged. 1247 non-live
 Gemini native path live-smoke validated (exit 0, 0 quarantined, native `usage_metadata` tokens).
 Sets up **baseline-1** (batch-1 four models at `v0.5.6`) against the `@v0.5.4` baseline-0; for
 Gemini the `@v0.5.4 → @v0.5.6` delta isolates the native-vs-shim effect. Plans:
-`docs/superpowers/plans/2026-06-07-phase1-pool-prep-per-model-config.md` +
-`docs/superpowers/plans/2026-06-07-phase1-gemini-native-handler.md`.
+`docs/superpowers/archive/plans/2026-06-07-phase1-pool-prep-per-model-config.md` +
+`docs/superpowers/archive/plans/2026-06-07-phase1-gemini-native-handler.md`.
 
 ---
 
@@ -113,8 +113,8 @@ plumbing; **no model-call-path change** (Phase 1 begins that).
 1221 non-live tests green. Sets up the clean-slate **baseline-0** cohort
 (deepseek-v4-flash / qwen3.5-flash / gpt-5.4-mini / gemini-3.1-flash-lite) to be fired
 at this tag. The prior 3-model cohort has been preserved as the `@v0.5.4` baseline.
-Plan: `docs/superpowers/plans/2026-06-07-phase0-run-provenance-leaderboard-key.md`.
-Spec: `docs/superpowers/specs/2026-06-07-optimal-model-calls-design.md`.
+Plan: `docs/superpowers/archive/plans/2026-06-07-phase0-run-provenance-leaderboard-key.md`.
+Spec: `docs/superpowers/archive/specs/2026-06-07-optimal-model-calls-design.md`.
 
 ---
 
@@ -191,8 +191,8 @@ with a live zoom readout in the header.
 GO-WITH-CHANGES; all folded, incl. the rung-1 escaping decision and Joseph's decision-B lowercase).
 Implemented **subagent-driven** (8-task TDD plan); per-task two-stage review caught two real bugs
 (a telemetry sticky-flag mis-report; the original semantic-gate gap). Merged `2fb5d0e`. Plan:
-`docs/superpowers/plans/2026-06-02-task106-json-escape-slug-coercion.md`; synthesis:
-`docs/superpowers/specs/2026-06-02-task106-review-synthesis.md`.
+`docs/superpowers/archive/plans/2026-06-02-task106-json-escape-slug-coercion.md`; synthesis:
+`docs/superpowers/archive/specs/2026-06-02-task106-review-synthesis.md`.
 
 **Next:** run-8 surfaced recoverable failures clustering in **Pass-1** (empty-response, null-summary;
 all retry-rescued) → **Task #108** (extend the ladder into Pass-1; rung-1 already reusable in
@@ -230,7 +230,7 @@ tests green** (1175 → 1191: +16 guard/split/render/gate tests, none lost).
 the logic-bearing ones). **5-panel code review** (Codex · Deepseek · Qwen · Gemini · Grok) → **GO-WITH-FIXES**, all
 must-fixes folded (F1–F6: guard retired migration scripts, `__version__`→`0.5.2`, `setup.sh`/boundary-set/wheel-exclude/
 stale-text). 3 non-blocking follow-ups (viewer packaging · `compiler.compiler` rename · cleanup decoupling) → **Task #107**.
-Synthesis: `docs/superpowers/specs/2026-06-02-phase-b-review-synthesis.md`. Merged `f28220e`.
+Synthesis: `docs/superpowers/archive/specs/2026-06-02-phase-b-review-synthesis.md`. Merged `f28220e`.
 
 **Next:** the **0.6 robustness ladder** — **Task #106** (JSON-repair + slug-coercion), now landing in the real
 `common/util` + `compiler/repair` homes; panel-review its spec → writing-plans → run-8.
@@ -261,7 +261,7 @@ delta is normal LLM run-to-run variance) → behavior preserved end-to-end. 1175
 - **North Star §5 rewritten** to the orchestrator architecture + stale-reference sweep.
 
 **Ratification:** 5-model panel (Codex · Deepseek · Qwen · Gemini · Grok-build), unanimous GO;
-blueprint v2 + reviews + synthesis under `docs/superpowers/specs/2026-06-01-codebase-realignment-*`.
+blueprint v2 + reviews + synthesis under `docs/superpowers/archive/specs/2026-06-01-codebase-realignment-*`.
 
 **Next:** **Phase B** — split the `kdb_compiler` monolith into peer packages
 (`common`/`ingestion`/`compiler`/`graph`=`kdb_graph`/`orchestrator`/`tools`), still before 0.6.
@@ -319,7 +319,7 @@ Snapshot → **v6**.
 16% → **100%**.
 
 Implements ratified decision **D1-A** (`docs/ontology-blueprint-V1.md` v0.2). Plan:
-`docs/superpowers/plans/2026-05-31-task-0.5.0-producer-domain-rebuild.md`. 1010
+`docs/superpowers/archive/plans/2026-05-31-task-0.5.0-producer-domain-rebuild.md`. 1010
 non-live tests green; final code review (opus) cleared it to ship.
 
 **Still pending for 0.5.0:** D3 domain-scoped T2/T3 retrieval · stdout/progress

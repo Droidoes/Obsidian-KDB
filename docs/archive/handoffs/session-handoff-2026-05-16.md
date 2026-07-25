@@ -32,7 +32,7 @@ state, the one ready-to-pick-up task, and direction for the next session.
   - `graphdb_kdb/adapters/obsidian_runs.py` — event-type routing (`compile` vs `cleanup`), `supported_journal_versions = ["2.0", "2.1"]`, `sync_cleanup_run()`.
   - `scripts/backfill_cleanup_journal.py` + `scripts/__init__.py` — one-shot backfill (already applied; kept for audit lineage).
   - `kdb_scan.py` / `manifest_update.py` — hash-based compile trigger (#66).
-- **New docs:** `docs/task66-*` blueprint+plan, `docs/task68-cleanup-retraction-event-blueprint.md`, `docs/superpowers/plans/2026-05-16-task68-*.md`, `docs/task65-pairing-reconcilable-blueprint.md` (pre-existing, still pending impl), `docs/task69-compile-count-drift-audit.md`.
+- **New docs:** `docs/task66-*` blueprint+plan, `docs/task68-cleanup-retraction-event-blueprint.md`, `docs/superpowers/archive/plans/2026-05-16-task68-*.md`, `docs/task65-pairing-reconcilable-blueprint.md` (pre-existing, still pending impl), `docs/task69-compile-count-drift-audit.md`.
 - **Producer contract** (`docs/graphdb-kdb-producer-contract.md` §3.3/§3.4/§4) + `docs/CODEBASE_OVERVIEW.md` amended for the cleanup event (`76f8562`).
 - **Live vault state:** manifest 54 active / 0 orphan; graph rebuilt and verified; `verify` drift down to 10, all known-benign (see below).
 

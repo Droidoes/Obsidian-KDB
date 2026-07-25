@@ -14,10 +14,10 @@
 **Issue:** Plan 1 treats validate / reconcile / canonicalize / apply as modules that "merely iterate `compiled_sources`", so wrapping a one-element `cr` is presented as behavior-preserving. That is true for several checks, but not for all downstream semantics. Both canonicalization and page application currently use the full `compiled_sources` list as a batch-level aggregation boundary.
 
 **Evidence:**
-- Plan 1 states that stages 4 / 5 / 6 "already operate on a `cr`-shaped dict and merely iterate `compiled_sources`" and that `compile_source` wraps a one-element `cr` (`docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:7`).
+- Plan 1 states that stages 4 / 5 / 6 "already operate on a `cr`-shaped dict and merely iterate `compiled_sources`" and that `compile_source` wraps a one-element `cr` (`docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:7`).
 - `canonicalize._merge_page_intents()` groups page intents across every source in `cr["compiled_sources"]` and merges collisions with unioned `supports_page_existence` (`kdb_compiler/canonicalize.py:336-462`).
 - `patch_applier.build_page_patches()` first accumulates `source_refs` per page across all compiled sources in the current `compile_result`, then writes frontmatter from that accumulated set (`kdb_compiler/patch_applier.py:208-238`).
-- The spec moves to a per-source loop where the next source sees prior graph writes after `apply_compile_result` (`docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md:266-278`), but Plan 1's wiki-page write happens before graph sync and only has the one-source `cr`.
+- The spec moves to a per-source loop where the next source sees prior graph writes after `apply_compile_result` (`docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md:266-278`), but Plan 1's wiki-page write happens before graph sync and only has the one-source `cr`.
 
 **Recommendation:** Amend Plan 1 to name this as an intentional semantic change, not an implementation detail. At minimum, add tests or acceptance notes for two changed behaviors:
 
@@ -34,10 +34,10 @@ If full wiki `source_refs` fidelity matters, do not leave this to later discover
 **Issue:** Plan 1 says all pre-commit failure modes return `CompileSourceResult(cr=None, error=...)`, but the apply-pages step only catches `PagePatchError`. `patch_applier.apply()` can also raise filesystem errors from the atomic write loop. If that happens, `compile_source()` can raise instead of returning the promised result shape. Also, because the loop writes page-by-page, a failure after one successful write can leave wiki pages changed while manifest and graph remain uncommitted.
 
 **Evidence:**
-- Plan 1's result contract says compile / validate / canonicalize / apply failures return `CompileSourceResult(cr=None, error=...)` (`docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:361-372`).
-- The apply implementation only catches `patch_applier.PagePatchError` (`docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:482-488`).
+- Plan 1's result contract says compile / validate / canonicalize / apply failures return `CompileSourceResult(cr=None, error=...)` (`docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:361-372`).
+- The apply implementation only catches `patch_applier.PagePatchError` (`docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:482-488`).
 - `patch_applier.apply()` renders all patches first, but then writes them one at a time with `atomic_write_text()` (`kdb_compiler/patch_applier.py:267-290`), so `OSError` or another filesystem exception can occur during the write loop.
-- The Task #91 spec classifies patch-apply failure as pre-commit case (a): source not committed, manifest untouched (`docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md:309-314`).
+- The Task #91 spec classifies patch-apply failure as pre-commit case (a): source not committed, manifest untouched (`docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md:309-314`).
 
 **Recommendation:** In Plan 1, catch apply-stage filesystem failures as part of the `CompileSourceResult` contract, not just `PagePatchError`. Add `stage="apply_pages"` / `exception_type` metadata to the result or error payload. Also document the residual wiki side effect explicitly: a pre-commit apply failure keeps manifest and graph untouched, but may have already atomically written one or more wiki pages. If that is unacceptable, Plan 1 needs a staging/rollback strategy before implementation; if acceptable for single-user v1, say so and make rerun/rebuild behavior explicit.
 
@@ -49,9 +49,9 @@ If full wiki `source_refs` fidelity matters, do not leave this to later discover
 **Issue:** `CompileSourceResult(cr, pages_written, error)` gives the orchestrator enough to fail fast, but not enough to produce the case-aware summary required by the Task #91 design without parsing strings. It also omits context-snapshot failures from the listed pre-commit modes.
 
 **Evidence:**
-- Plan 1 defines `CompileSourceResult` with only `cr`, `pages_written`, `error`, and derived `.ok` (`docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:174-188`).
-- The spec requires abort summaries to distinguish "not committed" vs "committed-but-graph-sync-failed" and record the failing source / case (`docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md:309-327`).
-- `compile_source()` calls `build_context_snapshot()` before any local failure wrapper in the planned code (`docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:374-378`). Graph read failures are therefore outside the uniform result model.
+- Plan 1 defines `CompileSourceResult` with only `cr`, `pages_written`, `error`, and derived `.ok` (`docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:174-188`).
+- The spec requires abort summaries to distinguish "not committed" vs "committed-but-graph-sync-failed" and record the failing source / case (`docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md:309-327`).
+- `compile_source()` calls `build_context_snapshot()` before any local failure wrapper in the planned code (`docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md:374-378`). Graph read failures are therefore outside the uniform result model.
 - The existing monolithic orchestrator records failures with stage index, stage name, and failure type rather than a bare string (`kdb_compiler/kdb_compile.py:202-224`).
 
 **Recommendation:** Extend `CompileSourceResult` before implementation:

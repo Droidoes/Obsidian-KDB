@@ -1,7 +1,7 @@
 # Task #89 Pass-1 — Provider Structured-Output Parity Findings
 
 **Date:** 2026-05-26
-**Purpose:** Per Task A.2 of `docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md`. Empirical verification of OQ-89-13 — which Pass-1 candidate providers reliably emit structured JSON for the Pass-1 envelope schema.
+**Purpose:** Per Task A.2 of `docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md`. Empirical verification of OQ-89-13 — which Pass-1 candidate providers reliably emit structured JSON for the Pass-1 envelope schema.
 **Script:** `scripts/verify_structured_output_parity.py` (committed at `c2353e5` after fixes for C1 deepseek extra_body + C2 gpt-5.4-mini use_completion_tokens + C3 anthropic full dated model string).
 
 ## Method
@@ -67,7 +67,7 @@ Filed as new follow-up: **OQ-Pass1-A1** — Anthropic JSON enforcement in `call_
 
 ## Cross-references
 
-- Plan: `docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md` Phase A
+- Plan: `docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md` Phase A
 - Memory: [[project_deepseek_v4_flash_dropped]] — the 2026-05-23 direct-route re-instatement; this finding extends that lineage
 - Memory: [[feedback_flag_time_bounded_pricing]] — DeepSeek's "75% discount" pricing remains the post-cliff rate (per `1/4 of original` line in their pricing page); no Pass-1 cost surprise expected
 - Earlier code review (Task A.1 commit `4882597`): I2 observation that `json_mode` is silently ignored on the anthropic path — this finding empirically confirms it

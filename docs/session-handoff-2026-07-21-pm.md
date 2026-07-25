@@ -33,7 +33,7 @@ The **Li Lu lecture trips BOTH Chinese providers' mandatory compliance layers** 
 
 **The principle (Joseph's reframe):** the LLM response is a *carrier*, the JSON document is the *payload*. The parse stage recovers the payload with maximum tolerance for carrier noise; it may only **select** (locate the complete document), never **edit** decoded content; failure only on (a) no complete document, or (b) content failing the schema/semantic gates. A format deviation alone never fails a source. Origin: the #104 coerce-don't-reject principle had been implemented as whack-a-mole per-class exceptions; the 20 gemini-3.5 carrier-noise failures (19 recoverable + 1 genuinely incomplete) proved the posture wrong.
 
-**Spec** v0.3.6 (`docs/superpowers/specs/2026-07-21-recovery-oriented-parse-stage-design.md`) — 3 Codex design rounds + 5 plan rounds, all findings verified + accepted, final verdict GO. Key contracts: shared `recover_json_response` (unwrap + strict-eval + 5-step selection-first ladder, used by `compile_one` AND `tools/replay.py`); root-preserving boundary-decode (never carves a nested object out of a failed array root; literal classification both-directional — `nul` attempted-root, `nulljunk` root+tail, `note:` prose); `recovered: bool` sentinel (JSON null ≠ failure); any-value recovery (schema judges content); coercion dict-guarded; recovery-before-truncation (ratified behavior change); `boundary_recovered` + prefix/tail counts threaded into `recovery_rate`/`repair_rung_rate`; `extract_ok` non-gating; `failure_stage="extract"` retired.
+**Spec** v0.3.6 (`docs/superpowers/archive/specs/2026-07-21-recovery-oriented-parse-stage-design.md`) — 3 Codex design rounds + 5 plan rounds, all findings verified + accepted, final verdict GO. Key contracts: shared `recover_json_response` (unwrap + strict-eval + 5-step selection-first ladder, used by `compile_one` AND `tools/replay.py`); root-preserving boundary-decode (never carves a nested object out of a failed array root; literal classification both-directional — `nul` attempted-root, `nulljunk` root+tail, `note:` prose); `recovered: bool` sentinel (JSON null ≠ failure); any-value recovery (schema judges content); coercion dict-guarded; recovery-before-truncation (ratified behavior change); `boundary_recovered` + prefix/tail counts threaded into `recovery_rate`/`repair_rung_rate`; `extract_ok` non-gating; `failure_stage="extract"` retired.
 
 **Execution** (subagent-driven, 9 tasks, each spec+quality reviewed): commits `253af03` docs → `d205189` util → `b82fe41` unwrap → `88ec454` recovery → `0b643cb` telemetry → `76d6cd7` fixtures (20 curated, `compiler/tests/fixtures/pass2_recovery/`) → `055f515` compile_one → `20bd8f7` KPI → `81e5690` replay → `334baad` closure → `de11e2f` final-review minors. Final whole-branch review: **READY TO MERGE, 0 Critical/Important**. Suite **1379 passed** green. Progress ledger: `.superpowers/sdd/progress.md` (git-ignored).
 
@@ -59,8 +59,8 @@ The **Li Lu lecture trips BOTH Chinese providers' mandatory compliance layers** 
 
 ### Pointers
 
-- Spec: `docs/superpowers/specs/2026-07-21-recovery-oriented-parse-stage-design.md` (v0.3.6, change log §7)
-- Plan: `docs/superpowers/plans/2026-07-21-task114-recovery-oriented-parse-stage.md` (v1.5)
+- Spec: `docs/superpowers/archive/specs/2026-07-21-recovery-oriented-parse-stage-design.md` (v0.3.6, change log §7)
+- Plan: `docs/superpowers/archive/plans/2026-07-21-task114-recovery-oriented-parse-stage.md` (v1.5)
 - Board: `benchmark/scores/leaderboard.md` (5 rows, current-gen)
 - GLM evidence: `common/models_dropped.json` (tail 2 entries: glm-5-turbo, grok-4.20)
 - Prior handoffs: `docs/session-handoff-2026-07-21.md` (overnight WS1 firing), `docs/session-handoff-2026-07-20.md` (WS stack + locked decisions)

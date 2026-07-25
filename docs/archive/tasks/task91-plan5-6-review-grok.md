@@ -2,9 +2,9 @@
 
 **Reviewer:** Grok Build (CLI, code-grounded)  
 **Date:** 2026-05-29  
-**Artifact reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`  
+**Artifact reviewed:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`  
 **Primary references:**  
-- Design spec: `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Orchestrator loop, Pass-1 egress, Pass-2 ingress)  
+- Design spec: `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Orchestrator loop, Pass-1 egress, Pass-2 ingress)  
 - Ratified decisions: `docs/task91-kdb-orchestrate-blueprint.md` (D-91-1..D-91-14, especially D-91-8/10/13/14)  
 - Shipped foundations (usage only): `compile_source`, `apply_compile_result` + `detect_orphans`, `pipeline_registry`, `scan_scope`, `build_source_state_update`, `enrich_one`, `patch_applier`, `kdb_clean`
 

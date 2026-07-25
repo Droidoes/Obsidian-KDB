@@ -19,7 +19,7 @@ Memory candidate (post-arc-2 close): re-instate agy as full panel member without
 
 ### Arc 2: Pass-1 + compile-integration implementation plan
 
-Written at `docs/superpowers/plans/2026-05-26-task89-pass1-ingestion-implementation.md` (~3000 lines, 22 tasks across Phase 0/A/B/C/D/E). Committed `02371bc`.
+Written at `docs/superpowers/archive/plans/2026-05-26-task89-pass1-ingestion-implementation.md` (~3000 lines, 22 tasks across Phase 0/A/B/C/D/E). Committed `02371bc`.
 
 ### Arc 3: Plan execution (subagent-driven; 19 of 22 tasks)
 

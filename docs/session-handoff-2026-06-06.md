@@ -39,7 +39,7 @@ A heavy build session, all merged to `main` and **pushed to `origin` (`origin/ma
 
 ## Pointers
 - Resume artifact: **`docs/reference/benchmark-cohort-procedure.md`** (the exact cohort run+score runbook) + the current `benchmark/scores/leaderboard.md` (gitignored, on Joseph's machine).
-- This arc's spec/plan: `docs/superpowers/specs/2026-06-06-benchmark-cli-refactor-penalty-design.md` · `docs/superpowers/plans/2026-06-06-benchmark-cli-refactor-penalty.md`.
+- This arc's spec/plan: `docs/superpowers/archive/specs/2026-06-06-benchmark-cli-refactor-penalty-design.md` · `docs/superpowers/archive/plans/2026-06-06-benchmark-cli-refactor-penalty.md`.
 - Scoring engine: `compiler/kpi/score.py` (`score_models`, `weak_spot_penalty`, `WEAK_SPOT_THRESHOLD`/`_PENALTY_CAP`, `COMPOSITE_SCALE`). CLI: `tools/benchmark/cli.py` (`_score_command`).
 - Task ledger: `docs/TASKS.md` (#109 entry carries the full narrative + §7 doc-debt note). North Star: `docs/CODEBASE_OVERVIEW.md`. Test-run base: `docs/reference/test-run-procedure.md`. Sandbox: `~/Obsidian/Vault-in-place-test-run/` (36 src).
 - Memory: [[project_benchmark_redesign_architecture]] (updated today — §6 + CLI/penalty + 3-model cohort + next steps), [[feedback_apples_to_apples_within_session]], [[feedback_user_fires_api_cost_runs]], [[feedback_conversational_over_askuserquestion]].

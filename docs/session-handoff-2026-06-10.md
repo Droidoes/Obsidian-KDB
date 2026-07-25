@@ -28,8 +28,8 @@ Long design+build session. Reframed `kdb_graph` from "a compiler package" into *
 - [ ] Strategic fork still parked: 2.0 Claim layer before/after 0.6→1.0 ingestion (lean: 1.0 first). Worldview-Reconciliation Gate gives 2.0 a named consumer when it's time.
 
 ## Pointers
-- **Resume artifact:** `docs/superpowers/specs/2026-06-10-graph-access-package-design.md` (v0.3) — §1.5 Named Gate, §3.5 tool surface, §6 prerequisites, §7 sequencing.
-- **Phase plans:** `docs/superpowers/plans/2026-06-10-graph-access-phase1-package-boundary.md` (DONE); Phase 2/3 plans TBD.
+- **Resume artifact:** `docs/superpowers/archive/specs/2026-06-10-graph-access-package-design.md` (v0.3) — §1.5 Named Gate, §3.5 tool surface, §6 prerequisites, §7 sequencing.
+- **Phase plans:** `docs/superpowers/archive/plans/2026-06-10-graph-access-phase1-package-boundary.md` (DONE); Phase 2/3 plans TBD.
 - **Panels:** `docs/superpowers/specs/reviews/2026-06-10-graph-access/` (design, 5) + `…/2026-06-10-mcp-killer-app/` (challenge, 6).
 - **Task ledger:** `docs/TASKS.md` (#112 closed, #113 in-progress — Phase 1 done) · **North Star:** `docs/CODEBASE_OVERVIEW.md` · **Journey:** `docs/JOURNEY.md` §6.
 - Memory: [[project_113_graph_access_mcp]] · [[feedback_interrogate_anchored_premise]] · [[feedback_terse_signals_clear_thinking]].

@@ -10,7 +10,7 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 
 ### Arc 1: #114 closure (merged + pushed)
 
-- Codex pre-merge review (`docs/superpowers/plans/2026-07-21-task114-recovery-oriented-parse-stage-pre-merge-review-codex.md`): GO WITH CHANGES, 2 Important, both verified + fixed + tested:
+- Codex pre-merge review (`docs/superpowers/archive/plans/2026-07-21-task114-recovery-oriented-parse-stage-pre-merge-review-codex.md`): GO WITH CHANGES, 2 Important, both verified + fixed + tested:
   - **F1**: `unwrap_response` fused multiple fenced blocks — a `null` block + object block would recover JSON `null` → quarantine. Fixed with the spec-mandated parse-based disambiguation (`compiler/response_normalizer.py:98`).
   - **F2**: `failed_after_response` treated non-gating `extract_ok=False` as failure → raw source text persisted on recovered successes even with capture unset. Fixed to derive from gating verdicts only (`common/llm_telemetry.py:156`).
 - Suite 1384 green; merged ff `3b4e300..7d8263b` (14 commits); **pushed `718e75d..7d8263b`**.
@@ -20,7 +20,7 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 
 **What it became:** not a prompt cleanup — a derivation-first Pass-2 contract revision. The LLM emits wiki-native data only; Python owns everything mechanical.
 
-**Spec v1.6** (`docs/superpowers/specs/2026-07-21-task115-pass2-contract-audit-findings.md`) — D-115-1..15 + carve addendum, 4 Codex spec rounds absorbed. Joseph's ratified calls (several reversed reviewer leans):
+**Spec v1.6** (`docs/superpowers/archive/specs/2026-07-21-task115-pass2-contract-audit-findings.md`) — D-115-1..15 + carve addendum, 4 Codex spec rounds absorbed. Joseph's ratified calls (several reversed reviewer leans):
 - Six fields OUT of the LLM contract: `concept_slugs`, `article_slugs`, top-level `summary_slug`, `outgoing_links`, `source_name`, `status`. No Python reconstruction of the removed aggregates.
 - **Design principle (Joseph): the contract speaks wiki, not graph** — pages, bodies, `[[wikilinks]]`; no edge-list projections.
 - Summary page stays fully model-authored INcluding its slug (no prompt injection — Joseph rejected the exception mechanism; exact-stem rule enforced by gate).
@@ -29,7 +29,7 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 - `confidence` deprecated end-to-end (logical — Entity scope only; Claim tier untouched). Joseph: "a dimension we don't need." 956 high/45 med/0 low.
 - `page_type` kept — the model's one earned classification field. No GLM A/B (retired, too slow; mechanism stays a supported hypothesis).
 
-**Blueprint v1.10** (`docs/superpowers/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md`) — 10 Codex rounds (R5–R14). Key structural content:
+**Blueprint v1.10** (`docs/superpowers/archive/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md`) — 10 Codex rounds (R5–R14). Key structural content:
 - **The carve (R12 + Joseph):** reservation-preflight / MOVED-lifecycle / durability subsystem carved to **#116** after R8–R11 accreted a write-ahead transaction subsystem inside what was supposed to be a contract task. Accepted temporary behavior: normalized derived-slug collisions keep wiki-LWW/graph-co-ownership (existing behavior, NOT a regression).
 - **#116 filed** (ledger): source-lifecycle convergence + durability, paired with #94 as a WS3 pre-production gate. v1.7 archived verbatim as its CANDIDATE (not ratified) design seed: `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md` (R13 F1 caught that the untracked blueprint had been overwritten — reconstructed from session history).
 - D-115-11 formally split: #115 keeps per-source exactness; #116 owns cross-source collision/reservation.
@@ -57,8 +57,8 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 
 ### Pointers
 
-- Blueprint: `docs/superpowers/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md` (v1.10) + 10 Codex review files beside it.
-- Spec: `docs/superpowers/specs/2026-07-21-task115-pass2-contract-audit-findings.md` (v1.6) + 4 spec review files.
+- Blueprint: `docs/superpowers/archive/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md` (v1.10) + 10 Codex review files beside it.
+- Spec: `docs/superpowers/archive/specs/2026-07-21-task115-pass2-contract-audit-findings.md` (v1.6) + 4 spec review files.
 - #116 seed: `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.
 - Ledger: `docs/TASKS.md` rows #115 (v1.10 descoped), #116 (proposed).
 - Prior handoff: `docs/session-handoff-2026-07-21-pm.md` (WS1 closure + #114 execution detail).

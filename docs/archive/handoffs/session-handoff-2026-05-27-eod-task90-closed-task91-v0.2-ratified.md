@@ -77,7 +77,7 @@ Multi-arc day: morning #90 closure ceremony → afternoon #88 sub-arc 3 architec
 
 ### Deferred (no-action this session)
 
-- **Task #91 TDD implementation plan** — next blocker. File: `docs/superpowers/plans/2026-05-27-task91-kdb-orchestrate-implementation.md` (target ~300-400 lines). Phase sequence: A.0 → A.1 → A.2 → A.3 → B → C → D → E.
+- **Task #91 TDD implementation plan** — next blocker. File: `docs/superpowers/archive/plans/2026-05-27-task91-kdb-orchestrate-implementation.md` (target ~300-400 lines). Phase sequence: A.0 → A.1 → A.2 → A.3 → B → C → D → E.
 - **OQ-91-8** — MOVED+CHANGED edge case (rare, current behavior is NEW + DELETED). Defer; revisit if production telemetry shows frequency.
 - **OQ-91-9** — `last_orchestrate.json` running-state marker (`state: "running" | "complete" | "failed"`). Defer to implementation-time decision; minimal observability addition, NOT a lock file.
 
@@ -102,7 +102,7 @@ Multi-arc day: morning #90 closure ceremony → afternoon #88 sub-arc 3 architec
 ### Primary (likely next-session opener)
 
 **Task #91 TDD implementation plan write.** Per Phase 3 → Phase 4 workflow + Task #90 precedent. Concrete shape:
-- File: `docs/superpowers/plans/2026-05-27-task91-kdb-orchestrate-implementation.md`
+- File: `docs/superpowers/archive/plans/2026-05-27-task91-kdb-orchestrate-implementation.md`
 - Target length: ~300-400 lines, checkboxed sub-tasks
 - Phase sequence (8 phases):
   1. **Phase A.0** — `apply_source_enrich_and_compile()` + `apply_source_path_update()` in `source_state_update.py` (CR-1 prereq; ~8-12 unit tests)

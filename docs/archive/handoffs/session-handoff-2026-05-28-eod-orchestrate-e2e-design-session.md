@@ -1,6 +1,6 @@
 # Session Handoff — 2026-05-28 EOD — `kdb-orchestrate` E2E design session
 
-Design/brainstorming session (no code changed). Walked the end-to-end orchestrator architecture component-by-component with Joseph, capturing each settled piece into a **living design spec**: `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md`.
+Design/brainstorming session (no code changed). Walked the end-to-end orchestrator architecture component-by-component with Joseph, capturing each settled piece into a **living design spec**: `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md`.
 
 **Framing pivot from where Task #91 v0.2 left off:** the v0.2 blueprint (`docs/task91-kdb-orchestrate-blueprint.md`) modeled a per-source world against the *pre-split monolithic* `kdb-compile`. This session reflects the real, decomposed architecture: `feeder → ingestion (Pass-1) → compiler (Pass-2) → GraphDB`, with `kdb-orchestrate` as the conductor. The new spec **supersedes the blueprint's §4 compile-driving assumptions** where they conflict.
 
@@ -36,6 +36,6 @@ Then: finish the spec → spec self-review → Joseph reviews → `writing-plans
 
 ## Repo / housekeeping state
 - **Branch:** `main`, in sync with `origin/main` at `c87434a` (the "4 commits ahead" in yesterday's handoff had already been pushed).
-- **Uncommitted:** the new design spec (`docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md`) + this handoff. **Not yet committed** — awaiting Joseph's go.
+- **Uncommitted:** the new design spec (`docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md`) + this handoff. **Not yet committed** — awaiting Joseph's go.
 - **`gws tasks` CLI note:** `--params` can no longer repeat; use a single JSON blob (`--params '{"tasklist":"@default","showCompleted":false}'`). Worth updating the `session-catchup` skill.
 - Carried-forward (untouched): NW-5 Pass-1 benchmark · tutorial promotion review · GraphDB-KDB stray-file anomaly.

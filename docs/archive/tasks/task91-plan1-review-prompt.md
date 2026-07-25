@@ -12,8 +12,8 @@ You are an independent senior architect reviewing an **implementation plan** bef
 
 ## Artifacts to read (repo root: `/home/ftu/Droidoes/Obsidian-KDB`)
 
-1. **The plan under review:** `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md`
-2. **The design spec it implements:** `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` — read especially the **"Component: Pass-2 ingress"** section (the `compile_source` input contract + stage-redistribution table) and the **"Component: Orchestrator loop"** section (per-source routing, fail-fast, the connection model) for context on what `compile_source` must compose with.
+1. **The plan under review:** `docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md`
+2. **The design spec it implements:** `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md` — read especially the **"Component: Pass-2 ingress"** section (the `compile_source` input contract + stage-redistribution table) and the **"Component: Orchestrator loop"** section (per-source routing, fail-fast, the connection model) for context on what `compile_source` must compose with.
 3. **The ratified decisions:** `docs/task91-kdb-orchestrate-blueprint.md` — the D-91-1..D-91-14 decision table (esp. D-91-8 fail-fast, D-91-12 direct Python API, D-91-13 two-phase failure, D-91-14 delete-via-sidecar).
 4. **The code the plan modifies/assembles:** `kdb_compiler/compiler.py` (`compile_one`, `run_compile`, `source_text_for`), `kdb_compiler/types.py`, `kdb_compiler/canonicalize.py`, `kdb_compiler/reconcile.py`, `kdb_compiler/validate_compile_result.py`, `kdb_compiler/patch_applier.py`, `kdb_compiler/graph_context_loader.py`.
 

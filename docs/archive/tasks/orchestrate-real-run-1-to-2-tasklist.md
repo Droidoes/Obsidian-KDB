@@ -88,7 +88,7 @@ Joseph: circuit-breaker is *downstream* of severity — design the foundation fi
       quarantine-and-continue second. Blueprint:
       `docs/archive/tasks/task96-orchestrator-error-handling-blueprint.md`.
 - [x] **Implementation plan drafted:**
-      `docs/superpowers/plans/2026-05-30-task96-orchestrator-error-handling.md`.
+      `docs/superpowers/archive/plans/2026-05-30-task96-orchestrator-error-handling.md`.
 
 ## C — [#94] Resilience redesign: quarantine-and-continue  **(GATING)**
 

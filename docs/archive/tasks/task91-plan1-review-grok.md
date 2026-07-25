@@ -2,9 +2,9 @@
 
 **Reviewer:** Grok Build (CLI, code-grounded)  
 **Date:** 2026-05-29  
-**Artifact reviewed:** `docs/superpowers/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md` (the TDD plan)  
+**Artifact reviewed:** `docs/superpowers/archive/plans/2026-05-29-task91-plan1-kdb-compile-rebuild.md` (the TDD plan)  
 **Primary references:**  
-- Design spec: `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Pass-2 ingress + Orchestrator loop sections)  
+- Design spec: `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md` (Pass-2 ingress + Orchestrator loop sections)  
 - Ratified decisions: `docs/task91-kdb-orchestrate-blueprint.md` (D-91-1..D-91-14)  
 - Code surface: `kdb_compiler/compiler.py`, `types.py`, `patch_applier.py`, `validate_compile_result.py`, `canonicalize.py`, `reconcile.py`, `graph_context_loader.py`  
 

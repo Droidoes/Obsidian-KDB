@@ -36,7 +36,7 @@ The Plan 5+6 implementation blueprint is an exceptionally well-thought-out integ
     2. `atomic_write_json(manifest_path, next_manifest)` (COMMIT BOUNDARY)
     3. `apply_compile_result(...)` (graph-sync)
     If `apply_compile_result` fails, the transaction is rolled back, but the manifest and wiki pages have already been committed. This creates a Case-(b) failure: the manifest is updated, but the live graph is stale. Recovery requires a manual `graphdb-kdb rebuild`.
-*   **Evidence:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` lines 79–84.
+*   **Evidence:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` lines 79–84.
 *   **Recommendation:** Move the manifest write **after** the graph-sync has successfully committed on the Kuzu connection:
     1. `patch_applier.apply(write=True)`
     2. `apply_compile_result(detect_orphans=False)` (Kuzu transaction successfully commits)
@@ -47,7 +47,7 @@ The Plan 5+6 implementation blueprint is an exceptionally well-thought-out integ
 *   **Dimension:** D1 (Per-Source Journaling / Replayability)
 *   **Severity:** Medium
 *   **Issue:** Accumulating all per-source `cr`s in-memory and writing the journal and sidecar once at `_finalize` is a highly pragmatic trade-off. However, a crash mid-loop before `_finalize` leaves committed-but-not-yet-journaled sources. While the live graph has them, the run journal on disk will be completely missing, meaning a subsequent `graphdb-kdb rebuild` would lose those edits if the graph had to be replayed.
-*   **Evidence:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` Design Point 1 (lines 15–17).
+*   **Evidence:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` Design Point 1 (lines 15–17).
 *   **Recommendation:** Implement a lightweight **Per-Source Sidecar Journal Directory** to close the crash window without adding complex append machinery:
     1. In `_commit_source`, immediately after a successful manifest commit, atomically write a tiny individual JSON file containing `cs.to_dict()` and `aliases_emitted` to a temporary run directory: `state/runs/<run_id>/<source_hash>.json`.
     2. In `_finalize`, read all small JSON files in `state/runs/<run_id>/`, aggregate them into the final batch `compile_result.json` and the standard run journal, then delete the temporary per-source directory.
@@ -57,7 +57,7 @@ The Plan 5+6 implementation blueprint is an exceptionally well-thought-out integ
 *   **Dimension:** D4 (Fail-fast / Resume / Idempotency)
 *   **Severity:** Medium
 *   **Issue:** A file that is both moved and edited (MOVED-and-CHANGED) will appear in both `scan.to_compile` (due to hash mismatch) and `scan.to_reconcile` (due to old-path removal). Under the current plan routing, it will trigger the compile queue path first, and then the reconcile path. If not carefully coordinated, the reconcile path's `_handle_source_deleted` (which tombstones the old path and drops its supports) might execute after or during compile, potentially clashing with the new path's SUPPORTS upsert.
-*   **Evidence:** `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` lines 127–129.
+*   **Evidence:** `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md` lines 127–129.
 *   **Recommendation:** Explicitly route MOVED-and-CHANGED operations. The orchestrator should process reconcile MOVED operations *before* compile operations, transferring existing SUPPORTS to the new path first, so that the subsequent compile step on the new path cleanly overwrites them. Reconcile DELETED operations should remain at the end.
 
 ---

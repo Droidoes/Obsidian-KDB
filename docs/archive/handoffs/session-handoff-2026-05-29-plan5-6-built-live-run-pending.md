@@ -85,8 +85,8 @@ Cleanup anytime: `rm -rf ~/Obsidian/Vault-in-place-test-run/` (everything under 
 - `kdb-old-compile` eventual retirement; scope-collision check (deferred).
 
 ## Pointers
-- Plan: `docs/superpowers/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
-- Spec: `docs/superpowers/specs/2026-05-28-kdb-orchestrate-e2e-design.md`
+- Plan: `docs/superpowers/archive/plans/2026-05-29-task91-plan5-6-orchestrator-loop.md`
+- Spec: `docs/superpowers/archive/specs/2026-05-28-kdb-orchestrate-e2e-design.md`
 - Blueprint + D-91-15: `docs/task91-kdb-orchestrate-blueprint.md`
 - C1/F-ord synthesis: `docs/task91-c1-ford-synthesis.md`
 - Ledger: `docs/TASKS.md` (#91 active; #92/#93/#94 filed)

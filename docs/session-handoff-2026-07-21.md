@@ -29,7 +29,7 @@ A benchmark-operations session (Kimi Code), executing WS1 from the 2026-07-20 st
 - Pass-1 sidecars nest tokens under `raw_response.total_*` (top-level zeroed); per-call `cost_usd` is correct at top level. **The §3C aggregate cost diagnostic ($/1k source-words) is NOT emitted in `measurements.json`/`report.md`** — designed but unimplemented; tonight's costs were summed from per-call records.
 - Quarantined Pass-2 records lack `compile_attempts` (clean/retried records have it).
 - Leaderboard keys on `(provider, model, release_version)`: same-key re-score **replaces** the row → the "low" re-fire cleanly replaces the flop row.
-- Why cost isn't scored: **purpose lock 2026-06-05** (`docs/superpowers/specs/2026-06-05-benchmark-kpi-enumeration-brief.md:17`) — selection settled on cost (deepseek wins regardless), board measures quality only; latency is the scored operational axis.
+- Why cost isn't scored: **purpose lock 2026-06-05** (`docs/superpowers/archive/specs/2026-06-05-benchmark-kpi-enumeration-brief.md:17`) — selection settled on cost (deepseek wins regardless), board measures quality only; latency is the scored operational axis.
 - Run-cost mechanics: per-call `cost_usd` includes discarded retry attempts (recorded totals > persisted-token pricing on retried runs).
 - `force_noise` does NOT skip Pass-1: every scanned source is Pass-1 enriched (gpt/deepseek runs: 36/36 enriched); force_noise only saves the Pass-2 call. A force_noise source whose Pass-1 fails quarantines instead of going noise (gemini-low run: `Daily Notes/2026-05-28.md`, Pass1EnrichError after 2 attempts). Big-run cost model consequence: main-vault `force_noise: [Daily Notes/**, Projects/**]` still costs a Pass-1 call per source — WS2/WS3 note.
 

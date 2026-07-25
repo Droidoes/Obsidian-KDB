@@ -17,7 +17,7 @@ Session arc: Phase-5 comparison cohort fired and analyzed → the first-ever Pas
 
 ### Arc 2: Failure analysis + Codex R1 + disposition
 
-- Analysis doc: `docs/superpowers/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis.md` — **v1.1** (disposition ratified, Codex R1 absorbed, v1.0 errors corrected).
+- Analysis doc: `docs/superpowers/archive/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis.md` — **v1.1** (disposition ratified, Codex R1 absorbed, v1.0 errors corrected).
 - Codex R1 (`…-review-codex.md`, same dir): **revise before ratification** — root issue broader than the summary slug: **canonical representation is enforced at the raw model-response boundary before any deterministic normalization stage exists** (`compiler/compiler.py:309-475`; strict schema requires `slug` on raw pages, `compiled_source_response.schema.json:37-42`). Governing rule: **reject ambiguity, not harmless representational differences** — normalize when Python can resolve exactly one valid meaning by role/provenance/registry/context authority (never string similarity); reject on ambiguity/collision/loss.
 - **Verification: all 6 blocking + 3 accuracy findings code-verified; zero false positives.** v1.0 had 4 genuine errors, corrected in v1.1: (1) "explained deltas"; (2) "deletes the source's content" (actually `error_compile`, prior content survives — `orchestrator/kdb_orchestrate.py:754-770`); (3) "uniqueness only" (slug = wiki filename + graph identity + wikilink target + manifest identity + replay identity); (4) "post-canon invariant trivially true" (canonicalize guard + post-canon invariant stay the fail-closed pair — `canonicalize.py:424-457`, `compiler.py:717-736`).
 - **Joseph's disposition (2026-07-23):** close #115 with the **explicit waiver** (quarantine behavior accepted as temporary production behavior — fail-closed: retry spend + per-run source absence); **#119** carries the full root-cause fix, with the identical KPI gate + cohort re-fire as its acceptance criterion.
@@ -47,7 +47,7 @@ Session arc: Phase-5 comparison cohort fired and analyzed → the first-ever Pas
 
 ### Pointers
 
-- #119 seed + verification record: `docs/superpowers/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis.md` (v1.1) + `…-review-codex.md`.
+- #119 seed + verification record: `docs/superpowers/archive/specs/2026-07-22-task119-phase5-summary-slug-failure-analysis.md` (v1.1) + `…-review-codex.md`.
 - Ledger: `docs/TASKS.md` (#115 Closed; #119 Open with full scope).
 - North Star: `docs/CODEBASE_OVERVIEW.md` Milestone Changelog 2026-07-23 (closure+waiver) atop 2026-07-22 (#117, DESIGN LOCKED).
 - #119 regression fixtures (future): `GraphRAG for Adaptive KB - Gemini3.1.md`, `what's React and Tailwind.md`.

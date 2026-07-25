@@ -25,7 +25,7 @@ Long build session. Shipped **two** #113 phases end-to-end (design → plan → 
 - [ ] Parked: 2.0 Claim layer before/after 0.6→1.0 ingestion (lean: 1.0 first).
 
 ## Pointers
-- **Resume artifact:** `docs/superpowers/specs/2026-06-10-graph-access-package-design.md` (v0.3 §3.5(c) analytics composite + §1.5 Named Gate) — the Phase 3b spec basis. Then write the Phase 3b plan.
+- **Resume artifact:** `docs/superpowers/archive/specs/2026-06-10-graph-access-package-design.md` (v0.3 §3.5(c) analytics composite + §1.5 Named Gate) — the Phase 3b spec basis. Then write the Phase 3b plan.
 - **How to test the MCP server now:** `OBSIDIAN_VAULT_PATH=~/Obsidian/Vault-in-place-test-run` then `.venv/bin/mcp dev kdb_mcp/server.py` (needs `pip install "mcp[cli]"`), or `claude mcp add kdb-graph -e OBSIDIAN_VAULT_PATH=… -- .venv/bin/python -m kdb_mcp.server`.
 - **Plans:** Phase 2 `…/plans/2026-06-11-get-body-content-tool.md`; Phase 3a `…/plans/2026-06-11-phase3a-mcp-read-server.md`; SDK verification `…/specs/2026-06-11-phase3-mcp-sdk-verification.md`.
 - **Ledger:** `docs/TASKS.md` #113 (Phase 1/2/3a done; 3b next) · **North Star:** `docs/CODEBASE_OVERVIEW.md` (two 2026-06-11 changelog entries).

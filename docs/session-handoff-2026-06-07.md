@@ -36,7 +36,7 @@ A second marathon block on 2026-06-07 (after the morning's #110/`v0.5.4`/Phase-0
 
 ## Pointers
 - **Resume artifact:** this file. Then the **`#111` Milestone Changelog entry** in `docs/CODEBASE_OVERVIEW.md` (full closure record) + ledger `docs/TASKS.md` (#111 → closed).
-- Spec (with the Phase-2-SHELVED banner): `docs/superpowers/specs/2026-06-07-optimal-model-calls-design.md`. Plans: `docs/superpowers/plans/2026-06-07-phase1-*.md`.
+- Spec (with the Phase-2-SHELVED banner): `docs/superpowers/archive/specs/2026-06-07-optimal-model-calls-design.md`. Plans: `docs/superpowers/archive/plans/2026-06-07-phase1-*.md`.
 - Reference: `docs/reference/model-provider-api-calls.md` (gpt temperature constraint, gemini native `thinking_level`, ollama notes). Cohort runbook: `docs/reference/benchmark-cohort-procedure.md`.
 - Memory: [[project_111_optimal_model_calls]], [[reference_model_provider_api_calls]], [[feedback_coerce_dont_reject]], [[feedback_data_before_principle]], [[feedback_user_fires_api_cost_runs]], [[project_release_versioning_scheme]].
 - Releases: `docs/RELEASES.md` (`v0.5.5`, `v0.5.6`). `main`/`origin` @ `f299ef4`; tags through `v0.5.6`.

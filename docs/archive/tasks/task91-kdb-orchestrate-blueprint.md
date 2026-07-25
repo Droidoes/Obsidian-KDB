@@ -630,6 +630,6 @@ Panel β (Codex + Deepseek) was the right scope for this task:
 2. ✅ Panel β responses landed → 2/2 guardrail-clean
 3. ✅ Synthesized panel feedback → v0.2 fold (17 amendments, 2 deferred to post-v0.2 OQs)
 4. ✅ Joseph ratified v0.2 (D-91-9..D-91-14 locked)
-5. **NEXT:** Write TDD implementation plan at `docs/superpowers/plans/2026-05-27-task91-kdb-orchestrate-implementation.md` mirroring Task #90 plan precedent (Phase A.0 → A.1 → A.2 → A.3 → B → C → D → E sequence with checkbox tracking)
+5. **NEXT:** Write TDD implementation plan at `docs/superpowers/archive/plans/2026-05-27-task91-kdb-orchestrate-implementation.md` mirroring Task #90 plan precedent (Phase A.0 → A.1 → A.2 → A.3 → B → C → D → E sequence with checkbox tracking)
 6. Plan review (lighter — single-reviewer Codex pass) → ratified
 7. Phase A-E execution per implementation-plan precedent

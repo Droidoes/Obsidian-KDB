@@ -6,7 +6,7 @@
 
 Design-only session. No code. We opened the **benchmark redesign** arc and got the architectural backbone to converge, but stopped **mid-brainstorm** — one fork + a few smaller decisions + the whole KPI deep-dive remain.
 
-**THE resume artifact:** `docs/superpowers/specs/2026-06-03-benchmark-redesign-directions.md` — DRAFT, with a clear **LOCKED vs OPEN** split. Read it first. Don't re-litigate LOCKED.
+**THE resume artifact:** `docs/superpowers/archive/specs/2026-06-03-benchmark-redesign-directions.md` — DRAFT, with a clear **LOCKED vs OPEN** split. Read it first. Don't re-litigate LOCKED.
 
 ### The redesign in one paragraph
 Model selection is settled on price; **quality is the only open axis**, and the old engine (`tools/benchmark/`, Task #5) measures **Pass-2 only** — blind to Pass-1 and to *graph* quality. The inversion: **drop the isolated harness, run the real `kdb-orchestrate` pipeline over the sandbox vault** (36 sources, full-corpus) as the benchmark vehicle, scoring **two KPI families — processing + graph — kept separate**, apples-to-apples across models.
@@ -32,7 +32,7 @@ Model selection is settled on price; **quality is the only open axis**, and the 
 - [ ] Carry-over from yesterday (untouched today): **#108** (Pass-1 repair ladder), **#107** (Phase-B polish), the 0.6→1.0 ingestion arc — all still queued; benchmark jumped the line by Joseph's call.
 
 ## Pointers
-- Resume artifact: `docs/superpowers/specs/2026-06-03-benchmark-redesign-directions.md`.
+- Resume artifact: `docs/superpowers/archive/specs/2026-06-03-benchmark-redesign-directions.md`.
 - Old engine: `tools/benchmark/` + `benchmark/runs|sources|scores|truth/`; North Star §7 (old KPI/Borda machinery).
 - Test-run procedure: `docs/reference/test-run-procedure.md`. Sandbox: `~/Obsidian/Vault-in-place-test-run/`.
 - Task ledger: `docs/TASKS.md`. North Star: `docs/CODEBASE_OVERVIEW.md`. Journey: `docs/JOURNEY.md`.
