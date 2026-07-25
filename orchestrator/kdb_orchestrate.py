@@ -46,6 +46,7 @@ from orchestrator.orchestrator_events import (
 )
 from common.measurement import RunMeasurementHeader
 from common.model_pool import resolve_models_json, UnknownModelError, PoolError
+from common.model_route import ModelRoute
 from common.run_context import RunContext, now_iso
 from common.version import release_version
 from orchestrator.emit_kpis import maybe_emit_kpis
@@ -499,6 +500,7 @@ def run(
     use_completion_tokens: bool = False, extra_body: dict | None = None,
     temperature: float | None = 0.0,
     ctx_window: int | None = None, price_in: float = 0.0, price_out: float = 0.0,
+    route: ModelRoute | None = None,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Source-local failures are quarantined
@@ -624,7 +626,7 @@ def run(
                     force_signal=pipeline.force_signal, force_noise=pipeline.force_noise,
                     price_in=price_in, price_out=price_out, ctx_window=ctx_window,
                     use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-                    temperature=temperature)
+                    temperature=temperature, route=route)
                 if enrich.outcome == "enrich_failed":
                     failure = _last_failure(
                         ctx=ctx,
@@ -713,7 +715,7 @@ def run(
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens,
                     price_in=price_in, price_out=price_out, ctx_window=ctx_window,
                     use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-                    temperature=temperature)
+                    temperature=temperature, route=route)
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
@@ -1090,6 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{args.model!r} (provider {spec.provider!r}). Omit --provider "
                 f"for known pool ids, or pass the matching provider.")
         provider, model = spec.provider, spec.model
+        route = spec.route
         use_completion_tokens = spec.use_completion_tokens
         extra_body = spec.extra_body
         temperature = spec.temperature
@@ -1101,8 +1104,10 @@ def main(argv: list[str] | None = None) -> int:
         # escape hatch is only for ids not in the pool at all.
         if args.provider is None:
             raise  # unknown id + no override → surface the UnknownModelError
-        # one-off escape hatch: raw model string, no pool metadata
+        # one-off escape hatch: raw model string, no pool metadata — the
+        # route-less registry path (Class B) resolves routing from `provider`.
         provider, model = args.provider, args.model
+        route = None
         use_completion_tokens, extra_body, ctx_window = False, None, None
         temperature = 0.0
         price_in, price_out = 0.0, 0.0
@@ -1114,7 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
         log_level=_resolve_log_level(args), quiet=args.quiet,
         emit_kpis=args.emit_kpis,
         use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-        temperature=temperature,
+        temperature=temperature, route=route,
         ctx_window=ctx_window, price_in=price_in, price_out=price_out)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "

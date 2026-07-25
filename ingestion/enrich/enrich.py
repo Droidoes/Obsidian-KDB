@@ -14,6 +14,7 @@ from ingestion.enrich.overrides import apply_overrides, build_override_block
 from ingestion.enrich.pass1_schema import validate_envelope, PASS1_SCHEMA_VERSION
 from ingestion.enrich.frontmatter_embedder import embed_frontmatter
 from common.source_io import parse_existing_frontmatter
+from common.model_route import ModelRoute
 from ingestion.enrich.replay_archive import write_sidecar, SidecarPayload
 
 
@@ -57,6 +58,7 @@ def enrich_one(
     ctx_window: int | None = None,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
     temperature: float | None = 0.0,
+    route: ModelRoute | None = None,
 ) -> EnrichResult:
     # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
     # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
@@ -89,7 +91,7 @@ def enrich_one(
             provider=provider, model=model,
             ctx_window=ctx_window,
             use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-            temperature=temperature,
+            temperature=temperature, route=route,
         )
     except Pass1CallError as e:
         sidecar = _write_sidecar_failed(

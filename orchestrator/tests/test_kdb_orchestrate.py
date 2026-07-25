@@ -13,6 +13,7 @@ from compiler import compiler, prompt_builder
 from orchestrator import kdb_orchestrate
 import orchestrator.emit_kpis as _emit_kpis_mod
 from common.call_model import ModelResponse
+from common.model_route import ModelRoute
 from compiler.canonicalize import load_or_empty
 from ingestion.enrich.pass1_caller import Pass1CallError, Pass1CallResult
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
@@ -261,6 +262,76 @@ def _write_pipelines(state_root: Path, vault_root: Path) -> None:
         {"id": "vt", "type": "in-place", "root": str(vault_root),
          "excludes": ["KDB/"], "force_noise": ["noise/*"], "file_types": [".md"]}
     ]}), encoding="utf-8")
+
+
+def _capture_pass_leaves(monkeypatch, captured: dict) -> None:
+    """#121 P2 §6: capture the LEAF ModelRequest of BOTH passes — Pass-1 inside
+    call_pass1 (real call_pass1 runs; only the engine call is faked) and
+    Pass-2 inside compile_one — without altering behavior."""
+    def pass1_leaf(req):
+        captured["pass1_req"] = req
+        return ModelResponse(
+            text=json.dumps({
+                "kdb_signal": "signal", "domain": "value-investing",
+                "source_type": "paper", "author": None, "summary": "A note.",
+                "key_themes": ["a"], "entity_search_keys": ["a"],
+                "confidence": 0.9, "uncertainty_reason": None,
+                "reject_reason": None, "other_reason": None,
+            }),
+            input_tokens=1, output_tokens=1, latency_ms=1,
+            model="m", provider="p", attempts=1)
+
+    def pass2_leaf(req):
+        captured["pass2_req"] = req
+        return _fake_model(_compiled_response("a.md", "summary-a"))(req)
+
+    monkeypatch.setattr("ingestion.enrich.pass1_caller.call_model", pass1_leaf)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", pass2_leaf)
+
+
+def test_run_threads_route_to_both_pass_leaves(tmp_path, monkeypatch):
+    """#121 P2 §6 both-pass leaf forwarding pin: the SAME ModelRoute object
+    reaches the leaf ModelRequest in Pass-1 (run → enrich_one → call_pass1 →
+    ModelRequest) and Pass-2 (run → compile_source → compile_one →
+    ModelRequest)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    captured: dict = {}
+    _capture_pass_leaves(monkeypatch, captured)
+
+    route = ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY")
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="deepseek", model="deepseek-v4-flash",
+        max_tokens=4096, route=route)
+
+    assert res.ok, res.exit_reason
+    assert captured["pass1_req"].route is route
+    assert captured["pass2_req"].route is route
+
+
+def test_main_escape_hatch_route_none_reaches_both_leaves(tmp_path, monkeypatch):
+    """#121 P2 §6 escape-hatch pin: unknown id + --provider → route=None
+    reaches BOTH pass leaves → the Class-B registry path."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    captured: dict = {}
+    _capture_pass_leaves(monkeypatch, captured)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt",
+        "--provider", "acme", "--model", "raw-acme-1",
+    ])
+
+    assert exit_code == 0
+    assert captured["pass1_req"].route is None
+    assert captured["pass2_req"].route is None
 
 
 def test_run_routes_signal_and_noise(tmp_path, monkeypatch):
@@ -893,6 +964,43 @@ def test_main_archived_model_with_provider_uses_escape_hatch(tmp_path, monkeypat
             "--vault-root", str(tmp_path), "--pipeline", "p",
             "--provider", "alibaba", "--model", "qwen-flash-us",
         ])
+
+
+def test_main_known_id_threads_spec_route_to_run(tmp_path, monkeypatch):
+    """#121 P2 §6 positive CLI pin: a known pool id's pre-validated ModelRoute
+    (spec.route) reaches run()."""
+    from common.model_pool import resolve_models_json
+    captured: dict = {}
+
+    def _sentinel(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("reached_run")
+    monkeypatch.setattr(kdb_orchestrate, "run", _sentinel)
+    with pytest.raises(RuntimeError, match="reached_run"):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--model", "deepseek-v4-flash",
+        ])
+    assert captured["route"] == ModelRoute(
+        "openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY")
+    assert captured["route"] == resolve_models_json("deepseek-v4-flash").route
+
+
+def test_main_escape_hatch_threads_none_route_to_run(tmp_path, monkeypatch):
+    """#121 P2 §6: the escape hatch passes route=None into run (Class-B
+    registry path — no pool metadata for a raw model string)."""
+    captured: dict = {}
+
+    def _sentinel(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("reached_run")
+    monkeypatch.setattr(kdb_orchestrate, "run", _sentinel)
+    with pytest.raises(RuntimeError, match="reached_run"):
+        kdb_orchestrate.main([
+            "--vault-root", str(tmp_path), "--pipeline", "p",
+            "--provider", "alibaba", "--model", "qwen-flash-us",
+        ])
+    assert captured["route"] is None
 
 
 def test_main_known_id_conflicting_provider_errors(tmp_path):

@@ -36,6 +36,7 @@ from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
 from common.model_pool import estimate_prompt_tokens, fits_context
+from common.model_route import ModelRoute
 from common.paths import PathError
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import T2Mode, build_context_snapshot
@@ -159,6 +160,7 @@ def compile_one(
     use_completion_tokens: bool = False,
     extra_body: dict | None = None,
     temperature: float | None = 0.0,
+    route: ModelRoute | None = None,
     price_in: float = 0.0,
     price_out: float = 0.0,
     ctx_window: int | None = None,
@@ -363,6 +365,7 @@ def compile_one(
                         max_tokens=max_tokens,
                         use_completion_tokens=use_completion_tokens,
                         extra_body=extra_body,
+                        route=route,
                         # Constrain output to valid JSON, mirroring Pass-1
                         # (pass1_caller.py json_mode=True).
                         json_mode=True,
@@ -642,6 +645,7 @@ def compile_source(
     use_completion_tokens: bool = False,
     extra_body: dict | None = None,
     temperature: float | None = 0.0,
+    route: ModelRoute | None = None,
     context_snapshot: ContextSnapshot | None = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
@@ -687,7 +691,7 @@ def compile_source(
         provider=provider, model=model, max_tokens=max_tokens,
         price_in=price_in, price_out=price_out, ctx_window=ctx_window,
         use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-        temperature=temperature,
+        temperature=temperature, route=route,
         resp_stats_dir=state_root / "runs" / ctx.run_id / "pass2",
         stats_record_sink=_capture,
     )

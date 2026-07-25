@@ -11,6 +11,7 @@ import pytest
 from compiler import compiler, prompt_builder
 from compiler.summary_slug import expected_summary_slug
 from common.call_model import ModelResponse
+from common.model_route import ModelRoute
 from compiler.canonicalize import load_or_empty
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
@@ -200,6 +201,38 @@ def test_compile_source_threads_pool_knobs_to_model_request(tmp_path, monkeypatc
 
     assert captured["req"].use_completion_tokens is True
     assert captured["req"].extra_body == knob_extra_body
+
+
+def test_compile_source_threads_route_to_model_request(tmp_path, monkeypatch):
+    """#121 P2 §6: compile_source → compile_one forwards the pool ModelRoute
+    into the constructed ModelRequest — the SAME object reaches the Pass-2
+    leaf (identity pin)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    captured: dict = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        )
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", capturing)
+
+    route = ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY")
+    with GraphDB(tmp_path / "graph") as g:
+        compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="deepseek", model="deepseek-v4-flash", max_tokens=4096,
+            route=route,
+        )
+
+    assert captured["req"].route is route
 
 
 def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):

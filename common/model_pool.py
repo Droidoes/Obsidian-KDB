@@ -2,8 +2,11 @@
 
 The JSON is DATA (pool + per-model knobs + curation ledger); this module is
 the LOOKUP layer (alias -> ModelSpec) plus token-estimate helpers for the
-context-overrun pre-flight guard.
-call_model.py (the engine) is untouched and still takes explicit provider+model.
+context-overrun pre-flight guard. Since Task #121 each entry also declares its
+routing (api_call_type / endpoint / api_key_env): load_pool validates the
+WHOLE pool once at materialization (Gate 1 — a malformed entry fails the pool
+at first touch, D4) and every ModelSpec carries the pre-validated ModelRoute
+that call_model dispatches on.
 """
 from __future__ import annotations
 
@@ -11,6 +14,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from functools import lru_cache
+
+from common.model_route import (
+    ModelConfigError,
+    ModelRoute,
+    validate_provider_identity,
+    validate_route,
+)
 
 _POOL_PATH = Path(__file__).with_name("models.json")
 WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
@@ -41,6 +51,10 @@ class ModelSpec:
     id: str
     provider: str
     model: str
+    # The pre-validated routing declaration (Gate 1 at load_pool). Stored
+    # canonical — Gate 1 rejects non-canonical providers, so this is the one
+    # identical string routing/lookup/echo/telemetry all see.
+    route: ModelRoute
     ctx_window: int | None = None
     max_output_tokens: int | None = None
     use_completion_tokens: bool = False
@@ -54,11 +68,43 @@ class ModelSpec:
     price_out: float = 0.0
 
 
+def _gate1_validate_entry(entry: dict) -> None:
+    """Gate 1 (#121): validate ONE entry's routing declaration at pool load.
+    Order: provider identity → required route fields present → build ModelRoute
+    → validate_route (no-auth never pool-declared). Any failure raises PoolError
+    naming the model id + cause; malformed JSON types are wrapped the same way
+    (validate_route never leaks a raw TypeError)."""
+    model_id = entry.get("id", "<missing id>")
+    try:
+        provider = validate_provider_identity(entry.get("provider"))
+    except ModelConfigError as e:
+        raise PoolError(f"Model {model_id!r}: {e}") from e
+    # Three-state endpoint (D4): the KEY must be present — absent → PoolError;
+    # explicit null → endpoint=None (SDK-built-in URL); string → override.
+    for field_name in ("api_call_type", "endpoint", "api_key_env"):
+        if field_name not in entry:
+            raise PoolError(
+                f"Model {model_id!r}: missing required route field {field_name!r}"
+            )
+    try:
+        route = ModelRoute(entry["api_call_type"], entry["endpoint"], entry["api_key_env"])
+        validate_route(route, provider=provider, allow_no_auth=False)
+    except ModelConfigError as e:
+        raise PoolError(f"Model {model_id!r}: {e}") from e
+
+
 @lru_cache(maxsize=1)
 def load_pool() -> list[dict]:
-    """Load the active pool from models.json. Dropped entries live in
-    models_dropped.json (a human archive the code never reads)."""
-    return json.loads(_POOL_PATH.read_text(encoding="utf-8"))
+    """Load the active pool from models.json, validating EVERY entry's route
+    declaration once at materialization (Gate 1) — a malformed entry, even one
+    never selected, fails the whole pool with PoolError naming the model id.
+    lru_cache caches successful loads only (exceptions re-run); tests that swap
+    _POOL_PATH must cache_clear(). Dropped entries live in models_dropped.json
+    (a human archive the code never reads)."""
+    entries = json.loads(_POOL_PATH.read_text(encoding="utf-8"))
+    for entry in entries:
+        _gate1_validate_entry(entry)
+    return entries
 
 
 def resolve_models_json(model_id: str) -> ModelSpec:
@@ -86,6 +132,8 @@ def resolve_models_json(model_id: str) -> ModelSpec:
         id=entry["id"],
         provider=entry["provider"],
         model=entry["model"],
+        # Pre-validated at Gate 1 (load_pool) — read verbatim, never re-validated.
+        route=ModelRoute(entry["api_call_type"], entry["endpoint"], entry["api_key_env"]),
         ctx_window=entry.get("ctx_window"),
         max_output_tokens=entry.get("max_output_tokens"),
         use_completion_tokens=entry.get("use_completion_tokens", False),

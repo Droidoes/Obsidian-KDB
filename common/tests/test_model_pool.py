@@ -8,6 +8,7 @@ from common.model_pool import (
     UnknownModelError,
     load_pool,
 )
+from common.model_route import ModelRoute
 
 
 def test_dropped_id_now_raises_unknown_model_error():
@@ -78,7 +79,10 @@ def test_resolve_unmapped_provider_injects_no_thinking_param():
 def test_resolve_invalid_thinking_value_raises_pool_error(monkeypatch):
     import common.model_pool as mp
     bogus = [{"id": "bogus", "provider": "alibaba", "model": "bogus",
-              "thinking": "bogus"}]
+              "thinking": "bogus",
+              "api_call_type": "openai_compat",
+              "endpoint": "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
+              "api_key_env": "QWEN_US_API_KEY"}]
     monkeypatch.setattr(mp, "load_pool", lambda: bogus)
     with pytest.raises(PoolError):
         mp.resolve_models_json("bogus")
@@ -88,7 +92,10 @@ def test_resolve_explicit_extra_body_merges_and_overrides(monkeypatch):
     # thinking-disable param merges with a raw extra_body; explicit keys win.
     import common.model_pool as mp
     crafted = [{"id": "crafted", "provider": "alibaba", "model": "crafted",
-                "thinking": "disabled", "extra_body": {"foo": 1}}]
+                "thinking": "disabled", "extra_body": {"foo": 1},
+                "api_call_type": "openai_compat",
+                "endpoint": "https://dashscope-us.aliyuncs.com/compatible-mode/v1",
+                "api_key_env": "QWEN_US_API_KEY"}]
     monkeypatch.setattr(mp, "load_pool", lambda: crafted)
     spec = mp.resolve_models_json("crafted")
     assert spec.extra_body == {"enable_thinking": False, "foo": 1}
@@ -220,3 +227,127 @@ def test_retired_glm_5_turbo_archived():
     # of the cohort; board 26.00, rank 4/5. See models_dropped.json.
     with pytest.raises(UnknownModelError):
         resolve_models_json("glm-5-turbo")
+
+
+# ---------- Task #121 P2: route-carrying pool (§4) ----------
+
+def test_active_entries_carry_byte_identical_routes():
+    """The 4 active entries' spec.route matches the §4 table EXACTLY."""
+    expected = {
+        "gpt-5.4-mini": ModelRoute("openai_compat", None, "OPENAI_API_KEY"),
+        "gemini-3.6-flash": ModelRoute("gemini", None, "GEMINI_API_KEY"),
+        "deepseek-v4-flash": ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+        "deepseek-v4-pro": ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    }
+    for model_id, route in expected.items():
+        spec = resolve_models_json(model_id)
+        assert spec.route == route, f"{model_id}: {spec.route} != {route}"
+
+
+import common.model_pool as mp
+
+
+@pytest.fixture
+def pool_json(tmp_path, monkeypatch):
+    """Swap _POOL_PATH to a tmp file for Gate-1 tests. lru_cache caches
+    successful loads (never exceptions) — cache_clear on write AND on teardown
+    so the real pool reloads for later tests."""
+    target = tmp_path / "models.json"
+    monkeypatch.setattr(mp, "_POOL_PATH", target)
+
+    def _write(entries):
+        target.write_text(json.dumps(entries), encoding="utf-8")
+        mp.load_pool.cache_clear()
+
+    yield _write
+    mp.load_pool.cache_clear()
+
+
+def _valid_entry(**overrides):
+    entry = {"id": "ok-1", "provider": "deepseek", "model": "deepseek-v4-flash",
+             "api_call_type": "openai_compat", "endpoint": "https://api.deepseek.com",
+             "api_key_env": "DEEPSEEK_API_KEY"}
+    entry.update(overrides)
+    return entry
+
+
+def test_route_fields_resolve_verbatim(pool_json):
+    """Endpoint override resolves EXACTLY — no `or DEFAULT` coercion (D4)."""
+    pool_json([_valid_entry(endpoint="https://custom.example.com/v1")])
+    spec = mp.resolve_models_json("ok-1")
+    assert spec.route == ModelRoute(
+        "openai_compat", "https://custom.example.com/v1", "DEEPSEEK_API_KEY")
+
+
+def test_explicit_null_endpoint_resolves_to_none(pool_json):
+    """Three-state endpoint: explicit JSON null → endpoint=None (SDK-built-in URL)."""
+    pool_json([_valid_entry(endpoint=None)])
+    spec = mp.resolve_models_json("ok-1")
+    assert spec.route.endpoint is None
+
+
+def test_gate1_absent_endpoint_key_raises_pool_error(pool_json):
+    """Three-state endpoint: the KEY must be present — absent → PoolError."""
+    bad = _valid_entry(id="bad-1")
+    del bad["endpoint"]
+    pool_json([_valid_entry(), bad])
+    with pytest.raises(PoolError, match="bad-1"):
+        mp.load_pool()
+
+
+def test_gate1_absent_api_call_type_key_raises_pool_error(pool_json):
+    bad = _valid_entry(id="bad-1b")
+    del bad["api_call_type"]
+    pool_json([_valid_entry(), bad])
+    with pytest.raises(PoolError, match="bad-1b"):
+        mp.load_pool()
+
+
+def test_gate1_empty_api_key_env_raises_pool_error(pool_json):
+    pool_json([_valid_entry(), _valid_entry(id="bad-2", api_key_env="")])
+    with pytest.raises(PoolError, match="bad-2"):
+        mp.load_pool()
+
+
+def test_gate1_null_api_key_env_raises_pool_error(pool_json):
+    """No-auth is never pool-declared (D: caller-declared no-auth is YAGNI)."""
+    pool_json([_valid_entry(), _valid_entry(id="bad-2b", api_key_env=None)])
+    with pytest.raises(PoolError, match="bad-2b"):
+        mp.load_pool()
+
+
+def test_gate1_unknown_api_call_type_raises_pool_error(pool_json):
+    pool_json([_valid_entry(), _valid_entry(id="bad-3", api_call_type="telepathy")])
+    with pytest.raises(PoolError, match="bad-3"):
+        mp.load_pool()
+
+
+def test_gate1_non_null_native_endpoint_raises_pool_error(pool_json):
+    pool_json([_valid_entry(), _valid_entry(
+        id="bad-4", provider="acme-gemini", api_call_type="gemini",
+        endpoint="https://x.example.com", api_key_env="SOME_KEY")])
+    with pytest.raises(PoolError, match="bad-4"):
+        mp.load_pool()
+
+
+@pytest.mark.parametrize("bad_provider", ["", "   ", " deepseek", "deepseek "])
+def test_gate1_blank_or_padded_provider_raises_pool_error(pool_json, bad_provider):
+    pool_json([_valid_entry(), _valid_entry(id="bad-5", provider=bad_provider)])
+    with pytest.raises(PoolError, match="bad-5"):
+        mp.load_pool()
+
+
+def test_gate1_wrong_json_types_wrapped_in_pool_error(pool_json):
+    """Malformed JSON types (api_call_type as a LIST — unhashable) are wrapped
+    in PoolError naming the model id; no raw TypeError/ModelConfigError leaks."""
+    pool_json([_valid_entry(), _valid_entry(id="bad-6", api_call_type=["openai_compat"])])
+    with pytest.raises(PoolError, match="bad-6"):
+        mp.load_pool()
+
+
+def test_gate1_fires_at_load_not_at_selection(pool_json):
+    """Whole-pool validation: the malformed entry is NEVER selected — even
+    resolving the valid sibling fails at load (D4, first touch)."""
+    pool_json([_valid_entry(), _valid_entry(id="bad-7", api_key_env=None)])
+    with pytest.raises(PoolError, match="bad-7"):
+        mp.resolve_models_json("ok-1")

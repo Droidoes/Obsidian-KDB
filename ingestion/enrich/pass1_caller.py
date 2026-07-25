@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from common.call_model import ModelRequest, call_model, ModelResponse
 from common.model_pool import estimate_prompt_tokens, fits_context
+from common.model_route import ModelRoute
 from common.util.json_escape_fix import escape_stray_backslashes
 from ingestion.enrich.pass1_prompt import build_pass1_prompt, PASS1_PROMPT_VERSION
 from ingestion.enrich.pass1_schema import (
@@ -106,6 +107,7 @@ def call_pass1(
     max_retries: int = 1, ctx_window: int | None = None,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
     temperature: float | None = 0.0,
+    route: ModelRoute | None = None,
 ) -> Pass1CallResult:
     """Fire one Pass-1 LLM call. Returns parsed + validated envelope.
 
@@ -171,6 +173,7 @@ def call_pass1(
             provider=provider, model=model, prompt=prompt,
             json_mode=True, temperature=temperature, max_tokens=_PASS1_MAX_OUTPUT_TOKENS,
             use_completion_tokens=use_completion_tokens, extra_body=extra_body,
+            route=route,
         )
         try:
             resp = call_model(req)

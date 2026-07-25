@@ -12,6 +12,7 @@ from ingestion.enrich.pass1_caller import call_pass1, Pass1CallError
 from ingestion.enrich.pass1_prompt import PASS1_PROMPT_VERSION
 from ingestion.enrich.pass1_schema import PASS1_SCHEMA_VERSION
 from common.call_model import ModelResponse
+from common.model_route import ModelRoute
 
 
 def _content_json(**overrides) -> str:
@@ -66,6 +67,39 @@ def test_caller_threads_pool_knobs_to_model_request(monkeypatch):
 
     assert captured["req"].use_completion_tokens is True
     assert captured["req"].extra_body == knob_extra_body
+
+
+def test_caller_threads_route_to_model_request(monkeypatch):
+    """#121 P2 §6: call_pass1 forwards the pool ModelRoute into the constructed
+    ModelRequest — the SAME object reaches the Pass-1 leaf (identity pin)."""
+    captured = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return _fake_response(_content_json())
+    monkeypatch.setattr(caller_mod, "call_model", capturing)
+
+    route = ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY")
+    call_pass1(source_text="body", source_path="x.md",
+               provider="deepseek", model="deepseek-v4-flash", route=route)
+
+    assert captured["req"].route is route
+
+
+def test_caller_route_defaults_to_none(monkeypatch):
+    """#121 P2 escape hatch: no route kwarg → the leaf ModelRequest gets
+    route=None → the Class-B registry path."""
+    captured = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return _fake_response(_content_json())
+    monkeypatch.setattr(caller_mod, "call_model", capturing)
+
+    call_pass1(source_text="body", source_path="x.md",
+               provider="deepseek", model="deepseek-v4-flash")
+
+    assert captured["req"].route is None
 
 
 def test_caller_coerces_over_cap_keys_without_retry(monkeypatch):

@@ -8,6 +8,7 @@ from ingestion.enrich import enrich as enrich_mod
 from ingestion.enrich import pass1_caller as caller_mod
 from ingestion.enrich.enrich import enrich_one
 from ingestion.enrich.pass1_caller import Pass1CallResult
+from common.model_route import ModelRoute
 
 
 def _signal_parsed(model: str = "m") -> dict:
@@ -48,6 +49,31 @@ def test_enrich_returns_body_and_post_embed_hash(tmp_path, monkeypatch):
     on_disk = "sha256:" + hashlib.sha256(src.read_bytes()).hexdigest()
     assert res.post_embed_hash == on_disk          # whole-file hash AFTER embed
     assert res.post_embed_mtime == pytest.approx(src.stat().st_mtime)
+
+
+def test_enrich_one_forwards_route_to_call_pass1(tmp_path, monkeypatch):
+    """#121 P2 §6: enrich_one threads the pool ModelRoute through to
+    call_pass1 (intermediate hop pin — same object, not a copy)."""
+    src = tmp_path / "s.md"
+    src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
+    captured: dict = {}
+
+    def fake_call_pass1(*, source_text, source_path, provider, model, **kwargs):
+        captured.update(kwargs)
+        return Pass1CallResult(
+            parsed=_signal_parsed(model), raw_response_text="{}",
+            request_prompt="prompt", request_model=model, request_provider=provider,
+            input_tokens=10, output_tokens=5, latency_ms=1, attempts=1,
+        )
+    monkeypatch.setattr(enrich_mod, "call_pass1", fake_call_pass1)
+
+    route = ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY")
+    res = enrich_one(source_path=src, source_id="s.md", runs_root=tmp_path / "runs",
+                     run_id="r1", provider="deepseek", model="deepseek-v4-flash",
+                     route=route)
+
+    assert res.outcome == "enriched"
+    assert captured["route"] is route
 
 
 def test_enrich_sidecar_cost_usd_from_aggregated_tokens(tmp_path, monkeypatch):
