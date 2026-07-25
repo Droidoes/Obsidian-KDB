@@ -23,7 +23,7 @@
   },
   {
     "id": "qwen-flash-us",
-    "provider": "alibaba",
+    "provider": "alibaba-us",
     "model": "qwen-flash-us",
     "ctx_window": 1000000,
     "max_output_tokens": 32768,
@@ -34,7 +34,7 @@
   },
   {
     "id": "deepseek-v4-flash:alibaba",
-    "provider": "alibaba",
+    "provider": "alibaba-us",
     "model": "deepseek-v4-flash",
     "ctx_window": 1050000,
     "max_output_tokens": 393216,
@@ -87,7 +87,7 @@
   },
   {
     "id": "qwen3.6-flash-us",
-    "provider": "alibaba",
+    "provider": "alibaba-us",
     "model": "qwen3.6-flash-us",
     "ctx_window": 1000000,
     "max_output_tokens": 65536,
@@ -98,7 +98,7 @@
   },
   {
     "id": "qwen3.5-flash",
-    "provider": "alibaba",
+    "provider": "alibaba-us",
     "model": "qwen3.5-flash",
     "ctx_window": 1000000,
     "max_output_tokens": 65536,
@@ -110,7 +110,7 @@
   },
   {
     "id": "qwen3.6-flash",
-    "provider": "alibaba",
+    "provider": "alibaba-us",
     "model": "qwen3.6-flash",
     "ctx_window": 1000000,
     "max_output_tokens": 65536,
@@ -130,6 +130,17 @@
     "price_out": 9.0,
     "dropped": true,
     "dropped_reason": "Retired 2026-07-21 (Joseph) hours after being added, on TWO same-night cohort runs at both thinking levels (minimal: 2026-07-21T01-09-32_EDT — 10 quarantined, $2.39, board 8.00; low: 2026-07-21T01-46-20_EDT — 13 quarantined, $2.38, board 10.00). Systematic contract-shape failure on Pass-2: ~72% of calls failed attempt 1; dominant signature JSONDecodeError 'Extra data' — a valid JSON object followed by trailing content (clean STOP, no truncation, outputs 0.9-1.8K tokens); #104 retry rescued only ~half (11 then 9); entity_reuse 0 and search-key resolution ~0.11 even on passes; semantic_pass 0.65/0.59. Third confirmation of the gemini + json_object Pass-2 weakness class (gemini-3.1-flash-lite 2026-06-07: pass-2-heavy quarantines). temperature was omitted (null) per 3.5 dropping legacy sampling params; thinking level is NOT the lever (both flopped identically). Un-retire trigger: #111 Phase-2 response_json_schema (schema-constrained decode forces single-object output) — re-test when it lands. Run dirs retained: benchmark/runs/gemini-3.5-flash-2026-07-21T01-09-32_EDT + ...T01-46-20_EDT."
+  },
+  {
+    "id": "gemini-3.1-flash-lite",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite",
+    "ctx_window": 1048576,
+    "max_output_tokens": 65536,
+    "price_in": 0.25,
+    "price_out": 1.5,
+    "dropped": true,
+    "dropped_reason": "Retired 2026-07-24 (Joseph) in the post-#120 pool pruning: strictly superseded by gemini-3.6-flash, which passed the full 4.0.2 acceptance battery on 2026-07-24 (overall resolved density 1.621, concept 0.685, dangling 0.7%, zero self-links, both named sources clean — best of the 4.x era) while this entry's own record carries the gemini-family json_object weakness class (pass-2-heavy quarantines at the 2026-06-07 cohort, cited in gemini-3.5-flash's 2026-07-21 retirement). Same price tier as qwen3.5-flash without a quality edge to justify keeping it. The gemini-native handler (call_model._call_gemini) is unaffected and remains wired for gemini-3.6-flash. Historical run dirs retained under benchmark/runs/."
   },
   {
     "id": "glm-5-turbo",

@@ -70,7 +70,7 @@ def test_resolve_undropped_deepseek_pro_returns_modelspec():
 def test_resolve_unmapped_provider_injects_no_thinking_param():
     # gemini has no verified disable param → no_op even though thinking
     # defaults to "disabled"; never inject a guessed param on a paid provider.
-    spec = resolve_models_json("gemini-3.1-flash-lite")
+    spec = resolve_models_json("gemini-3.6-flash")
     assert spec.provider == "gemini"
     assert spec.extra_body is None
 
