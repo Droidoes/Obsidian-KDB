@@ -25,12 +25,14 @@ Class-B registry (route-less calls):
     ollama-cloud → openai SDK, base_url=https://ollama.com/v1 (Ollama Cloud)
     zai          → openai SDK, base_url=https://api.z.ai/api/paas/v4 (Zhipu GLM)
 
-No streaming; batch-compile workload. The scalar SDK timeout
-(LLM_TIMEOUT_SECONDS, default 120) still covers all httpx phases in P1 — the
-connect/write/pool vs read-silence split lands in P3. Retry/backoff lives in
-call_model_retry.py, not here; the OpenAI/Anthropic constructors pass
-max_retries=2 explicitly (D8 — identical to today's SDK default, pinned
-against upstream drift).
+No streaming; batch-compile workload. Timeouts (D7): LLM_TIMEOUT_SECONDS
+(default 120) covers the connect/write/pool phases; LLM_INACTIVITY_TIMEOUT_SECONDS
+(default 900) is the read-silence watchdog — max socket silence on any single
+read, NOT a total wall-clock deadline. Gemini's scalar-only HttpOptions API
+takes the inactivity value (× 1000, also drives X-Server-Timeout).
+Retry/backoff lives in call_model_retry.py, not here; the OpenAI/Anthropic
+constructors pass max_retries=2 explicitly (D8 — identical to today's SDK
+default, pinned against upstream drift; google-genai has no such kwarg).
 """
 from __future__ import annotations
 
@@ -41,11 +43,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
+import httpx
 from google import genai
 from google.genai import types as genai_types
 from openai import OpenAI
 
-from common.config import llm_timeout_seconds, resolve_required_env
+from common.config import (
+    llm_inactivity_timeout_seconds,
+    llm_timeout_seconds,
+    resolve_required_env,
+)
 # ModelConfigError lives in common.model_route (so common.config can raise it
 # without an import cycle) and is re-exported here — existing
 # `from common.call_model import ModelConfigError` importers keep working.
@@ -173,7 +180,13 @@ def call_model(req: ModelRequest) -> ModelResponse:
 def _call_anthropic(req: ModelRequest, *, api_key: str) -> tuple[str, int, int, str | None, Any]:
     client = anthropic.Anthropic(
         api_key=api_key,
-        timeout=llm_timeout_seconds(),
+        # D7: connect/write/pool share LLM_TIMEOUT_SECONDS; `read` is the
+        # inactivity watchdog (max socket silence per read — NOT a total
+        # wall-clock deadline; a byte-dripping peer resets the clock).
+        timeout=httpx.Timeout(
+            connect=llm_timeout_seconds(), write=llm_timeout_seconds(),
+            pool=llm_timeout_seconds(), read=llm_inactivity_timeout_seconds(),
+        ),
         # Explicit = today's SDK default (one logical call may issue up to 3
         # HTTP requests on retryable failures); pinned against upstream drift (D8).
         max_retries=2,
@@ -201,7 +214,9 @@ def _call_gemini(req: ModelRequest, *, api_key: str) -> tuple[str, int, int, str
     # retries). D8 preserves exactly that.
     client = genai.Client(
         api_key=api_key,
-        http_options=genai_types.HttpOptions(timeout=llm_timeout_seconds() * 1000),
+        # Scalar-only API (no per-phase split): the inactivity watchdog value
+        # drives the whole request — and also X-Server-Timeout (D7).
+        http_options=genai_types.HttpOptions(timeout=llm_inactivity_timeout_seconds() * 1000),
     )
     # Gemini 3.x uses thinking_level (NOT thinking_budget). flash-lite floor is
     # "minimal" (full-off unsupported) — the near-zero-reasoning value for our
@@ -248,7 +263,13 @@ def _call_openai_compat(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=llm_timeout_seconds(),
+        # D7: connect/write/pool share LLM_TIMEOUT_SECONDS; `read` is the
+        # inactivity watchdog (max socket silence per read — NOT a total
+        # wall-clock deadline; a byte-dripping peer resets the clock).
+        timeout=httpx.Timeout(
+            connect=llm_timeout_seconds(), write=llm_timeout_seconds(),
+            pool=llm_timeout_seconds(), read=llm_inactivity_timeout_seconds(),
+        ),
         max_retries=2,  # explicit = today's SDK default; pinned against upstream drift (D8)
     )
 

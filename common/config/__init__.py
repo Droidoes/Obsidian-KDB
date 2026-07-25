@@ -3,11 +3,14 @@
 Loads .env at import time (python-dotenv, override=False). The frozen
 Settings dataclass + `settings` singleton were deleted in #121: secrets are
 resolved LATE at the call boundary via resolve_required_env() (plain
-os.getenv function calls — monkeypatch.setenv-friendly), and the request
-timeout via llm_timeout_seconds().
+os.getenv function calls — monkeypatch.setenv-friendly), and the two D7
+timeout knobs via llm_timeout_seconds() (connect/write/pool, default 120) and
+llm_inactivity_timeout_seconds() (read-silence watchdog, default 900).
 
 Usage:
-    from common.config import llm_timeout_seconds, resolve_required_env
+    from common.config import (
+        llm_inactivity_timeout_seconds, llm_timeout_seconds, resolve_required_env,
+    )
 
     api_key = resolve_required_env(route.api_key_env, model=req.model, provider=provider)
     timeout = llm_timeout_seconds()
@@ -50,20 +53,35 @@ def resolve_required_env(name: str, *, model: str, provider: str) -> str:
     return value
 
 
-def llm_timeout_seconds() -> int:
-    """LLM_TIMEOUT_SECONDS, default 120. Fails hard on a non-integer or
-    non-positive value, naming the offending variable."""
-    raw = os.getenv("LLM_TIMEOUT_SECONDS")
+def _positive_int_seconds_env(var: str, default: int) -> int:
+    """Shared validation for the two timeout getters (D7): unset → default;
+    non-integer or non-positive → ModelConfigError naming the variable."""
+    raw = os.getenv(var)
     if raw is None:
-        return 120
+        return default
     try:
         value = int(raw)
     except ValueError:
         raise ModelConfigError(
-            f"LLM_TIMEOUT_SECONDS must be an integer, got {raw!r}"
+            f"{var} must be an integer, got {raw!r}"
         ) from None
     if value <= 0:
         raise ModelConfigError(
-            f"LLM_TIMEOUT_SECONDS must be positive, got {value}"
+            f"{var} must be positive, got {value}"
         )
     return value
+
+
+def llm_timeout_seconds() -> int:
+    """LLM_TIMEOUT_SECONDS, default 120 — the connect/write/pool phases
+    (getting the request out the door). Fails hard on a non-integer or
+    non-positive value, naming the variable."""
+    return _positive_int_seconds_env("LLM_TIMEOUT_SECONDS", 120)
+
+
+def llm_inactivity_timeout_seconds() -> int:
+    """LLM_INACTIVITY_TIMEOUT_SECONDS, default 900 — the read-silence watchdog:
+    max seconds of socket silence on any single read before the call fails.
+    NOT a total wall-clock deadline (a peer dripping bytes resets the clock).
+    Fails hard on a non-integer or non-positive value, naming the variable."""
+    return _positive_int_seconds_env("LLM_INACTIVITY_TIMEOUT_SECONDS", 900)

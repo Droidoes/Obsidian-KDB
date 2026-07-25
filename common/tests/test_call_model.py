@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from google.genai import types as genai_types
 
@@ -436,13 +437,96 @@ def test_extra_dict_overrides_kwargs(
 def test_timeout_threads_to_client(
     monkeypatch: pytest.MonkeyPatch, anthropic_resp: MagicMock
 ) -> None:
+    """D7: LLM_TIMEOUT_SECONDS drives connect/write/pool; the read-silence
+    watchdog (LLM_INACTIVITY_TIMEOUT_SECONDS) drives `read`."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk")
     monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "600")
+    monkeypatch.delenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raising=False)
     client = MagicMock()
     client.messages.create.return_value = anthropic_resp
     with patch("anthropic.Anthropic", return_value=client) as ctor:
         call_model(ModelRequest(provider="anthropic", model="claude", prompt="hi"))
-    assert ctor.call_args.kwargs["timeout"] == 600
+    timeout = ctor.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 600
+    assert timeout.write == 600
+    assert timeout.pool == 600
+    assert timeout.read == 900  # inactivity watchdog default
+
+
+# ---------- timeout construction pins (D7) ----------
+
+def test_openai_constructor_timeout_httpx_shape_default(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    """Default shape: read=900 (watchdog), connect/write/pool=120."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk")
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raising=False)
+    client = _openai_client(openai_resp)
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="openai", model="gpt-4.1-mini", prompt="hi"))
+    timeout = ctor.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == 900
+    assert timeout.connect == 120
+    assert timeout.write == 120
+    assert timeout.pool == 120
+
+
+def test_openai_constructor_timeout_honors_both_knob_overrides(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "30")
+    monkeypatch.setenv("LLM_INACTIVITY_TIMEOUT_SECONDS", "45")
+    client = _openai_client(openai_resp)
+    with patch("common.call_model.OpenAI", return_value=client) as ctor:
+        call_model(ModelRequest(provider="openai", model="gpt-4.1-mini", prompt="hi"))
+    timeout = ctor.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.connect == 30
+    assert timeout.write == 30
+    assert timeout.pool == 30
+    assert timeout.read == 45
+
+
+def test_anthropic_constructor_timeout_httpx_shape_default(
+    monkeypatch: pytest.MonkeyPatch, anthropic_resp: MagicMock
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk")
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raising=False)
+    client = MagicMock()
+    client.messages.create.return_value = anthropic_resp
+    with patch("anthropic.Anthropic", return_value=client) as ctor:
+        call_model(ModelRequest(provider="anthropic", model="claude", prompt="hi"))
+    timeout = ctor.call_args.kwargs["timeout"]
+    assert isinstance(timeout, httpx.Timeout)
+    assert timeout.read == 900
+    assert timeout.connect == 120
+    assert timeout.write == 120
+    assert timeout.pool == 120
+
+
+def test_gemini_http_options_timeout_scalar_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini's scalar-only HttpOptions takes the inactivity value × 1000
+    (also drives X-Server-Timeout)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test")
+    monkeypatch.delenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raising=False)
+    client = _gemini_client(_make_gemini_resp())
+    with patch("common.call_model.genai.Client", return_value=client) as ctor:
+        call_model(ModelRequest(provider="gemini", model="gemini-3.1-flash-lite", prompt="hi"))
+    assert ctor.call_args.kwargs["http_options"].timeout == 900_000
+
+
+def test_gemini_http_options_timeout_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test")
+    monkeypatch.setenv("LLM_INACTIVITY_TIMEOUT_SECONDS", "45")
+    client = _gemini_client(_make_gemini_resp())
+    with patch("common.call_model.genai.Client", return_value=client) as ctor:
+        call_model(ModelRequest(provider="gemini", model="gemini-3.1-flash-lite", prompt="hi"))
+    assert ctor.call_args.kwargs["http_options"].timeout == 45_000
 
 
 # ---------- retry-budget pins (D8) ----------

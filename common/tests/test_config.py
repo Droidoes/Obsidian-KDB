@@ -6,7 +6,11 @@ import os
 import pytest
 
 from common import config
-from common.config import llm_timeout_seconds, resolve_required_env
+from common.config import (
+    llm_inactivity_timeout_seconds,
+    llm_timeout_seconds,
+    resolve_required_env,
+)
 from common.model_route import ModelConfigError
 
 
@@ -105,3 +109,33 @@ def test_llm_timeout_seconds_non_positive_fails_hard(
     monkeypatch.setenv("LLM_TIMEOUT_SECONDS", raw)
     with pytest.raises(ModelConfigError, match="LLM_TIMEOUT_SECONDS"):
         llm_timeout_seconds()
+
+
+# ---------- llm_inactivity_timeout_seconds ----------
+
+def test_llm_inactivity_timeout_seconds_default_900(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raising=False)
+    assert llm_inactivity_timeout_seconds() == 900
+
+
+def test_llm_inactivity_timeout_seconds_valid_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_INACTIVITY_TIMEOUT_SECONDS", "45")
+    assert llm_inactivity_timeout_seconds() == 45
+
+
+@pytest.mark.parametrize("raw", ["abc", "10.5", ""])
+def test_llm_inactivity_timeout_seconds_non_integer_fails_hard(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raw)
+    with pytest.raises(ModelConfigError, match="LLM_INACTIVITY_TIMEOUT_SECONDS"):
+        llm_inactivity_timeout_seconds()
+
+
+@pytest.mark.parametrize("raw", ["0", "-30"])
+def test_llm_inactivity_timeout_seconds_non_positive_fails_hard(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("LLM_INACTIVITY_TIMEOUT_SECONDS", raw)
+    with pytest.raises(ModelConfigError, match="LLM_INACTIVITY_TIMEOUT_SECONDS"):
+        llm_inactivity_timeout_seconds()

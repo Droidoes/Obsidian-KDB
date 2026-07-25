@@ -5,14 +5,65 @@ example per provider. **Grounded in the code** — every "what we send" row refl
 `_call_openai_compat` / `_call_anthropic` as written, not aspiration.
 
 > Pool entries live in `common/models.json`; `common/model_pool.py` `resolve_models_json(id)`
-> turns an entry into a `ModelRequest`'s provider/model/knobs (incl. translating the
-> semantic `thinking` field into the provider's `extra_body` disable-param). The engine
-> (`call_model.py`) takes an explicit `ModelRequest` and is provider-routing only.
+> turns an entry into a `ModelSpec` — provider/model/knobs (incl. translating the
+> semantic `thinking` field into the provider's `extra_body` disable-param) **plus the
+> entry's `ModelRoute`** (Gate-1-validated at pool load, #121). The engine
+> (`call_model.py`) dispatches on the route's `api_call_type`; route-less requests
+> resolve one from the Class-B registry below.
+
+## Routing, secrets, timeouts, retries (Task #121)
+
+A `ModelRequest` either carries an explicit `ModelRoute` (pool entries do, post-#121) or
+resolves one from the **Class-B registry** (`_PROVIDER_DEFAULTS`) by `provider`. The route's
+`api_call_type` is the ONLY closed set (`openai_compat` / `anthropic` / `gemini`) and alone
+selects the handler — an explicit route is authoritative even when its type differs from the
+provider's registry row. `endpoint=None` = the SDK's built-in URL.
+
+| provider | api_call_type | endpoint | api_key_env |
+|---|---|---|---|
+| anthropic | `anthropic` | `null` (SDK-built-in) | `ANTHROPIC_API_KEY` |
+| openai | `openai_compat` | `null` (SDK-built-in) | `OPENAI_API_KEY` |
+| gemini | `gemini` | `null` (SDK-built-in) | `GEMINI_API_KEY` |
+| xai | `openai_compat` | `https://api.x.ai/v1` | `XAI_GROK_API_KEY` |
+| alibaba | `openai_compat` | `https://dashscope-us.aliyuncs.com/compatible-mode/v1` | `QWEN_US_API_KEY` |
+| deepseek | `openai_compat` | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
+| ollama-local | `openai_compat` | `http://localhost:11434/v1` (or `OLLAMA_BASE_URL`, resolved late) | — (no-auth; dummy key `"ollama"`) |
+| ollama-cloud | `openai_compat` | `https://ollama.com/v1` | `OLLAMA_API_KEY` |
+| zai | `openai_compat` | `https://api.z.ai/api/paas/v4` | `ZAI_API_KEY` |
+
+**Secrets (D2/D6):** resolved LATE at the call boundary by env-var NAME — `os.getenv(route.api_key_env)`,
+never at import (the old `Settings` dataclass/singleton is deleted). A missing/empty key raises
+`ModelConfigError` naming the var + model + provider — never the value. No-auth is never
+caller-declared: only the ollama-local registry row carries `api_key_env=None`.
+
+**Timeouts (D7):** two knobs, honest semantics.
+- `LLM_TIMEOUT_SECONDS` (default **120**) → connect/write/pool phases (getting the request out the door).
+- `LLM_INACTIVITY_TIMEOUT_SECONDS` (default **900**) → read-silence watchdog: max seconds of socket
+  silence on any single read before the call fails. **NOT a total wall-clock deadline** — httpx applies
+  `read` per socket read; a peer dripping bytes before each deadline resets the clock. Attempt COUNTS
+  are bounded (below); total wall time is not.
+- openai_compat + anthropic constructors: `timeout=httpx.Timeout(connect=t, write=t, pool=t, read=inactivity)`.
+- gemini `HttpOptions(timeout=inactivity * 1000)` — scalar-only API; also drives `X-Server-Timeout`.
+
+**Retry budgets (D8 — preserved + pinned):** OpenAI/Anthropic constructors pass `max_retries=2`
+EXPLICITLY (identical to the SDK default; pinned against upstream drift — one logical `.create()` may
+issue up to 3 HTTP requests on connection errors, timeouts, 429, 5xx). google-genai has no such kwarg
+(`retry_options=None` → 1 attempt). The wrapper (`call_model_with_retry`, 3 attempts) and Pass-1's
+broad loop (`max_retries=1`) are unchanged. Attempt budgets per source:
+
+| Context | OpenAI / Anthropic | Gemini |
+|---|---:|---:|
+| One `call_model` invocation | up to 3 SDK attempts (explicit `max_retries=2`) | 1 (SDK `retry_options=None`) |
+| One Pass-1 source (broad loop, `max_retries=1`) | 2 invocations × 3 = **6** | **2** invocations |
+| One Pass-2 `call_model_with_retry` | 3 wrapper × 3 SDK = **9** | **1** — transport exception is terminal (not in `_RETRYABLE`, `call_model_retry.py`) |
+| Full Pass-2 per source (content loop × wrapper) | up to 2 × 9 = **18** in a mixed transport/content sequence | up to **2**, only when a response returns but fails a retriable content gate |
 
 ## What we send on EVERY openai-compat call (`_call_openai_compat`)
 
 ```python
-client = OpenAI(api_key=…, base_url=<provider>, timeout=LLM_TIMEOUT_SECONDS)
+client = OpenAI(api_key=…, base_url=<provider>,
+                timeout=httpx.Timeout(connect=120, write=120, pool=120, read=900),  # D7 knobs
+                max_retries=2)              # explicit = SDK default (D8)
 kwargs = {
     "model": model,                       # (gemini no longer here — native SDK, see below)
     "messages": [ {system?}, {user} ],
