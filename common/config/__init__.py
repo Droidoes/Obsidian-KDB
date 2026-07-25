@@ -1,23 +1,28 @@
-"""config — environment-driven settings for LLM calls.
+"""config — .env loading + late-bound env helpers for LLM calls (Task #121).
 
-Loads .env at import time (python-dotenv), then exposes a frozen Settings
-singleton `settings`. No pydantic, no validation layer — plain os.getenv
-reads with sensible defaults. Tests override by rebinding the singleton.
+Loads .env at import time (python-dotenv, override=False). The frozen
+Settings dataclass + `settings` singleton were deleted in #121: secrets are
+resolved LATE at the call boundary via resolve_required_env() (plain
+os.getenv function calls — monkeypatch.setenv-friendly), and the request
+timeout via llm_timeout_seconds().
 
 Usage:
-    from common.config import settings
-    settings.anthropic_api_key
+    from common.config import llm_timeout_seconds, resolve_required_env
+
+    api_key = resolve_required_env(route.api_key_env, model=req.model, provider=provider)
+    timeout = llm_timeout_seconds()
 
     # in tests:
-    monkeypatch.setattr("common.call_model.settings", Settings(...))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 """
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from common.model_route import ModelConfigError
 
 
 def _find_dotenv() -> Path | None:
@@ -34,41 +39,31 @@ if _dotenv_path is not None:
     load_dotenv(dotenv_path=_dotenv_path, override=False)
 
 
-@dataclass(frozen=True)
-class Settings:
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
-    xai_api_key: str = ""
-    qwen_us_api_key: str = ""
-    ollama_api_key: str = ""
-    ollama_base_url: str = "http://localhost:11434/v1"
-    deepseek_api_key: str = ""
-    zai_api_key: str = ""
-    llm_timeout_seconds: int = 300
-
-    @classmethod
-    def from_env(cls) -> "Settings":
-        return cls(
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
-            # The repo's .env uses XAI_GROK_API_KEY (vendor + product).
-            xai_api_key=os.getenv("XAI_GROK_API_KEY", ""),
-            # Alibaba DashScope intl/US endpoint — same env name as the
-            # youtube-comment-chat project for consistency.
-            qwen_us_api_key=os.getenv("QWEN_US_API_KEY", ""),
-            # Ollama Cloud OpenAI-compat endpoint (provider=ollama-cloud).
-            # Local Ollama (provider=ollama-local) does not require a key.
-            ollama_api_key=os.getenv("OLLAMA_API_KEY", ""),
-            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
-            # DeepSeek direct OpenAI-compat endpoint (provider=deepseek).
-            # Replaces the Alibaba-routed access dropped 2026-05-15 for re-test.
-            deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
-            # Zhipu z.ai OpenAI-compat endpoint (provider=zai) — GLM family.
-            zai_api_key=os.getenv("ZAI_API_KEY", ""),
-            llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
+def resolve_required_env(name: str, *, model: str, provider: str) -> str:
+    """Return the value of env var `name`; missing/empty → ModelConfigError
+    naming the env var + model + provider — NEVER the value."""
+    value = os.getenv(name, "")
+    if not value:
+        raise ModelConfigError(
+            f"{name} is not set (or is empty) — required for model={model!r} provider={provider!r}"
         )
+    return value
 
 
-settings = Settings.from_env()
+def llm_timeout_seconds() -> int:
+    """LLM_TIMEOUT_SECONDS, default 120. Fails hard on a non-integer or
+    non-positive value, naming the offending variable."""
+    raw = os.getenv("LLM_TIMEOUT_SECONDS")
+    if raw is None:
+        return 120
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ModelConfigError(
+            f"LLM_TIMEOUT_SECONDS must be an integer, got {raw!r}"
+        ) from None
+    if value <= 0:
+        raise ModelConfigError(
+            f"LLM_TIMEOUT_SECONDS must be positive, got {value}"
+        )
+    return value

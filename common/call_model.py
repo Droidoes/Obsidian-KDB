@@ -1,46 +1,67 @@
 """call_model — provider-routing proxy for LLM calls.
 
-Single sync entry point: sends a ModelRequest to one of the supported
-providers and returns a ModelResponse with the text, usage counts,
-wall-clock latency, and provider/model echo (resp-stats metadata per
-project memory).
+Single sync entry point: sends a ModelRequest to a provider and returns a
+ModelResponse with the text, usage counts, wall-clock latency, and
+provider/model echo (resp-stats metadata per project memory).
 
-Providers:
+Routing (Task #121): a request either carries an explicit ModelRoute
+(authoritative — its api_call_type alone selects the handler, even when it
+differs from the provider's registry row) or resolves one from the Class-B
+registry below via provider_default(). api_call_type is the ONLY closed set
+(openai_compat / anthropic / gemini); endpoint=None means the SDK's built-in
+URL; api_key_env NAMES the env var whose value is resolved late at the call
+boundary (never at import; the value never appears in errors). ollama-local
+is the only no-auth row (dummy key "ollama"); no-auth is never
+caller-declared.
+
+Class-B registry (route-less calls):
     anthropic    → native anthropic SDK (client.messages.create)
     openai       → openai SDK, standard endpoint
     gemini       → native google-genai SDK (json-mode only, minimal thinking)
     xai          → openai SDK, base_url=https://api.x.ai/v1
     alibaba      → openai SDK, base_url=https://dashscope-us.aliyuncs.com/compatible-mode/v1
     deepseek     → openai SDK, base_url=https://api.deepseek.com
-    ollama-local → openai SDK, base_url=http://localhost:11434/v1 (or OLLAMA_BASE_URL)
+    ollama-local → openai SDK, base_url=http://localhost:11434/v1 (or OLLAMA_BASE_URL, late)
     ollama-cloud → openai SDK, base_url=https://ollama.com/v1 (Ollama Cloud)
     zai          → openai SDK, base_url=https://api.z.ai/api/paas/v4 (Zhipu GLM)
 
-No streaming; batch-compile workload. SDK httpx timeout handles pre-first-byte
-hangs. Retry/backoff lives in call_model_retry.py, not here.
+No streaming; batch-compile workload. The scalar SDK timeout
+(LLM_TIMEOUT_SECONDS, default 120) still covers all httpx phases in P1 — the
+connect/write/pool vs read-silence split lands in P3. Retry/backoff lives in
+call_model_retry.py, not here; the OpenAI/Anthropic constructors pass
+max_retries=2 explicitly (D8 — identical to today's SDK default, pinned
+against upstream drift).
 """
 from __future__ import annotations
 
+import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 import anthropic
 from google import genai
 from google.genai import types as genai_types
 from openai import OpenAI
 
-from common.config import settings
-
-Provider = Literal[
-    "anthropic", "openai", "gemini", "xai", "alibaba", "deepseek", "ollama-local", "ollama-cloud",
-    "zai",
-]
+from common.config import llm_timeout_seconds, resolve_required_env
+# ModelConfigError lives in common.model_route (so common.config can raise it
+# without an import cycle) and is re-exported here — existing
+# `from common.call_model import ModelConfigError` importers keep working.
+from common.model_route import (
+    ModelConfigError,
+    ModelRoute,
+    validate_provider_identity,
+    validate_route,
+)
 
 
 @dataclass
 class ModelRequest:
-    provider: Provider
+    # Free-form informational identity (D5) — validated canonical at dispatch;
+    # the closed Literal was deleted in #121.
+    provider: str
     model: str
     prompt: str = ""
     system: str | None = None
@@ -60,6 +81,11 @@ class ModelRequest:
     # The gemini-native path reads `extra_body["thinking_level"]` specifically.
     extra_body: dict | None = None
     extra: dict = field(default_factory=dict)
+    # Explicit route (Class A) — authoritative when present, even if its
+    # api_call_type differs from the provider's registry row. None → the
+    # Class-B registry resolves the route from `provider` (the escape hatch
+    # every current caller takes).
+    route: ModelRoute | None = None
 
 
 @dataclass
@@ -75,54 +101,62 @@ class ModelResponse:
     raw: Any = None
 
 
-class ModelConfigError(ValueError):
-    """Raised when provider config is missing (e.g. no API key) or unknown."""
+# Class-B registry — a FACTORY (per-request lambda invocation), not static
+# data, so OLLAMA_BASE_URL resolves late (monkeypatch.setenv-friendly).
+_PROVIDER_DEFAULTS: dict[str, Callable[[], ModelRoute]] = {
+    "anthropic":    lambda: ModelRoute("anthropic", None, "ANTHROPIC_API_KEY"),
+    "openai":       lambda: ModelRoute("openai_compat", None, "OPENAI_API_KEY"),
+    "gemini":       lambda: ModelRoute("gemini", None, "GEMINI_API_KEY"),
+    "xai":          lambda: ModelRoute("openai_compat", "https://api.x.ai/v1", "XAI_GROK_API_KEY"),
+    "alibaba":      lambda: ModelRoute("openai_compat", "https://dashscope-us.aliyuncs.com/compatible-mode/v1", "QWEN_US_API_KEY"),
+    "deepseek":     lambda: ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    "ollama-local": lambda: ModelRoute("openai_compat",
+                                       os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+                                       None),   # no-auth; dummy key below
+    "ollama-cloud": lambda: ModelRoute("openai_compat", "https://ollama.com/v1", "OLLAMA_API_KEY"),
+    "zai":          lambda: ModelRoute("openai_compat", "https://api.z.ai/api/paas/v4", "ZAI_API_KEY"),
+}
+
+
+def provider_default(provider: str) -> ModelRoute:
+    """The registry row for a route-less call. Unknown provider →
+    ModelConfigError (before secret lookup or SDK construction)."""
+    factory = _PROVIDER_DEFAULTS.get(provider)
+    if factory is None:
+        raise ModelConfigError(f"Unknown provider: {provider!r}")
+    return factory()
 
 
 def call_model(req: ModelRequest) -> ModelResponse:
-    """Dispatch to the right provider. Sync/block. SDK errors propagate."""
+    """Dispatch on the resolved route's api_call_type. Sync/block. SDK errors propagate."""
     t0 = time.monotonic()
 
-    if req.provider == "anthropic":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_anthropic(req)
-    elif req.provider == "openai":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req, base_url=None, api_key=settings.openai_api_key
-        )
-    elif req.provider == "gemini":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_gemini(req)
-    elif req.provider == "xai":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req, base_url="https://api.x.ai/v1", api_key=settings.xai_api_key,
-        )
-    elif req.provider == "alibaba":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req,
-            base_url="https://dashscope-us.aliyuncs.com/compatible-mode/v1",
-            api_key=settings.qwen_us_api_key,
-        )
-    elif req.provider == "deepseek":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req,
-            base_url="https://api.deepseek.com",
-            api_key=settings.deepseek_api_key,
-        )
-    elif req.provider == "ollama-local":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req, base_url=settings.ollama_base_url, api_key="ollama"
-        )
-    elif req.provider == "ollama-cloud":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req, base_url="https://ollama.com/v1", api_key=settings.ollama_api_key,
-        )
-    elif req.provider == "zai":
-        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
-            req,
-            base_url="https://api.z.ai/api/paas/v4",
-            api_key=settings.zai_api_key,
-        )
+    provider = validate_provider_identity(req.provider)  # first, always
+    if req.route is not None:
+        route = validate_route(req.route, provider=provider, allow_no_auth=False)
+        allow_no_auth = False
     else:
-        raise ModelConfigError(f"Unknown provider: {req.provider!r}")
+        allow_no_auth = provider == "ollama-local"
+        route = validate_route(
+            provider_default(provider), provider=provider, allow_no_auth=allow_no_auth
+        )
+    # ollama-local needs no key, but the OpenAI SDK still requires a non-empty
+    # string. Otherwise validate_route check 5 guarantees api_key_env is a str.
+    api_key = "ollama" if allow_no_auth else resolve_required_env(
+        route.api_key_env, model=req.model, provider=provider)
+
+    if route.api_call_type == "openai_compat":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_openai_compat(
+            req, base_url=route.endpoint, api_key=api_key
+        )
+    elif route.api_call_type == "gemini":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_gemini(req, api_key=api_key)
+    elif route.api_call_type == "anthropic":
+        text, input_tokens, output_tokens, stop_reason, raw = _call_anthropic(req, api_key=api_key)
+    else:  # unreachable — validate_route closed the set
+        raise ModelConfigError(
+            f"provider {provider!r}: unknown api_call_type {route.api_call_type!r}"
+        )
 
     return ModelResponse(
         text=text,
@@ -136,12 +170,13 @@ def call_model(req: ModelRequest) -> ModelResponse:
     )
 
 
-def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
-    if not settings.anthropic_api_key:
-        raise ModelConfigError("ANTHROPIC_API_KEY not set")
+def _call_anthropic(req: ModelRequest, *, api_key: str) -> tuple[str, int, int, str | None, Any]:
     client = anthropic.Anthropic(
-        api_key=settings.anthropic_api_key,
-        timeout=settings.llm_timeout_seconds,
+        api_key=api_key,
+        timeout=llm_timeout_seconds(),
+        # Explicit = today's SDK default (one logical call may issue up to 3
+        # HTTP requests on retryable failures); pinned against upstream drift (D8).
+        max_retries=2,
     )
     kwargs: dict[str, Any] = {
         "model": req.model,
@@ -160,12 +195,13 @@ def _call_anthropic(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
     return text, resp.usage.input_tokens, resp.usage.output_tokens, stop_reason, resp
 
 
-def _call_gemini(req: ModelRequest) -> tuple[str, int, int, str | None, Any]:
-    if not settings.gemini_api_key:
-        raise ModelConfigError("GEMINI_API_KEY not set")
+def _call_gemini(req: ModelRequest, *, api_key: str) -> tuple[str, int, int, str | None, Any]:
+    # No max_retries here: google-genai has no such constructor kwarg — its
+    # retry knob is HttpOptions.retry_options (default None = no SDK-internal
+    # retries). D8 preserves exactly that.
     client = genai.Client(
-        api_key=settings.gemini_api_key,
-        http_options=genai_types.HttpOptions(timeout=settings.llm_timeout_seconds * 1000),
+        api_key=api_key,
+        http_options=genai_types.HttpOptions(timeout=llm_timeout_seconds() * 1000),
     )
     # Gemini 3.x uses thinking_level (NOT thinking_budget). flash-lite floor is
     # "minimal" (full-off unsupported) — the near-zero-reasoning value for our
@@ -212,7 +248,8 @@ def _call_openai_compat(
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=settings.llm_timeout_seconds,
+        timeout=llm_timeout_seconds(),
+        max_retries=2,  # explicit = today's SDK default; pinned against upstream drift (D8)
     )
 
     messages: list[dict] = []

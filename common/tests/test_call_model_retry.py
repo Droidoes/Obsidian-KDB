@@ -5,11 +5,13 @@ from unittest.mock import MagicMock
 
 import anthropic
 import httpx
+import openai
 import pytest
 
 from common.call_model import ModelRequest, ModelResponse
 from common.call_model_retry import (
     MAX_RETRIES,
+    _RETRYABLE,
     _parse_retry_after,
     call_model_with_retry,
 )
@@ -23,6 +25,34 @@ def test_max_retries_constant_is_two() -> None:
     default. Stable contract — bumping this value requires a coordinated
     update to the scorer's clamping rule."""
     assert MAX_RETRIES == 2
+
+
+# ---------- Task #121 pins: retry taxonomy + wrapper cap unchanged (D8) ----------
+
+def test_retryable_membership_unchanged() -> None:
+    """_RETRYABLE is exactly the 8 SDK transport exception classes (4 anthropic
+    + 4 openai) — no gemini-native class, no custom taxonomy (D8: unchanged;
+    a gemini transport exception stays terminal in the wrapper)."""
+    assert set(_RETRYABLE) == {
+        anthropic.RateLimitError,
+        anthropic.APIConnectionError,
+        anthropic.APITimeoutError,
+        anthropic.InternalServerError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.APITimeoutError,
+        openai.InternalServerError,
+    }
+
+
+def test_default_attempt_cap_is_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default wrapper budget is 3 attempts (MAX_RETRIES=2 retries + 1 initial)
+    — D8: unchanged."""
+    cm = MagicMock(side_effect=_make_sdk_error(anthropic.RateLimitError))
+    monkeypatch.setattr("common.call_model_retry.call_model", cm)
+    with pytest.raises(anthropic.RateLimitError):
+        call_model_with_retry(_req())
+    assert cm.call_count == 3
 
 
 # ---------- fixtures / helpers ----------
