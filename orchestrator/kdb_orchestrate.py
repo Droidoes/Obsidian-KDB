@@ -985,6 +985,9 @@ def run(
             noise=counts["sources_noise"],
             p1_attempted=p1_attempted,
             p2_attempted=signal,
+            # Task #122 §7.4: False = the run did not complete the finalize
+            # boundary (audit-only measurements; score-skipped at the §7c gate).
+            finalize_ran=finalize_stats is not None,
         )
         run_dir = runs_root / ctx.run_id
         run_dir.mkdir(parents=True, exist_ok=True)

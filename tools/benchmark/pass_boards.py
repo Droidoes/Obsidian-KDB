@@ -130,10 +130,22 @@ def _missing_from(raw: dict, pass_: str) -> list[str]:
 def _build_row(
     runs_root: Path, run_dir: str, model_key: str, pass_: str,
     graph_scored: dict, fallback_diag: dict, meas_header: dict,
+    pass1_watched: dict | None = None,
 ) -> dict:
     """Build one board row. Returns {"ranked": bool, ...}. Ranked and
-    unranked rows carry the SAME raw_values evidence contract (R5-F3)."""
+    unranked rows carry the SAME raw_values evidence contract (R5-F3).
+
+    pass1_watched (Task #122 §7d): the event-time watched fields extracted
+    from the row's measurements.json — merged EXPLICITLY (verbatim keys, not
+    the `_pass1` suffix filter) into raw_values on the Pass-1 board for
+    ranked, partial, AND fallback rows alike."""
     split = _SPLIT[pass_]
+
+    def _with_watched(raw: dict) -> dict:
+        if pass_ == "pass1" and pass1_watched:
+            raw.update(pass1_watched)
+        return raw
+
     run_state = runs_root / run_dir / "run_state"
     if not run_state.is_dir():
         # No run_state at all → measurements fallback (D-117-5).
@@ -143,7 +155,7 @@ def _build_row(
             "measurement_source": SRC_FALLBACK,
             "missing_kpis": _missing_from(raw, pass_),
             "completeness_errors": ["run_state_missing"],
-            "raw_values": raw,
+            "raw_values": _with_watched(raw),
         }
     try:
         header, calls, stats = load_run_measurements_with_stats(run_state)
@@ -158,7 +170,7 @@ def _build_row(
             "measurement_source": SRC_PARTIAL,
             "missing_kpis": _missing_from(raw, pass_),
             "completeness_errors": ["header_unparseable"],
-            "raw_values": raw,
+            "raw_values": _with_watched(raw),
         }
     problems = _completeness(run_state, pass_, header, stats)
     diag = compute_processing(header, calls)["diagnostic"]
@@ -198,13 +210,13 @@ def _build_row(
             "measurement_source": SRC_PARTIAL,
             "missing_kpis": missing,              # canonical KPI names only
             "completeness_errors": problems,      # contract violations, separate
-            "raw_values": raw,
+            "raw_values": _with_watched(raw),
         }
     return {
         "ranked": True,
         "measurement_source": SRC_RECOMPUTED,
         "scored": scored,
-        "raw_values": raw,
+        "raw_values": _with_watched(raw),
     }
 
 
@@ -216,14 +228,20 @@ def build_pass_board(
     graph_scored_by_model: dict[str, dict],
     fallback_diag_by_model: dict[str, dict],
     header_by_model: dict[str, dict] | None = None,
+    pass1_watched_by_model: dict[str, dict] | None = None,
 ) -> dict:
     """Build one pass board (payload shape: see plan Interfaces).
 
     header_by_model: measurements.json headers keyed by model row — feeds
     header-derived fallback evidence (R6-F2). The CLI always passes it;
     default None (→ {}) keeps older fixtures usable, degrading fallback
-    dispositions/eligibility to None."""
+    dispositions/eligibility to None.
+
+    pass1_watched_by_model (Task #122 §7d): per-row event-time watched fields
+    extracted from measurements.json — merged explicitly into Pass-1
+    raw_values on every row class. None (→ {}) merges nothing."""
     header_by_model = header_by_model or {}
+    pass1_watched_by_model = pass1_watched_by_model or {}
     models: list[dict] = []
     unranked: list[dict] = []
     raw_by_model: dict[str, dict] = {}
@@ -232,7 +250,8 @@ def build_pass_board(
         row = _build_row(runs_root, run_dir, model_key, pass_,
                          graph_scored_by_model.get(model_key, {}),
                          fallback_diag_by_model.get(model_key, {}),
-                         header_by_model.get(model_key, {}))
+                         header_by_model.get(model_key, {}),
+                         pass1_watched_by_model.get(model_key, {}))
         if row["ranked"]:
             models.append({"model": model_key, "scored": row["scored"]})
             raw_by_model[model_key] = row["raw_values"]

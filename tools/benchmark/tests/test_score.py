@@ -770,3 +770,119 @@ class TestThreeBoards:
         data = _load(lb)
         assert "cost_usd_pass1" in md                     # raw table passthrough
         assert "cost_usd_pass1" not in data["ranking"][0]["per_kpi_borda"]
+
+
+# ---------------------------------------------------------------------------
+# Task #122 §7c — the finalize_ran score-boundary rule
+# ---------------------------------------------------------------------------
+
+def _set_finalize_ran(runs_root: Path, run_dir: str, value) -> None:
+    """Rewrite <run_dir>/measurements.json with header.finalize_ran = value
+    (ABSENT when value is _ABSENT)."""
+    mpath = runs_root / run_dir / "measurements.json"
+    payload = json.loads(mpath.read_text(encoding="utf-8"))
+    if value is not _ABSENT:
+        payload["header"]["finalize_ran"] = value
+    mpath.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+_ABSENT = object()
+
+
+class TestFinalizeRanGate:
+    def test_missing_finalize_ran_is_eligible(self, tmp_path, capsys):
+        """Historical artifacts (no finalize_ran key) load as True."""
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        assert "skipped" not in capsys.readouterr().out
+        assert list(_load(lb)["models"]) == ["prov/a@unversioned"]
+
+    def test_bool_true_is_eligible(self, tmp_path, capsys):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="a-T1", model="a", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "a-T1", True)
+        rc = cli.main(["score", "a-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        assert list(_load(lb)["models"]) == ["prov/a@unversioned"]
+
+    def test_bool_false_skipped_before_pointer_update(self, tmp_path, capsys):
+        """finalize_ran: false → skip with a printed notice BEFORE any pointer
+        update; the audit artifact appears in no board."""
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="audit-T1", model="audit", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "audit-T1", False)
+        _make_measurements(run_dir="live-T1", model="live", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "live-T1", True)
+        rc = cli.main(["score", "audit-T1", "live-T1",
+                       "--runs-root", str(runs_root), "--leaderboard", str(lb)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "audit-T1" in out and "skipped" in out and "finalize_ran is false" in out
+        data = _load(lb)
+        assert list(data["models"]) == ["prov/live@unversioned"]
+        assert [r["model"] for r in data["ranking"]] == ["prov/live@unversioned"]
+        # and in no pass board either
+        for p in ("pass1", "pass2"):
+            board = json.loads(
+                (tmp_path / f"leaderboard-{p}.json").read_text(encoding="utf-8"))
+            assert all("audit" not in r["model"] for r in board["ranking"])
+            assert all("audit" not in u["model"] for u in board["unranked"])
+
+    @pytest.mark.parametrize("bad", ["false", 0])
+    def test_wrong_type_rejects_artifact_as_malformed(self, tmp_path, capsys, bad):
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="bad-T1", model="bad", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "bad-T1", bad)
+        rc = cli.main(["score", "bad-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 1
+        assert "malformed" in capsys.readouterr().err
+        assert not lb.exists()
+
+    def test_all_skipped_no_rankable_finalized_runs(self, tmp_path, capsys):
+        """Every supplied artifact skipped + no eligible leaderboard entry →
+        clear 'no rankable finalized runs' outcome."""
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="audit-T1", model="audit", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "audit-T1", False)
+        rc = cli.main(["score", "audit-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 1
+        out, err = capsys.readouterr()
+        assert "skipped" in out                      # the skip notice
+        assert "no rankable finalized runs" in err   # the clear outcome
+
+    def test_pointer_re_read_gate_skips_persisted_audit_entry(self, tmp_path, capsys):
+        """The gate applies when re-reading persisted leaderboard pointers too:
+        a leaderboard entry pointing at a finalize_ran:false run is skipped
+        from ranking/boards (its pointer is left untouched)."""
+        runs_root = tmp_path / "runs"
+        lb = tmp_path / "leaderboard.json"
+        _make_measurements(run_dir="audit-T1", model="audit", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "audit-T1", False)
+        _make_measurements(run_dir="live-T1", model="live", runs_root=runs_root)
+        _set_finalize_ran(runs_root, "live-T1", True)
+        # Pre-seed the leaderboard with BOTH pointers (the audit one persisted
+        # from an earlier, pre-gate incorporation).
+        lb.write_text(json.dumps(
+            {"models": {"prov/audit@unversioned": "audit-T1",
+                        "prov/live@unversioned": "live-T1"},
+             "ranking": [], "updated_at": "seed"}), encoding="utf-8")
+        rc = cli.main(["score", "live-T1", "--runs-root", str(runs_root),
+                       "--leaderboard", str(lb)])
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "audit" in out and "skipped" in out
+        data = _load(lb)
+        assert [r["model"] for r in data["ranking"]] == ["prov/live@unversioned"]
+        # the persisted audit pointer itself is left in place (not ranked)
+        assert data["models"]["prov/audit@unversioned"] == "audit-T1"

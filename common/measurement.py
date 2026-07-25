@@ -213,6 +213,10 @@ class RunMeasurementHeader:
     # SHA-256 of the loaded Pass-2 system prompt text (post-#115, D-115-13).
     # "" on historical (pre-#115) headers — see load_run_measurements.
     pass2_system_prompt_sha256: str = ""
+    # Task #122 §7: False means the run did NOT complete the finalize boundary
+    # (audit-only artifact — score-skipped at the §7c gate). Historical
+    # headers missing the field load as True (dataclass default).
+    finalize_ran: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +237,10 @@ def _validate_header_types(header: "RunMeasurementHeader") -> None:
         if not isinstance(v, int) or isinstance(v, bool):
             raise TypeError(
                 f"header field {f!r} must be int, got {type(v).__name__}")
+    # Task #122 §7: the finalize_ran stamp must be a real bool.
+    if not isinstance(header.finalize_ran, bool):
+        raise TypeError(
+            f"header field 'finalize_ran' must be bool, got {type(header.finalize_ran).__name__}")
 
 
 _MEASUREMENT_INT_FIELDS = ("attempts", "call_count", "total_input_tokens",

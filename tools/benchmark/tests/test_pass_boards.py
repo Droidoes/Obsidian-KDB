@@ -311,3 +311,113 @@ class TestCompleteness:
                                  fallback_diag_by_model={},
                                  header_by_model={"prov/a@unversioned": zero})
         assert board["unranked"][0]["raw_values"]["p1_failed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Task #122 §7d — Pass-1 board surfacing of the event-time watched fields
+# ---------------------------------------------------------------------------
+
+_WATCHED = {
+    "search_key_resolved_at_load_rate": 0.5,
+    "search_key_late_resolution_rate": 0.25,
+    "search_key_never_resolved_rate": 0.25,
+    "search_key_t2_seed_rate": 0.5,
+    "context_build_success_rate": 1.0,
+    "context_record_coverage": 1.0,
+    "context_integrity_ok": True,
+    "context_t1_delivered_mean": 2.0,
+    "context_missing_record_count": 0,
+    "context_expected_count_mismatch": False,
+}
+
+
+class TestPass1WatchedSurfacing:
+    def test_ranked_row_carries_watched_fields(self, tmp_path):
+        """Ranked rows merge the Task-122 fields EXPLICITLY into raw_values."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", latency_ms_p1=100)
+        _write_run(rr, "b-T1", model="b", latency_ms_p1=900)
+        m2r = {"prov/a@unversioned": "a-T1", "prov/b@unversioned": "b-T1"}
+        board = build_pass_board(
+            m2r, rr, "pass1",
+            graph_scored_by_model={}, fallback_diag_by_model={},
+            pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
+        )
+        rows = {r["model"]: r for r in board["ranking"]}
+        for k, v in _WATCHED.items():
+            assert rows["prov/a@unversioned"]["raw_values"][k] == v
+        # a row with no extracted watched evidence merges nothing
+        assert "search_key_resolved_at_load_rate" not in \
+            rows["prov/b@unversioned"]["raw_values"]
+
+    def test_fallback_row_carries_watched_fields(self, tmp_path):
+        """measurements-fallback rows (no run_state) carry them too."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", no_run_state=True)
+        m2r = {"prov/a@unversioned": "a-T1"}
+        board = build_pass_board(
+            m2r, rr, "pass1",
+            graph_scored_by_model={}, fallback_diag_by_model={},
+            pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
+        )
+        assert board["unranked"] and board["unranked"][0]["measurement_source"] == SRC_FALLBACK
+        raw = board["unranked"][0]["raw_values"]
+        for k, v in _WATCHED.items():
+            assert raw[k] == v
+
+    def test_partial_row_carries_watched_fields(self, tmp_path):
+        """Partial (unranked, completeness violation) rows carry them too."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", malformed_p1=True)
+        m2r = {"prov/a@unversioned": "a-T1"}
+        board = build_pass_board(
+            m2r, rr, "pass1",
+            graph_scored_by_model={}, fallback_diag_by_model={},
+            pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
+        )
+        assert board["unranked"] and board["unranked"][0]["measurement_source"] == SRC_PARTIAL
+        raw = board["unranked"][0]["raw_values"]
+        for k, v in _WATCHED.items():
+            assert raw[k] == v
+
+    def test_pass2_board_does_not_merge(self, tmp_path):
+        """The merge is Pass-1-only (§7d) — pass2 raw_values stay clean."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a")
+        m2r = {"prov/a@unversioned": "a-T1"}
+        board = build_pass_board(
+            m2r, rr, "pass2",
+            graph_scored_by_model={"prov/a@unversioned": {
+                "entity_reuse": 0.1, "graph_connectivity": 0.2,
+                "link_density": 2.0, "supports_density": 5.0}},
+            fallback_diag_by_model={},
+            pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
+        )
+        raw = board["ranking"][0]["raw_values"]
+        assert "search_key_resolved_at_load_rate" not in raw
+
+    def test_json_payload_and_markdown_render_from_same_raw_values(self, tmp_path):
+        """JSON + Markdown render the same raw_values — the new fields appear
+        in both the board payload and the rendered .md raw table."""
+        from tools.benchmark.cli import _render_leaderboard_md
+
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", latency_ms_p1=100)
+        m2r = {"prov/a@unversioned": "a-T1"}
+        board = build_pass_board(
+            m2r, rr, "pass1",
+            graph_scored_by_model={}, fallback_diag_by_model={},
+            pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
+        )
+        # JSON payload
+        raw = board["ranking"][0]["raw_values"]
+        assert raw["search_key_resolved_at_load_rate"] == 0.5
+        # Markdown via the CLI renderer (same construction as _score_command)
+        md = _render_leaderboard_md(
+            board["ranking"], {},
+            {r["model"]: r["raw_values"] for r in board["ranking"]},
+            board["effective_top_weights"], "2026-07-24T00:00:00",
+            board={"scope": "pass1", "unranked": board["unranked"],
+                   "effective_top_weights": board["effective_top_weights"]})
+        assert "search_key_resolved_at_load_rate" in md
+        assert "context_build_success_rate" in md

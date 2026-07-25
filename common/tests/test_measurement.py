@@ -754,3 +754,65 @@ def test_strict_loader_raises_on_wrong_typed_measurement(tmp_path):
                          "total_latency_ms": "fast"}}))
     with pytest.raises(TypeError):
         load_run_measurements(tmp_path)
+
+
+# ---------- Task #122: finalize_ran stamp + context-record coexistence ----------
+
+def test_header_without_finalize_ran_loads_as_true(tmp_path):
+    """Historical headers (no finalize_ran key) load as finalize_ran=True —
+    the §7 backfill semantic."""
+    run_dir = tmp_path / "run-historical"
+    _write_json(run_dir / "measurement_header.json", _make_header_dict("run-historical"))
+    header, _ = load_run_measurements(run_dir)
+    assert header.finalize_ran is True
+    header2, _, stats = load_run_measurements_with_stats(run_dir)
+    assert header2.finalize_ran is True
+
+
+def test_header_finalize_ran_false_loads_as_false(tmp_path):
+    run_dir = tmp_path / "run-audit"
+    data = {**_make_header_dict("run-audit"), "finalize_ran": False}
+    _write_json(run_dir / "measurement_header.json", data)
+    header, _ = load_run_measurements(run_dir)
+    assert header.finalize_ran is False
+
+
+@pytest.mark.parametrize("bad", ["false", 0, 1, "true", None])
+def test_header_wrong_typed_finalize_ran_rejected(tmp_path, bad):
+    """finalize_ran must be a real bool — wrong types raise on BOTH loader
+    paths (strict and stats-tolerant share _validate_header_types)."""
+    run_dir = tmp_path / "run-bad"
+    data = {**_make_header_dict("run-bad"), "finalize_ran": bad}
+    _write_json(run_dir / "measurement_header.json", data)
+    with pytest.raises(TypeError, match="finalize_ran"):
+        load_run_measurements(run_dir)
+    with pytest.raises(TypeError, match="finalize_ran"):
+        load_run_measurements_with_stats(run_dir)
+
+
+def test_context_records_coexist_with_strict_load(tmp_path):
+    """A context/ dir of Task #122 records inside run_dir does not disturb the
+    measurement loaders: strict load OK, pass2_records counts only pass2/,
+    pass2_malformed == 0 (context records are never projected as resp-stats)."""
+    run_id = "run-test"
+    run_dir = tmp_path / run_id
+    _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
+    sidecar = _make_sidecar_dict()
+    sidecar["source_id"] = "KDB/raw/alpha.md"
+    _write_json(run_dir / "pass1" / "KDB__raw__alpha.json", sidecar)
+    p2_rec = _make_resp_stats_dict()
+    p2_rec["run_id"] = run_id
+    p2_rec["source_id"] = "KDB/raw/beta.md"
+    _write_json(run_dir / "pass2" / "KDB__raw__beta.json", p2_rec)
+    # Task #122 context records alongside (shape irrelevant to these loaders).
+    _write_json(run_dir / "context" / "KDB__raw__alpha.json",
+                {"schema_version": 1, "run_id": run_id, "status": "complete"})
+
+    header, measurements = load_run_measurements(run_dir)
+    assert header.run_id == run_id
+    assert len(measurements) == 2
+
+    _, _, stats = load_run_measurements_with_stats(run_dir)
+    assert stats["pass2_records"] == 1
+    assert stats["pass2_malformed"] == 0
+    assert stats["pass1_identified"] == 1

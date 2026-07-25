@@ -1357,8 +1357,11 @@ def test_emit_kpis_quiet_skips_console_log(tmp_path, monkeypatch):
     assert not (out_dir / "console.log").exists(), "console.log must NOT be written in quiet mode"
 
 
-def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):
-    """When all sources are quarantined (finalize skipped), emit-kpis does not crash."""
+def test_emit_kpis_no_finalize_emits_audit_artifact(tmp_path, monkeypatch):
+    """§7: Pass-1 produced a signal source but all Pass-2 calls failed (no
+    finalize) — an auditable measurements.json is STILL written, recording
+    finalize_ran: false, graph scored fields None, Task-122 fields retained
+    (context records exist — the context build succeeded per source)."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     (vault / "AIML").mkdir()
@@ -1376,10 +1379,21 @@ def test_emit_kpis_no_compiled_sources_skips_gracefully(tmp_path, monkeypatch):
         graph_path=tmp_path / "graph", provider="p", model="m",
         max_tokens=4096, emit_kpis=True)
 
-    # Run still OK (quarantined) — emit-kpis gracefully skipped, no file
+    # Run still OK (quarantined) — finalize was skipped, but the audit
+    # artifact IS emitted (expected signal IDs exist).
     assert res.ok, res.exit_reason
-    assert res.finalize is None   # finalize was skipped
-    assert not any(bench_runs.rglob("measurements.json"))
+    assert res.finalize is None
+    matches = list(bench_runs.rglob("measurements.json"))
+    assert len(matches) == 1, "§7: audit measurements.json must be written"
+    m = json.loads(matches[0].read_text(encoding="utf-8"))
+    assert m["header"]["finalize_ran"] is False
+    assert m["graph"]["scored"]["entity_reuse"] is None
+    assert m["graph"]["watched"]["orphan_rate"] is None
+    assert m["graph"]["watched"]["entity_search_key_resolution"] is None
+    # Task-122 event-time fields retained: the context build succeeded per
+    # source (empty graph → complete records) — build success rate 1.0.
+    assert m["graph"]["watched"]["context_build_success_rate"] == 1.0
+    assert m["graph"]["watched"]["context_record_coverage"] == 1.0
 
 
 def test_cli_emit_kpis_flag_parsed(tmp_path):

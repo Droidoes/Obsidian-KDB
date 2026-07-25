@@ -400,6 +400,28 @@ def _pass_paths(leaderboard_path: Path, pass_: str) -> tuple[Path, Path]:
             stem.parent / f"{stem.name}-{pass_}.md")
 
 
+def _finalize_ran_gate(header: dict) -> bool | None:
+    """Task #122 §7c score-boundary rule on a measurements header dict:
+    missing → True (historical); bool True/False → itself (False = audit-only
+    artifact, skip before any pointer update); any other type → None
+    (malformed — the caller rejects the artifact)."""
+    value = header.get("finalize_ran", True)
+    return value if isinstance(value, bool) else None
+
+
+def _extract_pass1_watched(meas: dict) -> dict:
+    """Task #122 §7d: extract the event-time watched fields from a
+    measurements payload's graph section (all tiers) — every `search_key_*`
+    and `context_*` key (means/rates, coverage, and the §5 integrity
+    diagnostics). Merged EXPLICITLY into Pass-1 board raw_values downstream."""
+    graph = meas.get("graph", {}) or {}
+    all_vals: dict = {}
+    for tier in ("scored", "watched", "diagnostic"):
+        all_vals.update(graph.get(tier, {}) or {})
+    return {k: v for k, v in all_vals.items()
+            if k.startswith("search_key_") or k.startswith("context_")}
+
+
 def _scored_and_diag(meas: dict) -> tuple[dict, dict]:
     """Split a measurements payload into (merged scored KPIs, merged diag+watched).
 
@@ -528,6 +550,7 @@ def _score_command(args: argparse.Namespace) -> int:
     # --- Incorporate the incoming run dirs (latest run per row key wins) ---
     # Process in sorted order so that within one invocation, a lexically-greater
     # run dir (timestamp-suffixed) overwrites an earlier one for the same key.
+    skipped_audit_artifacts = 0
     for run_dir in sorted(args.run_dirs):
         data = _read_measurements(runs_root / run_dir / "measurements.json")
         if data is None:
@@ -544,19 +567,46 @@ def _score_command(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+        # §7c gate: audit-only artifacts (finalize_ran: false) are skipped
+        # BEFORE any pointer update; a wrong-typed value rejects the artifact.
+        gate = _finalize_ran_gate(header)
+        if gate is None:
+            print(
+                f"error: run dir '{run_dir}': header.finalize_ran must be a "
+                f"bool (missing loads as true) — artifact is malformed",
+                file=sys.stderr,
+            )
+            return 1
+        if gate is False:
+            print(
+                f"note: run dir '{run_dir}' skipped — finalize_ran is false "
+                "(audit-only artifact, never ranked)",
+            )
+            skipped_audit_artifacts += 1
+            continue
         key = _row_key(header)
         models_to_rundir[key] = run_dir  # latest replaces
 
     if not models_to_rundir:
-        print(
-            "error: leaderboard is empty — supply at least one run dir",
-            file=sys.stderr,
-        )
+        if skipped_audit_artifacts:
+            print(
+                "error: no rankable finalized runs — every supplied artifact "
+                "was skipped (finalize_ran: false, audit-only) and no eligible "
+                "leaderboard entry exists",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "error: leaderboard is empty — supply at least one run dir",
+                file=sys.stderr,
+            )
         return 1
 
     # --- Re-read every listed run LIVE and build the Borda input ---
     models: list[dict] = []
     diagnostics_by_model: dict[str, dict] = {}
+    pass1_watched_by_model: dict[str, dict] = {}
+    eligible_to_rundir: dict[str, str] = {}
     for key, run_dir in models_to_rundir.items():
         data = _read_measurements(runs_root / run_dir / "measurements.json")
         if data is None:
@@ -567,12 +617,39 @@ def _score_command(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+        # §7c gate on persisted pointers too: an audit-only artifact is
+        # skipped from ranking/boards (its pointer is left untouched).
+        gate = _finalize_ran_gate(data.get("header", {}) or {})
+        if gate is None:
+            print(
+                f"error: run dir '{run_dir}' (leaderboard entry '{key}'): "
+                f"header.finalize_ran must be a bool — artifact is malformed",
+                file=sys.stderr,
+            )
+            return 1
+        if gate is False:
+            print(
+                f"note: leaderboard entry '{key}' ({run_dir}) skipped — "
+                "finalize_ran is false (audit-only artifact, never ranked)",
+            )
+            continue
         # scored values are looked up across all emitted tiers (see _scored_and_diag),
         # so a KPI promoted between tiers needs no re-run; a genuinely-unmeasured
         # scored KPI comes back None and borda drops it pro-rata.
         scored, diag = _scored_and_diag(data)
         models.append({"model": key, "scored": scored})
         diagnostics_by_model[key] = diag
+        pass1_watched_by_model[key] = _extract_pass1_watched(data)
+        eligible_to_rundir[key] = run_dir
+
+    if not models:
+        print(
+            "error: no rankable finalized runs — every supplied artifact was "
+            "skipped (finalize_ran: false, audit-only) and no eligible "
+            "leaderboard entry exists",
+            file=sys.stderr,
+        )
+        return 1
 
     # --- Hierarchical score (§6: per-KPI Borda → graph_score → composite) ---
     result = score_models(models)
@@ -597,22 +674,27 @@ def _score_command(args: argparse.Namespace) -> int:
         row["rank"] = i
 
     # --- Pass boards (#117): recompute per-pass KPIs from run_state/ ---
+    # §7c: boards are built over ELIGIBLE rows only — skipped (audit-only)
+    # artifacts appear in no board. §7d: the Task-122 watched fields extracted
+    # above merge into the Pass-1 board's raw_values.
     graph_scored_by_model = {
         m["model"]: {k: m["scored"].get(k) for k in GRAPH_KPIS} for m in models
     }
     # measurements.json headers (already parsed above) feed header-derived
     # fallback evidence for rows without a usable run_state/ (R6-F2).
     header_by_model = {}
-    for key, run_dir in models_to_rundir.items():
+    for key, run_dir in eligible_to_rundir.items():
         data = _read_measurements(runs_root / run_dir / "measurements.json") or {}
         header_by_model[key] = data.get("header", {}) or {}
     try:
         pass_boards = {
             p: build_pass_board(
-                models_to_rundir, runs_root, p,
+                eligible_to_rundir, runs_root, p,
                 graph_scored_by_model=graph_scored_by_model,
                 fallback_diag_by_model=diagnostics_by_model,
-                header_by_model=header_by_model)
+                header_by_model=header_by_model,
+                pass1_watched_by_model=(
+                    pass1_watched_by_model if p == "pass1" else None))
             for p in ("pass1", "pass2")
         }
     except Exception as exc:   # pre-write failure: every artifact untouched
