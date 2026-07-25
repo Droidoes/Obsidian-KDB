@@ -453,91 +453,48 @@ def outgoing_links_ordered(conn: kuzu.Connection, slug: str) -> list[str]:
     return out
 
 
-# ---------- alias-aware canonical resolution (Task #90 v0.2 — D-90-9) ----------
+# ---------- alias-aware canonical resolution (Task #90 v0.2 — D-90-9; #122 provenance) ----------
+#
+# Row shape shared by BOTH query shapes (neutral — no resolution CASE in
+# Cypher; #122): (raw, e_status, canonical_id, e_first_run_id, target_status,
+# target_first_run_id, alias_slug, alias_status, alias_first_run_id). The
+# shared classifier below applies the §3.1 precedence + per-path first_run_id
+# selection exactly once. Legacy slug-only resolvers are projections over the
+# provenance resolvers — simple ≡ batch by construction.
 
 
-def resolve_to_canonical_slugs(
+def _resolution_rows(
     conn: kuzu.Connection,
-    raw_slugs: list[str],
-) -> dict[str, str]:
-    """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
-
-    Reachability per §3.1: direct PK → canonical_id (with target.status='active'
-    check — fixes B-2) → ALIAS_OF (canonical.status='active' check).
-
-    Returns {raw_slug: canonical_slug} for every raw key that resolves to an
-    active canonical entity. Unresolved raws are absent from the dict.
-
-    Defensive: trims whitespace + drops empty/whitespace-only entries (Qwen O-2).
-    """
-    if not raw_slugs:
-        return {}
-    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
-    if not cleaned:
-        return {}
-
-    resolved: dict[str, str] = {}
-
-    # Single MATCH with two OPTIONAL chains: surface direct PK, canonical_id
-    # target status, and ALIAS_OF canonical info in one round-trip. Path
-    # precedence applied in Python: Path 2 (canonical_id) > Path 3 (ALIAS_OF)
-    # > Path 1 (direct leaf). Path 3 before Path 1 is required so that an
-    # entity with NO canonical_id but WITH an outgoing ALIAS_OF resolves via
-    # the alias target — and so that an alias with a DEAD target stays
-    # unresolved (does not fall back to self).
+    cleaned: list[str],
+) -> list[tuple]:
+    """Simple 2-query shape: MATCH by slug set, neutral resolution rows."""
     q = conn.execute(
         """
         MATCH (e:Entity)
         WHERE e.slug IN $slugs
         OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
         OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
-        RETURN e.slug, e.status, e.canonical_id,
+        RETURN e.slug, e.status, e.canonical_id, e.first_run_id,
                CASE WHEN target IS NULL THEN NULL ELSE target.status END,
+               CASE WHEN target IS NULL THEN NULL ELSE target.first_run_id END,
                CASE WHEN canon IS NULL THEN NULL ELSE canon.slug END,
-               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.first_run_id END
         """,
         {"slugs": cleaned},
     )
+    rows: list[tuple] = []
     while q.has_next():
-        slug, status, canonical_id, target_status, alias_canon, alias_canon_status = q.get_next()
-        if canonical_id is not None:
-            # Path 2 — canonical_id resolution (B-2 active check)
-            if target_status == "active":
-                resolved[slug] = canonical_id
-            # else: dead canonical_id target — unresolved
-        elif alias_canon is not None:
-            # Path 3 — ALIAS_OF safety net (entity declared itself an alias)
-            if alias_canon_status == "active":
-                resolved[slug] = alias_canon
-            # else: dead alias target — unresolved (NOT Path 1 fallback)
-        elif status == "active":
-            # Path 1 — direct leaf entity (no canonical_id, no outgoing ALIAS_OF)
-            resolved[slug] = slug
-
-    return resolved
+        rows.append(q.get_next())
+    return rows
 
 
-def resolve_to_canonical_slugs_batch(
+def _resolution_rows_batch(
     conn: kuzu.Connection,
-    raw_slugs: list[str],
-) -> dict[str, str]:
-    """Codex-tested batch resolver (D-90-9 escape hatch, KDB_T2_RESOLVER=batch).
-
-    Single Cypher with UNWIND + chained OPTIONAL MATCH + CASE; empirically
-    validated on Kuzu 0.11.3 in the v0.1 panel review. Functional parity with
-    the simple resolver is enforced by test_t2_resolver_parity.py.
-    """
-    if not raw_slugs:
-        return {}
-    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
-    if not cleaned:
-        return {}
-
-    # CASE precedence: Path 2 (canonical_id) > Path 3 (ALIAS_OF) > Path 1 (direct leaf).
-    # An entity that has DECLARED itself an alias (either via canonical_id or
-    # an outgoing ALIAS_OF edge) must NOT fall back to Path 1 if its declared
-    # target is inactive — the explicit-null clauses suppress that fallback.
-    # This keeps Path 1 reserved for true canonical leaves.
+    cleaned: list[str],
+) -> list[tuple]:
+    """Batch shape (UNWIND; Codex-tested on Kuzu 0.11.3): one neutral row per
+    raw key — including misses (e IS NULL) so every input is accounted for."""
     q = conn.execute(
         """
         UNWIND $raw_slugs AS raw
@@ -546,21 +503,99 @@ def resolve_to_canonical_slugs_batch(
         OPTIONAL MATCH (e)-[:ALIAS_OF]->(canon:Entity)
         OPTIONAL MATCH (target:Entity {slug: e.canonical_id})
         RETURN raw,
-               CASE
-                 WHEN e IS NULL THEN NULL
-                 WHEN e.canonical_id IS NOT NULL AND target IS NOT NULL AND target.status = 'active' THEN e.canonical_id
-                 WHEN e.canonical_id IS NOT NULL THEN NULL
-                 WHEN canon IS NOT NULL AND canon.status = 'active' THEN canon.slug
-                 WHEN canon IS NOT NULL THEN NULL
-                 WHEN e.status = 'active' THEN e.slug
-                 ELSE NULL
-               END AS canonical
+               CASE WHEN e IS NULL THEN NULL ELSE e.status END,
+               CASE WHEN e IS NULL THEN NULL ELSE e.canonical_id END,
+               CASE WHEN e IS NULL THEN NULL ELSE e.first_run_id END,
+               CASE WHEN target IS NULL THEN NULL ELSE target.status END,
+               CASE WHEN target IS NULL THEN NULL ELSE target.first_run_id END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.slug END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.status END,
+               CASE WHEN canon IS NULL THEN NULL ELSE canon.first_run_id END
         """,
         {"raw_slugs": cleaned},
     )
-    resolved: dict[str, str] = {}
+    rows: list[tuple] = []
     while q.has_next():
-        raw, canonical = q.get_next()
-        if canonical is not None:
-            resolved[raw] = canonical
+        rows.append(q.get_next())
+    return rows
+
+
+def classify_resolution_rows(rows: list[tuple]) -> dict[str, tuple[str, str | None]]:
+    """THE row classifier (#122) — §3.1 precedence + per-path first_run_id
+    selection, exactly once for both query shapes.
+
+    Precedence: canonical_id active > ALIAS_OF active > direct leaf active;
+    dead targets fail-closed (an entity that DECLARED itself an alias — via
+    canonical_id or an outgoing ALIAS_OF — never falls back to Path 1).
+    Stamps: Path 2 → target's first_run_id; Path 3 → the ALIAS_OF canonical's;
+    Path 1 → the entity's own. Empty first_run_id → None HERE (normalization
+    at construction — the strict record parser rejects an empty persisted
+    stamp, so it must never survive classification).
+    """
+    resolved: dict[str, tuple[str, str | None]] = {}
+    for (raw, status, canonical_id, e_first_run_id,
+         target_status, target_first_run_id,
+         alias_slug, alias_status, alias_first_run_id) in rows:
+        if canonical_id is not None:
+            # Path 2 — canonical_id resolution (B-2 active check)
+            if target_status == "active":
+                resolved[raw] = (canonical_id, target_first_run_id or None)
+            # else: dead canonical_id target — unresolved
+        elif alias_slug is not None:
+            # Path 3 — ALIAS_OF safety net (entity declared itself an alias)
+            if alias_status == "active":
+                resolved[raw] = (alias_slug, alias_first_run_id or None)
+            # else: dead alias target — unresolved (NOT Path 1 fallback)
+        elif status == "active":
+            # Path 1 — direct leaf entity (no canonical_id, no outgoing ALIAS_OF)
+            resolved[raw] = (raw, e_first_run_id or None)
     return resolved
+
+
+def resolve_to_canonical_slugs_with_provenance(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, tuple[str, str | None]]:
+    """{raw: (canonical_slug, target_first_run_id)} — simple query shape.
+
+    Reachability per §3.1: direct PK → canonical_id (with target.status='active'
+    check — fixes B-2) → ALIAS_OF (canonical.status='active' check). Unresolved
+    raws are absent from the dict. Defensive: trims whitespace + drops
+    empty/whitespace-only entries (Qwen O-2).
+    """
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+    return classify_resolution_rows(_resolution_rows(conn, cleaned))
+
+
+def resolve_to_canonical_slugs_with_provenance_batch(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, tuple[str, str | None]]:
+    """Batch twin (D-90-9 escape hatch) — same classifier, same outcomes."""
+    cleaned = [s.strip() for s in raw_slugs if s and s.strip()]
+    if not cleaned:
+        return {}
+    return classify_resolution_rows(_resolution_rows_batch(conn, cleaned))
+
+
+def resolve_to_canonical_slugs(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Legacy slug-only projection (D-90-9 v1 default) over the shared
+    provenance resolver — parity with the batch shape is structural."""
+    return {raw: canonical
+            for raw, (canonical, _stamp)
+            in resolve_to_canonical_slugs_with_provenance(conn, raw_slugs).items()}
+
+
+def resolve_to_canonical_slugs_batch(
+    conn: kuzu.Connection,
+    raw_slugs: list[str],
+) -> dict[str, str]:
+    """Legacy slug-only projection (Codex-tested batch escape hatch)."""
+    return {raw: canonical
+            for raw, (canonical, _stamp)
+            in resolve_to_canonical_slugs_with_provenance_batch(conn, raw_slugs).items()}

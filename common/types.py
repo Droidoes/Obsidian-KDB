@@ -331,6 +331,61 @@ class ContextSnapshot:
         }
 
 
+# ---------- Task #122 event-time context capture (shared vocabulary) ----------
+
+KeyDisposition = Literal["unresolved", "resolved_t2_seed", "resolved_already_t1",
+                         "resolved_out_of_scope", "resolved_duplicate_seed"]
+ConfiguredT2Mode = Literal["structured", "layered", "legacy"]
+EffectiveT2Strategy = Literal["structured_keys", "explicit_empty", "legacy_regex", "layered_union"]
+
+
+@dataclass(frozen=True)
+class KeyOutcome:
+    """One emitted search key's load-time outcome. `resolved` is the canonical
+    slug (None iff disposition == "unresolved"); `target_first_run_id` is the
+    resolution target's first_run_id provenance stamp (None when the graph
+    carries none — never an empty string; normalization happens at the
+    resolver, never at parse)."""
+    key: str
+    disposition: KeyDisposition
+    resolved: str | None
+    target_first_run_id: str | None
+
+
+@dataclass(frozen=True)
+class TierRecord:
+    """One ranking tier's capture: `candidates` = pre-cap tier set size;
+    `delivered`/`slugs` = post-cap, post-projection prompt pages in rank order."""
+    candidates: int
+    delivered: int
+    slugs: list[str]              # ALL delivered slugs, prompt rank order
+
+
+@dataclass(frozen=True)
+class ContextTelemetry:           # builder-owned — NO run_id, NO schema metadata
+    """The persistence-facing product of build_context_snapshot: what the
+    builder observed at event time, before any record/run metadata is added."""
+    source_id: str
+    configured_t2_mode: ConfiguredT2Mode
+    effective_t2_strategy: EffectiveT2Strategy
+    keys_emitted: list[str]
+    key_outcomes: list[KeyOutcome]
+    t1: TierRecord
+    t2: TierRecord
+    t3: TierRecord
+    candidate_universe_size: int
+    domain_scope: str | None
+    cold_start: bool
+    max_hops: int
+    page_cap: int
+
+
+@dataclass(frozen=True)
+class ContextBuildResult:
+    snapshot: ContextSnapshot     # prompt-facing — unchanged
+    telemetry: ContextTelemetry   # persistence-facing — never serialized into the prompt
+
+
 @dataclass
 class CompileJob:
     """One unit of compile work: a source_id + resolved path + its

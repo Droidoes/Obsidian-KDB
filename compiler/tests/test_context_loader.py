@@ -85,7 +85,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="unrelated text with no slug mentions",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # src-alpha supports hub, spoke-1, spoke-2 — all must be present
         assert "hub" in slugs
@@ -101,7 +101,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="See also leaf-b for more context.",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # leaf-b is T2 (slug in text), should appear after T1 seeds
         assert "leaf-b" in slugs
@@ -117,7 +117,7 @@ class TestTierRanking:
             source_id="src-beta",
             source_text="no slug mentions here",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # src-beta supports leaf-a (T1). leaf-a has no outgoing links,
         # but spoke-2 links TO leaf-a (incoming). spoke-2 is T3.
@@ -132,7 +132,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # Within T1: hub has highest PageRank (most inbound).
         # hub should sort before spoke-1, spoke-2 within the T1 band.
@@ -145,7 +145,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="leaf-b orphan-x",
             page_cap=3,
-        )
+        ).snapshot
         assert len(snapshot.pages) == 3
 
     def test_outgoing_links_populated(self, gdb):
@@ -155,7 +155,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="",
             page_cap=50,
-        )
+        ).snapshot
         hub_page = next(p for p in snapshot.pages if p.slug == "hub")
         assert set(hub_page.outgoing_links) == {"spoke-1", "spoke-2", "leaf-a"}
 
@@ -166,7 +166,7 @@ class TestTierRanking:
             source_id="src-alpha",
             source_text="",
             page_cap=50,
-        )
+        ).snapshot
         assert snapshot.source_id == "src-alpha"
 
 
@@ -179,7 +179,7 @@ class TestEdgeCases:
                 source_id="nonexistent",
                 source_text="anything",
                 page_cap=50,
-            )
+            ).snapshot
         assert snapshot.pages == []
         assert snapshot.source_id == "nonexistent"
 
@@ -190,7 +190,7 @@ class TestEdgeCases:
             source_id="unknown-source",
             source_text="hub is mentioned here",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         assert "hub" in slugs
 
@@ -205,7 +205,7 @@ class TestEdgeCases:
             source_id="src-alpha",
             source_text="orphan-x is mentioned",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         assert "orphan-x" not in slugs
 
@@ -304,7 +304,7 @@ class TestColdStartTitleMatching:
             source_id="src-new",
             source_text="The concept of Margin of Safety is fundamental to investing.",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         assert "margin-of-safety" in slugs
 
@@ -315,7 +315,7 @@ class TestColdStartTitleMatching:
             source_id="src-new",
             source_text="Chinese Legalism influenced governance structures.",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         assert "legalism" in slugs
 
@@ -343,7 +343,7 @@ class TestColdStartTitleMatching:
             source_id="src-existing",
             source_text="Deep Leaf is very interesting.",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # src-existing has T1 seeds (margin-of-safety, legalism, value, hub-node).
         # "Deep Leaf" is only reachable via title match or 2-hop.
@@ -408,7 +408,7 @@ class TestColdStart2HopExpansion:
             source_id="src-new",
             source_text="legalism shaped political thought",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # T2 = {legalism} (1 seed, < 5 threshold → 2-hop fires)
         assert "legalism" in slugs  # T2
@@ -427,7 +427,7 @@ class TestColdStart2HopExpansion:
                 "and Margin of Safety again"
             ),
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # With 4+ slug matches + title matches, T2 should be >= 5
         # Regardless, the main assertion is that the system works correctly
@@ -441,7 +441,7 @@ class TestColdStart2HopExpansion:
             source_id="src-existing",
             source_text="no extra slug mentions",
             page_cap=50,
-        )
+        ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # src-existing has T1 seeds. T3 is 1-hop only.
         # hub-node (T1) -> deep-leaf (1-hop T3) — should be reachable.
@@ -594,7 +594,7 @@ class TestColdStartWideningInvariant:
                 "investing."
             ),
             page_cap=50,
-        )
+        ).snapshot
         slugs = {p.slug for p in snapshot.pages}
         assert len(slugs) >= 5, (
             f"cold-start widening produced only {len(slugs)} seeds "
@@ -663,7 +663,7 @@ def _vi_fm(keys):
 def test_t2_off_domain_key_is_dropped(gdb_dom):
     snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm(["ai-node"]))
+        frontmatter=_vi_fm(["ai-node"])).snapshot
     slugs = [p.slug for p in snap.pages]
     assert "ai-node" not in slugs            # off-domain key resolution dropped
 
@@ -671,7 +671,7 @@ def test_t2_off_domain_key_is_dropped(gdb_dom):
 def test_t2_same_domain_key_is_kept(gdb_dom):
     snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm(["vi-leaf"]))
+        frontmatter=_vi_fm(["vi-leaf"])).snapshot
     assert "vi-leaf" in [p.slug for p in snap.pages]
 
 
@@ -679,7 +679,7 @@ def test_t3_excludes_cross_domain_neighbor(gdb_dom):
     # vi-hub LINKS_TO ai-node (cross-domain) and vi-leaf (same-domain).
     snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm([]))
+        frontmatter=_vi_fm([])).snapshot
     slugs = [p.slug for p in snap.pages]
     assert "ai-node" not in slugs            # cross-domain neighbor excluded
     assert "vi-leaf" in slugs                # same-domain neighbor admitted
@@ -688,7 +688,7 @@ def test_t3_excludes_cross_domain_neighbor(gdb_dom):
 def test_no_padding_and_all_same_domain(gdb_dom):
     snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm([]))
+        frontmatter=_vi_fm([])).snapshot
     slugs = {p.slug for p in snap.pages}
     assert slugs <= {"vi-hub", "vi-spoke", "vi-leaf"}   # no off-domain top-up
     assert "ai-node" not in slugs
@@ -698,5 +698,5 @@ def test_no_domain_source_falls_back_to_full_graph(gdb_dom):
     # frontmatter=None → un-scoped; ai-node is reachable via T3 (vi-hub→ai-node).
     snap = context_loader.build_context_snapshot(
         gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=None)
+        frontmatter=None).snapshot
     assert "ai-node" in [p.slug for p in snap.pages]

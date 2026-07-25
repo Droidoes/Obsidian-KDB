@@ -192,3 +192,43 @@ def test_batch_resolver_qwen_probe_2(resolver_graph):
     """Qwen Probe-2 on batch resolver."""
     result = _resolve_to_canonical_slugs_batch(resolver_graph, ["ambiguous"])
     assert result == {"ambiguous": "target-a"}
+
+
+# ---------- #122: provenance twins — same outcomes AND stamps; projection ≡ legacy ----------
+
+from compiler.context_loader import (
+    _resolve_to_canonical_slugs_with_provenance,
+    _resolve_to_canonical_slugs_with_provenance_batch,
+)
+
+
+@pytest.mark.parametrize(
+    "raw_slugs,expected,label",
+    PARITY_PROBES,
+    ids=[probe[2] for probe in PARITY_PROBES],
+)
+def test_provenance_twin_parity_simple_vs_batch(resolver_graph, raw_slugs, expected, label):
+    """The provenance twins agree on the full {raw: (canonical, stamp)} mapping —
+    simple ≡ batch on outcomes AND stamps (the fixture stamps everything 'r1')."""
+    expected_prov = {raw: (canonical, "r1") for raw, canonical in expected.items()}
+    simple_prov = _resolve_to_canonical_slugs_with_provenance(resolver_graph, raw_slugs)
+    batch_prov = _resolve_to_canonical_slugs_with_provenance_batch(resolver_graph, raw_slugs)
+    assert simple_prov == expected_prov, f"simple provenance wrong for {label!r}"
+    assert batch_prov == expected_prov, f"batch provenance wrong for {label!r}"
+    assert simple_prov == batch_prov, f"provenance parity violated for {label!r}"
+
+
+@pytest.mark.parametrize(
+    "raw_slugs,expected,label",
+    PARITY_PROBES,
+    ids=[probe[2] for probe in PARITY_PROBES],
+)
+def test_legacy_is_provenance_projection(resolver_graph, raw_slugs, expected, label):
+    """projection ≡ legacy: each legacy resolver equals its provenance twin with
+    stamps dropped (structural parity — same classifier, one output)."""
+    simple_prov = _resolve_to_canonical_slugs_with_provenance(resolver_graph, raw_slugs)
+    batch_prov = _resolve_to_canonical_slugs_with_provenance_batch(resolver_graph, raw_slugs)
+    assert _resolve_to_canonical_slugs(resolver_graph, raw_slugs) == {
+        raw: canonical for raw, (canonical, _stamp) in simple_prov.items()}
+    assert _resolve_to_canonical_slugs_batch(resolver_graph, raw_slugs) == {
+        raw: canonical for raw, (canonical, _stamp) in batch_prov.items()}

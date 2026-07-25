@@ -8,6 +8,12 @@ Note: `KDB_CONTEXT_SOURCE`, `KDB_T2_MODE`, and `KDB_T2_RESOLVER` env vars no
 longer have any effect; selection and mode are wired directly by the
 orchestrator.
 
+Task #122: build_context_snapshot returns a ContextBuildResult — TWO products:
+the prompt-facing ContextSnapshot (byte-identical) + the persistence-facing
+ContextTelemetry (event-time capture: per-key dispositions with resolution
+provenance, pre/post-cap tier records, effective strategy). The telemetry is
+NEVER serialized into the prompt.
+
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
     T2 (score=2): entities seeded into context per T2Mode (Task #90 v0.2):
@@ -30,7 +36,15 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from kdb_graph import queries
-from common.types import ContextPage, ContextSnapshot
+from common.types import (
+    ContextBuildResult,
+    ContextPage,
+    ContextSnapshot,
+    ContextTelemetry,
+    EffectiveT2Strategy,
+    KeyOutcome,
+    TierRecord,
+)
 
 if TYPE_CHECKING:
     from common.source_io import SourceFrontmatter
@@ -39,6 +53,7 @@ _VALID_PAGE_TYPES = frozenset({"summary", "concept", "article"})
 
 
 _MIN_SEED_THRESHOLD = 5
+_DEFAULT_PAGE_CAP = 50
 
 
 class T2Mode(str, Enum):
@@ -53,17 +68,81 @@ class T2Mode(str, Enum):
     LEGACY = "legacy"
 
 
+def _effective_strategy(
+    mode: "T2Mode",
+    frontmatter: "SourceFrontmatter | None",
+) -> tuple[list[str], EffectiveT2Strategy]:
+    """(keys_emitted, effective_t2_strategy) from the configured mode +
+    frontmatter presence — pre-graph-read, so the same derivation is valid on
+    the context_failed path (Task #122 §3). keys_emitted is the key list the
+    strategy actually consumes: State B / LAYERED-with-keys → the frontmatter
+    keys; State A / LEGACY (frontmatter ignored) → []; State C → [] (the
+    explicit empty emission itself)."""
+    if mode == T2Mode.LAYERED:
+        keys = (list(frontmatter.entity_search_keys)
+                if frontmatter is not None and frontmatter.entity_search_keys
+                else [])
+        return keys, "layered_union"
+    if mode == T2Mode.LEGACY:
+        return [], "legacy_regex"
+    # STRUCTURED three-state (D-90-8)
+    if frontmatter is None:
+        return [], "legacy_regex"                       # State A
+    if frontmatter.entity_search_keys:
+        return list(frontmatter.entity_search_keys), "structured_keys"  # State B
+    return [], "explicit_empty"                         # State C
+
+
+def _resolve_key_outcomes(
+    resolved_prov: dict[str, tuple[str, str | None]],
+    keys: list[str],
+    *,
+    t1_slugs: set[str],
+    pool: set[str],
+) -> tuple[list[KeyOutcome], set[str]]:
+    """Disposition per emitted key, in emission order (Task #122 §3 precedence):
+    absent from the resolution map → unresolved; canonical ∈ t1 → already_t1;
+    canonical ∉ (pool − t1) → out_of_scope; already seeded by an earlier key →
+    duplicate_seed; else → t2_seed (and seed it). Returns (outcomes, t2_seeds)
+    — the seeds set equals the slug-only structured T2 set by construction."""
+    outcomes: list[KeyOutcome] = []
+    seeded: set[str] = set()
+    scope = pool - t1_slugs
+    for key in keys:
+        hit = resolved_prov.get(key)
+        if hit is None:
+            outcomes.append(KeyOutcome(key=key, disposition="unresolved",
+                                       resolved=None, target_first_run_id=None))
+            continue
+        canonical, stamp = hit
+        if canonical in t1_slugs:
+            disposition = "resolved_already_t1"
+        elif canonical not in scope:
+            disposition = "resolved_out_of_scope"
+        elif canonical in seeded:
+            disposition = "resolved_duplicate_seed"
+        else:
+            disposition = "resolved_t2_seed"
+            seeded.add(canonical)
+        outcomes.append(KeyOutcome(key=key, disposition=disposition,
+                                   resolved=canonical, target_first_run_id=stamp))
+    return outcomes, seeded
+
+
 def build_context_snapshot(
     conn: Any,
     *,
     source_id: str,
     source_text: str,
-    page_cap: int = 50,
+    page_cap: int = _DEFAULT_PAGE_CAP,
     frontmatter: "SourceFrontmatter | None" = None,
     mode: T2Mode = T2Mode.STRUCTURED,
     resolver: str = "simple",
-) -> ContextSnapshot:
-    """Build a tier-ranked, source-specific context snapshot from GraphDB.
+) -> ContextBuildResult:
+    """Build a tier-ranked, source-specific context snapshot from GraphDB —
+    returning BOTH products (Task #122): the prompt-facing ContextSnapshot
+    (byte-identical to pre-#122) and the persistence-facing ContextTelemetry
+    (event-time capture; never serialized into the prompt).
 
     Pure graph reads — no manifest access, no env var reads.
     Empty/missing source or empty graph → empty snapshot (never raises).
@@ -75,9 +154,35 @@ def build_context_snapshot(
         resolver: "simple" (2-query default per D-90-9) or "batch" (Codex-tested
             escape hatch; pass resolver="batch" explicitly).
     """
+    keys_emitted, strategy = _effective_strategy(mode, frontmatter)
+    domain = frontmatter.domain if frontmatter is not None else None
+
     active_entities = _load_active_entities(conn)
     if not active_entities:
-        return ContextSnapshot(source_id=source_id, pages=[])
+        # Empty-graph early return: FULL telemetry — every emitted key
+        # unresolved (outcomes present), zero tiers, cold_start=True, max_hops
+        # per the cold-start widening policy (T1 empty + |T2| < threshold → 2).
+        zero = TierRecord(candidates=0, delivered=0, slugs=[])
+        return ContextBuildResult(
+            snapshot=ContextSnapshot(source_id=source_id, pages=[]),
+            telemetry=ContextTelemetry(
+                source_id=source_id,
+                configured_t2_mode=mode.value,  # type: ignore[arg-type]
+                effective_t2_strategy=strategy,
+                keys_emitted=keys_emitted,
+                key_outcomes=[KeyOutcome(key=k, disposition="unresolved",
+                                         resolved=None, target_first_run_id=None)
+                              for k in keys_emitted],
+                t1=zero,
+                t2=zero,
+                t3=zero,
+                candidate_universe_size=0,
+                domain_scope=domain,
+                cold_start=True,
+                max_hops=2,
+                page_cap=page_cap,
+            ),
+        )
 
     slug_set = set(active_entities.keys())
 
@@ -85,7 +190,6 @@ def build_context_snapshot(
     # domain (entity anti-entropy). T1 stays on the full set — it is the source's
     # own SUPPORTS, same-domain by construction. A source with no Pass-1 domain
     # (pre-Pass-1 / un-enriched) cannot be scoped, so it falls back to the full graph.
-    domain = frontmatter.domain if frontmatter is not None else None
     pool = (_domain_pool(conn, domain) & slug_set) if domain else slug_set
 
     # --- Tier assignment ---
@@ -108,6 +212,18 @@ def build_context_snapshot(
     if cold_start and len(t2_slugs) < _MIN_SEED_THRESHOLD:
         max_hops = 2
     t3_slugs = _t3_neighbors(conn, seeds, pool - seeds, max_hops=max_hops)
+
+    # --- Key dispositions (event-time; prompt-facing T2 unchanged above) ---
+    key_outcomes: list[KeyOutcome] = []
+    if keys_emitted:
+        resolved_prov = (
+            _resolve_to_canonical_slugs_with_provenance_batch(conn, keys_emitted)
+            if resolver == "batch"
+            else _resolve_to_canonical_slugs_with_provenance(conn, keys_emitted)
+        )
+        key_outcomes, _t2_seeds = _resolve_key_outcomes(
+            resolved_prov, keys_emitted, t1_slugs=t1_slugs, pool=pool,
+        )
 
     # --- Scoring + ranking ---
     pagerank_scores = _pagerank_scores(conn)
@@ -139,7 +255,39 @@ def build_context_snapshot(
             outgoing_links=outgoing_map.get(slug, []),
         ))
 
-    return ContextSnapshot(source_id=source_id, pages=pages)
+    # --- TierRecords: candidates = pre-cap tier sets; delivered/slugs =
+    # post-cap, post-projection prompt pages per tier, in rank order. The
+    # tiers are disjoint by construction (t2 ⊆ pool−t1, t3 ⊆ pool−seeds), so
+    # sum(delivered) == len(pages) ≤ page_cap.
+    tier_of: dict[str, int] = {}
+    for slug in t1_slugs:
+        tier_of[slug] = 1
+    for slug in t2_slugs:
+        tier_of[slug] = 2
+    for slug in t3_slugs:
+        tier_of[slug] = 3
+    tier_slugs: dict[int, list[str]] = {1: [], 2: [], 3: []}
+    for page in pages:
+        tier_slugs[tier_of[page.slug]].append(page.slug)
+
+    return ContextBuildResult(
+        snapshot=ContextSnapshot(source_id=source_id, pages=pages),
+        telemetry=ContextTelemetry(
+            source_id=source_id,
+            configured_t2_mode=mode.value,  # type: ignore[arg-type]
+            effective_t2_strategy=strategy,
+            keys_emitted=keys_emitted,
+            key_outcomes=key_outcomes,
+            t1=TierRecord(len(t1_slugs), len(tier_slugs[1]), tier_slugs[1]),
+            t2=TierRecord(len(t2_slugs), len(tier_slugs[2]), tier_slugs[2]),
+            t3=TierRecord(len(t3_slugs), len(tier_slugs[3]), tier_slugs[3]),
+            candidate_universe_size=len(pool),
+            domain_scope=domain,
+            cold_start=cold_start,
+            max_hops=max_hops,
+            page_cap=page_cap,
+        ),
+    )
 
 
 # ---------- Tier helpers ----------
@@ -460,3 +608,21 @@ def _resolve_to_canonical_slugs_batch(
     Thin wrapper over kdb_graph.queries.resolve_to_canonical_slugs_batch.
     """
     return queries.resolve_to_canonical_slugs_batch(conn, raw_slugs)
+
+
+def _resolve_to_canonical_slugs_with_provenance(
+    conn: Any,
+    raw_slugs: list[str],
+) -> dict[str, tuple[str, str | None]]:
+    """Provenance twin (#122): {raw: (canonical, target_first_run_id)} — the
+    disposition pass reads stamps from here; the slug-only wrapper above is a
+    projection of the same classification."""
+    return queries.resolve_to_canonical_slugs_with_provenance(conn, raw_slugs)
+
+
+def _resolve_to_canonical_slugs_with_provenance_batch(
+    conn: Any,
+    raw_slugs: list[str],
+) -> dict[str, tuple[str, str | None]]:
+    """Batch provenance twin (#122)."""
+    return queries.resolve_to_canonical_slugs_with_provenance_batch(conn, raw_slugs)

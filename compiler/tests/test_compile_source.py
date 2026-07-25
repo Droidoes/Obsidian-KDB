@@ -4,6 +4,7 @@ All non-live: the model is faked via monkeypatch (the test_compiler.py pattern).
 Run: python -m pytest compiler/tests/test_compile_source.py -v -m "not live"
 """
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ from compiler.summary_slug import expected_summary_slug
 from common.call_model import ModelResponse
 from common.model_route import ModelRoute
 from compiler.canonicalize import load_or_empty
+from compiler.context_record import parse_context_record_v1
+from common.llm_telemetry import safe_source_id
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
 from common.types import CompileJob, CompileSourceResult, ContextSnapshot
@@ -532,3 +535,156 @@ def test_compile_source_payload_contains_no_removed_keys(tmp_path, monkeypatch):
     legacy = json.loads(
         Path("tests/fixtures/compile_result.minimal.valid.json").read_text(encoding="utf-8"))
     assert vcr.validate(legacy).is_valid
+
+
+# ---------- Task #122 P1: per-source context record writer ----------
+
+def _record_path(state_root: Path, run_id: str, source_id: str) -> Path:
+    return (state_root / "runs" / run_id / "context"
+            / f"{safe_source_id(source_id)}.json")
+
+
+def test_compile_source_writes_complete_context_record(tmp_path, monkeypatch):
+    """Success path: one complete record per source per run, parseable by the
+    strict parser, observables non-null (empty-graph telemetry here)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda req: ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        ),
+    )
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert result.ok, (result.failure_stage, result.error)
+
+    path = _record_path(state_root, ctx.run_id, "KDB/raw/s.md")
+    assert path.is_file(), f"context record not written at {path}"
+    rec = parse_context_record_v1(json.loads(path.read_text(encoding="utf-8")))
+    assert rec.status == "complete"
+    assert rec.run_id == ctx.run_id
+    assert rec.source_id == "KDB/raw/s.md"
+    assert rec.configured_t2_mode == "structured"
+    assert rec.effective_t2_strategy == "structured_keys"
+    assert rec.keys_emitted == ["value-investing"]
+    # strict 1:1 — the empty graph leaves every emitted key unresolved
+    assert [o.key for o in rec.key_outcomes] == rec.keys_emitted
+    assert [o.disposition for o in rec.key_outcomes] == ["unresolved"]
+    # complete-side observables non-null (empty-graph values)
+    assert rec.candidate_universe_size == 0
+    assert rec.cold_start is True
+    assert rec.max_hops == 2
+    assert rec.page_cap == 50
+
+
+def test_compile_source_writes_context_failed_record_on_builder_exception(
+    tmp_path, monkeypatch,
+):
+    """Builder raises → synthesized context_failed record (frozen shape: keys
+    retained from frontmatter, empty outcomes, zero tiers, null observables)
+    alongside the unchanged failure_stage='context' result."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("graph wedged")
+    monkeypatch.setattr("compiler.compiler.build_context_snapshot", boom)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert "graph wedged" in (result.error or "")
+
+    path = _record_path(state_root, ctx.run_id, "KDB/raw/s.md")
+    assert path.is_file(), f"context_failed record not written at {path}"
+    rec = parse_context_record_v1(json.loads(path.read_text(encoding="utf-8")))
+    assert rec.status == "context_failed"
+    assert rec.run_id == ctx.run_id
+    assert rec.source_id == "KDB/raw/s.md"
+    assert rec.configured_t2_mode == "structured"
+    assert rec.effective_t2_strategy == "structured_keys"
+    assert rec.keys_emitted == ["value-investing"]   # retained from frontmatter
+    assert rec.key_outcomes == []
+    assert rec.t1.candidates == rec.t2.candidates == rec.t3.candidates == 0
+    assert rec.t1.delivered == rec.t2.delivered == rec.t3.delivered == 0
+    assert rec.candidate_universe_size is None
+    assert rec.cold_start is None
+    assert rec.max_hops is None
+    assert rec.domain_scope == "value-investing"
+
+
+def test_compile_source_context_record_write_failure_is_warn_only(
+    tmp_path, monkeypatch, caplog,
+):
+    """A record-write failure must NEVER affect the source outcome."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda req: ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        ),
+    )
+
+    def disk_full(*_args, **_kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("compiler.compiler.atomic_write_json", disk_full)
+
+    with caplog.at_level(logging.WARNING, logger="compiler.compiler"):
+        with GraphDB(tmp_path / "graph") as g:
+            result = compiler.compile_source(
+                source_id="KDB/raw/s.md", body="A note about value investing.",
+                frontmatter=_fm(), conn=g.conn,
+                vault_root=vault, state_root=state_root, ctx=ctx,
+                ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+                provider="p", model="m", max_tokens=4096,
+            )
+    assert result.ok, (result.failure_stage, result.error)
+    assert any("context record write failed" in r.message for r in caplog.records)
+
+
+def test_compile_source_caller_supplied_snapshot_writes_no_record(
+    tmp_path, monkeypatch,
+):
+    """The replay/tooling path (caller-supplied context_snapshot=) supplies no
+    telemetry and writes NO record."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda req: ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        ),
+    )
+    result = compiler.compile_source(
+        source_id="KDB/raw/s.md", body="A note about value investing.",
+        frontmatter=_fm(), conn=None,          # pre-built snapshot: no graph read
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096,
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+    )
+    assert result.ok, (result.failure_stage, result.error)
+    context_dir = state_root / "runs" / ctx.run_id / "context"
+    assert not context_dir.exists() or not list(context_dir.iterdir()), \
+        "caller-supplied snapshot path must not write a context record"

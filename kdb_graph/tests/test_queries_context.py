@@ -320,3 +320,122 @@ def test_resolver_simple_batch_parity(resolver_graph):
         "buffett": "warren-buffett",
         "wb": "warren-buffett",
     }
+
+
+# ---------------------------------------------------------------------------
+# #122 provenance resolver — per-path stamps, classifier normalization, parity
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def prov_graph(tmp_path: Path):
+    """Resolution graph with DISTINCT first_run_id stamps per entity — proves
+    the per-path stamp selection (target's stamp, never the alias row's)."""
+    with GraphDB(tmp_path / "prov-graph") as g:
+        conn = g.conn
+
+        def add_entity(slug, status="active", canonical_id=None, first_run_id="r-self"):
+            conn.execute(
+                "CREATE (e:Entity {slug: $s, title: $s, page_type: 'concept', "
+                "status: $st, confidence: 'medium', canonical_id: $ci, "
+                "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                "first_run_id: $fr, last_run_id: 'r1'})",
+                {"s": slug, "st": status, "ci": canonical_id, "fr": first_run_id},
+            )
+
+        def add_alias_of(alias, canonical):
+            conn.execute(
+                "MATCH (a:Entity {slug: $alias}), (c:Entity {slug: $canonical}) "
+                "CREATE (a)-[:ALIAS_OF {run_id: 'r1', created_at: '2026-01-01', "
+                "algorithm: 'manual'}]->(c)",
+                {"alias": alias, "canonical": canonical},
+            )
+
+        add_entity("value-investing", first_run_id="r-direct")
+        add_entity("warren-buffett", first_run_id="r-target")
+        add_entity("wb", canonical_id="warren-buffett", first_run_id="r-aliasrow")
+        add_entity("buffett", first_run_id="r-aliasrow2")
+        add_alias_of("buffett", "warren-buffett")
+        add_entity("dead", status="inactive", first_run_id="r-dead")
+        add_entity("old-name", canonical_id="dead", first_run_id="r-oldrow")
+        add_entity("dead-alias", status="inactive", first_run_id="r-dead2")
+        add_entity("alias-to-dead", first_run_id="r-a2d")
+        add_alias_of("alias-to-dead", "dead-alias")
+        add_entity("nostamp", first_run_id="")   # legacy row: empty stamp
+        yield conn
+
+
+def test_provenance_path1_direct_leaf_stamp_is_own(prov_graph):
+    prov = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, ["value-investing"])
+    assert prov == {"value-investing": ("value-investing", "r-direct")}
+
+
+def test_provenance_path2_canonical_id_stamp_is_targets(prov_graph):
+    """Path 2: the stamp is the canonical_id TARGET's first_run_id — never the
+    alias row's own."""
+    prov = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, ["wb"])
+    assert prov == {"wb": ("warren-buffett", "r-target")}
+
+
+def test_provenance_path3_alias_of_stamp_is_canonicals(prov_graph):
+    """Path 3: the stamp is the ALIAS_OF canonical's first_run_id."""
+    prov = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, ["buffett"])
+    assert prov == {"buffett": ("warren-buffett", "r-target")}
+
+
+def test_provenance_dead_targets_fail_closed(prov_graph):
+    """canonical_id → inactive target AND ALIAS_OF → inactive canonical both
+    stay unresolved (no Path-1 fallback)."""
+    prov = queries.resolve_to_canonical_slugs_with_provenance(
+        prov_graph, ["old-name", "alias-to-dead"])
+    assert prov == {}
+
+
+def test_provenance_empty_stamp_normalized_to_none(prov_graph):
+    """Empty first_run_id → None AT THE CLASSIFIER (construction) — the strict
+    record parser rejects an empty persisted stamp, so it never leaves here."""
+    prov = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, ["nostamp"])
+    assert prov == {"nostamp": ("nostamp", None)}
+
+
+def test_provenance_batch_matches_simple_outcomes_and_stamps(prov_graph):
+    raw = ["value-investing", "wb", "buffett", "old-name", "alias-to-dead",
+           "nostamp", "nonexistent"]
+    simple = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, raw)
+    batch = queries.resolve_to_canonical_slugs_with_provenance_batch(prov_graph, raw)
+    assert simple == batch
+    assert simple == {
+        "value-investing": ("value-investing", "r-direct"),
+        "wb": ("warren-buffett", "r-target"),
+        "buffett": ("warren-buffett", "r-target"),
+        "nostamp": ("nostamp", None),
+    }
+
+
+def test_legacy_resolvers_are_slug_only_projections(prov_graph):
+    """projection ≡ legacy: the legacy dict is exactly the provenance map with
+    stamps dropped — for BOTH query shapes."""
+    raw = ["value-investing", "wb", "buffett", "old-name", "nostamp", "nonexistent"]
+    prov_s = queries.resolve_to_canonical_slugs_with_provenance(prov_graph, raw)
+    prov_b = queries.resolve_to_canonical_slugs_with_provenance_batch(prov_graph, raw)
+    expected = {raw: canonical for raw, (canonical, _stamp) in prov_s.items()}
+    assert queries.resolve_to_canonical_slugs(prov_graph, raw) == expected
+    assert queries.resolve_to_canonical_slugs_batch(prov_graph, raw) == expected
+    assert prov_s == prov_b
+
+
+def test_classifier_normalizes_empty_stamp_directly():
+    """classify_resolution_rows: row-level unit pin for '' → None on all three
+    paths (no graph needed)."""
+    rows = [
+        # (raw, e_status, canonical_id, e_fr, target_status, target_fr,
+        #  alias_slug, alias_status, alias_fr)
+        ("direct", "active", None, "", None, None, None, None, None),
+        ("via-ci", "active", "canon", "x", "active", "", None, None, None),
+        ("via-alias", "active", None, "x", None, None, "canon", "active", ""),
+    ]
+    assert queries.classify_resolution_rows(rows) == {
+        "direct": ("direct", None),
+        "via-ci": ("canon", None),
+        "via-alias": ("canon", None),
+    }

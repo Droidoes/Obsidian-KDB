@@ -90,7 +90,7 @@ def test_structured_state_a_no_frontmatter_falls_back_to_legacy(t2_graph):
         source_text="Long-form essay on value-investing as a discipline.",
         frontmatter=None,
         mode=T2Mode.STRUCTURED,
-    )
+    ).snapshot
     assert "value-investing" in _t2_slugs(snap)
 
 
@@ -104,7 +104,7 @@ def test_structured_state_b_non_empty_uses_structured_lookup(t2_graph):
         source_text="A diary entry with no concept slugs in it.",
         frontmatter=_fm(["compound-interest"]),
         mode=T2Mode.STRUCTURED,
-    )
+    ).snapshot
     assert "compound-interest" in _t2_slugs(snap)
     # The body slug should NOT be picked up — structured signal only
     assert "value-investing" not in _t2_slugs(snap)
@@ -119,7 +119,7 @@ def test_structured_state_c_empty_entity_search_keys_emits_empty_t2(t2_graph):
         source_text="Long-form essay on value-investing as a discipline.",
         frontmatter=_fm([]),
         mode=T2Mode.STRUCTURED,
-    )
+    ).snapshot
     assert _t2_slugs(snap) == set(), \
         "State C should honor LLM's empty signal; legacy fallback would " \
         "have produced {'value-investing'}"
@@ -137,7 +137,7 @@ def test_layered_state_c_still_runs_legacy_regex(t2_graph):
         source_text="Long-form essay on value-investing as a discipline.",
         frontmatter=_fm([]),
         mode=T2Mode.LAYERED,
-    )
+    ).snapshot
     assert "value-investing" in _t2_slugs(snap)
 
 
@@ -149,7 +149,7 @@ def test_layered_state_b_unions_structured_and_legacy(t2_graph):
         source_text="Long-form essay on value-investing.",
         frontmatter=_fm(["compound-interest"]),
         mode=T2Mode.LAYERED,
-    )
+    ).snapshot
     slugs = _t2_slugs(snap)
     assert "value-investing" in slugs  # from legacy regex on body
     assert "compound-interest" in slugs  # from entity_search_keys
@@ -166,7 +166,7 @@ def test_legacy_ignores_frontmatter_entirely(t2_graph):
         source_text="Long-form essay on value-investing.",
         frontmatter=_fm(["compound-interest"]),  # ignored
         mode=T2Mode.LEGACY,
-    )
+    ).snapshot
     slugs = _t2_slugs(snap)
     assert "value-investing" in slugs
     assert "compound-interest" not in slugs
@@ -182,7 +182,7 @@ def test_default_mode_is_structured(t2_graph):
         source_id="src-1",
         source_text="Long-form essay on value-investing.",
         frontmatter=_fm([]),  # State C
-    )
+    ).snapshot
     # Default STRUCTURED honors empty signal — should be empty T2.
     assert _t2_slugs(snap) == set()
 
