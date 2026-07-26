@@ -142,19 +142,57 @@ have silently attributed the hit to expression 1: a *wrong* attribution that loo
 like a correct one. Now covered for both `matched` and the advisory list.
 
 ### P1.3 — budget estimator (`budget.py`) → `test_budget.py` + `test_zero_escape.py`
-- [ ] §7.0 constants module: `M`, `max_results`, `MAX_EXPRESSIONS`, separators tuple, index base, ceilings, allowances, `HIDDEN_OUTPUT_RESERVE`, provider `max_tokens`
-- [ ] Estimator: `ceil(utf8_bytes / 4)` over the **fully rendered** request + the stage's provider-total reserved output; 0.8 headroom applied in `budget.py`, not via `fits_context` (G6)
-- [ ] Zero-invocation `budget_exceeded` at **both** stages; never retried
-- [ ] **The four envelope quantities asserted separately** (D9): visible response tokens, hidden output tokens, provider cap, context reservation
-- [ ] Visible allowances vs **exact max serialized bytes**, documents built **mechanically** from the §7.0 separator tuple + zero-based indices — never hard-coded integers
-- [ ] FAT exact-max parameterized on `MAX_EXPRESSIONS`: **10 ⇒ 8,251 B (fits) / 22 ⇒ 10,087 B (exceeds)**
-- [ ] M=100 static guarantee: 100 × 2,500 B + 4,096 B + system/template ≤ ~257 kB ⇒ ≤ ~257k tokens + 26k provider-total < 320k *(re-derived 2026-07-26: 254,096 B before system/template — holds)*
-- [ ] `tokens_lte_bytes` — **`common/` change**: optional at Gate 1 (which cannot know which model is a selector), **required at selector-route resolution**; missing/false ⇒ typed config error before any work; declared on all three D4 candidates
-- [ ] `ctx_window=None` route ⇒ typed config error at resolution
-- [ ] `InvalidGraphSearchRequest(code="max_expressions_exceeded")` ⇒ zero rendering/reads/calls/StageRecords
-- [ ] Estimator structure only — measurement assertions live at the D5 calibration gate, **not P1** (H3)
-- [ ] Property test: zero foreign identity escapes
+- [x] §7.0 constants module: `M`, `max_results`, `MAX_EXPRESSIONS`, separators tuple, index base, ceilings, allowances, `HIDDEN_OUTPUT_RESERVE`, provider `max_tokens`
+- [x] Estimator: `ceil(utf8_bytes / 4)` over the **fully rendered** request + the stage's provider-total reserved output; 0.8 headroom applied in `budget.py`, not via `fits_context` (G6)
+- [x] Zero-invocation `budget_exceeded` at **both** stages; never retried
+- [x] **The four envelope quantities asserted separately** (D9): visible response tokens, hidden output tokens, provider cap, context reservation
+- [x] Visible allowances vs **exact max serialized bytes**, documents built **mechanically** from the §7.0 separator tuple + zero-based indices — never hard-coded integers
+- [x] FAT exact-max parameterized on `MAX_EXPRESSIONS`: **10 ⇒ 8,251 B (fits) / 22 ⇒ 10,087 B (exceeds)**
+- [x] M=100 static guarantee: 100 × 2,500 B + 4,096 B + system/template ≤ ~257 kB ⇒ ≤ ~257k tokens + 26k provider-total < 320k *(re-derived 2026-07-26: 254,096 B before system/template — holds)*
+- [x] `tokens_lte_bytes` — **`common/` change**: optional at Gate 1 (which cannot know which model is a selector), **required at selector-route resolution**; missing/false ⇒ typed config error before any work; declared on all three D4 candidates
+- [x] `ctx_window=None` route ⇒ typed config error at resolution
+- [x] `InvalidGraphSearchRequest(code="max_expressions_exceeded")` ⇒ zero rendering/reads/calls/StageRecords
+- [x] Estimator structure only — measurement assertions live at the D5 calibration gate, **not P1** (H3)
+- [x] Property test: zero foreign identity escapes
 
+**`SYSTEM_TEMPLATE_BUDGET_BYTES = 3_072` is new.** The M=100 guarantee's
+"system/template ~3 kB" was prose, so the guarantee was not a checkable sum.
+Recorded as a constant and folded into `fat_worst_case_request_bytes()`, which
+makes the total assertable: **257,168 B input + 26,000 provider-total output =
+283,168 tokens < 320,000**, matching the ratified ~283k. **P2 obligation:** assert
+the real rendered templates against this reserve and recompute the guarantee if
+they exceed it. Until then it is a declared reserve, not a measurement.
+
+**The estimate and the bound are two named functions, deliberately.**
+`estimate_input_tokens` = `ceil(bytes/4)` is the calibrated guard that the 0.8
+headroom protects; `worst_case_input_tokens` = `bytes` is the pathological
+1-token-per-byte bound the static guarantee rests on, sound only under
+`tokens_lte_bytes`. A single function serving both would turn a by-construction
+proof into a measurement — the exact regression the K1→L1→M1→N2 lineage closed.
+Pinned by a test asserting the guarantee uses the bound, not the estimate.
+
+**M=100 is proved load-bearing, not incidental:** the guarantee holds at 100 and
+**fails at 150** (382,168 B + 26,000 = 408,168 > 320,000). That is codex's 381 kB
+counterexample dying by sizing, now an executable statement.
+
+**`tokens_lte_bytes` declared on all four pool entries, not only the three D4
+candidates.** The byte-level-BPE theorem holds for every pool provider, and any
+pool model may be configured as the selector — so an undeclared entry is a latent
+typed failure rather than a safe default. Enforced at **selector route
+resolution**, never Gate 1: `load_pool` cannot know which entries serve as a
+selector, and failing the whole pool over a premise one consumer needs would break
+every unrelated call. A test pins that undeclared is *representable* (`None`) and
+does not fail the pool.
+
+**Verified against the implementation:** every §7.0a integer reproduces exactly —
+THIN 12,314 B, FAT 8,251 B, and the whole break-even table (10→8,251 / 20→9,781 /
+21→9,934 / 22→10,087 / 50→14,371). The v0.11 correction is now confirmed from both
+directions, and `max(fitting) == 21` pins the break-even at 22 rather than the
+superseded ~15.
+
+**No hypothesis dependency.** `test_zero_escape.py` uses seeded `random.Random`
+sweeps (100 parametrized cases × 60 documents) — reproducible, and it buys the
+coverage without adding a dependency for shrinking we do not need.
 ### P1.4 — artifact builder + hashes (`artifact.py`) → `test_artifact.py`
 - [ ] `SearchAuditPayload` consumer-neutral core; constructed on **every** path (completed/abstain/budget/failure)
 - [ ] `GraphSnapshotRef` = `{schema_version, active_entity_count, space_fingerprint, source_kind, source_detail}`

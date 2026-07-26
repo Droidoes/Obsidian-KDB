@@ -117,3 +117,16 @@ ESTIMATOR_BYTES_PER_TOKEN = 4
 #: The guardrail. The "never underestimates" claim stays withdrawn — this
 #: headroom explicitly carries density variance (opus5 J3).
 BUDGET_HEADROOM = 0.8
+
+
+#: Declared byte budget for the rendered system block + user wrapper — the
+#: "~3 kB system/template" line in the M=100 static guarantee (blueprint §7.0a).
+#: Recorded as a constant rather than left as prose so the guarantee is a checkable
+#: sum. **P2 obligation:** the real rendered templates must be asserted against
+#: this, and this figure raised (with the guarantee recomputed) if they exceed it.
+#: Until then it is a declared reserve, not a measurement.
+SYSTEM_TEMPLATE_BUDGET_BYTES = 3_072
+
+#: The pool's smallest effective context budget: gpt-5.4-mini's 400,000 window at
+#: BUDGET_HEADROOM. The M=100 static guarantee is stated against this.
+SMALLEST_POOL_BUDGET_TOKENS = 320_000

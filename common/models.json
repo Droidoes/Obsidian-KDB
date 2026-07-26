@@ -14,7 +14,8 @@
     },
     "temperature": null,
     "price_in": 0.75,
-    "price_out": 4.5
+    "price_out": 4.5,
+    "tokens_lte_bytes": true
   },
   {
     "id": "gemini-3.6-flash",
@@ -26,7 +27,8 @@
     "ctx_window": 1048576,
     "max_output_tokens": 65536,
     "price_in": 1.5,
-    "price_out": 7.5
+    "price_out": 7.5,
+    "tokens_lte_bytes": true
   },
   {
     "id": "deepseek-v4-flash",
@@ -39,7 +41,8 @@
     "max_output_tokens": 384000,
     "price_in": 0.14,
     "price_out": 0.28,
-    "thinking": "disabled"
+    "thinking": "disabled",
+    "tokens_lte_bytes": true
   },
   {
     "id": "deepseek-v4-pro",
@@ -52,6 +55,7 @@
     "max_output_tokens": 384000,
     "price_in": 0.435,
     "price_out": 0.87,
-    "thinking": "disabled"
+    "thinking": "disabled",
+    "tokens_lte_bytes": true
   }
 ]

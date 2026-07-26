@@ -66,6 +66,16 @@ class ModelSpec:
     temperature: float | None = 0.0
     price_in: float = 0.0
     price_out: float = 0.0
+    # Declared per-route premise (#123 D8/codex N4): content token count <= UTF-8
+    # byte count. A THEOREM for byte-level BPE — every token maps to >= 1 byte —
+    # but a declaration here, not an inference, because it is load-bearing for
+    # #123's output-allowance proof and must be verified per route rather than
+    # assumed for a future provider. Deliberately NOT validated at Gate 1:
+    # load_pool cannot know which entries will be used as a semantic selector, and
+    # failing the whole pool over a premise only one consumer needs would break
+    # every unrelated call. `None` == not declared; consumers that need it check
+    # at their own route resolution and fail typed before doing any work.
+    tokens_lte_bytes: bool | None = None
 
 
 def _gate1_validate_entry(entry: dict) -> None:
@@ -142,6 +152,7 @@ def resolve_models_json(model_id: str) -> ModelSpec:
         temperature=entry.get("temperature", 0.0),
         price_in=entry.get("price_in", 0.0),
         price_out=entry.get("price_out", 0.0),
+        tokens_lte_bytes=entry.get("tokens_lte_bytes"),
     )
 
 
