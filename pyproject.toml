@@ -40,16 +40,17 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_graph*", "kdb_mcp*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+include = ["kdb_graph*", "kdb_mcp*", "kdb_search*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
 compiler      = ["schemas/*.json", "prompts/*.md"]
 tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
+kdb_search    = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
-testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
+testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "kdb_search/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [
