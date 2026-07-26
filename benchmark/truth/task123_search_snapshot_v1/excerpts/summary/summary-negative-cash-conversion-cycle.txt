@@ -1,0 +1,2 @@
+
+This source explains the [[cash-conversion-cycle]] (CCC) financial metric and how it measures working capital efficiency. It details the components of CCC—Days Inventory Outstanding, Days Sales Outstanding, and Days Payable Outstanding—and explores the mechanism and strategic implications of achieving a [[negative-cash-conversion-cycle]], where suppliers effectively provide interest-free operational financing.

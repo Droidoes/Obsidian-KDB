@@ -1,0 +1,10 @@
+
+The Synthetic Analyst Engine combines structured schema extraction, relational graph modeling, and vector memory to create a continuous qualitative research system. Traditional investment analysis relies heavily on fast quantitative processing, but durable qualitative insight requires cross-referencing and tracking belief changes across time.
+
+The system unifies four distinct layers into an adaptive loop:
+1. **Ingestion Layer**: Acquires unstructured research and purifies content by stripping administrative boilerplate and HTML formatting.
+2. **Extraction Layer**: Applies schema constraints to extract entities, controlled-vocabulary relationships, and qualitative judgments, enforcing [[canonical-entity-resolution]].
+3. **[[knowledge-substrate|Knowledge Substrate]]**: Pairs a relational [[knowledge-graph]] for structured assertions with vector embeddings for context retrieval.
+4. **Adaptive Synthesis Loop**: Executes [[delta-first-learning]] by comparing new inputs against structural and semantic neighbors, recording belief changes, and updating the system's [[circle-of-competence-exclusion-tracking|"Too Hard" knowledge base]].
+
+By treating qualitative insight as a versioned asset rather than a static document, the engine operationalizes long-term memory for investment analysis.

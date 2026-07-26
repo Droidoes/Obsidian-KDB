@@ -1,0 +1,2 @@
+
+Provides a Python automation pipeline to convert Claude Code JSONL conversation logs into formatted Obsidian Markdown notes. Outlines file parsing, automated execution via [[wsl-cron-sync]], and knowledge management workflows using [[dataview-session-queries]] and [[claude-session-mocs]].

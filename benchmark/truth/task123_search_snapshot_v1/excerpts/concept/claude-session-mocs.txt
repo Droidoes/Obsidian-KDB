@@ -1,0 +1,2 @@
+
+A Map of Content (MOC) note dedicated to organizing exported [[claude-jsonl-parsing|Claude sessions]]. Instead of relying purely on search, a MOC manually categorizes links to specific conversation logs by topic, domain, or research goal to synthesize raw logs into usable knowledge.

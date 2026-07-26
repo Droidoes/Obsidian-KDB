@@ -1,0 +1,2 @@
+
+Slash Commands in VS Code Copilot function as text-injection shortcuts or form templates. Located at `.github/prompts/*.prompt.md`, typing a slash command (e.g., `/warmup`) populates the chat context with pre-written prompt text. Unlike [[vscode-copilot-skills|Skills]], slash commands only expand text templates into the chat and cannot execute code or scripts on their own.

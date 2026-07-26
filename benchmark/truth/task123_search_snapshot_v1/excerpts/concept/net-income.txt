@@ -1,0 +1,2 @@
+
+Net Income (or reported earnings) represents the official bottom-line profit on an income statement according to GAAP rules. While legally binding, net income often diverges from economic reality due to non-cash charges like [[depreciation-and-amortization|depreciation]], accounting rules for asset revaluations, or one-time charges. Management often presents adjusted net income by adding back select expenses, though investors like Warren Buffett analyze net income by deriving [[owner-earnings]] directly.

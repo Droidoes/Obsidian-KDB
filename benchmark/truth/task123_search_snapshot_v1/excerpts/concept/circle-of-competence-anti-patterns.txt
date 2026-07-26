@@ -1,0 +1,2 @@
+
+A systematic method of documenting why specific investment theses or businesses fail operational criteria, mapping them to a 'Too Hard' pile. By extracting structural risks and failure reasoning into structured schema attributes (`reasoning_too_hard`), an information extraction pipeline explicitly enforces and bounds an investor's circle of competence.

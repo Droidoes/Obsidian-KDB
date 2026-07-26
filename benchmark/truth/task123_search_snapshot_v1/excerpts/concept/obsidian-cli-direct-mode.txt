@@ -1,0 +1,2 @@
+
+The execution pattern for [[obsidian-cli]] where commands and parameters are invoked non-interactively directly from shell invocations or terminal scripts (e.g., `obsidian command id="graph:open"`). Direct mode supports structured parameters like `vault=`, `path=`, `format=json`, and output flags like `--copy`, enabling piping into external utilities like `xargs`.

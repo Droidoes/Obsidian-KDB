@@ -1,0 +1,2 @@
+
+Social choice theory is the theoretical framework concerned with aggregating individual preferences, rankings, or evaluations into a collective decision or consensus ranking. Key mechanisms within this domain include positional scoring rules like the [[borda-count]] and pairwise majority systems like the [[condorcet-method]], each optimizing for different definitions of fairness, consensus, and majority rule.

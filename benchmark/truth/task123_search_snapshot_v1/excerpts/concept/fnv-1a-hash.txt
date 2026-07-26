@@ -1,0 +1,2 @@
+
+FNV-1a (Fowler–Noll–Vo, variant 1a) is a fast, non-cryptographic hash function that converts an input byte sequence into a 32-bit integer. It operates by initializing with an offset basis (`2166136261`), then iterating over input bytes by applying an XOR operation followed by multiplication with the FNV prime (`16777619`). In deterministic systems like the [[claude-code-buddy-system]], FNV-1a provides a uniform, well-distributed seed for pseudo-random number generators like [[mulberry32-prng]] from user identity strings.

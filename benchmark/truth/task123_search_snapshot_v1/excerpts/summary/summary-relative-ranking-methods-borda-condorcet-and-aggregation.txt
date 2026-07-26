@@ -1,0 +1,2 @@
+
+This document outlines relative ranking aggregation techniques, specifically comparing the [[borda-count]] and [[condorcet-method]]. It explains the mechanics, intuition, strengths, weaknesses, and appropriate use cases for both consensus-based and pairwise majority preference systems in [[social-choice-theory]]. The core tradeoffs between these methods are synthesized in [[borda-vs-condorcet-tradeoffs]].

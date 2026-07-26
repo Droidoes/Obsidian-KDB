@@ -1,0 +1,2 @@
+
+Mulberry32 is a lightweight, 32-bit pseudo-random number generator (PRNG) characterized by fast execution using simple bit shifts and integer multiplication. Given an initial 32-bit seed (often produced by [[fnv-1a-hash]]), Mulberry32 yields a deterministic sequence of floating-point numbers between 0 and 1. It is frequently employed in procedural generation scenarios, such as weighted attribute sampling in the [[claude-code-buddy-system]].

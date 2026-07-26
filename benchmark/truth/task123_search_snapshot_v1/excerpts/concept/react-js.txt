@@ -1,0 +1,2 @@
+
+React is a component-based JavaScript library for building user interfaces across web and mobile applications. It employs a declarative syntax called [[jsx]] and relies on a [[virtual-dom]] to make UI updates efficient by minimizing direct manipulation of the document object model.

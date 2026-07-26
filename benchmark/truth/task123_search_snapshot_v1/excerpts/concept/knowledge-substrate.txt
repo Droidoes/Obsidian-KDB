@@ -1,0 +1,2 @@
+
+A knowledge substrate is a hybrid data storage layer combining a relational [[knowledge-graph]] and a vector memory space. The graph component captures precise, temporal assertions and direct relationships between entities using standard relational tables for SQL transparency. The semantic vector layer is used exclusively for contextual retrieval and semantic similarity search, explicitly serving as a retrieval aid rather than an authoritative source of truth.

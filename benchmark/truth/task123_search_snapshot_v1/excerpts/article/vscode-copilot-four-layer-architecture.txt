@@ -1,0 +1,9 @@
+
+Managing AI context limits and cognitive load requires modular prompt distribution. GitHub Copilot in VS Code enforces this using a four-layer framework mapped to specific `.github/` directory conventions:
+
+1. **Culture Layer:** Universal base rules loaded automatically via [[vscode-copilot-global-instructions|Global Instructions]].
+2. **Specialist Layer:** Domain-specific roles loaded on demand via [[vscode-copilot-custom-agents|Custom Agents]].
+3. **Shortcut Layer:** Text macros and repeatable prompt templates injected via [[vscode-copilot-slash-commands|Slash Commands]].
+4. **Tool Layer:** Script execution and function calling configured through self-contained [[vscode-copilot-skills|Skills]] packages.
+
+By segregating broad repository constraints from specialized domain instructions and executable tool definitions, this multi-tiered approach maintains focus within the model's context budget while enabling complex, automated developer workflows.

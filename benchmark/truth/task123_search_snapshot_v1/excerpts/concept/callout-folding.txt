@@ -1,0 +1,2 @@
+
+Callout folding is a structural syntax feature in [[obsidian-callouts]] that makes block contents collapsible. Adding a `+` sign after the callout type (e.g., `[!tip]+`) sets the callout to be expanded by default, while a `-` sign (e.g., `[!info]-`) sets it to be collapsed by default.

@@ -1,0 +1,2 @@
+
+The official command-line tool shipped natively with Obsidian starting in version 1.12+. It provides direct terminal control over core vault operations, graph manipulation, workspace state, tasks, and properties. It operates via two execution models: interactive [[obsidian-cli-tui-mode|TUI mode]] and scripted [[obsidian-cli-direct-mode|direct mode]]. Subcommands can be dynamically enumerated and filtered using `obsidian commands filter=<query>`.

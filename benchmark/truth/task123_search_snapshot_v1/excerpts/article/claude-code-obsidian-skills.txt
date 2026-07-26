@@ -1,0 +1,9 @@
+
+Integrating [[claude-code]] with an Obsidian vault enables automated daily logging, knowledge retrieval, and structural health checks. This integration is organized across four distinct helper skill modules:
+
+- **`obsidian-shared`**: Serves as the foundation by providing [[obsidian-cli-process-management]] helper functions (`obsidian_running` and `obsidian_ensure`) to manage application lifecycle issues.
+- **`obsidian-daily`**: Interacts with formatted daily note templates to capture logs, decisions, and deferred tasks under structured headers.
+- **`obsidian-recall`**: Utilizes full-text search across predefined vault directories (such as `AI-ML/` and `Equity Research/`) to serve as long-term memory prior to executing complex work.
+- **`obsidian-graph`**: Performs structural analysis of the vault by checking backlinks, identifying orphan notes, counting tags, and calculating vault health metrics.
+
+To balance execution speed and application overhead, read and write operations prioritize [[obsidian-direct-filesystem-access]], resorting to CLI socket commands only when interactive app features are explicitly requested.

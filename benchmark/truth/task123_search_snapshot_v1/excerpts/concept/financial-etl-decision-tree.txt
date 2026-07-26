@@ -1,0 +1,11 @@
+
+A multi-gate mapping architecture designed for financial statement line item ingestion. Rather than relying purely on text matching, line items flow through deterministic gates: 
+- **Gate 0 (Preprocessing):** Text normalization and sign preservation.
+- **Gate 1 (Exact Match):** Direct synonym and canonical name matches.
+- **Gate 2 (Section Constraints):** Filtering target concepts by statement type and section (e.g., Current Assets).
+- **Gate 3 (Structural Inference):** Hierarchy-aware parent/child rollup detection.
+- **Gate 4 (Decomposition):** Splitting composite items (e.g., separating combined cash and short-term investments).
+- **Gate 5 (Semantic Fallback):** Constrained AI classification for ambiguous leftovers.
+- **Gate 6 (Unmapped):** Storing raw items for gap analysis.
+
+This layered approach ensures high-precision mapping while accounting for presentation artifacts.

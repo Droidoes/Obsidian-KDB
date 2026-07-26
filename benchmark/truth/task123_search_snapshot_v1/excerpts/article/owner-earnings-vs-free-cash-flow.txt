@@ -1,0 +1,4 @@
+
+Standard accounting numbers like [[net-income]] frequently obscure economic reality. While financial markets rely heavily on [[free-cash-flow]] to correct net income's limitations, standard FCF introduces two distortion points: it treats all capital expenditures equally and adds back non-cash dilutive expenses.
+
+Warren Buffett's framework solves these issues through [[owner-earnings]]. First, owner earnings separates capital expenditures into maintenance CapEx (required to retain competitive position) and growth CapEx (discretionary investments for expansion). By deducting only maintenance CapEx, owner earnings avoids penalizing businesses investing in profitable growth. Second, owner earnings accounts for non-cash expenses like stock-based compensation as real economic costs to shareholders, preventing the overstatement of cash generation. Distinguishing between growth investments and true business costs provides a more accurate view of intrinsic value.

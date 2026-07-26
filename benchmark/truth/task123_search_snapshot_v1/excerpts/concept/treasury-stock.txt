@@ -1,0 +1,4 @@
+
+Treasury stock represents shares that a company has repurchased from open market investors and holds in its own treasury. Located in the [[shareholders-equity]] section of the balance sheet, it is typically recorded as a contra-equity account (a negative value) because buybacks absorb cash and reduce total equity balance.
+
+A positive cumulative total of treasury stock indicates that management actively returns capital to shareholders via stock repurchases, signaling high free cash flow generation beyond operational capital requirements.

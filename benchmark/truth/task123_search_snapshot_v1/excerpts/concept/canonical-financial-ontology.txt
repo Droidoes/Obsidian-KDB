@@ -1,0 +1,9 @@
+
+A canonical financial ontology is a typed, relational model of financial concepts that formalizes accounting semantics beyond simple standardized labels (canonical data). It explicitly declares:
+- **Concept Types and Roles:** Classifications such as asset, operating expense, or top-line revenue.
+- **Structural Relationships:** Rollup hierarchies, component lists, and parent targets.
+- **Temporal and Balance Types:** Distinctions between point-in-time stocks and flow metrics, debit vs. credit balance behavior.
+- **Cross-Statement Links:** Explicit linkages between statement lines, such as Net Income flowing into Retained Earnings or D&A connecting to Cash Flow.
+- **Accounting Invariants:** Enforceable mathematical identities (e.g., Assets = Liabilities + Equity).
+
+By separating presentation variants from semantic meaning, a canonical financial ontology turns raw normalization into a machine-readable knowledge graph.

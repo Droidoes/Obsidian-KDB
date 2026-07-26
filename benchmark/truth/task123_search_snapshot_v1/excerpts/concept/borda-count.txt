@@ -1,0 +1,4 @@
+
+The Borda count is a positional scoring method used in [[social-choice-theory]] to aggregate multiple ranked lists into a single consensus ranking. For a set of n items, each ranking assigns points based on position (e.g., n - 1 points for 1st place, n - 2 for 2nd place, down to 0 points for last place). Scores are summed across all lists, and the candidate with the highest total score wins.
+
+Borda rewards overall consistency, making it well-suited for selecting broadly accepted consensus candidates or combining rankings from judges and machine learning evaluation metrics. However, it is vulnerable to strategic voting, sensitive to clone candidates, and does not guarantee alignment with pairwise majority preferences. See [[condorcet-method]] for a contrastive pairwise approach.

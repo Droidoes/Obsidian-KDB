@@ -1,0 +1,2 @@
+
+An interactive terminal user interface mode launched by running `obsidian` without subcommands. It provides a REPL-like environment with inline help, autocompletion, and command history (`Ctrl+R`). It serves as an interactive environment for discovering internal [[obsidian-cli]] capabilities before incorporating them into scripts.

@@ -1,0 +1,2 @@
+
+Tailwind CSS is a utility-first CSS framework. Rather than providing pre-designed UI components, Tailwind supplies low-level utility classes for styling attributes like padding, margin, layout, and colors directly within markup to enable rapid prototyping and flexible styling.

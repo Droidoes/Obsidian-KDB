@@ -1,0 +1,2 @@
+
+Skills are self-contained functional packages that provide tool-use and function-calling capabilities to GitHub Copilot agents. Structured as direct folders under `.github/skills/` (containing both a `SKILL.md` instruction definition and execution scripts), Copilot selects and runs these scripts (such as Python or database queries) to fetch dynamic external data or execute complex local tasks.

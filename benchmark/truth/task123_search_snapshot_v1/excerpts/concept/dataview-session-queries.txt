@@ -1,0 +1,2 @@
+
+Using the Obsidian Dataview plugin to treat archived conversation notes as a structured database. By querying YAML metadata fields like `date`, `project`, and `tags` (such as `#claude-session`), users can build dynamic tabular views of past interactions within their vault.

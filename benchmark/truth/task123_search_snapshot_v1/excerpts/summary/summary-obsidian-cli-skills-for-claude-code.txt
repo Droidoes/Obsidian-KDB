@@ -1,0 +1,2 @@
+
+This technical document details custom integration skills for [[claude-code]] to interact with an [[obsidian-cli|Obsidian vault]]. It outlines helper shell scripts for managing the application process lifecycle via [[obsidian-cli-process-management]] and describes operational skills for managing daily notes, retrieving vault content, and analyzing graph topology. It also highlights a fallback strategy using [[obsidian-direct-filesystem-access|direct filesystem manipulation]] when running headless commands.

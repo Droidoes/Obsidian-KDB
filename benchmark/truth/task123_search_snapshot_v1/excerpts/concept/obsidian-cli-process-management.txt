@@ -1,0 +1,4 @@
+
+Process management for the Obsidian CLI addresses execution differences between warm-start and cold-start states. Because CLI commands connect to a running Obsidian GUI instance via a Unix domain socket (`~/.config/obsidian/SingletonSocket`), non-interactive tools like [[claude-code]] must verify whether the application process is alive before invoking commands.
+
+A live process check inspects the `~/.config/obsidian/SingletonLock` symlink to extract the active process PID and validates it using `kill -0`. If the application is not running, execution wrappers like `obsidian_ensure` cold-start the background process and wait for socket initialization before passing commands, ensuring execution does not time out.

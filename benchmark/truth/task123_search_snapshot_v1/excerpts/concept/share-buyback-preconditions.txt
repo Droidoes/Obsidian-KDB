@@ -1,0 +1,7 @@
+
+Share buybacks are not inherently value-creating; their success depends entirely on capital allocation discipline and business durability. Mohnish Pabrai highlights two critical preconditions:
+
+1. **No Secular Decline**: A company must not be undergoing structural or technological disruption. If a business's terminal earnings fall toward zero (e.g., Sears or IBM in certain eras), repurchasing shares merely concentrates ownership in a dying asset.
+2. **Price vs. Intrinsic Value**: Buybacks create maximal value when executed at low earnings multiples or significant discounts to intrinsic value. Repurchasing stock at inflated multiples destroys shareholder capital.
+
+Additionally, management teams must prioritize internal reinvestment at high return on equity (ROE) before allocating excess capital toward repurchases.

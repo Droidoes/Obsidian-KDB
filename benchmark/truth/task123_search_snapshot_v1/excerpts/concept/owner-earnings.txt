@@ -1,0 +1,2 @@
+
+Owner Earnings is a valuation metric introduced by Warren Buffett to measure the true distributable cash flow of a business. It is calculated as reported [[net-income]] plus [[depreciation-and-amortization|depreciation and amortization]], minus maintenance capital expenditures. Unlike standard [[free-cash-flow]], owner earnings excludes growth capital expenditures (so high-growth businesses are not penalized) while subtracting costs like stock-based compensation to reflect genuine economic owner cash.

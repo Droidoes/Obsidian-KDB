@@ -1,0 +1,2 @@
+
+This runbook addresses startup failures and missing service errors for the Claude Desktop Cowork workspace on Windows 11. It outlines diagnosis methods for issues caused by MSIX package corruption, stale VM caches, and stuck network services, and provides a multi-step recovery procedure involving [[claude-cowork-vm-troubleshooting]], resetting [[hyper-v-virtualization-stack]], and deploying [[cowork-vm-health-monitoring]].

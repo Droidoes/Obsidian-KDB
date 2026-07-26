@@ -1,0 +1,31 @@
+{
+  "source_run_id": "gemini-3.6-flash-2026-07-25T09-41-46_EDT",
+  "generated_at": "2026-07-25T09:41:46-04:00",
+  "excerpt_policy_version": "1",
+  "excerpt_policy": "Take the page body (verbatim bytes after the closing frontmatter '---'). If it is <=250 whitespace-separated words, the excerpt is the body verbatim. Otherwise cut at the end of the 250th word, then extend to the end of the current sentence (the next '.', '!' or '?' followed by whitespace or end-of-text) if that lands within 25 more words; if no sentence end falls inside that window, hard-cut at the 250th word boundary.",
+  "hub_rank_method": "PageRank over the directed link graph parsed from the frozen wiki bodies ('[[slug]]' and '[[slug|display]]'; self-links dropped; links to slugs outside the 163 dropped; duplicate edges collapsed). Power iteration, damping 0.85, convergence when the L1 rank delta < 1e-12, max 100 iterations, dangling nodes redistribute uniformly, no external graph library. hub_rank = 1-based integer rank by score descending, ties broken by slug ascending.",
+  "counts": {
+    "total": 163,
+    "by_page_type": {
+      "article": 18,
+      "concept": 116,
+      "summary": 29
+    },
+    "by_domain": {
+      "ai-ml": 27,
+      "geopolitics": 6,
+      "health-wellbeing": 22,
+      "history": 3,
+      "math-statistics-logic": 5,
+      "personal-finance": 3,
+      "psychology": 5,
+      "quotes": 6,
+      "software": 35,
+      "value-investing": 51
+    }
+  },
+  "capped": [
+    "pabrai-cannibal-formula-and-singleton-playbook",
+    "value-investing-as-owner-mindset-and-analytical-rigor"
+  ]
+}

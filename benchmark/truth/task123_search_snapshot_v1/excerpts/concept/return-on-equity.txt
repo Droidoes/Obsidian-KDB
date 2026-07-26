@@ -1,0 +1,2 @@
+
+Return on Equity (ROE) measures managerial economic performance by calculating how much profit a company generates relative to its [[book-value|shareholders' equity]]. The standard formula is net income divided by shareholders' equity (often using average equity over a period). While high ROE (above 20%) is a indicator of business quality, standard ROE can be artificially inflated through financial leverage or share buybacks. Consequently, evaluating ROE requires verifying that high returns are achieved without excessive debt.

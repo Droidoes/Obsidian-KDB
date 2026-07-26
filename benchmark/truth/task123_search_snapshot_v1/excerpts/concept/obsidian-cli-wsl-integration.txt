@@ -1,0 +1,2 @@
+
+The operational setup for running [[obsidian-cli]] within Windows Subsystem for Linux (WSL/WSLg). It relies on wrapper shell scripts to auto-launch the graphical Obsidian instance with necessary hardware/GPU acceleration flags (such as NVIDIA D3D12 flags) when commands are issued from a WSL terminal.

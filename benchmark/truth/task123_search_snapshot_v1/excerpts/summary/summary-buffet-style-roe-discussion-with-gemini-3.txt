@@ -1,0 +1,2 @@
+
+This source explores Warren Buffett's approach to financial statement analysis and corporate valuation. It contrasts GAAP accounting metrics like [[net-income]], standard [[return-on-equity|ROE]], and [[free-cash-flow]] against Buffett's preferred measures: [[return-on-net-tangible-assets]] and [[owner-earnings]]. The discussion also breaks down the nuances of [[depreciation-and-amortization]], the distinction between [[book-value]] and distributable equity, and how debt or capital allocation choices impact financial analysis.

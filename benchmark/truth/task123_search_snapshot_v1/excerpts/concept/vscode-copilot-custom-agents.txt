@@ -1,0 +1,2 @@
+
+Custom Agents act as specialized domain experts within GitHub Copilot. Stored under `.github/agents/*.agent.md`, an agent is loaded on-demand when invoked explicitly (e.g., using `@agent-name`). They isolate complex, domain-specific instructions—such as accounting standards or security policies—preventing global context bloat during general programming tasks.

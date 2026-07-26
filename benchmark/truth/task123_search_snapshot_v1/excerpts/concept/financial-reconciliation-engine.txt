@@ -1,0 +1,2 @@
+
+An automated validation layer operating over a normalized financial fact table to enforce accounting consistency. The engine evaluates intra-statement identities (e.g., Balance Sheet equation, Gross Profit identity) and cross-statement roll-forwards (e.g., Cash reconciliation, Net Income to Retained Earnings bridge). Rules return structured results containing status (pass, warn, fail), delta, tolerance thresholds, and implicated canonical concepts to diagnose mapping errors and quantify data confidence.

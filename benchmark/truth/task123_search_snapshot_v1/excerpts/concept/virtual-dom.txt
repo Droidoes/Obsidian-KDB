@@ -1,0 +1,2 @@
+
+The Virtual DOM is a lightweight memory representation of the real DOM used by [[react-js]]. By computing updates in the Virtual DOM first, React selectively updates only the changed parts of the actual user interface, improving performance.

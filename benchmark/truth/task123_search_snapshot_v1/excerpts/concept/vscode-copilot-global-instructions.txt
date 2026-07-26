@@ -1,0 +1,2 @@
+
+Global Instructions serve as the baseline rule set or employee handbook for GitHub Copilot in VS Code. Configured in `.github/copilot-instructions.md` (or `.instructions.md`), these rules load automatically into every chat session. They define non-negotiable, repository-wide standards such as coding style conventions or safety rules (e.g., preventing hardcoded API keys).

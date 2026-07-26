@@ -1,0 +1,2 @@
+
+Book Value (or Shareholders' Equity) represents the net accounting value of a corporation, calculated either as total assets minus total liabilities or as the sum of paid-in capital and retained earnings (adjusted for treasury stock and AOCI). Book value reflects permanent capital plus accumulated historical profits, making it distinct from distributable equity, which legally restricts dividend payments strictly to accumulated earnings.

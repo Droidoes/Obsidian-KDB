@@ -1,0 +1,2 @@
+
+Claude Code stores conversation logs in `~/.claude/projects/` as JSONL files. Each line represents a JSON object containing a `type`, `timestamp`, and `message` object with a `role` ('user' or 'assistant') and `content`. Parsing requires extracting string or list-of-blocks text content and converting the turns into formatted Markdown frontmatter and sections.

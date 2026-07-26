@@ -1,0 +1,2 @@
+
+An approach to computing EBITDA that treats the metric as a semantic filter rather than a static string formula. By utilizing a [[canonical-financial-ontology]], the system includes or excludes line items based on their structural accounting roles (e.g., top-line, direct costs, non-cash expenses, financing). When Depreciation and Amortization is embedded or omitted from the Income Statement, the system dynamically uses cross-statement ontology links to retrieve D&A add-backs from Cash Flow statement facts.

@@ -1,0 +1,2 @@
+
+Obsidian callouts are styled visual blocks used in Markdown notes to highlight specific types of information, such as notes, warnings, questions, tips, or tasks. Callouts are declared using blockquote syntax followed by `[!type]`, where `type` corresponds to a built-in classification (e.g., `[!note]`, `[!warning]`, `[!todo]`). They support custom titles, multi-level nesting, CSS customization via `data-callout` attributes, and dynamic [[callout-folding|folding]].

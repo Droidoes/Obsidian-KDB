@@ -1,0 +1,2 @@
+
+Depreciation and Amortization (D&A) allocate the historical cost of tangible assets (depreciation) and intangible assets (amortization) across their useful lives on the income statement. Although D&A is a non-cash expense that artificially reduces [[net-income]] in the current period—providing a tax shield—the physical or economic wear of underlying assets requires ongoing capital expenditures, making it a critical consideration when computing [[owner-earnings]].

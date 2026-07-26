@@ -1,0 +1,2 @@
+
+Circle of competence exclusion tracking elevates rejection decisions and boundary conditions to first-class knowledge entries (often represented as a "Too Hard" knowledge base). Storing structured rationales for excluding opportunities—such as structural complexity, regulatory opacity, or capital intensity—enables systematic learning from rejected ideas and helps identify recurring institutional blind spots.

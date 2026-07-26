@@ -1,0 +1,4 @@
+
+The Condorcet method is a voting and preference aggregation system that selects the candidate who wins every pairwise head-to-head comparison against all other candidates. It operates by evaluating all pairwise matchups and identifying the Condorcet winner based on majority preference.
+
+The method reflects majority legitimacy, is clone-proof, and avoids certain strategic vulnerabilities. Its principal limitation is that a Condorcet winner may not always exist due to cyclical preferences (Condorcet cycles), and it requires more computation than positional scoring systems like the [[borda-count]].

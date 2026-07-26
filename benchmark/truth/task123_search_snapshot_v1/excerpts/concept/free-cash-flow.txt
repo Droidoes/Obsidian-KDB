@@ -1,0 +1,2 @@
+
+Free Cash Flow (FCF) measures cash generation by subtracting total capital expenditures from operating cash flow. While popular in financial analysis, standard FCF can penalize growing companies by deducting growth capital expenditure alongside routine maintenance. Additionally, standard FCF can overestimate cash flow in companies heavily utilizing stock-based compensation, as those non-cash expenses are added back despite causing equity dilution.

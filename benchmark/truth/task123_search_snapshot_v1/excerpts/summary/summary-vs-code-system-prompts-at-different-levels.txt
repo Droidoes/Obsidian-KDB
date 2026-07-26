@@ -1,0 +1,2 @@
+
+This architectural reference outlines a four-layer instructions framework for GitHub Copilot in VS Code: [[vscode-copilot-global-instructions|Global Instructions]], [[vscode-copilot-custom-agents|Custom Agents]], [[vscode-copilot-slash-commands|Slash Commands]], and [[vscode-copilot-skills|Skills]]. The core philosophy addresses optimizing the context budget to prevent model confusion across different languages and minimizing cognitive load by isolating specialized task behaviors into discrete files under `.github/`.

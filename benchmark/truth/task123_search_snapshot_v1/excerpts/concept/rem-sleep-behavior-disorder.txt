@@ -1,0 +1,2 @@
+
+REM Sleep Behavior Disorder (RBD) is a parasomnia primarily affecting older men, characterized by the loss of normal muscle atonia during [[rem-sleep|REM sleep]]. Patients physically act out vivid, often violent dreams, risking injury to themselves or bed partners. RBD is strongly predictive of underlying neurodegenerative synucleinopathies; up to 85% of affected individuals eventually develop conditions such as Parkinson's disease. First-line treatments include bedroom safety modifications, high-dose melatonin, or low-dose clonazepam.

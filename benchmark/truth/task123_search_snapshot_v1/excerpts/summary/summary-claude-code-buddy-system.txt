@@ -1,0 +1,2 @@
+
+This document explains the deterministic generation mechanics behind the [[claude-code-buddy-system|Claude Code Buddy]] companion feature. It details how pet traits like species, rarity, and stats are computed via [[fnv-1a-hash|FNV-1a]] hashing and the [[mulberry32-prng|Mulberry32 PRNG]], and provides operational steps and community tools for [[buddy-reroll-strategy|rerolling traits]] to attain legendary companions.

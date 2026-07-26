@@ -1,0 +1,12 @@
+
+The Cash Conversion Cycle (CCC) is a financial metric that measures the number of days required for a company to convert its operational investments in inventory and other resources into cash inflows from sales. 
+
+It is calculated using the formula:
+$$\text{CCC} = \text{DIO} + \text{DSO} - \text{DPO}$$
+
+Where:
+- **Days Inventory Outstanding (DIO)**: The average time taken to turn inventory into sales.
+- **Days Sales Outstanding (DSO)**: The average time needed to collect receivables from customers.
+- **Days Payable Outstanding (DPO)**: The average time a business takes to pay its suppliers.
+
+A lower CCC indicates greater working capital efficiency and liquidity. When DPO exceeds the sum of DIO and DSO, the metric becomes a [[negative-cash-conversion-cycle]].

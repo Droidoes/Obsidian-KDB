@@ -1,0 +1,2 @@
+
+This document details a troubleshooting process for port conflicts and request interception issues when running a Python HTTP server under WSL2 on Windows. It analyzes two primary root causes—[[hyper-v-port-exclusions]] masking ports 8080/8081 from Linux networking tools, and stale browser [[service-workers]]—and tests [[wsl2-mirrored-networking]] as a potential fix.

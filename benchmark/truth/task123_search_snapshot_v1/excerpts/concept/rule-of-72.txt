@@ -1,0 +1,2 @@
+
+The Rule of 72 is a simplified mental calculation used to estimate the time required for an investment to double given a fixed annual rate of return. Dividing 72 by the annual percentage yield provides the approximate number of years needed to double the initial capital (e.g., a 7% return doubles capital in roughly 10 years, while a 10% return doubles it in about 7 years). It serves as a foundational tool for understanding non-linear exponential [[compounding]].

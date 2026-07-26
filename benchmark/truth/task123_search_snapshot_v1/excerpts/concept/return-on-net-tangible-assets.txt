@@ -1,0 +1,2 @@
+
+Return on Net Tangible Assets is an adjusted [[return-on-equity|ROE]] metric favored by Warren Buffett to measure operational efficiency. It subtracts [[goodwill]] and other intangible assets from shareholders' equity, isolating the hard tangible capital required to run the business. Companies requiring minimal capital to generate large earnings exhibit exceptionally high returns on net tangible assets, usually driven by economic moats or strong brand value.

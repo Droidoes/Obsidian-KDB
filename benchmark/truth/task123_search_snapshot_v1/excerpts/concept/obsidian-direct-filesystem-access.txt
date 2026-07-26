@@ -1,0 +1,4 @@
+
+Direct filesystem access is a fallback strategy for interacting with an Obsidian knowledge base without invoking the Obsidian GUI or CLI application. Because Obsidian vaults store content as standard markdown files and plain text directories, standard Unix utilities like `cat`, `grep`, `echo`, and standard append operations can read and modify notes directly.
+
+This pattern avoids cold-start delays, GPU wrapper requirements, and process timeouts associated with headless CLI calls. High-level GUI operations (such as opening graph visualizers) require application process invocation via [[obsidian-cli-process-management]], but routine text reads, searches, and logging bypass the app completely via direct file I/O.

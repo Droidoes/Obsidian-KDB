@@ -1,0 +1,2 @@
+
+An advanced developer capability within [[obsidian-cli]] accessed via `obsidian eval code="..."`. It allows arbitrary JavaScript code to execute directly inside the running Obsidian application instance, providing programmatic access to internal app structures like `app.vault`.

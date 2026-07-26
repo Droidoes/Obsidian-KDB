@@ -1,0 +1,16 @@
+
+The mechanics of aggressive share repurchases reveal that value creation in mature enterprises is largely a function of [[share-buyback-preconditions|capital allocation discipline]] rather than top-line hypergrowth alone. As Mohnish Pabrai illustrates through his [[uber-cannibals]] framework, the ultimate math of stock repurchases manifests non-linearly once share reduction crosses critical thresholds:
+
+- Repurchasing 50% of shares yields a 2x multiplier per remaining share.
+- Repurchasing 80% of shares yields a 5x multiplier.
+- Repurchasing 90% of shares yields a 10x multiplier.
+
+When combined with modest organic earnings growth (10–15% annually) and occasional multiple expansion, this share contraction effect generates multi-bagger returns over 10- to 30-year horizons. NVR and AutoZone serve as modern exemplars: NVR reduced its share count by over 80% while adopting an asset-light land-option strategy, achieving a 700x+ return over nearly three decades.
+
+### The Singleton Archetype
+
+The historic masterclass of this mechanism remains [[henry-singleton]] at Teledyne. Singleton demonstrated that exceptional capital allocators must act dynamically based on relative valuation. Rather than buying back stock blindly at any price, Singleton issued highly valued stock during the 1960s bull market to acquire lower-multiple operating assets, then drastically reversed course in the 1970s bear market to retire 90% of Teledyne's shares through aggressive tender offers and debt exchanges.
+
+### The Risk of Secular Destruction
+
+The inverse of the cannibal playbook occurs when management teams attempt repurchases inside a business suffering from secular decline. Pabrai points to Eddie Lampert's tenure at Sears and IBM's share repurchases in the 2010s: because the core underlying franchises were being eroded by competitive or technological shifts, repurchasing equity proved value-destructive.

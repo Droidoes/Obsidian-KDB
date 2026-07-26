@@ -1,0 +1,2 @@
+
+Graph Retrieval-Augmented Generation (GraphRAG) combines semantic vector search with structural graph traversal to retrieve contextual knowledge for language models. Unlike standard vector search that only finds semantically similar text, GraphRAG queries 1st- and 2nd-degree connections within a [[knowledge-graph]] to surface complex relationships—such as supply chain dependencies or structural industry bottlenecks—before synthesizing answers or evaluating net-new information via a [[delta-protocol]].

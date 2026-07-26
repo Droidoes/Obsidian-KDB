@@ -1,0 +1,11 @@
+
+When aggregating relative rankings, social choice mechanisms must balance consensus optimization against pairwise majority dominance. The fundamental tension between the [[borda-count]] and the [[condorcet-method]] illustrates this divergence in philosophy and outcome within [[social-choice-theory]].
+
+### Consensus vs. Pairwise Dominance
+- **Consensus Optimization:** The [[borda-count]] maximizes overall consistency across entire preference lists. It heavily penalizes polarizing candidates with extreme split votes (many first and last places) while elevating candidates who are broadly acceptable (e.g., everyone's second choice).
+- **Pairwise Majority Dominance:** The [[condorcet-method]] prioritizes majority legitimacy by evaluating isolated head-to-head comparisons. A polarizing candidate with sufficient top-rank strength can win all pairwise matchups and defeat a compromise candidate who is universally ranked second.
+
+### Operational Selection
+The choice between these methods depends on the operational goal:
+1. **Use Borda Count** when a guaranteed winner is required, computational simplicity is valued, or the domain seeks a broadly acceptable compromise (e.g., combining judge scores or ML model evaluation metrics).
+2. **Use Condorcet Method** when strict majority legitimacy is necessary, avoiding spoiler effects is critical, or the system must remain robust against clone options.

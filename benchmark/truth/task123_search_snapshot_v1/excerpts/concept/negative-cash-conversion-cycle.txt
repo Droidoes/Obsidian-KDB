@@ -1,0 +1,6 @@
+
+A negative cash conversion cycle occurs within the framework of the [[cash-conversion-cycle]] when Days Payable Outstanding (DPO) exceeds the combined total of Days Inventory Outstanding (DIO) and Days Sales Outstanding (DSO). 
+
+Under this condition, a business collects cash from customer sales before its accounts payable to suppliers fall due. This dynamic creates an interest-free working capital bridge, allowing the company to use supplier funds to finance ongoing operations, expansion, or general liquidity needs.
+
+Achieving a negative cycle requires rapid inventory turnover, short collection periods, and strong leverage to negotiate extended payment terms with vendors. While it enhances liquidity and reduces reliance on external debt, maintaining it requires managing supplier relationships carefully to prevent operational strain caused by prolonged payment windows.

@@ -1,0 +1,2 @@
+
+An adaptive learning workflow designed to prevent echo chambers by identifying net-new information ('thesis deltas') before committing updates to a knowledge base. Incoming data is embedded and queried against existing vector stores via `pgvector`, traversed across its [[knowledge-graph]] connections, and evaluated by an LLM to determine if it introduces novel insights or merely reinforces consensus.

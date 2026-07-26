@@ -1,0 +1,2 @@
+
+A structural network of entities (nodes) and their interrelationships (edges) used to organize domain knowledge. In the context of the 10x-Learning-Engine, the knowledge graph represents a 'latticework of mental models' stored within relational PostgreSQL tables (`knowledge_nodes` and `knowledge_edges`) rather than a dedicated graph database, enabling the system to trace supply chain linkages, industry bottlenecks, and competitive dynamics alongside [[graph-rag]] operations.

@@ -1,0 +1,2 @@
+
+WSL2 mirrored networking (`networkingMode=mirrored` in `.wslconfig`) is a configuration mode where the WSL2 VM shares the Windows host's network namespace, replacing the default NAT mode. It exposes active open sockets across the host-guest boundary, allowing WSL-side servers to be accessed directly and host-side bound sockets to appear in Linux networking inspection tools (`ss`, `lsof`). However, mirrored networking only synchronizes real active sockets; it does not expose Windows kernel reservations such as [[hyper-v-port-exclusions]].

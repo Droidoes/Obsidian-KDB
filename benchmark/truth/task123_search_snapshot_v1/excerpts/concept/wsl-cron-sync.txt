@@ -1,0 +1,2 @@
+
+Automated background sync of local files in Windows Subsystem for Linux (WSL) using cron jobs. By running scheduled Python scripts via crontab (e.g., nightly at `0 2 * * *`), transformed files such as converted [[claude-jsonl-parsing|Claude sessions]] are incrementally copied into an Obsidian vault directory.

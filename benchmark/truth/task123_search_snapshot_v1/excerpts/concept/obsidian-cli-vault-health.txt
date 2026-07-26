@@ -1,0 +1,2 @@
+
+A set of structural inspection commands provided by [[obsidian-cli]] to analyze links and note references across a vault. Key operations include `obsidian orphans` (identifying notes without incoming links), `obsidian unresolved` (detecting broken wikilinks), and inspecting directional connections per file via `obsidian backlinks` and `obsidian links`.

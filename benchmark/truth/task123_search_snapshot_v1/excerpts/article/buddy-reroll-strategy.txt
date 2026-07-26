@@ -1,0 +1,4 @@
+
+Because the [[claude-code-buddy-system]] deterministically derives pet attributes from an identity string via [[fnv-1a-hash]] and [[mulberry32-prng]], editing local pet attribute fields directly in config is ineffective as traits are recomputed on every session. However, because identity evaluation prioritizes `accountUuid` over `userID` in user configuration, users seeking higher rarity tiers (such as Legendary) must bypass or overwrite this identifier.
+
+Rerolling strategies employ brute-force iteration over alternative candidate identity strings to find seeds that yield targeted rarity, species, and cosmetic outputs. Community CLI utilities automate this process by either generating matching candidate `userID` configurations or patching executable binaries directly to override the hashing pipeline.

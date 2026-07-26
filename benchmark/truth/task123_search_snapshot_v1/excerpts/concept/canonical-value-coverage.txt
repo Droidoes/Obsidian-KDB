@@ -1,0 +1,6 @@
+
+Canonical Value Coverage (CVC) is a financial ETL metric measuring the percentage of total financial statement monetary value captured by mapped canonical items, defined as:
+
+$$\text{CVC}_S = \frac{\sum |\text{mapped canonical values}|}{\sum |\text{total statement values}|}$$
+
+Unlike simple row-matching percentages (which penalize systems for skipping uninformative disclosures or rollups), CVC measures semantic and economic completeness. It is used alongside Canonical Model Coverage (CMC) and Decision-Weighted Coverage (DWC).

@@ -1,0 +1,10 @@
+
+Warren Buffett uses a set of five quick heuristics when analyzing financial statements to rapidly evaluate whether a business is financially resilient and conservatively capitalized:
+
+1. **Cash vs. Debt**: The company should hold more cash and cash equivalents than total debt, demonstrating it generates enough liquidity to operate without relying on leverage.
+2. **Debt-to-Equity Ratio**: The [[debt-to-equity-ratio]] should ideally be below 0.8, showing the business finances operations primarily through equity rather than debt.
+3. **Absence of Preferred Stock**: The company should have zero [[preferred-stock]], as strong businesses do not need hybrid expensive financing.
+4. **Retained Earnings Growth**: [[retained-earnings]] should consistently grow over time, including through economic recessions, proving sustained profitability and capital reinvestment.
+5. **Presence of Treasury Stock**: The company should show positive [[treasury-stock]], indicating a history of returning excess capital to shareholders through share buybacks.
+
+Applying these heuristics requires analyzing line items in the assets, liabilities, and [[shareholders-equity]] sections of the balance sheet. In some cases, adjustments must be made for operating leases or aggressive buybacks that artificially lower reported book value.

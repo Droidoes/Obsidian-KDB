@@ -1,0 +1,2 @@
+
+Canonical entity resolution is an extraction-layer mapping technique used to prevent semantic drift within a [[knowledge-graph]]. When extracting structured entities from raw text, multiple surface forms or synonyms are systematically mapped to a single canonical node identifier. This ensures graph integrity over time while allowing free-form language to be stored separately as annotations rather than core topological structure.

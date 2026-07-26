@@ -1,0 +1,4 @@
+
+The debt-to-equity ratio is a fundamental solvency metric calculated by dividing a company's total liabilities by its [[shareholders-equity]]. It measures the extent to which a company is financing its operations through debt versus internally generated or investor-supplied capital.
+
+Under Warren Buffett's framework, a ratio below 0.8 indicates a conservatively managed company that relies primarily on equity. However, analyzing this ratio often requires adjusting for specific accounting items. For instance, large long-term lease liabilities can inflate total liabilities without representing traditional interest-bearing debt, while substantial [[treasury-stock]] repurchases reduce reported equity, artificially inflating the ratio.

@@ -1,0 +1,2 @@
+
+This document outlines the architecture and execution plan for the '10x-Learning-Engine', a headless [[graph-rag]] system designed for deep value investing. It details a pipeline using Gmail API ingestion, LLM schema-based extraction, and Supabase PostgreSQL (pgvector + relational graph tables) to extract investment thesis deltas and build a [[knowledge-graph]] of mental models.

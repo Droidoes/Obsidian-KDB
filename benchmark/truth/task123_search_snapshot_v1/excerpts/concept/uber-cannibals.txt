@@ -1,0 +1,9 @@
+
+The Uber Cannibals framework, coined by Mohnish Pabrai based on a insight from Charlie Munger, focuses on investing in stable or growing businesses that aggressively reduce their outstanding share count through stock repurchases. When a business takes out a massive percentage of its shares—ideally 80% or more over a multi-decade period—the remaining shareholders receive a compounding multiplier on per-share intrinsic value.
+
+According to Pabrai, the total return formula for a cannibal stock depends on three interlocking variables:
+1. **Earnings Growth**: Growth in total net income over the holding period.
+2. **Share Contraction Rate**: The ratio of initial shares to remaining shares (e.g., reducing shares by 80% creates a 5x per-share multiplier).
+3. **Multiple Expansion**: Changes in the price-to-earnings (P/E) valuation multiple awarded by the market.
+
+For the framework to work, the underlying business must be non-declining; secular disruption ruins share repurchases by reducing total intrinsic value faster than share count contracts.

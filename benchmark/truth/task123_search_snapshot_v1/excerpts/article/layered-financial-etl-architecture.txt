@@ -1,0 +1,11 @@
+
+Raw financial statement processing often fails when treating financial reports as flat text lists. Financial statements are semantic trees where meaning depends on hierarchy, disclosure context, and accounting constraints. A robust architecture separates mapping recognition from semantic post-processing.
+
+### 1. Ingestion and Mapping
+Line items are normalized using a [[financial-etl-decision-tree]] that prioritizes structural context, decomposition rules, and explicit section constraints over simple string matching. This stage maps raw text labels to normalized canonical names.
+
+### 2. Semantic Materialization and Reasoning
+Once flat facts reside in storage, a [[canonical-financial-ontology]] acts as a semantic post-processing layer. The ontology explicitly defines accounting roles, rollups, and invariant constraints. It automatically materializes missing derived concepts without altering the raw ingestion pipeline.
+
+### 3. Metric Derivation and Validation
+Derived metrics like [[ontology-driven-ebitda]] fall out naturally from semantic roles rather than hardcoded company-specific logic. Subsequently, a [[financial-reconciliation-engine]] evaluates cross-statement integrity, while metrics such as [[canonical-value-coverage]] evaluate the economic completeness of the dataset. This layered separation ensures the system remains explainable, auditable, and resilient to varied corporate reporting standards.

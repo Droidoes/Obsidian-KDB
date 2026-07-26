@@ -1,0 +1,2 @@
+
+Cowork VM health monitoring ensures stability for long-running virtualized agent environments using automated PowerShell verification. Monitoring scripts check the operational status and startup type of `CoworkVMService`, query `Get-VM` for assigned memory and CPU usage, verify log activity in `cowork_vm_node.log`, and validate the accessibility of mounted folders (such as Obsidian vaults and Ollama models). Automated scheduled tasks can run weekly checks to detect I/O errors or broken links and notify operators when routine cache maintenance is required.

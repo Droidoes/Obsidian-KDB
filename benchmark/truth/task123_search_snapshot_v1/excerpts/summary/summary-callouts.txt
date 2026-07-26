@@ -1,0 +1,2 @@
+
+A reference guide detailing Obsidian's built-in [[obsidian-callouts|callouts]], including syntax, core classifications, and visual customization capabilities. It demonstrates structural features like [[callout-folding|folding]], custom titles, nesting, and CSS styling.

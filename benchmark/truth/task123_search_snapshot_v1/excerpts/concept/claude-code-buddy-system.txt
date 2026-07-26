@@ -1,0 +1,2 @@
+
+The Claude Code Buddy System is a terminal pet companion feature integrated into Claude Code (v2.1.89+). It models pet generation through a two-layer architecture: deterministic 'bones' (rarity, species, cosmetics, and base stats) recomputed on each session, and a persistent 'soul' (personality and commentary style) generated upon initial hatching stored in local configuration (`~/.claude.json`). The system relies on an identity string seed passed into [[fnv-1a-hash]] and [[mulberry32-prng]] to generate all pet attributes.

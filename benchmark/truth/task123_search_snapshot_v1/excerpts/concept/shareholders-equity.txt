@@ -1,0 +1,4 @@
+
+Shareholders' equity represents the residual interest in a company's assets after deducting all liabilities, governed by the accounting equation: Assets = Liabilities + Shareholders' Equity. 
+
+Key components within shareholders' equity include common stock, [[preferred-stock]], [[retained-earnings]], and [[treasury-stock]]. Tracking changes across these sub-accounts provides insight into how a firm funds its growth, reinvests profits, and executes shareholder return programs.

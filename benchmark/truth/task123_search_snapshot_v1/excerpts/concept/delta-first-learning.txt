@@ -1,0 +1,2 @@
+
+Delta-first learning is a research synthesis principle that prioritizes change detection over simple retrieval or accumulation. Rather than continually storing redundant context, the system evaluates incoming research against existing context to explicitly classify new information into three categories: net-new insight, belief contradiction, or consensus reinforcement. Under this paradigm, beliefs are versioned with rationale over time, and contradictions are treated as positive informational signals rather than errors.

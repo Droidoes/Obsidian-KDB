@@ -1,0 +1,2 @@
+
+JSX (JavaScript XML) is a declarative syntax extension for JavaScript used by [[react-js]]. It allows developers to write HTML-like markup directly inside JavaScript files to define component structures.

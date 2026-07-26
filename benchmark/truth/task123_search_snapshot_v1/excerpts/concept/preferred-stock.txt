@@ -1,0 +1,4 @@
+
+Preferred stock is a hybrid security positioned between equity and debt on the balance sheet, usually appearing near the top of the [[shareholders-equity]] section. It carries fixed dividend obligations similar to debt payments but lacks full voting rights.
+
+In value investing analysis, the presence of preferred stock is often viewed as a warning sign. Financially strong companies rarely need to issue preferred shares to finance operations, so a clean balance sheet with zero preferred stock is considered a mark of financial stability.
