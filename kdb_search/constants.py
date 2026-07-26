@@ -27,6 +27,12 @@ MAX_RESULTS = 50
 #: bound is the core's, not the adapter's: R2 forbids per-consumer contracts.
 MAX_EXPRESSIONS = 10
 
+#: Logical attempts per executed stage (blueprint §8, frozen by codex c-1). One
+#: `StageRecord` per logical attempt, so this is also the per-stage `StageRecord`
+#: ceiling. SDK transport sub-retries are the provider's business and are never
+#: counted here.
+MAX_ATTEMPTS_PER_STAGE = 2
+
 # ---------------------------------------------------------------------------
 # wire serialization — NORMATIVE (codex, v0.10 review)
 # ---------------------------------------------------------------------------

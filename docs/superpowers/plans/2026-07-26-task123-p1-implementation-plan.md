@@ -247,20 +247,79 @@ caller shares one type shape (codex F5, R2).
 option-C resolution's other half. §3.1's "the archived QueryPayload records both
 original and rendered forms" is a statement about the artifact, and this is it.
 
-### P1.5 — contract matrix (`test_contract.py`) — last
-- [ ] status × execution × evidence_status matrix, incl. the D3 terminal's complete contract
-- [ ] `fat_after_thin_failure` naming
-- [ ] The fat `budget_exceeded` terminal's complete contract (two-row: `not_executed` thin-preflight / `thin_attempted` fat-preflight) + the F1 interaction
-- [ ] Post-call output terminal's three contracts (thin / fat-after-thin / fat-after-F1) — *stubs where P2 owns the producer, marked as such*
+### P1.5 — contract matrix (`contracts.py` + `result.py`) → `test_contract.py` — last
+- [x] status × execution × evidence_status matrix, incl. the D3 terminal's complete contract
+- [x] `fat_after_thin_failure` naming
+- [x] The fat `budget_exceeded` terminal's complete contract (two-row: `not_executed` thin-preflight / `thin_attempted` fat-preflight) + the F1 interaction
+- [x] Post-call output terminal's three contracts (thin / fat-after-thin / fat-after-F1) — *stubs where P2 owns the producer, marked as such*
+- [x] `GraphSearchResult` + `SearchTelemetry` + `BudgetRecord` (`result.py`) — the matrix cannot be written without them; spec §1.1/§6.3
+
+**The matrix is a module, not a test fixture — because it has a runtime consumer.**
+The plan warned this sub-phase risks being *"enum plumbing that would pass
+trivially"*, and a table living only in its own test would be exactly that: a
+second copy of the ratified rows asserting it equals itself. `contracts.py`
+escapes it by having a named caller — **P2's orchestrator, at its single return
+site**, via `assert_result_contract`, which refuses to let a non-conforming
+`GraphSearchResult` leave `graph_search`. Fail-closed, not documentation.
+
+**Three rows run through real code, ten are shape.** `empty_space` and both
+pre-flight budget terminals have producers *today* (`budget.preflight`, an empty
+`SearchSpaceRef`), so they are driven end-to-end; `PRODUCIBLE_IN_P1` names them
+and a test pins the split so it cannot rot. The rest wait on P2's producer.
+
+**Two rows added beyond the bullet above.** The bullet enumerates the three
+*output*-side post-call terminals. Blueprint §8's branch table also carries two
+*input*-side post-call rows — `budget_estimation_miss` at thin and at fat (D7,
+re-typed `budget_exceeded`/`detected: post_call` by opus5 M1). They are ratified
+terminals with the same structure, so the matrix carries them as
+`thin_input_estimation_miss` / `fat_input_estimation_miss`. Recorded rather than
+absorbed silently: a matrix that looks complete while missing a ratified row is
+the same defect as a spec saying "hard gate" over a 0% threshold.
+
+**Three cells are left unconstrained on purpose.** The evidence side of
+`fat_exhausted` and `fat_input_estimation_miss`, and concordance on
+`fat_exhausted`: the ratified text fixes their status/execution and says nothing
+else. The neighbouring truncation rows' reasoning would apply, but inferring it
+would make an implementer's guess indistinguishable from a ratified decision to
+the next reader. They carry an `UNENUMERATED` marker in `note` and a test asserts
+exactly which three they are, so a later spec round has one place to land.
+
+**`SearchTelemetry` omits `status` and `execution`** even though §6.3's prose
+lists them: they live on `GraphSearchResult`, and a second copy can disagree with
+the first. The emission reads them from the result. Same class of narrowing as
+`page_type`'s.
+
+**One check was written, then deleted for being unreachable.** The verifier
+carried a `(status, execution) ∈ ALLOWED_STATUS_EXECUTION` assertion; a mutation
+sweep showed removing it broke no test, and inspection confirmed why — with the
+status and execution checks green, set membership follows by construction, so it
+could never fire on its own. Removed rather than left as an assertion that only
+echoes another; the set's real consumer is `is_ratified_pair`, for a reader
+holding an archived result and **no** terminal name (replay, the KPI series).
 
 ## Verification gates
 
 | gate | when |
 |---|---|
 | targeted sub-phase tests green | each sub-phase |
-| full suite `-m "not live"` green (baseline **1963 passed**; **2018 after P1.0 + P1.1** — the figure the next boundary compares against) | each sub-phase boundary |
+| full suite `-m "not live"` green (baseline **1963 passed**; **2018 after P1.0 + P1.1**; **2494 at P1 close**) | each sub-phase boundary |
 | boundary contract test green with the new rows | P1.0 |
 | P1 complete → change summary + ledger/plan update | phase close |
+
+## Narrowings of ratified text — both P1 departures, in one place
+
+Neither moves a decision, and each is documented at its site. Collected here so
+they are reviewable together rather than found one docstring at a time.
+
+| # | Ratified text | What P1 built | Why |
+|---|---|---|---|
+| 1 | Spec §1.1 types `SpaceEntity.page_type` as `str` | `common.paths.PageType` (the `Literal`) | `get_body` takes the Literal, so a bad page_type fails at the type boundary instead of surfacing as a projection error — §2.1's fail-hard posture. Strictly narrower: every value the spec admits that this rejects was already unusable. |
+| 2 | Spec §6.3 lists `status` and `execution` among `SearchTelemetry`'s fields | They live on `GraphSearchResult` only | Two copies of the same pair can disagree, and the telemetry copy is the one nothing validates. The #122 emission reads them from the result. |
+
+A third item is *not* a narrowing but belongs beside them: P1.1's **option C** on
+`QueryPayload` resolved an internal conflict between two ratified passages rather
+than departing from either (§1.1's two-field type vs D7(iv)'s projector-owned
+per-field ceiling). It is a panel-record item, already noted in P1.1 above.
 
 ## Out of scope for P1 (do not build)
 
