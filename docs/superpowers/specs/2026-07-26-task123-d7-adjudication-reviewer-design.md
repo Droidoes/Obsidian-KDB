@@ -68,3 +68,35 @@ compiler, orchestrator, benchmark-scoring, CLI, or MCP runtime boundaries.
 - Local smoke, run 2026-07-26: repository served over `http.server`; the page,
   all four tracked JSON inputs and the frozen excerpt routes return 200; the
   inline script passes `node --check`.
+
+## If this reviewer is ever reused — one known gap
+
+The 2026-07-26 run surfaced a limitation worth recording before the tool is
+picked up for another adjudication.
+
+**The gap.** The reviewer accepts a threshold that makes its own gate unable to
+fail — a `0` floor or a `100%` ceiling — and writes it to the artifact with no
+mark distinguishing *deliberately diagnostic* from *forgotten placeholder*. In
+this run four of five gates were set that way **on purpose** (spec §8.4), and the
+artifact records the numbers but not the intent, so the distinction survives only
+in prose elsewhere.
+
+**The fix that was considered and rejected.** A validation rule of the form *"a
+gate must be able to bind"* would have caught a forgotten placeholder — and would
+also have **blocked the owner's chosen policy**, since these thresholds are the
+policy. Adding it would make the tool refuse the very decision it exists to
+record.
+
+**The fix to make instead.** Do not validate the value; capture the intent
+alongside it. When a threshold renders its gate unfalsifiable, prompt for an
+explicit acknowledgement and write it into the artifact — e.g. a `gate_policy`
+map recording `diagnostic` vs `binding` per gate, adjudicator-set. A reader then
+sees the policy in the data rather than inferring it from a zero, and a genuinely
+forgotten threshold is visible as an *unacknowledged* unfalsifiable gate rather
+than being indistinguishable from a chosen one.
+
+**Not applied to the v1 artifact.** `benchmark/truth/task123_search_probes_v1.json`
+is adjudicated, committed and ratified; spec §8.4 now carries the policy in prose,
+which closes the practical risk. Retrofitting a field into ratified truth data is
+an owner decision, not a tooling cleanup — so this stays a note until either the
+reviewer is reused or Joseph asks for the field.
