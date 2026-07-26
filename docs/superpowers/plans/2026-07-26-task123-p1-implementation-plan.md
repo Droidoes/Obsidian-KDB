@@ -45,8 +45,52 @@ error, which is §2.1's fail-hard posture. Spec §1.1 says `str`; this is a narr
       *(1-byte reconciliation, 2026-07-26: spec §4 enumerates the block as "identity line + excerpt field + delimiters" ⇒ 2,208 B; the ratified 2,209 B figure was measured with the block's terminating newline included. The ceiling now governs the **stream contribution** — the conservative reading, and the one the 100 × 2,500 B rollup is built from. Both readings sit far under the ceiling, so nothing decided moves; `projection.stream_contribution_bytes` is the named accessor and both integers are pinned.)*
 - [x] Missing body (`ContentNotFoundError`) ⇒ title-only degrade, counted in `body_coverage`
 - [x] Thin line form: `- slug: … title: … type: …`, no excerpt
-- [ ] **Query block** — 4,096 B ceiling via per-field allocations: `author` ≤ 256 B, `entity_search_keys` ≤ `MAX_EXPRESSIONS` × 128 B (per item), `key_themes` ≤ 1,024 B aggregate, `summary` ≤ remainder; per-field `query_truncated` counts; original **and** rendered forms archived; oversized `author`/`themes`/`keys` cases, not just `summary`
-- [ ] Query-side P10 indent guard (H03 fixture)
+- [x] **Query block** — 4,096 B ceiling via per-field allocations: `author` ≤ 256 B, `entity_search_keys` ≤ `MAX_EXPRESSIONS` × 128 B (per item), `key_themes` ≤ 1,024 B aggregate, `summary` ≤ remainder; per-field `query_truncated` counts; original **and** rendered forms archived; oversized `author`/`themes`/`keys` cases, not just `summary`
+- [x] Query-side P10 indent guard (H03 fixture)
+
+**Fork resolved here — `QueryPayload` vs the per-field ceiling (option C).** Spec
+§1.1 fixes `QueryPayload` at `{text, expressions}` and §3.1 states `text` =
+summary + themes + keys + author *"rendered into a fixed template"* — i.e. the
+adapter composes `text`. But D7(iv) makes the per-field ceiling a **projector**
+property with per-field counts, and blueprint §12 puts its tests in the core's
+own `test_projection.py`. Read literally, only one of the two can hold.
+
+Resolved as **option C: the renderer lives in the core, the ratified type is
+untouched.** `projection.render_query_block(...) → RenderedQuery{text,
+query_truncated, original_fields, delimiter_collision_guard}`; the P3a adapter
+calls it and passes `.text` into `QueryPayload`. codex L2's requirement is
+satisfied — the truncation logic *is* in the projector, which is what "projector
+property" names — without adding fields to a ratified request type on my own
+reading of implementability. §3.1's "the archived QueryPayload records both
+original and rendered forms" is a statement about the **artifact**, so
+`RenderedQuery` becomes an optional `SearchAuditPayload` field in P1.4. A human
+caller passing only `text` never enters this path, which is what R2's
+consumer-neutrality actually requires. *Panel-record item for the next round —
+it moves no decision, so it is not a blocking question.*
+
+**Allocations bind on each field's rendered contribution, not its raw content.**
+The only reading under which 4,096 B is a hard property: `key_themes` has no
+`maxItems` (`pass1_schema.py:77-89`), so 1,024 one-byte themes satisfy a raw
+aggregate cap while their `    - ` prefixes alone cost ~14 kB. Same call as
+`stream_contribution_bytes`, now stated in both docstrings and pinned by a
+theme-count-explosion test (50,000 themes ⇒ 1,046 B, 128 kept).
+
+**`domain` gets an allocation SD-1's list omits** (128 B, matching the per-key
+figure — both are short identifiers). Pass-1 constrains `domain` to an enum, so
+it is not unbounded *for that consumer* — but R2 forbids per-consumer contracts
+and the ceiling has to hold against a P5b CLI/MCP caller too. Without it the
+ceiling was an input assumption, which is the exact defect codex L2 fixed for
+`summary`.
+
+Measured (mechanically, not asserted from the allocation sum): every bounded
+field over its allocation + an unbounded summary ⇒ **4,095 B**, 1 B under the
+ceiling, with the bounded fields claiming 2,688 B and leaving the summary
+1,408 B. Multi-byte saturation decodes clean.
+
+**P10 is asserted as an invariant, not against enumerated payloads:** the block's
+own structural lines are the only ones permitted at 2-space indent, and the
+terminator must be the final line. That holds for any injection, including ones
+no fixture anticipated — tested per-field and with every field injected at once.
 
 ### P1.2 — response salvage + accounting (`response.py`) → `test_response.py`
 - [ ] Four-way response classification, exactly one applies: `unparseable_response`, `structurally_unusable_response`, `all_entries_dropped`, and `selections: []` as **honest-empty completed**
@@ -91,7 +135,7 @@ error, which is §2.1's fail-hard posture. Spec §1.1 says `str`; this is a narr
 | gate | when |
 |---|---|
 | targeted sub-phase tests green | each sub-phase |
-| full suite `-m "not live"` green (baseline **1963 passed**; **1993 after P1.0+P1.1** — the figure the next boundary compares against) | each sub-phase boundary |
+| full suite `-m "not live"` green (baseline **1963 passed**; **2018 after P1.0 + P1.1** — the figure the next boundary compares against) | each sub-phase boundary |
 | boundary contract test green with the new rows | P1.0 |
 | P1 complete → change summary + ledger/plan update | phase close |
 

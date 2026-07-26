@@ -66,10 +66,20 @@ QUERY_BLOCK_CEILING_BYTES = 4_096
 #: Deterministic per-field byte allocations (D7 / codex L2). Every one of these
 #: pass-1 fields is schema-unbounded (`pass1_schema.py:77-89`), so summary-only
 #: truncation was an observed-input assumption rather than a projector property.
+#: Allocations are enforced on each field's **rendered contribution**, not on its
+#: raw content. That is the only reading under which the total ceiling is a hard
+#: property: `key_themes` carries no `maxItems`, so 1,024 one-byte themes satisfy
+#: a raw aggregate cap while their rendered `    - ` prefixes alone cost ~14 kB.
 QUERY_FIELD_ALLOCATIONS = {
     "author": 256,
     "entity_search_keys_per_item": 128,
     "key_themes_aggregate": 1_024,
+    #: SD-1's ceiling list omits `domain` because pass-1 constrains it to an enum
+    #: (`pass1_schema.py`), so it is not an unbounded input *for that consumer*.
+    #: The core caps it anyway: R2 forbids per-consumer contracts, and the
+    #: ceiling has to hold against a P5b CLI/MCP caller too. Sized to match the
+    #: per-key allocation — both are short identifiers.
+    "domain": 128,
     # `summary` takes the remainder of QUERY_BLOCK_CEILING_BYTES
 }
 
