@@ -194,11 +194,58 @@ superseded ~15.
 sweeps (100 parametrized cases × 60 documents) — reproducible, and it buys the
 coverage without adding a dependency for shrinking we do not need.
 ### P1.4 — artifact builder + hashes (`artifact.py`) → `test_artifact.py`
-- [ ] `SearchAuditPayload` consumer-neutral core; constructed on **every** path (completed/abstain/budget/failure)
-- [ ] `GraphSnapshotRef` = `{schema_version, active_entity_count, space_fingerprint, source_kind, source_detail}`
-- [ ] `search_snapshot_hash` + `artifact_integrity_hash` — sha256 over canonical JSON per spec §5.1
-- [ ] Exact rendered system+user **bytes** archived per stage; raw response text verbatim
-- [ ] Invariant: `logical_call_count == len(StageRecords)` (SDK transport sub-retries excluded from both sides)
+- [x] `SearchAuditPayload` consumer-neutral core; constructed on **every** path (completed/abstain/budget/failure)
+- [x] `GraphSnapshotRef` = `{schema_version, active_entity_count, space_fingerprint, source_kind, source_detail}`
+- [x] `search_snapshot_hash` + `artifact_integrity_hash` — sha256 over canonical JSON per spec §5.1
+- [x] Exact rendered system+user **bytes** archived per stage; raw response text verbatim
+- [x] Invariant: `logical_call_count == len(StageRecords)` (SDK transport sub-retries excluded from both sides)
+
+**The two hashes answer different questions, and the separation is the point.**
+`search_snapshot_hash` = *what was searched* (graph identity + ordered manifest +
+exact evidence bytes + projection-policy identity); `artifact_integrity_hash` =
+*what happened* (query + prompts + stage trace + result + execution). A run that
+changes only its outcome moves the integrity hash and leaves the snapshot hash
+alone — which is exactly what makes selector A/B over a frozen snapshot compare
+anything at all.
+
+**Latency and cost are excluded from the integrity hash.** They vary run to run
+without the artifact having changed, and a hash that never reproduces cannot detect
+tampering. Pinned by a test.
+
+**Mutation-verified, and three assertions exist only because of it.** Ten mutations
+were tried; seven were caught immediately. The three that **passed** were all test
+gaps rather than code defects, and each is a real hole:
+
+1. *Snapshot hash leaking what the selector produced.* The A/B test varied only
+   the result summary, so leaking `parsed_output` into the snapshot digest went
+   unnoticed. A real frozen-snapshot A/B varies the raw response, the parsed output
+   **and** the result — the test now does.
+2. *Canonical JSON without `sort_keys`.* Nothing caught it, because every dict in
+   the tests was built in one consistent order. A `validation` mapping that P2
+   happens to assemble differently would then hash differently — an integrity hash
+   reporting tampering because a dict was built by another code path. Now covered by
+   key-order-independence tests on both digests.
+3. *Manifest digest hashing slugs only.* Membership was tested by trimming an
+   entry, which changes the slug set too — so dropping `title`/`page_type` passed.
+   But the THIN stage's entire evidence is `- slug: … title: … type: …`: two spaces
+   with identical slugs and different titles present genuinely different evidence,
+   and hashing slugs alone would call them the same snapshot.
+
+**Built on every path**, asserted for all four: completed, `abstain_empty_space`,
+pre-flight `budget_exceeded`, and retry-exhausted `selector_failure` (both attempts
+archived with their own bytes). `stages` defaults to empty because the zero-call
+paths are real outcomes — their emptiness is the finding, not a reason to skip the
+record. A mutation that raised on the zero-call path fails 3 tests.
+
+**`logical_call_count == len(stages)`** by construction, with SDK transport
+sub-retries excluded from both sides. The consumer-neutral split is asserted
+structurally: `run_id`/`source_id`/`intra_run_order`/`artifact_path` appear on
+`SearchRunEnvelope` and are absent from the core payload, so an MCP/CLI/human
+caller shares one type shape (codex F5, R2).
+
+**`RenderedQuery` lands here** as the optional `rendered_query` field — the P1.1
+option-C resolution's other half. §3.1's "the archived QueryPayload records both
+original and rendered forms" is a statement about the artifact, and this is it.
 
 ### P1.5 — contract matrix (`test_contract.py`) — last
 - [ ] status × execution × evidence_status matrix, incl. the D3 terminal's complete contract
