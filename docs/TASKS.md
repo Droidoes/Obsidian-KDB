@@ -60,6 +60,23 @@ E+A10 abstention denominator, M=5 watched; the three relevance floors are 0%
 and the selector-failure ceiling is 100%. Escaped foreign identities remain
 zero-tolerance. No live selector experiment was run by this adjudication.
 
+Post-adjudication amendment (2026-07-26, Joseph's call, annotation-only —
+recorded in the artifact's own `amendments` array with the prior sha256):
+**A09 and A12 are marked `scoring_role: "precision_only"`** and named in
+`gates.metric_rules.class_a_precision_only_probes`. Both were exported as
+scored class-A probes with zero relevant slugs but non-empty
+`acceptable_alternatives`, so they contributed to neither side of micro class-A
+recall while carrying nothing saying that was intended — harmless
+arithmetically, indistinguishable from an oversight to a later reader. They are
+**not** abstention probes and must not join that denominator: unlike A10 (zero
+acceptable alternatives, a true domain-gated abstention), returning one of
+A09/A12's labeled alternatives is *correct*, so scoring it as a failed
+abstention would invert the label. That makes **three** scoring roles, not two —
+required-set / precision-only / abstention — now stated in spec §8.3 metric 3.
+Verified: all 39 probes, every label and slug, all five thresholds and every
+aggregation rule byte-identical to the ratified version; totals still 89
+relevant / 216 acceptable.
+
 ---
 
 ## Closed

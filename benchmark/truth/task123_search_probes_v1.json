@@ -707,7 +707,9 @@
         "henry-singleton",
         "uber-cannibals"
       ],
-      "relevance_notes": "THE hard probe (D10 thin-title ceiling 0/3; #122: never resolves). Only 3 excerpt-visible Munger mentions; draft marks the Pabrai-life-lessons summary relevant (Munger discussed), the other 2 as alternatives. Joseph: is a thin 1-3-page relevant set right, or is honest empty acceptable here?"
+      "relevance_notes": "THE hard probe (D10 thin-title ceiling 0/3; #122: never resolves). Only 3 excerpt-visible Munger mentions; draft marks the Pabrai-life-lessons summary relevant (Munger discussed), the other 2 as alternatives. Joseph: is a thin 1-3-page relevant set right, or is honest empty acceptable here?",
+      "scoring_role": "precision_only",
+      "scoring_note": "No required set: adjudication moved every candidate to acceptable_alternatives, answering the drafted question as 'nothing here is required, several returns are fine'. Enters precision@5 (spec §8.3 metric 3); excluded from class-A recall (it asserts no recall to fail) and from the semantic-abstention denominator (returning a labeled acceptable alternative is correct here, so scoring it as a failed abstention would invert the label). Distinct from A10, which has zero acceptable alternatives and is a true domain-gated abstention."
     },
     {
       "probe_id": "A10",
@@ -889,7 +891,9 @@
         "summary-warren-buffett-how-to-analyze-a-balance-sheet",
         "buffett-balance-sheet-rules"
       ],
-      "relevance_notes": "Single excerpt-visible mention (the source's own summary page — Chipotle is its case study). World-knowledge vs evidence divergence: is the article composite relevant? Adjudicate."
+      "relevance_notes": "Single excerpt-visible mention (the source's own summary page — Chipotle is its case study). World-knowledge vs evidence divergence: is the article composite relevant? Adjudicate.",
+      "scoring_role": "precision_only",
+      "scoring_note": "No required set: adjudication moved every candidate to acceptable_alternatives, answering the drafted question as 'nothing here is required, several returns are fine'. Enters precision@5 (spec §8.3 metric 3); excluded from class-A recall (it asserts no recall to fail) and from the semantic-abstention denominator (returning a labeled acceptable alternative is correct here, so scoring it as a failed abstention would invert the label). Distinct from A10, which has zero acceptable alternatives and is a true domain-gated abstention."
     },
     {
       "probe_id": "A13",
@@ -2341,7 +2345,23 @@
         "budget_exceeded_post_call_input",
         "budget_exceeded_post_call_output"
       ],
-      "acceptable_alternatives": "recall-neutral and precision-acceptable"
+      "acceptable_alternatives": "recall-neutral and precision-acceptable",
+      "class_a_precision_only_probes": [
+        "A09",
+        "A12"
+      ]
     }
-  }
+  },
+  "amendments": [
+    {
+      "date": "2026-07-26",
+      "decided_by": "joseph",
+      "applied_by": "opus5",
+      "scope": "annotation_only",
+      "labels_changed": false,
+      "gates_changed": false,
+      "summary": "Marked A09 and A12 scoring_role: precision_only and named them in gates.metric_rules.class_a_precision_only_probes. Both were exported as scored class-A probes with zero relevant slugs but non-empty acceptable_alternatives, so they contributed to neither side of micro class-A recall while carrying no marker saying that was intended. Arithmetically harmless, but indistinguishable from an oversight to a later reader. No label, slug, threshold or aggregation rule was altered.",
+      "prior_sha256": "sha256:11cccd09c34ca514509b9977adaac01afedd8e3ed69a78295bc99d2ebef90b7e"
+    }
+  ]
 }
