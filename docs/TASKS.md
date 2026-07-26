@@ -50,10 +50,15 @@ must not be used as the authoritative list.
 | 124 | open | `token_overrun` / truncation predicates miss gemini's `MAX_TOKENS` stop reason | Filed 2026-07-26 out of #123's v0.9 confirmation round (codex P2; both panel seats concur it is a live defect needing its own ID rather than a fix inside #123's feature diff — changing shared telemetry there would mix a pre-existing defect and a watched-series re-baseline into semantic search). **Defect:** `common/llm_telemetry.py:152` computes `token_overrun = stop_reason in ("max_tokens", "length")` and `compiler/compiler.py:411` gates its truncation terminal on the same tuple, but `_call_gemini` surfaces the enum *value* — uppercase `"MAX_TOKENS"` (`common/call_model.py:250-254`). **Consequence: gemini truncation is invisible to `token_overrun` and to the compiler's truncation guard for pass-1 and pass-2 today**, and gemini-3.6-flash is the current interim default. Scope: decide whether normalization becomes a shared `common.call_model` boundary primitive (returning both raw and normalized) or stays consumer-side; table-test every pool route; note that fixing it **re-baselines a watched KPI series**, so the change needs its own before/after record. Must preserve `compiler.py:405-411`'s ruling that a cap stop is carrier metadata, not proof of absence (`test_compiler_recovery.py:200-224`). Sequenced after #123. |
 | —  | open          | Resolve `Open-1..Open-8` in `docs/CODEBASE_OVERVIEW.md`       | Tracked there, not here. Target: close before end of M2                                       |
 
-Task #123 progress note (2026-07-26): Joseph selected and smoke-verified the
-static D7 localhost reviewer (`tools/task123_probe_adjudicator.html`). It reads
-the frozen truth artifacts, autosaves only to browser state, and downloads a
-new adjudicated v1 JSON without overwriting the draft.
+Task #123 D7 progress note (2026-07-26): Joseph selected and smoke-verified the
+static D7 localhost reviewer (`tools/task123_probe_adjudicator.html`), then
+completed all 39 probe labels and 14 special-outcome confirmations. The
+canonical fixture-valid result is `benchmark/truth/task123_search_probes_v1.json`
+(review/export record: `docs/superpowers/specs/task123_search_probes_v1.json`).
+The final policy is diagnostic: micro Class-A and Stage-1 aggregation, Class
+E+A10 abstention denominator, M=5 watched; the three relevance floors are 0%
+and the selector-failure ceiling is 100%. Escaped foreign identities remain
+zero-tolerance. No live selector experiment was run by this adjudication.
 
 ---
 
