@@ -93,15 +93,53 @@ terminator must be the final line. That holds for any injection, including ones
 no fixture anticipated — tested per-field and with every field injected at once.
 
 ### P1.2 — response salvage + accounting (`response.py`) → `test_response.py`
-- [ ] Four-way response classification, exactly one applies: `unparseable_response`, `structurally_unusable_response`, `all_entries_dropped`, and `selections: []` as **honest-empty completed**
-- [ ] Joseph's 6-of-10 rule as a table: per-entry drop (foreign slug, malformed entry), never wholesale discard
-- [ ] Per-field coerce: out-of-range `matched` index removed; duplicate slug keep-first; duplicate `matched` index deduped; over-cap truncate in returned order
-- [ ] Controller-computed expression accounting + `selector_accounting_delta`
-- [ ] Annotations: `cap_exhausted_possible` when `len(hits) == max_results`; `unattributed_hit_count` + `unattributed_possible`
-- [ ] `valid_entry_yield = valid/returned`, **`None` when returned = 0** (D9.6 — a truncated attempt never enters the denominator)
-- [ ] `attempted_violations{foreign_slug, malformed_entry, unknown_expression, duplicate_slug, over_cap}`
-- [ ] Stage-1 (thin) validation = the identical per-entry rule on the retained-slug list
-- [ ] Every numeric maximum tested **at its bound**
+- [x] Four-way response classification, exactly one applies: `unparseable_response`, `structurally_unusable_response`, `all_entries_dropped`, and `selections: []` as **honest-empty completed**
+- [x] Joseph's 6-of-10 rule as a table: per-entry drop (foreign slug, malformed entry), never wholesale discard
+- [x] Per-field coerce: out-of-range `matched` index removed; duplicate slug keep-first; duplicate `matched` index deduped; over-cap truncate in returned order
+- [x] Controller-computed expression accounting + `selector_accounting_delta`
+- [x] Annotations: `cap_exhausted_possible` when `len(hits) == max_results`; `unattributed_hit_count` + `unattributed_possible`
+- [x] `valid_entry_yield = valid/returned`, **`None` when returned = 0** (D9.6 — a truncated attempt never enters the denominator)
+- [x] `attempted_violations{foreign_slug, malformed_entry, unknown_expression, duplicate_slug, over_cap}`
+- [x] Stage-1 (thin) validation = the identical per-entry rule on the retained-slug list
+- [x] Every numeric maximum tested **at its bound**
+
+**Three calls made here, none of which the spec settles:**
+
+1. **Truncation runs after salvage.** Spec §2.3 says over-cap "truncate to
+   `max_results` in returned order" without fixing whether it precedes or follows
+   per-entry validation. Following: 60 returned with 20 foreign yields 40 good
+   hits; preceding yields ~33. R1 says take the content, so validation goes
+   first. `over_cap` is still counted against the *returned* length — that is what
+   the selector attempted. Pinned by a test; mutating the order fails 2 tests.
+
+2. **`matched_expressions` is in canonical index order, not emission order.**
+   `matched` carries no ranking claim among expressions, and canonicalizing means
+   two responses attributing the same set produce identical `Hit`s — which the
+   `artifact_integrity_hash` and replay comparison both depend on. (Returned order
+   *is* authoritative for duplicate-slug resolution; different question.)
+
+3. **`all_entries_dropped` has a yield of 0.0, not `None`.** It returned entries,
+   so the denominator exists — D9.6's `None` is specifically for *no entry
+   population*, which is a truncated/unparseable attempt or an honest empty.
+   Collapsing the two would hide a systematically-hallucinating model inside the
+   same bucket as a clean abstention.
+
+**Identity never comes off the wire.** The response carries slugs; titles and
+page types are read from the search space, so a response echoing
+`{"slug": "owner-earnings", "title": "ATTACKER"}` cannot influence what is
+returned. This is also what makes the §8.4 escaped-foreign-identity gate hold at
+**0 by construction** rather than by measurement — asserted over a hostile mix
+(near-miss slug, 500-byte slug, empty string, `../../etc/passwd`, case variant).
+
+**Mutation-verified.** Eight mutations of the load-bearing behaviours were each
+confirmed to fail the suite: keep-last instead of keep-first, truncate-before-
+salvage, membership check removed, `0.0` instead of `None` at zero returned,
+out-of-range index invalidating the whole hit, advisory list becoming the
+accounting authority, and the thin cap skipped. The ninth initially **passed** —
+`bool` not excluded from wire indices — because the parametrized cases covered
+`None`/`"0"`/`1.5` but not `True`. `bool` is an `int` subclass, so `[true]` would
+have silently attributed the hit to expression 1: a *wrong* attribution that looks
+like a correct one. Now covered for both `matched` and the advisory list.
 
 ### P1.3 — budget estimator (`budget.py`) → `test_budget.py` + `test_zero_escape.py`
 - [ ] §7.0 constants module: `M`, `max_results`, `MAX_EXPRESSIONS`, separators tuple, index base, ceilings, allowances, `HIDDEN_OUTPUT_RESERVE`, provider `max_tokens`
