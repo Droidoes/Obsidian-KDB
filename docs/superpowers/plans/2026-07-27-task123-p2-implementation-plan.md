@@ -704,9 +704,34 @@ accept a slug the selector was never shown, quietly widening the closed-world gu
 run had. Thin's pool *is* the manifest; both directions are tested.
 
 ### P2.7 — adversarial fixtures + close-out → `test_adversarial.py`
-- [ ] H01 / H02 evidence-side injection (system-block precedence: evidence is subject matter,
-      never directives)
-- [ ] H03 query-side (P10) — the query-side indent guard fixture
+- [x] H01 / H02 evidence-side injection (system-block precedence: evidence is subject matter,
+      never directives) — 5 payloads × both sides, each a **different mechanism** rather than a
+      variation: an imperative (the spec's own example), a forged section header, a forged block
+      delimiter, a template slot, a forged system turn.
+- [x] H03 query-side (P10) — the query-side indent guard fixture, over every unbounded field rather
+      than `summary` alone, plus the end-to-end case showing an injected query reaches the QUERY slot
+      and cannot appear in the evidence region.
+
+**Each fixture asserts TWO things, and the second is the one that matters.** We cannot make a model
+ignore an instruction; what is ours is (1) **structural containment** — injected text arrives as
+content, at content indent, with the SYSTEM half byte-identical to the template and no slot
+substituted — and (2) **output-side fail-closed**: every fixture *also* scripts a selector that
+**obeys** the injection, and asserts nothing foreign leaves the function. Testing only (1) proves the
+prompt is tidy while leaving a compromised selector unexercised; testing only (2) proves the
+validator works while letting the prompt structure rot. Spec §102's guarantee is output-side for
+exactly this reason.
+
+**One assertion had to be rewritten after it failed for the right reason.** The first pass tested
+"no `QUERY:` at column 0" — which fails on a *clean* render, because the template legitimately has
+one there. The checkable claim is that an injection cannot **add** one, so every structural fixture
+now compares against a benign control render. Same for the block delimiter: the block legitimately
+closes with `  """` per entity, so the assertion is that the injected one is the only `"""` at
+*content* indent.
+
+**One recorded non-finding:** `Hit.title` carries the space's value verbatim, line breaks included.
+Sanitization is a **render-side** containment measure (`_single_line`), deliberately not a mutation
+of the data — a search result that silently rewrote a title would report something the vault does not
+contain. Containment governs the prompt; the result reports the world.
 - [x] **H04 — the identity-line indent asymmetry. FIXED in P2.1a (Joseph authorized 2026-07-27),
       not deferred to a fixture here.** Found while writing P2.1a, then made codex's F2.
       `projection._scalar_lines` splits a field value on `"\n"` and indents every continuation line,
@@ -736,9 +761,38 @@ run had. Thin's pool *is* the manifest; both directions are tested.
       every line-based test reasons in. 50 regression tests, every field × every boundary; the anomaly is deliberately **not**
       counted — no consumer, and unlike `delimiter_collision_guard` the anomaly is removed rather
       than left in place.
-- [ ] Full suite green; mutation-check the two behaviours with no other coverage (the D10 ordering
-      assertion and the stop-reason normalization) per standing repo practice
-- [ ] Update `docs/TASKS.md`, this plan's checkboxes, and blueprint §11's P2 row on closure
+- [x] Full suite green; mutation-check the two behaviours with no other coverage (the D10 ordering
+      assertion and the stop-reason normalization) per standing repo practice — **8/8 caught**, the
+      two named behaviours plus four P10 containment mutations that the new fixtures are what catch
+      (identity fields no longer single-lined; excerpt lines no longer indented; single-pass
+      substitution replaced by sequential `str.replace`; query-block continuation lines unindented).
+      Both D10 swaps are caught at both stages.
+- [x] Update `docs/TASKS.md`, this plan's checkboxes, and blueprint §11's P2 row on closure
+
+## P2 CLOSED — 2026-07-28
+
+Repo suite **2,513 → 3,021**. Every sub-phase P2.0–P2.7 closed, every behaviour mutation-swept
+(P2.1f 12, P2.2 18, P2.3 28, P2.4 27, P2.6 14, P2.7 8), and the §8 branch table verified as an
+oracle independent of the flow tests that produced it.
+
+**Two items carried OUT of P2 for the owner, neither blocking:**
+
+1. **The audit-delivery surface.** `graph_search` builds `SearchAuditPayload` on every path and does
+   not return it — ratified §1.1 fixes `GraphSearchResult` at seven fields and `audit` is not one, so
+   blueprint §2.1's "audit (always, §6)" is an obligation, not a field. Only
+   `telemetry.search_snapshot_hash` is surfaced. **The adapter (P3a) needs the whole payload to write
+   its envelope**, so a surface has to be decided; it changes a public signature, which wants a
+   ratification rather than an inference. Nothing built in P2 presupposes an answer — P2.5 and P2.6's
+   tests reach the payload through pass-through recorders and survive any choice.
+2. **`FAT_INPUT_ESTIMATION_MISS_ON_F1`** — the matrix extension added in P2.4 for a reachable state
+   the ratified text has no row for. Marked EXTENSION, NOT RATIFIED TEXT in its own note.
+
+**Also still open from P2.1a, off the critical path:** `SYSTEM_TEMPLATE_BUDGET_BYTES` 3,072 → 4,096
+(74 B headroom; both reviewers recommend it, blueprint v0.15 first).
+
+**Next gate: D5 calibration — Joseph fires it** (§7 usage-reported measurement, one non-comparative
+call per candidate, 3-call ceiling; measurements to the sibling calibration artifact, fixture
+manifest untouched). P2.1f's pins are frozen, which was its precondition.
 
 ### Gate — calibration (end of P2, **Joseph fires** — D5, ledger #11)
 - [ ] §7 usage-reported measurement, one non-comparative call per candidate (3-call ceiling)
