@@ -5,7 +5,8 @@ other module and every test derives from these names, never from a figure copied
 out of a document. That rule exists because four consecutive confirmation rounds
 each caught a stale restatement, and the round that added §7.0a shipped a byte
 figure computed from an unnamed serializer (one-based indices under
-`separators=(",", ": ")`, where the contract is zero-based compact).
+`separators=(",", ": ")`, where the contract of the day was zero-based compact —
+since replaced by letter labels, D11).
 """
 
 from common.paths import MAX_SLUG_LEN  # noqa: F401  — re-exported: one slug bound, not two
@@ -22,7 +23,7 @@ M = 100
 MAX_RESULTS = 50
 
 #: Declared in the core QueryPayload (D9) — the sole derivation source for the
-#: wire's index caps, the index digit width and the FAT allowance. pass-1.5
+#: wire's label caps, the label vocabulary and the FAT allowance. pass-1.5
 #: satisfies it by construction (`entity_search_keys` maxItems: 10), but the
 #: bound is the core's, not the adapter's: R2 forbids per-consumer contracts.
 MAX_EXPRESSIONS = 10
@@ -42,10 +43,51 @@ MAX_ATTEMPTS_PER_STAGE = 2
 #: serializer is precisely what produced the superseded 12,315/8,404 figures.
 WIRE_JSON_SEPARATORS = (",", ":")
 
-#: Expression indices on the wire are zero-based — `[0, len(expressions))`
-#: (spec §2.3). The digit width in the exact-maxima computation follows from
-#: this plus MAX_EXPRESSIONS.
-WIRE_INDEX_BASE = 0
+#: Expressions are addressed on the wire by **letter key-label** — `A`, `B`, … —
+#: not by index (D11, replacing D8's zero-based `WIRE_INDEX_BASE = 0`). A letter
+#: is not an ordinal, so the 0-vs-1 base ambiguity — a *protocol* ambiguity that
+#: produces a *systematic* mis-attribution rather than a visible error — ceases
+#: to exist. It also unifies the wire under one rule: every identifier the
+#: selector returns is a verbatim echo of something printed in the prompt (slugs
+#: already were; indices had to be computed from position).
+WIRE_LABEL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def expression_labels(count: int) -> tuple[str, ...]:
+    """The wire labels for `count` expressions, in request order.
+
+    The single derivation source for the rendered markers (`projection.py`), the
+    accepted response vocabulary (`response.py`) and the exact-maxima documents
+    (`budget.py`) — so no caller can drift from another.
+
+    Bounded by the alphabet rather than extended to `AA`: `MAX_EXPRESSIONS` is 10
+    and the FAT allowance is exceeded at 14 labels (§7.0a), so the byte bound
+    binds long before the alphabet does. A multi-letter scheme would be untested
+    reach for a case the contract already forbids.
+    """
+    if not 0 <= count <= len(WIRE_LABEL_ALPHABET):
+        raise ValueError(
+            f"{count} expressions cannot be labelled: the wire alphabet holds "
+            f"{len(WIRE_LABEL_ALPHABET)} (MAX_EXPRESSIONS={MAX_EXPRESSIONS})"
+        )
+    return tuple(WIRE_LABEL_ALPHABET[:count])
+
+
+def wire_vocabulary(count: int) -> tuple[str, ...]:
+    """The labels a response may legitimately carry, for a request of `count`
+    expressions — the lenient sibling of `expression_labels()`, sharing its one
+    alphabet so the two cannot drift.
+
+    **Total where `expression_labels()` raises**, deliberately. An over-long
+    request is refused at request validation (`QueryPayload` ⇒
+    `InvalidGraphSearchRequest(code="max_expressions_exceeded")`), which is where
+    D9.2 puts that bound, so this branch is unreachable in production. It is total
+    anyway because the response path carries §2.3's contract that **a parseable
+    response is never discarded** — and discarded-by-exception is still discarded.
+    Raising belongs on the render and exact-maxima paths, which state a maximum;
+    salvage states the opposite.
+    """
+    return tuple(WIRE_LABEL_ALPHABET[:count])
 
 # ---------------------------------------------------------------------------
 # projection ceilings

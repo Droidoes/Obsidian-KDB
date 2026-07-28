@@ -25,7 +25,7 @@ from .constants import (
     EXCERPT_WORD_CAP,
     QUERY_BLOCK_CEILING_BYTES,
     QUERY_FIELD_ALLOCATIONS,
-    WIRE_INDEX_BASE,
+    expression_labels,
 )
 from .types import SpaceEntity
 
@@ -178,7 +178,7 @@ class RenderedQuery:
 
     text: str
     #: The expressions AS RENDERED — after per-item truncation. Expression
-    #: accounting resolves the wire's `matched` indices against these, never
+    #: accounting resolves the wire's `matched` labels against these, never
     #: against the caller's originals: §3.1's "accounting runs over the rendered
     #: expressions — what the selector saw". Always populated, truncation or not,
     #: because the consumer needs it on every path.
@@ -267,8 +267,9 @@ def render_query_block(
     # Per-item, so a single oversized key never costs another key its place.
     per_item = QUERY_FIELD_ALLOCATIONS["entity_search_keys_per_item"]
     fitted_expressions, expression_drop = [], 0
-    for index, expression in enumerate(expressions):
-        marker = f"{index + WIRE_INDEX_BASE}. "
+    labels = expression_labels(len(expressions))
+    for label, expression in zip(labels, expressions):
+        marker = f"{label}. "
         fitted, dropped = _fit(lambda v, m=marker: _item_lines(m, v), expression, per_item)
         fitted_expressions.append(fitted)
         expression_drop += dropped
@@ -302,8 +303,8 @@ def render_query_block(
                 lines += _item_lines("- ", theme)
         if fitted_expressions:
             lines.append(f"{_FIELD_INDENT}entity_search_keys:")
-            for index, expression in enumerate(fitted_expressions):
-                lines += _item_lines(f"{index + WIRE_INDEX_BASE}. ", expression)
+            for label, expression in zip(labels, fitted_expressions):
+                lines += _item_lines(f"{label}. ", expression)
         if summary_text:
             lines.append(f"{_FIELD_INDENT}summary: {_DELIMITER}")
             lines += [_INDENT + line for line in summary_text.split("\n")]

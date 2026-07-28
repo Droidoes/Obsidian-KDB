@@ -254,7 +254,8 @@ from kdb_search.constants import (  # noqa: E402
     MAX_EXPRESSIONS,
     QUERY_BLOCK_CEILING_BYTES,
     QUERY_FIELD_ALLOCATIONS,
-    WIRE_INDEX_BASE,
+    WIRE_LABEL_ALPHABET,
+    expression_labels,
 )
 from kdb_search.projection import render_query_block  # noqa: E402
 
@@ -275,8 +276,8 @@ def test_query_block_grammar_is_exact():
         "    - moats\n"
         "    - owner earnings\n"
         "  entity_search_keys:\n"
-        "    0. warren-buffett\n"
-        "    1. berkshire\n"
+        "    A. warren-buffett\n"
+        "    B. berkshire\n"
         '  summary: """\n'
         "    One two.\n"
         "    Three four.\n"
@@ -285,13 +286,27 @@ def test_query_block_grammar_is_exact():
     assert r.query_truncated == {}
 
 
-def test_expression_numbering_is_derived_from_the_wire_index_base():
-    """A one-based query against a zero-based wire offsets every `matched` index
-    by one, and coerce-drop then silently eats a hit. The rendering is derived
-    from WIRE_INDEX_BASE, never written as a literal."""
+def test_expression_labelling_is_derived_from_the_wire_alphabet():
+    """The markers are derived from `expression_labels()`, never written as
+    literals — one derivation source for the rendered marker, the accepted
+    response vocabulary and the exact-maxima documents, so no caller can drift
+    from another. (D11 replaced numbering, whose 0-vs-1 base was a *protocol*
+    ambiguity: a one-based query against a zero-based wire offsets every
+    attribution by one and coerce-drop then silently eats a hit.)"""
     r = render_query_block(summary="s", expressions=("a", "b", "c"))
-    numbered = [line.strip() for line in r.text.split("\n") if re.match(r"^\s+\d+\. ", line)]
-    assert numbered == [f"{WIRE_INDEX_BASE + i}. {slug}" for i, slug in enumerate("abc")]
+    labelled = [line.strip() for line in r.text.split("\n") if re.match(r"^\s+[A-Z]\. ", line)]
+    assert labelled == [f"{label}. {slug}" for label, slug in zip(expression_labels(3), "abc")]
+    assert labelled == ["A. a", "B. b", "C. c"]
+
+
+def test_a_label_marker_costs_the_same_bytes_as_an_index_marker():
+    """Why no allowance or ceiling moves on the INPUT side: `"A. "` and `"0. "` are
+    both 3 B. D11's growth is entirely response-side quoting, so
+    `QUERY_BLOCK_CEILING_BYTES`, the per-field allocations, the 257 kB input bound
+    and the 283k static guarantee all stand unchanged."""
+    labels = render_query_block(summary="s", expressions=("a", "b", "c"))
+    assert len(labels.text.encode()) == len(labels.text.encode().replace(b"A. ", b"0. "))
+    assert all(len(label.encode()) == 1 for label in WIRE_LABEL_ALPHABET)
 
 
 def test_absent_fields_emit_no_field_line():
@@ -314,7 +329,7 @@ def test_author_is_truncated_to_its_allocation_and_counted():
 def test_each_expression_is_truncated_per_item_not_in_aggregate():
     per_item = QUERY_FIELD_ALLOCATIONS["entity_search_keys_per_item"]
     r = render_query_block(summary="s", expressions=tuple("k" * 500 for _ in range(MAX_EXPRESSIONS)))
-    items = [line for line in r.text.split("\n") if re.match(r"^\s+\d+\. ", line)]
+    items = [line for line in r.text.split("\n") if re.match(r"^\s+[A-Z]\. ", line)]
     assert len(items) == MAX_EXPRESSIONS, "per-item truncation never drops an expression"
     for line in items:
         assert len(line.encode()) + 1 <= per_item
@@ -496,7 +511,7 @@ def test_bounded_field_allocations_leave_room_for_a_summary():
 # --- rendered forms: what the selector actually saw -------------------------
 
 def test_rendered_expressions_are_always_available_and_reflect_truncation():
-    """Expression accounting resolves the wire's `matched` indices against these.
+    """Expression accounting resolves the wire's `matched` labels against these.
     Against the caller's originals it would attribute a hit to a string the
     selector never saw — silently, and only for oversized keys."""
     keys = ("short-key", "k" * 500)

@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from .constants import MAX_EXPRESSIONS
+from .constants import MAX_EXPRESSIONS, wire_vocabulary
 from .types import Hit, SpaceEntity
 
 #: `usable` covers both a populated selection and the honest empty — spec §2.3's
@@ -63,8 +63,8 @@ class Violations:
 class ValidatedResponse:
     classification: ResponseClass
     hits: tuple[Hit, ...]
-    #: The selector's advisory `unresolved`, bounded and de-duplicated — INPUT to
-    #: accounting, never its authority.
+    #: The selector's advisory `unresolved`, decoded from wire labels to positions,
+    #: bounded and de-duplicated — INPUT to accounting, never its authority.
     advisory_unresolved: tuple[int, ...]
     attempted_violations: Violations
     #: Entries the selector returned, before validation — `valid_entry_yield`'s
@@ -113,26 +113,40 @@ def _parse(raw: str) -> tuple[object | None, ResponseClass | None]:
         return None, "unparseable_response"
 
 
-def _bounded_indices(values: object, expression_count: int) -> tuple[tuple[int, ...], int]:
-    """Coerce a wire index list to unique, in-range, `MAX_EXPRESSIONS`-bounded
-    indices. Returns the indices and the count of unknown-expression coercions.
+def _bounded_labels(values: object, expression_count: int) -> tuple[tuple[int, ...], int]:
+    """Decode a wire label list to unique, in-range, `MAX_EXPRESSIONS`-bounded
+    positions. Returns the positions and the count of unknown-expression coercions.
 
-    `bool` is excluded deliberately: it is an `int` subclass in Python, and
-    `True` would otherwise silently address expression 1.
+    **Labels, not indices (D11).** The wire carries `"A"`, `"B"`, … — a verbatim
+    echo of the marker printed beside each expression. Positions are an internal
+    representation the wire never sees, which is why D8's `isinstance(bool)` guard
+    is gone rather than kept: it existed because `bool` is an `int` subclass, so
+    `True` silently addressed expression 1. A `bool` is not a `str`, so the same
+    input is now an ordinary unknown-expression coercion — the guard's whole
+    concern is what letters remove.
+
+    Case is coerced, not counted: `"a"` has exactly one deterministic reading, and
+    the project's rule is to normalize a benign deviation rather than drop it.
+
+    Uses `wire_vocabulary` rather than `expression_labels`: this path must never
+    raise, or a parseable response would be discarded by exception (see the
+    constant's docstring).
     """
     if not isinstance(values, list):
         return (), 0
+    positions = {label: i for i, label in enumerate(wire_vocabulary(expression_count))}
     seen: list[int] = []
     unknown = 0
     for value in values:
-        if isinstance(value, bool) or not isinstance(value, int):
+        if not isinstance(value, str):
             unknown += 1
             continue
-        if not 0 <= value < expression_count:
+        position = positions.get(value.upper())
+        if position is None:
             unknown += 1
             continue
-        if value not in seen:
-            seen.append(value)
+        if position not in seen:
+            seen.append(position)
     return tuple(seen[:MAX_EXPRESSIONS]), unknown
 
 
@@ -175,7 +189,7 @@ def validate_response(
             # The selector's own returned order is the authority: first wins.
             violations += Violations(duplicate_slug=1)
             continue
-        indices, unknown = _bounded_indices(entry.get("matched"), len(expressions))
+        positions, unknown = _bounded_labels(entry.get("matched"), len(expressions))
         violations += Violations(unknown_expression=unknown)
         kept.add(slug)
         hits.append(
@@ -183,7 +197,7 @@ def validate_response(
                 slug=entity.slug,
                 title=entity.title,
                 page_type=entity.page_type,
-                matched_expressions=tuple(expressions[i] for i in sorted(indices)),
+                matched_expressions=tuple(expressions[i] for i in sorted(positions)),
             )
         )
 
@@ -194,7 +208,7 @@ def validate_response(
     # (R1: keep the most content a valid response can give us).
     hits = hits[:max_results]
 
-    advisory, advisory_unknown = _bounded_indices(document.get("unresolved"), len(expressions))
+    advisory, advisory_unknown = _bounded_labels(document.get("unresolved"), len(expressions))
     violations += Violations(unknown_expression=advisory_unknown)
 
     classification: ResponseClass = (

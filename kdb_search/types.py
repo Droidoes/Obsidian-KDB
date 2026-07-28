@@ -124,7 +124,8 @@ BudgetSide = Literal["input", "output"]
 class Hit:
     """Every hit is LLM-selected — there is no deterministic path anywhere in
     this contract. `matched_expressions` is resolved controller-side from the
-    wire's `matched` indices (D8) and may be empty (an unattributed hit)."""
+    wire's `matched` labels (D8 as amended by D11) and may be empty (an
+    unattributed hit)."""
 
     slug: str
     title: str

@@ -41,8 +41,8 @@ from .constants import (
     SYSTEM_TEMPLATE_BUDGET_BYTES,
     VISIBLE_OUTPUT_ALLOWANCE_FAT,
     VISIBLE_OUTPUT_ALLOWANCE_THIN,
-    WIRE_INDEX_BASE,
     WIRE_JSON_SEPARATORS,
+    expression_labels,
 )
 from .types import SearchConfigError
 
@@ -101,8 +101,8 @@ def _dump(obj: object) -> str:
     return json.dumps(obj, separators=WIRE_JSON_SEPARATORS, ensure_ascii=False)
 
 
-def _max_indices(expression_count: int) -> list[int]:
-    return list(range(WIRE_INDEX_BASE, WIRE_INDEX_BASE + expression_count))
+def _max_labels(expression_count: int) -> list[str]:
+    return list(expression_labels(expression_count))
 
 
 def schema_maximum_thin_document(*, retained: int = M) -> str:
@@ -116,11 +116,11 @@ def schema_maximum_fat_document(
     """Every value at its declared maximum. `expressions` is a parameter because
     the FAT maximum is a FUNCTION of `MAX_EXPRESSIONS`, not a free constant — which
     is precisely why D9 moved that bound into the core contract."""
-    indices = _max_indices(expressions)
+    labels = _max_labels(expressions)
     return _dump(
         {
-            "selections": [{"slug": "x" * MAX_SLUG_LEN, "matched": indices}] * selections,
-            "unresolved": indices,
+            "selections": [{"slug": "x" * MAX_SLUG_LEN, "matched": labels}] * selections,
+            "unresolved": labels,
         }
     )
 

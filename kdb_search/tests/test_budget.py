@@ -6,7 +6,7 @@ is arithmetic and contract: the exact serialized maxima, the four envelope
 quantities, route preconditions, and the M=100 static guarantee.
 
 The synthetic schema-maximum documents are the executable authority for §7.0a.
-They are built mechanically from `WIRE_JSON_SEPARATORS`, `WIRE_INDEX_BASE` and
+They are built mechanically from `WIRE_JSON_SEPARATORS`, `expression_labels()` and
 `MAX_EXPRESSIONS` — never from a byte figure copied out of the blueprint. That
 rule exists because §7.0a itself once shipped an integer derived from an unnamed
 serializer.
@@ -51,8 +51,9 @@ from kdb_search.constants import (
     SYSTEM_TEMPLATE_BUDGET_BYTES,
     VISIBLE_OUTPUT_ALLOWANCE_FAT,
     VISIBLE_OUTPUT_ALLOWANCE_THIN,
-    WIRE_INDEX_BASE,
     WIRE_JSON_SEPARATORS,
+    WIRE_LABEL_ALPHABET,
+    expression_labels,
 )
 from kdb_search.types import InvalidGraphSearchRequest, QueryPayload, SearchConfigError
 
@@ -92,9 +93,13 @@ def test_thin_exact_max_is_12314_bytes_and_fits_its_allowance():
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_THIN, "tokens <= bytes <= allowance"
 
 
-def test_fat_exact_max_is_8251_bytes_and_fits_its_allowance():
+def test_fat_exact_max_is_9271_bytes_and_fits_its_allowance():
+    """D11: letter labels quote where indices did not — `"A"` costs 3 B against
+    `0`'s 1 B, over 51 label lists (50 selections + `unresolved`) = +1,020 B, so
+    8,251 -> 9,271. The allowance stays 10,000: 9,271 <= 10,000 is a proof under
+    `tokens_lte_bytes`, and raising it would eat the static guarantee's spare."""
     exact = exact_max_visible_bytes("fat")
-    assert exact == 8_251, f"fat exact max moved: {exact}"
+    assert exact == 9_271, f"fat exact max moved: {exact}"
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_FAT
 
 
@@ -104,38 +109,60 @@ def test_the_thin_document_is_built_from_the_declared_maxima():
     assert {len(slug) for slug in document["retained"]} == {MAX_SLUG_LEN}
 
 
-def test_the_fat_document_is_built_from_the_declared_maxima_and_zero_based_indices():
+def test_the_thin_maximum_is_unmoved_by_labels():
+    """D11 touches only expression addressing, and thin's wire carries none —
+    it is a retained-slug list. Pinned so a future reader cannot read the fat
+    move as a change to the whole wire."""
+    assert exact_max_visible_bytes("thin") == 12_314
+
+
+def test_the_fat_document_is_built_from_the_declared_maxima_and_letter_labels():
     document = json.loads(schema_maximum_fat_document())
     assert len(document["selections"]) == MAX_RESULTS
-    assert document["unresolved"] == list(range(WIRE_INDEX_BASE, WIRE_INDEX_BASE + MAX_EXPRESSIONS))
-    assert document["selections"][0]["matched"][0] == WIRE_INDEX_BASE == 0
-    assert max(document["selections"][0]["matched"]) == MAX_EXPRESSIONS - 1
+    assert document["unresolved"] == list(expression_labels(MAX_EXPRESSIONS))
+    assert document["selections"][0]["matched"] == ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
 
 
 @pytest.mark.parametrize(
     "expressions,expected,fits",
-    [(10, 8_251, True), (20, 9_781, True), (21, 9_934, True), (22, 10_087, False), (50, 14_371, False)],
+    [(10, 9_271, True), (13, 9_883, True), (14, 10_087, False), (22, 11_719, False), (26, 12_535, False)],
 )
 def test_the_fat_maximum_is_a_function_of_max_expressions(expressions, expected, fits):
-    """The ratified break-even table (§7.0a, corrected at v0.11). The 10/22 pair is
-    the load-bearing one: a fits/exceeds contrast. The superseded `20 => 10,414`
-    point would have shipped a test whose two data points BOTH fit — demonstrating
-    nothing about the bound it existed to pin."""
+    """The break-even table (§7.0a, re-derived at v0.16 for D11's labels). The
+    10/14 pair is the load-bearing one: a fits/exceeds contrast. A pair where both
+    points fit would ship a test demonstrating nothing about the bound it exists to
+    pin — the defect codex caught in the superseded `10/20` pair."""
     exact = exact_max_visible_bytes("fat", expressions=expressions)
     assert exact == expected, f"{expressions} expressions => {exact}, table says {expected}"
     assert (exact <= VISIBLE_OUTPUT_ALLOWANCE_FAT) is fits
 
 
-def test_the_break_even_is_22_expressions_not_15():
-    """Pins the v0.11 correction itself. The superseded ~15 came from a one-based
-    index list under `separators=(",", ": ")`; nothing at 15 exceeds."""
-    fitting = [n for n in range(1, 40) if exact_max_visible_bytes("fat", expressions=n) <= VISIBLE_OUTPUT_ALLOWANCE_FAT]
-    assert max(fitting) == 21
-    assert exact_max_visible_bytes("fat", expressions=22) > VISIBLE_OUTPUT_ALLOWANCE_FAT
+def test_the_break_even_is_14_labels_not_22():
+    """D11 moved the break-even from 22 expressions to 14 — quoted labels cost
+    2 B each more than single-digit indices. `MAX_EXPRESSIONS = 10` still sits
+    under it, but by 4 rather than by 12, which is why D9.2's argument for a
+    consumer-neutral bound gets STRONGER, not weaker: a P5b CLI/MCP caller now
+    needs only 14 expressions to re-open the truncation chain."""
+    fitting = [
+        n for n in range(1, len(WIRE_LABEL_ALPHABET) + 1)
+        if exact_max_visible_bytes("fat", expressions=n) <= VISIBLE_OUTPUT_ALLOWANCE_FAT
+    ]
+    assert max(fitting) == 13
+    assert exact_max_visible_bytes("fat", expressions=14) > VISIBLE_OUTPUT_ALLOWANCE_FAT
 
 
-def test_max_expressions_stays_far_inside_the_break_even():
-    assert MAX_EXPRESSIONS < 22, "the declared bound must sit under the break-even"
+def test_max_expressions_stays_inside_the_break_even():
+    assert MAX_EXPRESSIONS < 14, "the declared bound must sit under the break-even"
+
+
+def test_the_byte_bound_binds_long_before_the_alphabet_does():
+    """Why `expression_labels` stops at Z instead of extending to `AA`: the
+    allowance is exceeded at 14 labels, so a multi-letter scheme would be untested
+    reach for a case the contract already forbids."""
+    assert exact_max_visible_bytes("fat", expressions=14) > VISIBLE_OUTPUT_ALLOWANCE_FAT
+    assert 14 < len(WIRE_LABEL_ALPHABET)
+    with pytest.raises(ValueError, match="alphabet"):
+        expression_labels(len(WIRE_LABEL_ALPHABET) + 1)
 
 
 # --------------------------------------------------------------------------

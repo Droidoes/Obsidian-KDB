@@ -19,7 +19,12 @@ import random
 
 import pytest
 
-from kdb_search.constants import MAX_EXPRESSIONS, MAX_RESULTS, MAX_SLUG_LEN
+from kdb_search.constants import (
+    MAX_EXPRESSIONS,
+    MAX_RESULTS,
+    MAX_SLUG_LEN,
+    WIRE_LABEL_ALPHABET,
+)
 from kdb_search.response import resolve_accounting, validate_response, validate_thin_retention
 from kdb_search.types import SpaceEntity
 
@@ -51,11 +56,36 @@ FOREIGN_POOL = (
 )
 
 
+#: Wire label values, mixed so the sweep exercises every decode branch. Under
+#: D11 `matched` carries LETTERS, so an all-integer generator would make every
+#: value an unknown-expression coercion — leaving `matched_expressions` uniformly
+#: empty and the partition assertion below passing trivially. A generator whose
+#: values can never resolve tests nothing, so valid and wrong-case labels are
+#: drawn deliberately alongside the hostile ones.
+VALID_LABELS = tuple(WIRE_LABEL_ALPHABET[:MAX_EXPRESSIONS])
+WRONG_CASE_LABELS = tuple(label.lower() for label in VALID_LABELS)  # coerced, not dropped
+UNRESOLVABLE_LABELS = (
+    "Z", "AA", "a1", "", " A", "A ", "A.", "0", "-1",   # not the verbatim echo
+    *(str(i) for i in range(3)),                          # the D8 index form, now foreign
+)
+
+
+def _random_label_list(rng: random.Random) -> list:
+    pool = (
+        VALID_LABELS
+        + WRONG_CASE_LABELS
+        + UNRESOLVABLE_LABELS
+        + (True, False, None, 0, 1, 1.5, [], {"k": "v"})  # wrong-typed
+    )
+    return [rng.choice(pool) for _ in range(rng.randint(0, 12))]
+
+
 def _random_matched(rng: random.Random) -> object:
     return rng.choice(
         [
-            [rng.randint(-5, MAX_EXPRESSIONS + 5) for _ in range(rng.randint(0, 12))],
-            [rng.choice([True, False, None, "0", 1.5])],
+            _random_label_list(rng),
+            [rng.choice(VALID_LABELS)],
+            [rng.choice(WRONG_CASE_LABELS)],
             rng.choice(["not-a-list", 7, {"k": "v"}, None]),
             [],
         ]
@@ -84,8 +114,31 @@ def _random_entry(rng: random.Random) -> object:
 def _random_document(rng: random.Random) -> str:
     body: dict = {"selections": [_random_entry(rng) for _ in range(rng.randint(0, 70))]}
     if rng.random() < 0.6:
-        body["unresolved"] = [rng.randint(-5, MAX_EXPRESSIONS + 5) for _ in range(rng.randint(0, 14))]
+        body["unresolved"] = _random_label_list(rng)
     return json.dumps(body)
+
+
+def test_the_generator_actually_reaches_both_decode_outcomes():
+    """A liveness check on the sweep itself, not on the validator.
+
+    The generator is the sweep's only source of coverage, and a silent way to
+    lose it is for every generated `matched` value to stop resolving — which is
+    exactly what happened when D11 moved the wire from indices to labels while an
+    integer generator stayed behind. The remaining assertions would all still have
+    passed, over a population where no attribution ever survived. So: prove the
+    sweep produces resolved attributions AND coercions before trusting what it
+    says about escapes.
+    """
+    rng = random.Random(99)
+    resolved = coerced = 0
+    for _ in range(400):
+        response = validate_response(
+            _random_document(rng), space=SPACE, expressions=EXPRESSIONS, max_results=MAX_RESULTS
+        )
+        resolved += sum(len(hit.matched_expressions) for hit in response.hits)
+        coerced += response.attempted_violations.unknown_expression
+    assert resolved > 0, "no generated label ever resolved — the sweep tests nothing"
+    assert coerced > 0, "no generated label was ever coerced away"
 
 
 @pytest.mark.parametrize("seed", range(40))

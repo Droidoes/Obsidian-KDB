@@ -65,8 +65,8 @@ def _stage(**overrides) -> StageRecord:
         latency_ms=1_200,
         cost=0.0004,
         excerpt_policy_version=EXCERPT_POLICY_VERSION,
-        raw_response_text='{"selections":[{"slug":"warren-buffett","matched":[0]}]}',
-        parsed_output={"selections": [{"slug": "warren-buffett", "matched": [0]}]},
+        raw_response_text='{"selections":[{"slug":"warren-buffett","matched":["A"]}]}',
+        parsed_output={"selections": [{"slug": "warren-buffett", "matched": ["A"]}]},
         validation=StageValidation(dropped={"foreign_slug": 0}, coerced={}, counts={"returned": 1}),
     )
     return StageRecord(**{**base, **overrides})

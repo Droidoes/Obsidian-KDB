@@ -12,10 +12,17 @@ inside or well outside it pins nothing.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
-from kdb_search.constants import MAX_EXPRESSIONS, MAX_RESULTS, MAX_SLUG_LEN
+from kdb_search.constants import (
+    MAX_EXPRESSIONS,
+    MAX_RESULTS,
+    MAX_SLUG_LEN,
+    WIRE_LABEL_ALPHABET,
+)
+from kdb_search.projection import render_query_block
 from kdb_search.response import (
     Violations,
     resolve_accounting,
@@ -34,7 +41,7 @@ def _space(*slugs: str) -> tuple[SpaceEntity, ...]:
 SPACE = _space("warren-buffett", "berkshire-hathaway", "owner-earnings", "economic-moats")
 
 
-def _wire(selections: list[dict], unresolved: list[int] | None = None) -> str:
+def _wire(selections: list[dict], unresolved: list | None = None) -> str:
     payload: dict = {"selections": selections}
     if unresolved is not None:
         payload["unresolved"] = unresolved
@@ -103,11 +110,11 @@ def test_exactly_one_classification_applies():
 def test_joseph_six_of_ten_rule():
     """His example IS the rule: 10 returned, 1 duplicate, 3 malformed => 6 kept."""
     space = _space(*[f"slug-{i}" for i in range(6)])
-    selections = [{"slug": f"slug-{i}", "matched": [0]} for i in range(6)]
-    selections.append({"slug": "slug-0", "matched": [0]})          # duplicate
-    selections.append({"matched": [0]})                             # malformed: no slug
-    selections.append({"slug": 42, "matched": [0]})                 # malformed: wrong type
-    selections.append({"slug": ["nested"], "matched": [0]})         # malformed: wrong type
+    selections = [{"slug": f"slug-{i}", "matched": ["A"]} for i in range(6)]
+    selections.append({"slug": "slug-0", "matched": ["A"]})          # duplicate
+    selections.append({"matched": ["A"]})                             # malformed: no slug
+    selections.append({"slug": 42, "matched": ["A"]})                 # malformed: wrong type
+    selections.append({"slug": ["nested"], "matched": ["A"]})         # malformed: wrong type
     r = _validate(_wire(selections), space=space, expressions=("k",))
 
     assert [h.slug for h in r.hits] == [f"slug-{i}" for i in range(6)]
@@ -173,33 +180,55 @@ def test_hits_carry_the_titles_and_page_types_from_the_space_never_the_wire():
 # per-field coercion (a unique deterministic reading exists)
 # --------------------------------------------------------------------------
 
-def test_out_of_range_matched_index_is_removed_leaving_the_hit_standing():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0, 99]}]))
+def test_a_label_outside_the_vocabulary_is_removed_leaving_the_hit_standing():
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A", "Z"]}]))
     assert r.hits[0].matched_expressions == ("warren-buffett",)
     assert r.attempted_violations.unknown_expression == 1
 
 
-def test_a_hit_stripped_of_every_matched_index_stands_as_an_unattributed_hit():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [99]}]))
+def test_a_hit_stripped_of_every_matched_label_stands_as_an_unattributed_hit():
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["Z"]}]))
     assert [h.slug for h in r.hits] == ["warren-buffett"]
     assert r.hits[0].matched_expressions == ()
     assert r.attempted_violations.unknown_expression == 1
 
 
-@pytest.mark.parametrize("index", [-1, 3, 4, 1_000])
-def test_indices_outside_the_zero_based_half_open_range_are_coerced_away(index):
-    """`matched` indices are in [0, len(expressions)) — three expressions means
-    0,1,2. A negative index would silently address the tail under Python slicing."""
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [index]}]))
+@pytest.mark.parametrize("label", ["D", "Z", "AA", "", "A ", " A", "A."])
+def test_labels_outside_the_rendered_vocabulary_are_coerced_away(label):
+    """The vocabulary is exactly what the prompt printed: three expressions means
+    `A`, `B`, `C`. `D` is the nearest miss; `AA` is the multi-letter scheme the
+    alphabet bound deliberately does not reach; the padded and dotted forms are
+    not the verbatim echo the wire asks for."""
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": [label]}]))
     assert r.hits[0].matched_expressions == ()
     assert r.attempted_violations.unknown_expression == 1
 
 
-def test_the_highest_in_range_index_resolves():
+def test_the_last_label_in_the_vocabulary_resolves():
     last = len(EXPRESSIONS) - 1
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [last]}]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": [WIRE_LABEL_ALPHABET[last]]}]))
     assert r.hits[0].matched_expressions == (EXPRESSIONS[last],)
     assert r.attempted_violations == Violations()
+
+
+@pytest.mark.parametrize("sent,expected", [("a", 0), ("b", 1), ("c", 2)])
+def test_a_lowercase_label_is_case_folded_not_counted_a_violation(sent, expected):
+    """D11's coercion: `"a"` has exactly one deterministic reading, so the project
+    rule (coerce benign deviations, reject only the unrecoverable) normalizes it
+    rather than dropping the attribution and counting a violation."""
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": [sent]}]))
+    assert r.hits[0].matched_expressions == (EXPRESSIONS[expected],)
+    assert r.attempted_violations == Violations()
+
+
+def test_an_integer_no_longer_addresses_an_expression():
+    """The systematic error D11 removes. Under D8's integer wire a base
+    disagreement mis-attributed silently — every hit looked correct and pointed at
+    the wrong expression. An integer is now simply not a label: the attribution is
+    dropped and COUNTED, so the same disagreement is loud instead of silent."""
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0, 1]}]))
+    assert r.hits[0].matched_expressions == ()
+    assert r.attempted_violations.unknown_expression == 2
 
 
 def test_duplicate_slug_keeps_the_first_occurrence():
@@ -207,8 +236,8 @@ def test_duplicate_slug_keeps_the_first_occurrence():
     wins, and its attribution is the one kept."""
     r = _validate(
         _wire([
-            {"slug": "warren-buffett", "matched": [0]},
-            {"slug": "warren-buffett", "matched": [1, 2]},
+            {"slug": "warren-buffett", "matched": ["A"]},
+            {"slug": "warren-buffett", "matched": ["B", "C"]},
         ])
     )
     assert len(r.hits) == 1
@@ -216,10 +245,10 @@ def test_duplicate_slug_keeps_the_first_occurrence():
     assert r.attempted_violations.duplicate_slug == 1
 
 
-def test_duplicate_matched_index_within_an_entry_is_deduped():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [1, 1, 1, 0]}]))
+def test_duplicate_matched_label_within_an_entry_is_deduped():
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["B", "B", "B", "A"]}]))
     assert r.attempted_violations.unknown_expression == 0
-    # Canonical INDEX order, not the selector's emission order. `matched` carries
+    # Canonical REQUEST-ORDER, not the selector's emission order. `matched` carries
     # no ranking claim among expressions, and canonicalizing means two responses
     # attributing the same set render identically — which the artifact integrity
     # hash and replay comparison both depend on. (Returned order IS authoritative
@@ -228,43 +257,63 @@ def test_duplicate_matched_index_within_an_entry_is_deduped():
 
 
 def test_matched_expression_order_is_canonical_regardless_of_emission_order():
-    forward = _validate(_wire([{"slug": "warren-buffett", "matched": [0, 2]}]))
-    reversed_ = _validate(_wire([{"slug": "warren-buffett", "matched": [2, 0]}]))
+    forward = _validate(_wire([{"slug": "warren-buffett", "matched": ["A", "C"]}]))
+    reversed_ = _validate(_wire([{"slug": "warren-buffett", "matched": ["C", "A"]}]))
     assert forward.hits == reversed_.hits
 
 
-def test_matched_holding_more_than_max_expressions_unique_indices_is_bounded():
+def test_matched_holding_more_than_max_expressions_labels_is_bounded():
     r = _validate(
-        _wire([{"slug": "warren-buffett", "matched": list(range(MAX_EXPRESSIONS + 5))}]),
+        _wire([{"slug": "warren-buffett", "matched": list(WIRE_LABEL_ALPHABET[: MAX_EXPRESSIONS + 5])}]),
         expressions=tuple(f"e{i}" for i in range(MAX_EXPRESSIONS)),
     )
     assert len(r.hits[0].matched_expressions) <= MAX_EXPRESSIONS
+    # The 5 past the vocabulary are coercions, not silently swallowed.
+    assert r.attempted_violations.unknown_expression == 5
 
 
-@pytest.mark.parametrize("matched", ["not-a-list", 5, {"a": 1}, [None], ["0"], [1.5]])
+@pytest.mark.parametrize(
+    "matched", ["not-a-list", 5, {"a": 1}, [None], ["0"], [1.5], "A"]
+)
 def test_a_wrong_typed_matched_field_never_invalidates_the_hit(matched):
-    """R1: the hit's identity is valid; a broken attribution is noise."""
+    """R1: the hit's identity is valid; a broken attribution is noise. A bare
+    `"A"` counts here too — the field is a LIST of labels, and a string is itself
+    iterable, which is exactly the shape a permissive reading would mis-accept."""
     r = _validate(_wire([{"slug": "warren-buffett", "matched": matched}]))
     assert [h.slug for h in r.hits] == ["warren-buffett"]
     assert r.hits[0].matched_expressions == ()
 
 
-@pytest.mark.parametrize("value,would_address", [(True, 1), (False, 0)])
-def test_json_booleans_are_not_accepted_as_indices(value, would_address):
-    """`bool` is an `int` subclass in Python, so `[true]` on the wire would
-    silently attribute the hit to expression 1 and `[false]` to expression 0 —
-    a wrong attribution that looks like a correct one. It is a type violation,
-    counted as unknown_expression, not a valid index."""
+def test_a_partly_valid_matched_list_salvages_the_valid_labels():
+    """Per-FIELD salvage inside per-entry salvage: one good label beside a broken
+    one keeps the good attribution and counts the bad one. Held separately from
+    the wrong-typed cases above so neither test's assertion is computed from its
+    own input — the repo adopted mutation testing mid-P1 exactly because a test
+    can pass without exercising its subject."""
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A", None, "Z", "c"]}]))
+    assert r.hits[0].matched_expressions == ("warren-buffett", "moats")  # A + case-folded c
+    assert r.attempted_violations.unknown_expression == 2                # None + Z
+
+
+@pytest.mark.parametrize("value,would_have_addressed", [(True, 1), (False, 0)])
+def test_json_booleans_are_not_accepted_as_labels(value, would_have_addressed):
+    """Kept from D8, where it guarded a real hazard: `bool` is an `int` subclass,
+    so `[true]` silently attributed the hit to expression 1 and `[false]` to
+    expression 0 — a wrong attribution wearing the look of a right one. Under D11
+    the explicit `isinstance(bool)` guard is GONE, because a `bool` is not a `str`
+    and the general type check subsumes it. The test stays: it pins the behaviour,
+    not the mechanism, so the hazard cannot return through a laxer decoder."""
     r = _validate(_wire([{"slug": "warren-buffett", "matched": [value]}]))
     assert [h.slug for h in r.hits] == ["warren-buffett"]
     assert r.hits[0].matched_expressions == (), (
-        f"a JSON boolean was read as index {would_address} ({EXPRESSIONS[would_address]})"
+        f"a JSON boolean addressed expression {would_have_addressed} "
+        f"({EXPRESSIONS[would_have_addressed]})"
     )
     assert r.attempted_violations.unknown_expression == 1
 
 
 def test_json_booleans_are_not_accepted_in_the_advisory_list_either():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}], unresolved=[True]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=[True]))
     assert r.advisory_unresolved == ()
     assert r.attempted_violations.unknown_expression == 1
 
@@ -337,7 +386,7 @@ def test_a_truncated_attempt_contributes_no_denominator():
 # --------------------------------------------------------------------------
 
 def test_accounting_splits_expressions_into_matched_and_unresolved():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}], unresolved=[1, 2]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["B", "C"]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
     assert a.matched_expressions == ("warren-buffett",)
     assert a.unresolved_expressions == ("owner-earnings", "moats")
@@ -347,21 +396,23 @@ def test_accounting_splits_expressions_into_matched_and_unresolved():
 def test_the_advisory_list_is_input_to_accounting_never_the_authority():
     """The selector claims everything is unresolved while attributing a hit. The
     controller's computation wins; the discrepancy is counted, never a failure."""
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}], unresolved=[0, 1, 2]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["A", "B", "C"]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
     assert a.matched_expressions == ("warren-buffett",)
     assert a.selector_accounting_delta == 1
 
 
 def test_a_missing_advisory_list_is_not_a_discrepancy_by_itself():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
     assert a.unresolved_expressions == ("owner-earnings", "moats")
     assert a.selector_accounting_delta == 0
 
 
-def test_out_of_range_advisory_indices_are_bounded_and_counted():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}], unresolved=[99, -1]))
+def test_advisory_labels_outside_the_vocabulary_are_bounded_and_counted():
+    # Both out of vocabulary and both upper-case: the case-fold test owns folding,
+    # so this fixture exercises one mechanism only.
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["Z", "Y"]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
     assert a.unresolved_expressions == ("owner-earnings", "moats")
     assert r.attempted_violations.unknown_expression == 2
@@ -370,12 +421,12 @@ def test_out_of_range_advisory_indices_are_bounded_and_counted():
 def test_cap_exhausted_possible_is_annotated_only_at_the_cap():
     space = _space(*[f"s{i}" for i in range(5)])
     at_cap = _validate(
-        _wire([{"slug": f"s{i}", "matched": [0]} for i in range(5)]),
+        _wire([{"slug": f"s{i}", "matched": ["A"]} for i in range(5)]),
         space=space, expressions=("k", "unmatched"), max_results=5,
     )
     assert resolve_accounting(at_cap, expressions=("k", "unmatched"), max_results=5).cap_exhausted_possible
     under_cap = _validate(
-        _wire([{"slug": "s0", "matched": [0]}]),
+        _wire([{"slug": "s0", "matched": ["A"]}]),
         space=space, expressions=("k", "unmatched"), max_results=5,
     )
     assert not resolve_accounting(under_cap, expressions=("k", "unmatched"), max_results=5).cap_exhausted_possible
@@ -393,7 +444,7 @@ def test_unattributed_hits_are_counted_and_their_expressions_annotated():
 
 
 def test_unattributed_possible_is_false_when_every_hit_carries_attribution():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": [0]}]))
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
     assert a.unattributed_hit_count == 0
     assert a.unattributed_possible is False
@@ -451,9 +502,60 @@ def test_zero_foreign_identity_escapes_by_construction():
 
 def test_validation_is_deterministic():
     raw = _wire(
-        [{"slug": "warren-buffett", "matched": [0, 99, 1]}, {"slug": "ghost"},
-         {"slug": "warren-buffett"}, {"slug": "owner-earnings", "matched": [2, 2]}],
-        unresolved=[2],
+        [{"slug": "warren-buffett", "matched": ["A", "Z", "B"]}, {"slug": "ghost"},
+         {"slug": "warren-buffett"}, {"slug": "owner-earnings", "matched": ["C", "C"]}],
+        unresolved=["C"],
     )
     first, second = _validate(raw), _validate(raw)
     assert first == second
+
+
+# --------------------------------------------------------------------------
+# the projector <-> validator seam — the property `expression_labels()` claims
+# --------------------------------------------------------------------------
+
+def test_the_labels_the_projector_prints_are_the_labels_the_validator_accepts():
+    """The one property the whole D11 refactor rests on, and it spans two modules,
+    so neither module's own tests reach it.
+
+    `render_query_block` prints the markers; `validate_response` decodes them.
+    Both derive from `expression_labels()` precisely so they cannot drift — but
+    "both call the same helper" is a claim about today's code, not a property.
+    This scrapes the markers out of the rendered prompt text and feeds those exact
+    strings back as `matched`, which is what a selector does.
+    """
+    keys = ("warren-buffett", "berkshire-hathaway", "owner-earnings", "economic-moats")
+    rendered = render_query_block(summary="s", expressions=keys)
+    printed = re.findall(r"^\s+([A-Z])\. (.+)$", rendered.text, re.MULTILINE)
+    assert [slug for _, slug in printed] == list(keys), "the projector's own output moved"
+
+    r = _validate(
+        _wire([{"slug": "warren-buffett", "matched": [label for label, _ in printed]}]),
+        space=_space(*keys),
+        expressions=rendered.rendered_expressions,
+    )
+    assert r.attempted_violations == Violations(), "a printed marker was not accepted"
+    assert r.hits[0].matched_expressions == keys
+
+
+def test_the_seam_resolves_against_the_rendered_expressions_not_the_originals():
+    """The hazard the seam still carries after D11, named so it stays visible.
+
+    Labels line up positionally whether the caller passes the originals or the
+    rendered forms, so a caller passing the wrong one produces attributions to
+    strings the selector never saw — silently, and only for oversized keys. §3.1
+    settles it (`accounting runs over the rendered expressions`); this pins that
+    the two really do differ, so the choice is load-bearing rather than cosmetic.
+    """
+    keys = ("short-key", "k" * 500)
+    rendered = render_query_block(summary="s", expressions=keys)
+    assert rendered.rendered_expressions != keys, "no truncation — the test proves nothing"
+
+    r = _validate(
+        _wire([{"slug": "warren-buffett", "matched": ["B"]}]),
+        expressions=rendered.rendered_expressions,
+    )
+    attributed = r.hits[0].matched_expressions[0]
+    assert attributed == rendered.rendered_expressions[1]
+    assert attributed != keys[1], "attributed to a string the selector never saw"
+    assert attributed in rendered.text, "every attribution must be findable in the prompt"
