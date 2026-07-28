@@ -1,13 +1,11 @@
 """#123 `graph_search` — the orchestration spine (spec §2.1, blueprint §2.2/§8).
 
-**P2.2 builds the spine and every terminal that spends nothing.** The stages
-themselves are P2.3 (`stage_call`), so this module currently ends at a single
-explicit seam: everything before the first model call is complete and contract-
-guarded, and the point where the thin call would happen raises `NotImplementedError`
-naming the sub-phase. That split is deliberate — a zero-call terminal is a claim
-about work *not* done, so it must be reachable and testable without the machinery
-that does the work. If a zero-call path ever needed a scripted selector reply to
-be exercised, it would not be a zero-call path.
+**This module decides WHICH stages run and what each is given; `stage.py` owns
+what happens inside one.** Every terminal returns through one `finish` helper, so
+the audit payload is built on every path (§6) by construction rather than by each
+branch remembering to, and `assert_result_contract` cannot be omitted from a
+return site — the one mutation P2.2's sweep showed the rest of the suite cannot
+catch.
 
 **Order of the pre-work gates**, which the ratified text fixes only partly:
 
@@ -25,25 +23,39 @@ route they may not have chosen. Recorded as a decision, not read off the spec, a
 pinned by a test that fires both faults at once so the precedence cannot drift
 silently.
 
-**`json_mode` splits across two sub-phases.** The ratified requirement is
-`json_mode=True` on every selector `ModelRequest` — but requests are built in
-`stage_call`, so that assertion belongs to P2.3. What lands *here* is the half
-that must fail before any work: a route whose `api_call_type` cannot honour
+**`json_mode` splits across two modules.** The ratified requirement is
+`json_mode=True` on every selector `ModelRequest`, and requests are built in
+`stage_call`, so that assertion lives there. What lands *here* is the half that
+must fail before any work: a route whose `api_call_type` cannot honour
 `json_mode` at all is rejected at resolution. `common/call_model.py` implements
 `json_mode` on the openai-compat path (`:291`) and the gemini path (`:232`) and
 **not** on the anthropic path — so an anthropic selector would silently free-form
 its JSON, which is the exact failure Pass-2 shipped and `test_compile_source.py:139`
 now pins. Silent is the problem, so it is made loud at resolution.
 
+**The two-stage order and its two enforced guarantees** (§2.2, R4 as amended):
+
+  * **Thin always runs**, even where its answer cannot bind. At `N <= M` stage 2
+    is **every** eligible identity regardless of what thin returned (codex #3) —
+    a recall-oriented selector can omit an identity by judgment, and validation
+    cannot distinguish omission from judgment, so retain-all is enforced
+    controller-side rather than asked for in a prompt. That is also what makes
+    the F1 path work with no thin output at all.
+  * **Stage 2 is presented in MANIFEST order, never thin's ranked order**, so
+    fat's judgment stays unanchored to thin's. Thin's ranking survives in its
+    `StageRecord` and feeds exactly one consumer: the concordance metric.
+
 **The audit payload is built on every terminal, including the zero-call ones**
 (§6 — their emptiness is the finding, not a reason to skip the record). How the
-full payload reaches the caller is deliberately still open: ratified §1.1 fixes
-`GraphSearchResult` at seven fields and `audit` is not among them, so the
-blueprint §2.1 gloss "audit (always, §6)" describes an obligation rather than a
-field. P2.2 discharges the obligation to *build* it and surfaces the part that has
-a ratified home — `telemetry.search_snapshot_hash` — leaving delivery to P2.4,
-which is where the caller-persistence bullet lives. Nothing here is shaped in a
-way that presupposes the answer.
+full payload reaches the CALLER is still open and deliberately not answered here:
+ratified §1.1 fixes `GraphSearchResult` at seven fields and `audit` is not among
+them, so the blueprint §2.1 gloss "audit (always, §6)" describes an obligation
+rather than a field. This module discharges the obligation to *build* it on every
+path and surfaces the part with a ratified home
+(`telemetry.search_snapshot_hash`). The adapter needs the whole payload to write
+its envelope, so a delivery surface has to be decided — it changes this function's
+public signature, which wants a ratification rather than an inference. Nothing
+here is shaped in a way that presupposes the answer.
 """
 
 from __future__ import annotations
@@ -55,27 +67,29 @@ from common.call_model import ModelRequest, ModelResponse
 from common.model_pool import ModelSpec
 
 from . import budget, projection
-from .artifact import SearchAuditPayload, SearchResultSummary, build_audit_payload
+from .artifact import (
+    SPACE_MANIFEST_REF,
+    TITLE_ONLY_MARKER,
+    SearchAuditPayload,
+    SearchResultSummary,
+    StageRecord,
+    build_audit_payload,
+)
+from .constants import M
 from .contracts import assert_result_contract
-from .prompts import render_thin_messages
+from .prompts import render_fat_messages, render_thin_messages
+from .response import ValidatedResponse, resolve_accounting, validate_response, validate_thin_response
 from .result import BudgetRecord, GraphSearchResult, SearchTelemetry, WatchedClass
+from .stage import StageOutcome, stage_call
 from .types import (
+    EvidenceStatus,
     Execution,
     GraphSearchRequest,
+    Hit,
     SearchConfigError,
     SearchSpaceRef,
     Status,
 )
-
-#: The seam P2.3 fills. Named rather than left as a bare `NotImplementedError`
-#: so a test can assert the spine reached the call boundary and stopped there —
-#: which is how "every zero-call terminal returns before any call" is proved
-#: while the calling machinery does not yet exist.
-STAGE_CALL_SEAM = (
-    "stage_call is P2.3 — the P2.2 spine covers request validation, route "
-    "resolution and every zero-spend terminal, and stops at the thin call"
-)
-
 
 def _empty_space_watched(space: SearchSpaceRef) -> tuple[WatchedClass, ...]:
     """`domain_missing` when a domain-scoped space has no domain at all (§1.2).
@@ -225,8 +239,283 @@ def graph_search(
             fat_attempts=0,
         )
 
-    # ---- everything below spends money; P2.3 fills it in --------------------
-    raise NotImplementedError(STAGE_CALL_SEAM)
+    # ---- stage 1 ------------------------------------------------------------
+    budget_records = [_budget_record(verdict, selector)]
+    thin = stage_call(
+        "thin",
+        messages=messages,
+        evidence=SPACE_MANIFEST_REF,
+        spec=selector,
+        call=call,
+        validate=lambda raw: validate_thin_response(raw, space=space.entities, cap=M),
+        verdict=verdict,
+    )
+    if thin.budget_record is not None:
+        budget_records.append(thin.budget_record)
+
+    def finish(
+        terminal: str,
+        *,
+        status: Status,
+        execution: Execution,
+        telemetry: SearchTelemetry,
+        hits: tuple[Hit, ...] = (),
+        unresolved: tuple[str, ...] | None = None,
+        evidence_status: EvidenceStatus = "not_applicable",
+        body_coverage: float | None = None,
+        stages: tuple[StageRecord, ...] = (),
+    ) -> GraphSearchResult:
+        """The single shape every post-thin terminal returns through.
+
+        One helper rather than a return statement per branch, so the audit is
+        built on **every** path by construction (§6) rather than by each branch
+        remembering to — and so `assert_result_contract` cannot be omitted from a
+        return site, which is the mutation P2.2's sweep showed the rest of the
+        suite cannot catch.
+        """
+        result = GraphSearchResult(
+            hits=hits,
+            unresolved_expressions=(
+                request.query.expressions if unresolved is None else unresolved
+            ),
+            status=status,
+            execution=execution,
+            telemetry=telemetry,
+            evidence_status=evidence_status,
+            body_coverage=body_coverage,
+        )
+        audit = build_audit_payload(
+            graph_ref=space.graph_ref,
+            query=request.query,
+            manifest=space.entities,
+            execution=execution,
+            stages=stages,
+            result=SearchResultSummary(
+                hits=result.hits,
+                unresolved_expressions=result.unresolved_expressions,
+                status=result.status,
+                evidence_status=result.evidence_status,
+                body_coverage=result.body_coverage,
+            ),
+        )
+        return assert_result_contract(
+            terminal,
+            _with_snapshot(result, audit),
+            request_expressions=request.query.expressions,
+            thin_attempts=thin.attempts,
+            fat_attempts=sum(
+                1 for record in stages if record.stage == "fat_selection"
+            ),
+        )
+
+    thin_failed = thin.outcome == "exhausted"
+    watched: tuple[WatchedClass, ...] = (
+        ("thin_failed_nonbinding",) if thin_failed else ()
+    )
+
+    def thin_telemetry(**overrides) -> SearchTelemetry:
+        base = dict(
+            eligible_space_size=len(space.entities),
+            stage1_retained=len(thin.validated.retained) if thin.validated else 0,
+            attempted_violations=thin.attempted_violations,
+            all_entries_dropped_occurrences=thin.all_entries_dropped_occurrences,
+            retry_attempts=thin.retry_attempts,
+            budget_records=tuple(budget_records),
+            watched=watched,
+        )
+        return SearchTelemetry(**{**base, **overrides})
+
+    # 5. Thin's own post-call budget terminals (D9.3 / D7). Terminal at thin:
+    #    F1's proceed-to-fat applies only to retry exhaustion, never to a budget
+    #    side (codex P1 — that removes a branch rather than adding one).
+    if thin.outcome == "output_truncation":
+        return finish(
+            "thin_output_truncation",
+            status="budget_exceeded",
+            execution="thin_attempted",
+            telemetry=thin_telemetry(),
+            stages=thin.records,
+        )
+    if thin.outcome == "input_estimation_miss":
+        return finish(
+            "thin_input_estimation_miss",
+            status="budget_exceeded",
+            execution="thin_attempted",
+            telemetry=thin_telemetry(watched=watched + ("budget_estimation_miss",)),
+            stages=thin.records,
+        )
+
+    # 6. Stage-2 composition. `N <= M` is retain-all **regardless of the thin
+    #    response** (codex #3): a recall-oriented selector can omit an identity by
+    #    judgment, and validation cannot distinguish omission from judgment, so
+    #    the guarantee is enforced controller-side rather than requested in a
+    #    prompt. It is also what makes the F1 path work without thin's output.
+    small_space = len(space.entities) <= M
+
+    if thin_failed and not small_space:
+        return finish(
+            "thin_exhausted",
+            status="selector_failure",
+            execution="thin_attempted",
+            telemetry=thin_telemetry(selector_failure_class=thin.failure_class),
+            stages=thin.records,
+        )
+
+    if small_space:
+        stage2 = space.entities
+    else:
+        retained = set(thin.validated.retained) if thin.validated else set()
+        # Manifest order, NOT thin's ranked order — fat's judgment stays
+        # unanchored to thin's (spec §3.4). Thin's ranking survives in the
+        # StageRecord and feeds concordance only.
+        stage2 = tuple(entity for entity in space.entities if entity.slug in retained)
+        if not stage2:
+            # D3 — no fat call. `completed` with the watched class, so the KPI
+            # series can tell it apart from an honest empty selection.
+            return finish(
+                "thin_retained_zero",
+                status="completed",
+                execution="thin_attempted",
+                telemetry=thin_telemetry(watched=watched + ("thin_retained_zero",)),
+                stages=thin.records,
+            )
+
+    # 7. Fat evidence. Bodies are read HERE — inside search, never by the caller
+    #    (§1.1) — and a missing body degrades the entity to title-only rather
+    #    than dropping it.
+    projected = tuple(
+        projection.project_entity(entity, body_reader=body_reader) for entity in stage2
+    )
+    title_only = sum(1 for entity in projected if entity.excerpt is None)
+    hydrated = len(projected) - title_only
+    fat_evidence = {
+        entity.entity.slug: (
+            TITLE_ONLY_MARKER if entity.excerpt is None else entity.excerpt
+        )
+        for entity in projected
+    }
+    fat_messages = render_fat_messages(
+        evidence="\n".join(projection.render_fat_block(entity) for entity in projected),
+        query=request.query.text,
+        max_results=request.max_results,
+    )
+    fat_verdict = budget.preflight(
+        "fat",
+        rendered_bytes=len(fat_messages.system.encode()) + len(fat_messages.user.encode()),
+        spec=selector,
+    )
+    budget_records.append(_budget_record(fat_verdict, selector))
+
+    def fat_telemetry(**overrides) -> SearchTelemetry:
+        base = dict(
+            stage2_hydrated=hydrated,
+            stage2_title_only=title_only,
+        )
+        return thin_telemetry(**{**base, **overrides})
+
+    # 8. Fat pre-flight (D6). Evidence status stays `not_applicable` and
+    #    `body_coverage` stays `None` even though the bodies were just read: the
+    #    ratified contract distinguishes this terminal from the post-call one by
+    #    whether the pool was PRESENTED, and here it never was.
+    if not fat_verdict.fits:
+        return finish(
+            "fat_preflight_budget_on_f1" if thin_failed else "fat_preflight_budget",
+            status="budget_exceeded",
+            execution="thin_attempted",
+            telemetry=fat_telemetry(),
+            stages=thin.records,
+        )
+
+    # ---- stage 2 ------------------------------------------------------------
+    fat = stage_call(
+        "fat",
+        messages=fat_messages,
+        evidence=fat_evidence,
+        spec=selector,
+        call=call,
+        validate=lambda raw: validate_response(
+            raw,
+            space=stage2,
+            expressions=request.query.expressions,
+            max_results=request.max_results,
+        ),
+        verdict=fat_verdict,
+    )
+    if fat.budget_record is not None:
+        budget_records.append(fat.budget_record)
+
+    stages = thin.records + fat.records
+    execution: Execution = "fat_after_thin_failure" if thin_failed else "two_stage_attempted"
+    evidence_status: EvidenceStatus = "complete" if title_only == 0 else "partial"
+    body_coverage = hydrated / len(projected)
+
+    def both_telemetry(**overrides) -> SearchTelemetry:
+        base = dict(
+            attempted_violations=thin.attempted_violations + fat.attempted_violations,
+            all_entries_dropped_occurrences=(
+                thin.all_entries_dropped_occurrences + fat.all_entries_dropped_occurrences
+            ),
+            retry_attempts=thin.retry_attempts + fat.retry_attempts,
+            budget_records=tuple(budget_records),
+        )
+        return fat_telemetry(**{**base, **overrides})
+
+    if fat.outcome == "output_truncation":
+        return finish(
+            "fat_output_truncation_on_f1" if thin_failed else "fat_output_truncation",
+            status="budget_exceeded",
+            execution=execution,
+            telemetry=both_telemetry(),
+            evidence_status=evidence_status,
+            body_coverage=body_coverage,
+            stages=stages,
+        )
+    if fat.outcome == "input_estimation_miss":
+        return finish(
+            "fat_input_estimation_miss_on_f1"
+            if thin_failed
+            else "fat_input_estimation_miss",
+            status="budget_exceeded",
+            execution=execution,
+            telemetry=both_telemetry(
+                watched=watched + ("budget_estimation_miss",)
+            ),
+            stages=stages,
+        )
+    if fat.outcome == "exhausted":
+        return finish(
+            "fat_exhausted",
+            status="selector_failure",
+            execution=execution,
+            telemetry=both_telemetry(selector_failure_class=fat.failure_class),
+            stages=stages,
+        )
+
+    # 9. The ordinary path. Expression accounting is the CONTROLLER's: the
+    #    selector's advisory `unresolved` is an input, and where the two disagree
+    #    the controller wins and the disagreement is counted (§2.3).
+    validated = fat.validated
+    accounting = resolve_accounting(
+        validated,
+        expressions=request.query.expressions,
+        max_results=request.max_results,
+    )
+    return finish(
+        "completed",
+        status="completed",
+        execution=execution,
+        hits=validated.hits,
+        unresolved=accounting.unresolved_expressions,
+        telemetry=both_telemetry(
+            returned_entries=validated.returned_entries,
+            valid_entry_yield=validated.valid_entry_yield,
+            unattributed_hit_count=accounting.unattributed_hit_count,
+            concordance=_concordance(thin, validated),
+        ),
+        evidence_status=evidence_status,
+        body_coverage=body_coverage,
+        stages=stages,
+    )
 
 
 def _require_json_mode_capable(spec: ModelSpec) -> None:
@@ -245,6 +534,36 @@ def _require_json_mode_capable(spec: ModelSpec) -> None:
             "openai_compat and gemini only) — the selector would free-form its JSON "
             "silently, which is the Pass-2 failure test_compile_source.py:139 pins"
         )
+
+
+#: Joseph's [1] — the "does fat earn its cost" watched series (§8.3). Fat's top
+#: 10 measured against thin's ranked top 20.
+_FAT_TOP = 10
+_THIN_TOP = 20
+
+
+def _concordance(thin: StageOutcome, fat: ValidatedResponse) -> float | None:
+    """`len(fat_top10 ∩ thin_top20) / len(fat_top10)`, `None` where the ratio has
+    no meaning.
+
+    Three null cases, and the third is the one worth stating: **no fat stage ran**
+    and **fat produced no validated hits** are the ratified two (codex #12), and
+    **thin produced no validated retention at all** is the F1 path — thin
+    exhausted its attempts, so there is no ranked list to compare against and a
+    computed 0.0 would report "fat and thin agreed on nothing" about a comparison
+    that never happened.
+
+    A thin stage that *ran* and honestly retained nothing is NOT that case: the
+    ranked list exists and is empty, so 0.0 is a real measurement — fat found
+    things thin did not. The distinction is `thin.validated is None` versus
+    `thin.validated.retained == ()`, which is exactly the distinction
+    `validate_thin_response` exists to preserve.
+    """
+    if thin.validated is None or not fat.hits:
+        return None
+    top_fat = [hit.slug for hit in fat.hits[:_FAT_TOP]]
+    top_thin = set(thin.validated.retained[:_THIN_TOP])
+    return len([slug for slug in top_fat if slug in top_thin]) / len(top_fat)
 
 
 def _budget_record(verdict: budget.BudgetVerdict, spec: ModelSpec) -> BudgetRecord:
@@ -282,4 +601,4 @@ def _with_snapshot(
     )
 
 
-__all__ = ["STAGE_CALL_SEAM", "graph_search"]
+__all__ = ["graph_search"]

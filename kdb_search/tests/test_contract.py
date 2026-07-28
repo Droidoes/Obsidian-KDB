@@ -604,13 +604,28 @@ def test_every_terminal_in_the_branch_table_exists_in_the_matrix():
     assert set(BLUEPRINT_SECTION_8) <= set(TERMINAL_CONTRACTS)
 
 
-def test_the_two_f1_rows_are_the_matrix_additions_beyond_the_branch_table():
-    """§8's table lists the F1 *path*; the matrix names its two terminals
-    separately because their field contracts differ from the non-F1 rows."""
-    assert set(TERMINAL_CONTRACTS) - set(BLUEPRINT_SECTION_8) == {
+def test_the_f1_rows_are_the_matrix_additions_beyond_the_branch_table():
+    """§8's table lists the F1 *path*; the matrix names its terminals separately
+    because their field contracts differ from the non-F1 rows.
+
+    **Two of the three are ratified; the third is a P2.4 extension.** The
+    ratified matrix gave the F1 treatment to the fat PRE-flight terminal and to
+    the fat OUTPUT terminal but not to the fat INPUT one, which reads as an
+    ordering artifact — the D7 input rows predate D9.3's F1 treatment — rather
+    than a decision, since the state is reachable on a sub-330k window and
+    without a row a legitimate search dies on a `ContractViolation`. Asserted
+    here as a set so a fourth addition cannot arrive unnoticed, and the extension
+    is named in its own assertion so the distinction survives in the test rather
+    than only in the note.
+    """
+    additions = set(TERMINAL_CONTRACTS) - set(BLUEPRINT_SECTION_8)
+    assert additions == {
         "fat_preflight_budget_on_f1",
         "fat_output_truncation_on_f1",
+        "fat_input_estimation_miss_on_f1",
     }
+    extension = TERMINAL_CONTRACTS["fat_input_estimation_miss_on_f1"]
+    assert "EXTENSION, NOT RATIFIED TEXT" in extension.note
 
 
 def test_no_terminal_exceeds_two_logical_attempts_per_stage():
@@ -696,7 +711,14 @@ def test_the_unenumerated_terminals_are_exactly_the_marked_ones():
     one assertion would make settling either look like progress on the other.
     """
     marked = {name for name, c in TERMINAL_CONTRACTS.items() if "UNENUMERATED" in c.note}
-    assert marked == {"fat_exhausted", "fat_input_estimation_miss"}
+    assert marked == {
+        "fat_exhausted",
+        "fat_input_estimation_miss",
+        # The P2.4 extension row inherits its parent's gap rather than closing it
+        # on the way past — a row added to keep a reachable state from dying
+        # fail-closed is the worst place to also settle an open question.
+        "fat_input_estimation_miss_on_f1",
+    }
     for name in marked:
         contract = TERMINAL_CONTRACTS[name]
         assert contract.evidence_status is None, f"{name} marks a gap it does not have"

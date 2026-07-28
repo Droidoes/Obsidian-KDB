@@ -567,21 +567,60 @@ conjunction weakened to a bare cap-stop test, that same check moved *after* the 
 unrelated-400 `raise` swallowed, and the thin classifier branching on the validated list. Every one
 changes a real outcome; none is caught by a status assertion alone.
 
-### P2.4 — the two-stage flow → `test_two_stage.py`
-- [ ] thin → fat order; thin **always** runs (R4 as amended — the masking-asymmetry rationale)
-- [ ] retain-all when N ≤ M (stage 2 = all eligible, manifest order); `thin.retained_validated`
+### P2.4 — the two-stage flow → `test_two_stage.py` — **DONE** (+42 tests)
+- [x] thin → fat order; thin **always** runs (R4 as amended — the masking-asymmetry rationale)
+- [x] retain-all when N ≤ M (stage 2 = all eligible, manifest order); `thin.retained_validated`
       when N > M
-- [ ] **F1 path**: thin exhausted + N ≤ M ⇒ proceed to fat, concordance `null`,
+- [x] **F1 path**: thin exhausted + N ≤ M ⇒ proceed to fat, concordance `null`,
       `thin_failed_nonbinding`, `execution=fat_after_thin_failure`
-- [ ] thin exhausted + N > M ⇒ `selector_failure` / `thin_attempted`, failure class recorded
-- [ ] **D3 terminal**: N > M and stage-2 empty ⇒ no fat call, `status=completed`, hits `[]`, ALL
+- [x] thin exhausted + N > M ⇒ `selector_failure` / `thin_attempted`, failure class recorded
+- [x] **D3 terminal**: N > M and stage-2 empty ⇒ no fat call, `status=completed`, hits `[]`, ALL
       expressions unresolved, concordance `null`, `evidence_status=not_applicable`,
       `body_coverage=None`, `thin_retained_zero` (watched)
-- [ ] fat preflight `budget_exceeded` / `thin_attempted` — no fat `StageRecord`; the named F1
+- [x] fat preflight `budget_exceeded` / `thin_attempted` — no fat `StageRecord`; the named F1
       interaction (`budget_exceeded` + `thin_failed_nonbinding`) covered
-- [ ] concordance = `len(fat_top10 ∩ thin_top20) / len(fat_top10)`; `None` when fat has no validated
-      hits or no fat stage ran
-- [ ] `artifact.build_audit_payload` on **every** path (§6 — one path, caller owns persistence)
+- [x] concordance = `len(fat_top10 ∩ thin_top20) / len(fat_top10)`; `None` when fat has no validated
+      hits or no fat stage ran — **plus a third null case the bullet does not name**: thin produced
+      no *validated retention at all* (the F1 path). A computed 0.0 there would report "the two
+      stages agreed on nothing" about a comparison that never happened, and that value would enter
+      the watched series as evidence. A thin stage that **ran** and honestly retained nothing is not
+      that case — its ranked list exists and is empty, so 0.0 is a real measurement. The
+      discriminator is `thin.validated is None` vs `retained == ()`, which is precisely the
+      distinction `validate_thin_response` was added to preserve.
+- [x] `artifact.build_audit_payload` on **every** path (§6 — one path, caller owns persistence).
+      Enforced structurally: every post-thin terminal returns through one `finish` helper that
+      builds the audit and calls `assert_result_contract`, so neither can be omitted from a return
+      site — the mutation P2.2's sweep showed the rest of the suite cannot catch. **Audit DELIVERY
+      remains the open owner question** (see below); this discharges the obligation to *build*.
+
+**Two findings, one of them a gap in the ratified matrix:**
+
+- [x] **`FAT_INPUT_ESTIMATION_MISS_ON_F1` — a missing contract row, added as a marked EXTENSION.**
+      The ratified matrix gives the F1 treatment to the fat PRE-flight terminal and to the fat
+      OUTPUT terminal, but not to the fat INPUT one: `FAT_INPUT_ESTIMATION_MISS` admits
+      `two_stage_attempted` only. That reads as an ordering artifact — the D7 input rows predate
+      D9.3's F1 treatment — rather than a decision, and the state **is** reachable (F1 runs fat after
+      an exhausted thin; a sub-330k window can still draw the provider's over-window rejection).
+      With no row, a legitimate search dies fail-closed on a `ContractViolation`. Every cell is
+      **copied**, not inferred — the budget cells from `FAT_INPUT_ESTIMATION_MISS`, the execution and
+      watched class from `FAT_OUTPUT_TRUNCATION_ON_F1` — the evidence side is left UNENUMERATED
+      exactly as its parent leaves it, and the note says EXTENSION, NOT RATIFIED TEXT in its first
+      words. **Flagged for owner ratification.**
+- [x] **The contract guard's budget check was wrong for a two-stage producer.** It required *every*
+      matching budget record to be a non-fit, which P1.5 could write safely because it had no
+      producer: a fat pre-flight rejection carries two `pre_call`/`input` records — thin's, which
+      passed, and fat's, which did not. That would have forbidden the passing thin record, and
+      `BudgetRecord` exists to keep exactly those (a series of estimates that never bind is how the
+      estimator's calibration gets judged). Narrowed to the **last** record of the class — records
+      are appended in stage order, so the decision that ended the search is the last one.
+
+**Mutation sweep: 27 designed, 27 caught — after one honest correction.** The
+`request.max_results` → `MAX_RESULTS` mutation first reported as caught, and it was caught by a
+`NameError` rather than by any test. Re-run with the literal `50`, the whole suite stayed green:
+every test used the default cap, under which the two values coincide. That is a real gap —
+`render_fat_messages` takes `max_results` with no default precisely so the prompt's cap and
+`validate_response`'s cap cannot disagree — so two tests were added at a non-default cap, one per
+end of the pairing.
 
 ### P2.5 — the §8 branch table as a parameterized oracle
 - [ ] One parameterized case per row of the 12-row branch-specific call-count table, each asserting

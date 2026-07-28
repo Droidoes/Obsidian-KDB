@@ -16,19 +16,27 @@
     tested alone would pass under any ordering, so precedence is asserted with a
     request that violates both — the one case that discriminates.
 
-**Not here, deliberately:** anything that requires a model reply. The stages are
-P2.3; this file stops at `search.STAGE_CALL_SEAM` and one test asserts the spine
-reaches exactly that boundary, which is how "no terminal below spends anything"
-stays provable while the calling machinery does not yet exist.
+**P2.4 continues below the pre-work gates** with the two-stage flow itself —
+thin → fat, retain-all, the F1 path, the D3 terminal, the fat pre-flight and
+post-call terminals, and concordance. The zero-call section above keeps its
+`NeverCalled` discipline unchanged; everything from the P2.4 banner down drives a
+scripted `FakeSelector`, and the call-count assertion is part of nearly every
+case because §8's branch table is a statement about how many times money was
+spent, not only about what came back.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
+import openai
 import pytest
 from common.model_pool import ModelRoute, ModelSpec
 from common.paths import PageType
+from common.wiki_io import ContentNotFoundError
+
+from kdb_search.budget import provider_max_tokens
 
 from kdb_search import search
 from kdb_search.contracts import TERMINAL_CONTRACTS, ContractViolation
@@ -305,27 +313,27 @@ def test_the_estimate_actually_includes_the_RENDERED_EVIDENCE() -> None:
     """
     spec = _spec(ctx_window=50_000, max_output_tokens=128_000)
 
-    with pytest.raises(NotImplementedError):  # small space: pre-flight passes
-        _run(_request(count=5), selector=spec)
+    small = _search(count=5, selector=spec)  # pre-flight passes: the search runs
+    assert small.status == "completed"
 
     large = _run(_request(count=2_000), selector=spec)
     assert large.status == "budget_exceeded"
     assert large.telemetry.eligible_space_size == 2_000
 
 
-def test_a_space_that_fits_passes_the_preflight_and_reaches_the_call_seam() -> None:
+def test_a_space_that_fits_passes_the_preflight_and_runs_BOTH_stages() -> None:
     """The negative control, and the proof that the pre-flight is not simply
-    always-fails. Reaching `STAGE_CALL_SEAM` is the correct P2.2 outcome: the
-    spine ran every gate and stopped where money would be spent.
+    always-fails: every gate passes and the search reaches its ordinary terminal.
     """
-    with pytest.raises(NotImplementedError, match="stage_call is P2.3"):
-        _run(_request(count=5))
+    result, selector = _search_with(count=5)
+    assert result.status == "completed"
+    assert selector.calls == 2
 
 
-def test_the_seam_is_reached_only_AFTER_every_zero_spend_gate() -> None:
-    """Ordering, from the other side: each zero-call terminal must return instead
-    of falling through to the seam. If a gate were dropped, this would surface as
-    `NotImplementedError` rather than a status."""
+def test_no_zero_spend_gate_falls_through_to_the_stages() -> None:
+    """Ordering, from the other side: each zero-call terminal must return rather
+    than continue. Driven with `NeverCalled`, so a dropped gate surfaces as the
+    invocation it would cause and not as a wrong status three fields later."""
     assert _run(_request(count=0)).status == "abstain_empty_space"
     assert (
         _run(_request(count=100), selector=_tiny_window_spec()).status
@@ -496,16 +504,761 @@ def test_the_snapshot_hash_is_sensitive_to_space_ORDER() -> None:
 def test_an_unexpected_exception_from_the_selector_propagates() -> None:
     """Joseph's #121 posture: typed outcomes are `status` values, and anything
     else is a defect that propagates. Pinned with a space that PASSES every gate,
-    so the exception comes from the call boundary rather than from a gate.
-
-    Today the boundary raises `NotImplementedError`; P2.3 replaces it with a real
-    call and this test keeps its meaning — no `except Exception` may appear
-    between the caller and the stages.
+    so the exception comes from the call boundary rather than from a gate — and
+    with a fault the retry loop deliberately does not recognize, since the whole
+    claim is that no `except Exception` sits between the caller and the stages.
     """
-    with pytest.raises(NotImplementedError):
-        _run(_request(count=5))
+    with pytest.raises(openai.BadRequestError):
+        _run(
+            _request(count=5),
+            call=fakes.FakeSelector(fakes.unrelated_bad_request()),
+            body_reader=_ok_body_reader,
+        )
 
 
-def test_the_seam_message_names_the_sub_phase_that_fills_it() -> None:
-    """So the failure is legible to whoever hits it before P2.3 lands."""
-    assert "P2.3" in search.STAGE_CALL_SEAM
+# ==========================================================================
+# P2.4 — the two-stage flow
+#
+# Everything below drives a scripted `FakeSelector`. Three habits, each
+# earning its keep:
+#
+#   * **Call counts are asserted, not inferred.** §8's branch table is a
+#     statement about how many times money was spent; a status assertion is
+#     silent on an extra call that produced the same answer.
+#   * **The script is asserted consumed.** A branch that stops early — retrying
+#     when it should not, skipping a stage — leaves script behind, and no field
+#     assertion notices.
+#   * **The terminal NAME is what `assert_result_contract` checked.** These
+#     tests read the resulting fields, but the guard inside `graph_search` is
+#     what proves the whole row was satisfied, including the cells no test here
+#     mentions.
+# ==========================================================================
+
+
+def _ok_body_reader(slug: str, page_type: PageType) -> str:
+    """Every entity has a body. The title-only degrade gets its own reader, so a
+    test that means to exercise drift has to say so."""
+    return f"Body text for {slug}, a {page_type} page with enough words to excerpt."
+
+
+def _long_body_reader(slug: str, page_type: PageType) -> str:
+    """A body big enough that the fat evidence, and only the fat evidence, busts
+    the window — which is what makes the fat pre-flight tests measure the fat
+    request rather than re-testing the thin one."""
+    return " ".join(f"word{n}" for n in range(400))
+
+
+def _missing_for(*slugs: str):
+    """A reader that raises `ContentNotFoundError` for the named slugs — the
+    graph/disk drift `project_entity` degrades to title-only."""
+
+    def read(slug: str, page_type: PageType) -> str:
+        if slug in slugs:
+            # The real constructor, not a stand-in: `project_entity` catches this
+            # exact type, and a test raising an approximation would pass while
+            # the production reader's exception fell through.
+            raise ContentNotFoundError(slug, page_type, Path(f"/nonexistent/{slug}.md"))
+        return _ok_body_reader(slug, page_type)
+
+    return read
+
+
+def _two_stage_script(count: int, *, hits: int = 3):
+    """The ordinary pair of replies: thin retains, fat selects."""
+    space = fakes.make_space(count)
+    return (
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=hits)),
+    )
+
+
+def _search_with(*script, count: int = 5, **kwargs):
+    """Run a full search against a script, returning the result AND the selector
+    so call counts stay assertable."""
+    selector = fakes.FakeSelector(*(script or _two_stage_script(count)))
+    result = _run(
+        kwargs.pop("request", None) or _request(count=count),
+        call=selector,
+        body_reader=kwargs.pop("body_reader", _ok_body_reader),
+        **kwargs,
+    )
+    return result, selector
+
+
+def _search(*script, count: int = 5, **kwargs):
+    return _search_with(*script, count=count, **kwargs)[0]
+
+
+# --------------------------------------------------------------------------
+# the ordinary path
+# --------------------------------------------------------------------------
+
+
+def test_the_ordinary_search_runs_thin_THEN_fat() -> None:
+    result, selector = _search_with(count=5)
+    selector.assert_consumed()
+    assert result.status == "completed"
+    assert result.execution == "two_stage_attempted"
+    assert selector.calls == 2
+    assert len(result.hits) == 3
+
+
+def test_the_stages_are_identifiable_from_the_REQUESTS_not_the_script() -> None:
+    """`FakeSelector` is order-scripted and never inspects the request, so stage
+    identity has to be read off what was sent. A stage-keyed fake would agree
+    with whatever the controller believes the boundary is — the one thing worth
+    checking."""
+    _, selector = _search_with(count=5)
+    thin_request, fat_request = selector.requests
+    assert thin_request.max_tokens == provider_max_tokens("thin")
+    assert fat_request.max_tokens == provider_max_tokens("fat")
+    assert "RETAIN" in thin_request.system.upper()
+    assert "excerpt:" in fat_request.prompt
+
+
+def test_thin_ALWAYS_runs_even_where_its_answer_cannot_bind() -> None:
+    """R4 as amended. At `N <= M` thin's retention is non-binding by
+    construction, so the cheap implementation skips the call — and would lose the
+    concordance series plus every thin defect the retain-all rule currently masks.
+    Joseph's rationale: the development window is the only window in which finding
+    those defects is free, because after `N > M` the same defect is silent,
+    unrecoverable data loss."""
+    _, selector = _search_with(count=3)
+    assert selector.calls == 2
+    assert selector.requests[0].max_tokens == provider_max_tokens("thin")
+
+
+def test_a_five_entity_space_still_runs_BOTH_calls() -> None:
+    """"No small-space skip" (§7.2 R4), asserted at the size where skipping is
+    most tempting."""
+    _, selector = _search_with(count=5)
+    assert selector.calls == 2
+
+
+def test_expression_accounting_is_the_CONTROLLERs_not_the_selectors() -> None:
+    """§2.3: the selector's advisory `unresolved` is an input, and where the two
+    disagree the controller wins. Here the selector claims everything is
+    unresolved while attributing hits to `A` — the controller reports the truth."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(
+            fakes.usable_document(space, count=2, matched=("A",), unresolved=("A", "B"))
+        ),
+        count=5,
+    )
+    assert result.unresolved_expressions == ("beta",)
+    assert all("alpha" in hit.matched_expressions for hit in result.hits)
+
+
+def test_the_fat_prompt_states_the_REQUESTs_cap_not_the_global_one() -> None:
+    """`render_fat_messages` takes `max_results` with no default for exactly this
+    reason: the prompt states the cap and `validate_response` counts `over_cap`
+    against `request.max_results`, so a call site rendering the global constant
+    would tell the selector 50 and then charge it against 5 — the selector obeys
+    the rule it was given and is penalized under a different one, invisibly at
+    both ends.
+
+    Every other test here uses the default `max_results`, under which the two
+    values coincide and the defect is unobservable. Found by mutation: replacing
+    `request.max_results` with the literal 50 left the whole suite green.
+    """
+    space = fakes.make_space(5)
+    request = GraphSearchRequest(
+        query=QueryPayload(text="QUERY TEXT", expressions=("alpha", "beta")),
+        search_space=fakes.make_space_ref(5),
+        max_results=3,
+    )
+    _, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        request=request,
+    )
+    fat_prompt = selector.requests[1].prompt
+    assert "3" in fat_prompt.split("EVIDENCE")[0] or " 3" in fat_prompt
+    assert "50" not in fat_prompt
+
+
+def test_the_request_cap_also_binds_the_VALIDATOR_not_only_the_prompt() -> None:
+    """The other end of the same pairing: a response over the request's cap is
+    truncated to it and the excess counted, rather than measured against the
+    global 50."""
+    space = fakes.make_space(6)
+    request = GraphSearchRequest(
+        query=QueryPayload(text="QUERY TEXT", expressions=("alpha", "beta")),
+        search_space=fakes.make_space_ref(6),
+        max_results=2,
+    )
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=5)),
+        request=request,
+    )
+    assert len(result.hits) == 2
+    assert result.telemetry.attempted_violations.over_cap == 3
+
+
+def test_an_honest_empty_fat_selection_is_completed_with_every_expression_open() -> None:
+    """Spec §2.3's fourth case. `completed` with no hits is a real answer, and
+    `COMPLETED` leaves `hits_empty` unconstrained precisely so this passes the
+    contract rather than needing a terminal of its own (D9.6)."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.honest_empty_document()),
+        count=5,
+    )
+    assert (result.status, result.hits) == ("completed", ())
+    assert result.unresolved_expressions == ("alpha", "beta")
+
+
+def test_the_salvage_rule_survives_the_whole_flow() -> None:
+    """Joseph's 10-returned/6-kept rule, end to end rather than at the validator:
+    a parseable response is never discarded, and the violations reach telemetry
+    by class."""
+    space = fakes.make_space(6)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.salvage_document(space)),
+        count=6,
+    )
+    assert len(result.hits) == 6
+    assert result.telemetry.returned_entries == 10
+    assert result.telemetry.valid_entry_yield == pytest.approx(0.6)
+    violations = result.telemetry.attempted_violations
+    assert (violations.foreign_slug, violations.duplicate_slug, violations.malformed_entry) == (2, 1, 1)
+
+
+# --------------------------------------------------------------------------
+# retain-all (N <= M) and manifest order
+# --------------------------------------------------------------------------
+
+
+def test_stage_two_is_EVERY_eligible_identity_when_N_is_at_or_below_M() -> None:
+    """codex #3, enforced controller-side. Thin retains exactly one slug; the fat
+    call still sees all five — a recall-oriented selector can omit an identity by
+    judgment and validation cannot tell omission from judgment, so the guarantee
+    cannot be requested in a prompt."""
+    space = fakes.make_space(5)
+    _, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(space, count=1)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=1)),
+        count=5,
+    )
+    fat_prompt = selector.requests[1].prompt
+    for entity in space:
+        assert entity.slug in fat_prompt
+
+
+def test_a_thin_stage_that_retains_NOTHING_still_gets_the_whole_space_at_N_le_M() -> None:
+    """The same rule at its extreme, and the boundary against D3: below M an empty
+    retention is not the D3 terminal, because retain-all overrides it."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_empty_document()),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=5,
+    )
+    assert result.status == "completed"
+    assert selector.calls == 2
+    assert "thin_retained_zero" not in result.telemetry.watched
+
+
+def test_stage_two_is_presented_in_MANIFEST_order_not_thins_ranked_order() -> None:
+    """Spec §3.4 — fat's judgment stays unanchored to thin's. Thin returns its
+    retention reversed; the fat evidence must still ascend by slug. Without this,
+    fat inherits thin's ranking and the two stages stop being independent
+    judgments, which is what the concordance series is trying to measure."""
+    space = fakes.make_space(120)  # N > M, so thin's list actually selects
+    retained = list(space[:30])
+    document = fakes._dump({"retained": [e.slug for e in reversed(retained)]})
+    _, selector = _search_with(
+        fakes.ScriptedReply(document),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=120,
+    )
+    fat_prompt = selector.requests[1].prompt
+    positions = [fat_prompt.index(e.slug) for e in retained]
+    assert positions == sorted(positions)
+
+
+def test_above_M_stage_two_is_thins_VALIDATED_retention() -> None:
+    space = fakes.make_space(120)
+    kept = space[:4]
+    _, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in kept]})),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=120,
+    )
+    fat_prompt = selector.requests[1].prompt
+    assert all(entity.slug in fat_prompt for entity in kept)
+    assert space[50].slug not in fat_prompt
+
+
+# --------------------------------------------------------------------------
+# F1 — thin exhausted, N <= M
+# --------------------------------------------------------------------------
+
+
+def test_F1_proceeds_to_fat_after_an_exhausted_thin_when_N_is_below_M() -> None:
+    """opus5 F1/G8.1. Thin burns both attempts, and because retain-all does not
+    need thin's answer the search still has a complete stage-2 input — so
+    abstaining would discard a working fat call for a stage whose output was
+    never binding."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=5,
+    )
+    selector.assert_consumed()
+    assert result.status == "completed"
+    assert result.execution == "fat_after_thin_failure"
+    assert "thin_failed_nonbinding" in result.telemetry.watched
+    assert selector.calls == 3
+
+
+def test_F1_reports_concordance_as_NULL_not_zero() -> None:
+    """The distinction the metric depends on. Thin produced no validated ranking
+    at all, so there is nothing to compare fat against — a computed 0.0 would
+    report "the two stages agreed on nothing" about a comparison that never
+    happened, and that value would then enter the watched series as evidence."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=5,
+    )
+    assert result.telemetry.concordance is None
+
+
+def test_F1_does_NOT_apply_above_M() -> None:
+    """The partition. Above M there is no stage-2 input without thin, so the
+    search fails rather than inventing one — and the fat call never happens."""
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        count=120,
+    )
+    selector.assert_consumed()
+    assert result.status == "selector_failure"
+    assert result.execution == "thin_attempted"
+    assert result.telemetry.selector_failure_class == "unparseable_response"
+    assert selector.calls == 2
+
+
+def test_thin_exhaustion_above_M_records_WHICH_class_exhausted_it() -> None:
+    """`THIN_EXHAUSTED.failure_class_required` — and the matrix forbids the field
+    anywhere else, so a class leaking onto a non-failure terminal fails the guard
+    rather than passing unnoticed."""
+    result = _search(
+        fakes.ScriptedReply(fakes.thin_structurally_unusable_document()),
+        fakes.ScriptedReply(fakes.thin_structurally_unusable_document()),
+        count=120,
+    )
+    assert result.telemetry.selector_failure_class == "structurally_unusable_response"
+
+
+def test_a_completed_search_carries_NO_failure_class() -> None:
+    result = _search(count=5)
+    assert result.telemetry.selector_failure_class is None
+
+
+# --------------------------------------------------------------------------
+# D3 — thin retained zero over N > M
+# --------------------------------------------------------------------------
+
+
+def test_D3_skips_the_fat_call_entirely() -> None:
+    """Every fat call is a thin→fat call (Joseph). With nothing retained above M
+    there is no evidence pool to build, so `completed` is reported without a
+    second call — and the watched class is what keeps it out of the honest-empty
+    bucket in the KPI series."""
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_empty_document()), count=120
+    )
+    selector.assert_consumed()
+    assert result.status == "completed"
+    assert result.execution == "thin_attempted"
+    assert selector.calls == 1
+    assert "thin_retained_zero" in result.telemetry.watched
+    assert result.hits == ()
+    assert result.unresolved_expressions == ("alpha", "beta")
+    assert result.evidence_status == "not_applicable"
+    assert result.body_coverage is None
+    assert result.telemetry.concordance is None
+
+
+def test_D3_is_reached_only_by_an_HONEST_empty_not_by_a_hallucination() -> None:
+    """The pair `fakes.retained_all_foreign_document` exists for. Both documents
+    validate to `retained == ()`; one is the D3 terminal after ONE call, the other
+    is an allowed retry class that exhausts thin over two. A controller branching
+    on the validated list collapses them, and a malfunctioning selector then reads
+    as an honest empty — exactly what D3's watched class exists to prevent."""
+    space = fakes.make_space(120)
+    honest, honest_selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_empty_document()), count=120
+    )
+    honest_selector.assert_consumed()
+    assert honest.status == "completed"
+    assert honest_selector.calls == 1
+
+    foreign, foreign_selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_all_foreign_document(space)),
+        fakes.ScriptedReply(fakes.retained_all_foreign_document(space)),
+        count=120,
+    )
+    foreign_selector.assert_consumed()
+    assert foreign.status == "selector_failure"
+    assert foreign_selector.calls == 2
+    assert "thin_retained_zero" not in foreign.telemetry.watched
+
+
+# --------------------------------------------------------------------------
+# the fat evidence pool
+# --------------------------------------------------------------------------
+
+
+def test_bodies_are_read_INSIDE_search_never_by_the_caller() -> None:
+    """§1.1 — the caller passes identities only. Asserted by counting reads: the
+    projector is what turns a slug into evidence, and a caller that had to
+    pre-hydrate would make the snapshot hash a function of its own work."""
+    seen: list[str] = []
+
+    def counting_reader(slug: str, page_type: PageType) -> str:
+        seen.append(slug)
+        return _ok_body_reader(slug, page_type)
+
+    _search(count=5, body_reader=counting_reader)
+    assert seen == [entity.slug for entity in fakes.make_space(5)]
+
+
+def test_full_hydration_reports_complete_evidence_and_full_coverage() -> None:
+    result = _search(count=5)
+    assert result.evidence_status == "complete"
+    assert result.body_coverage == 1.0
+    assert result.telemetry.stage2_hydrated == 5
+    assert result.telemetry.stage2_title_only == 0
+
+
+def test_a_missing_body_degrades_to_title_only_rather_than_dropping_the_entity() -> None:
+    """Graph/disk drift (§4). The entity still competes, with weaker evidence —
+    dropping it would silently shrink the closed world the selector was told it
+    had, and `partial` is what makes that visible to a caller whose acceptance
+    policy cares."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        count=5, body_reader=_missing_for(space[1].slug, space[3].slug)
+    )
+    assert result.evidence_status == "partial"
+    assert result.body_coverage == pytest.approx(0.6)
+    assert result.telemetry.stage2_title_only == 2
+    assert space[1].slug in selector.requests[1].prompt
+
+
+# --------------------------------------------------------------------------
+# concordance (§8.3)
+# --------------------------------------------------------------------------
+
+
+def test_concordance_is_the_fraction_of_fats_top_ten_inside_thins_top_twenty() -> None:
+    space = fakes.make_space(120)
+    result = _search(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space[:4]]})),
+        # Fat returns 4 hits, of which the first 2 are in thin's list.
+        fakes.ScriptedReply(fakes.usable_document(space, count=4)),
+        count=120,
+    )
+    assert result.telemetry.concordance == pytest.approx(1.0)
+
+
+def test_concordance_is_null_when_fat_produced_no_validated_hits() -> None:
+    """codex #12 — no denominator. Zero would say the stages disagreed
+    completely, which is a claim about a comparison that has no left-hand side."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.honest_empty_document()),
+        count=5,
+    )
+    assert result.telemetry.concordance is None
+
+
+def test_a_thin_stage_that_RAN_and_retained_nothing_gives_a_real_zero() -> None:
+    """The third null case, from its negative side. Thin ran fine and honestly
+    retained nothing, so the ranked list exists and is empty — 0.0 is a real
+    measurement (fat found what thin did not) and must not be flattened into the
+    F1 null, which means no comparison happened at all."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_empty_document()),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=5,
+    )
+    assert result.telemetry.concordance == 0.0
+
+
+def test_concordance_measures_thins_TOP_TWENTY_not_its_whole_retention() -> None:
+    """The window is part of the metric's definition (§8.3). Thin retains 40
+    slugs; fat's hits sit at positions 0-1, inside the top 20, while a
+    whole-retention reading would score identically for a hit at position 39 —
+    and the series would stop discriminating exactly where ranking matters."""
+    space = fakes.make_space(120)
+    result = _search(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space[:40]]})),
+        fakes.ScriptedReply(
+            fakes._dump({"selections": [{"slug": space[39].slug, "matched": ["A"]}]})
+        ),
+        count=120,
+    )
+    assert result.telemetry.concordance == 0.0
+
+
+# --------------------------------------------------------------------------
+# the fat pre-flight terminal (D6)
+# --------------------------------------------------------------------------
+
+
+def _fat_only_budget_spec() -> ModelSpec:
+    """A window that fits thin's identity-only evidence and not fat's excerpts.
+    The two stages differ by exactly the bodies, which is what makes this the fat
+    pre-flight and not a second thin one."""
+    return _spec(ctx_window=45_000, max_output_tokens=128_000)
+
+
+def test_the_fat_preflight_stops_the_search_with_NO_fat_call() -> None:
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
+        count=90,
+        selector=_fat_only_budget_spec(),
+        body_reader=_long_body_reader,
+    )
+    selector.assert_consumed()
+    assert result.status == "budget_exceeded"
+    assert result.execution == "thin_attempted"
+    assert selector.calls == 1
+    fat_records = [r for r in result.telemetry.budget_records if r.stage == "fat"]
+    assert [r.fits for r in fat_records] == [False]
+    assert [r.detected for r in fat_records] == ["pre_call"]
+
+
+def test_the_fat_preflight_terminal_reports_NOT_APPLICABLE_evidence() -> None:
+    """Deliberate, and it looks wrong: the bodies were read a moment earlier to
+    size the request, so hydration data exists. The ratified contract distinguishes
+    this terminal from the post-call one by whether the pool was **presented**, and
+    here it never was — reporting measured coverage would make an unspent search
+    indistinguishable from a billed one in the artifact."""
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
+        count=90,
+        selector=_fat_only_budget_spec(),
+        body_reader=_long_body_reader,
+    )
+    assert result.evidence_status == "not_applicable"
+    assert result.body_coverage is None
+
+
+def test_the_named_F1_interaction_keeps_BOTH_markers() -> None:
+    """`FAT_PREFLIGHT_BUDGET_ON_F1`. `execution` stays `thin_attempted` — NOT
+    `fat_after_thin_failure`, which means the fat call ran — while the
+    `thin_failed_nonbinding` class is preserved, so the record shows both that
+    thin failed and that the budget, not the failure, is what ended the search."""
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        count=90,
+        selector=_fat_only_budget_spec(),
+        body_reader=_long_body_reader,
+    )
+    selector.assert_consumed()
+    assert result.status == "budget_exceeded"
+    assert result.execution == "thin_attempted"
+    assert "thin_failed_nonbinding" in result.telemetry.watched
+    assert selector.calls == 2
+
+
+# --------------------------------------------------------------------------
+# the post-call fat terminals
+# --------------------------------------------------------------------------
+
+
+def test_a_truncated_fat_response_reports_the_evidence_it_DID_present() -> None:
+    """The mirror of the pre-flight case above, and the reason both exist: here
+    the pool was built and sent, so `evidence_status` and `body_coverage` are
+    measured. Same status, opposite evidence side — that difference is the whole
+    content of the distinction."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(
+            fakes.truncated_text(space), stop_reason=fakes.STOP_LENGTH_OPENAI
+        ),
+        count=5,
+    )
+    selector.assert_consumed()
+    assert result.status == "budget_exceeded"
+    assert result.execution == "two_stage_attempted"
+    assert result.evidence_status == "complete"
+    assert result.body_coverage == 1.0
+
+
+def test_a_truncated_THIN_response_ends_the_search_without_a_fat_call() -> None:
+    """D9.3's terminal, and F1 explicitly does not apply: proceeding to fat is for
+    retry-exhausted failures, never for either budget side (codex P1 — it removes
+    a branch rather than adding one)."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(
+            fakes.thin_truncated_text(space), stop_reason=fakes.STOP_LENGTH_OPENAI
+        ),
+        count=5,
+    )
+    selector.assert_consumed()
+    assert result.status == "budget_exceeded"
+    assert result.execution == "thin_attempted"
+    assert selector.calls == 1
+    assert result.evidence_status == "not_applicable"
+
+
+def test_a_fat_truncation_on_the_F1_path_keeps_the_F1_execution_and_class() -> None:
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(
+            fakes.truncated_text(space), stop_reason=fakes.STOP_LENGTH_OPENAI
+        ),
+        count=5,
+    )
+    assert result.execution == "fat_after_thin_failure"
+    assert "thin_failed_nonbinding" in result.telemetry.watched
+
+
+def test_a_thin_over_window_rejection_is_watched_as_an_estimation_miss() -> None:
+    result, selector = _search_with(
+        fakes.context_length_rejection_openai(), count=5
+    )
+    selector.assert_consumed()
+    assert result.status == "budget_exceeded"
+    assert "budget_estimation_miss" in result.telemetry.watched
+    post = [r for r in result.telemetry.budget_records if r.detected == "post_call"]
+    assert [(r.detected, r.budget_side) for r in post] == [("post_call", "input")]
+
+
+def test_a_fat_over_window_rejection_on_F1_has_a_contract_row_at_all() -> None:
+    """The gap P2.4 found in the ratified matrix. The F1 treatment reached the
+    fat PRE-flight and OUTPUT terminals but not the fat INPUT one, which reads as
+    an ordering artifact — the D7 rows predate D9.3's F1 treatment — rather than a
+    decision, since the state is reachable. Without a row this legitimate search
+    dies on a `ContractViolation`, so P2.4 added
+    `fat_input_estimation_miss_on_f1` with every cell COPIED from the two rows
+    that bracket it, marked EXTENSION, and flagged for ratification."""
+    result = _search(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.context_length_rejection_openai(),
+        count=5,
+    )
+    assert result.status == "budget_exceeded"
+    assert result.execution == "fat_after_thin_failure"
+    assert set(result.telemetry.watched) == {
+        "thin_failed_nonbinding",
+        "budget_estimation_miss",
+    }
+
+
+def test_a_fat_stage_that_exhausts_its_retries_is_a_selector_failure() -> None:
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.all_dropped_document(space)),
+        fakes.ScriptedReply(fakes.all_dropped_document(space)),
+        count=5,
+    )
+    selector.assert_consumed()
+    assert result.status == "selector_failure"
+    assert result.execution == "two_stage_attempted"
+    assert result.telemetry.selector_failure_class == "all_entries_dropped"
+    assert selector.calls == 3
+
+
+# --------------------------------------------------------------------------
+# the audit payload, on every path
+# --------------------------------------------------------------------------
+
+
+def test_the_stage_trace_holds_one_record_per_logical_call() -> None:
+    """§6's invariant, observed through the hash that covers the trace: a search
+    with a retried thin and a fat call must move the integrity hash relative to
+    one with a clean thin, because the archived attempt count differs."""
+    space = fakes.make_space(5)
+    clean = _search(count=5)
+    retried = _search(
+        fakes.ScriptedReply(fakes.unparseable_text()),
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=3)),
+        count=5,
+    )
+    assert clean.telemetry.retry_attempts == 0
+    assert retried.telemetry.retry_attempts == 1
+    assert clean.hits == retried.hits
+
+
+def test_the_snapshot_hash_covers_the_EVIDENCE_the_fat_stage_was_shown() -> None:
+    """The snapshot answers "what was searched", so two runs over the same space
+    that presented different evidence bytes must not share it. Here one run's
+    entity is title-only and the other's is hydrated — same manifest, same graph,
+    different evidence."""
+    space = fakes.make_space(5)
+    hydrated = _search(count=5)
+    degraded = _search(count=5, body_reader=_missing_for(space[0].slug))
+    assert (
+        hydrated.telemetry.search_snapshot_hash
+        != degraded.telemetry.search_snapshot_hash
+    )
+
+
+def test_the_snapshot_hash_ignores_what_the_selector_ANSWERED() -> None:
+    """The other half of the split: a run that differs only in its outcome moves
+    the integrity hash and leaves the snapshot hash alone. That is what makes
+    selector A/B over a frozen snapshot meaningful — without it, "the two models
+    faced the same world" would be unverifiable."""
+    space = fakes.make_space(5)
+    three = _search(count=5)
+    one = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.usable_document(space, count=1)),
+        count=5,
+    )
+    assert len(three.hits) != len(one.hits)
+    assert three.telemetry.search_snapshot_hash == one.telemetry.search_snapshot_hash
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    ["completed", "d3", "thin_exhausted", "fat_preflight"],
+)
+def test_every_terminal_produces_a_snapshot_hash(terminal: str) -> None:
+    """§6 — the audit is built on every path, and its emptiness on an abstention
+    is the finding rather than a reason to skip the record. The snapshot hash is
+    the observable end of that obligation."""
+    if terminal == "completed":
+        result = _search(count=5)
+    elif terminal == "d3":
+        result = _search(fakes.ScriptedReply(fakes.retained_empty_document()), count=120)
+    elif terminal == "thin_exhausted":
+        result = _search(
+            fakes.ScriptedReply(fakes.unparseable_text()),
+            fakes.ScriptedReply(fakes.unparseable_text()),
+            count=120,
+        )
+    else:
+        result = _search(
+            fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
+            count=90,
+            selector=_fat_only_budget_spec(),
+            body_reader=_long_body_reader,
+        )
+    assert result.telemetry.search_snapshot_hash is not None

@@ -288,6 +288,36 @@ FAT_INPUT_ESTIMATION_MISS = TerminalContract(
     "guarantee removes estimation from fat's safety path entirely.",
 )
 
+FAT_INPUT_ESTIMATION_MISS_ON_F1 = TerminalContract(
+    name="fat_input_estimation_miss_on_f1",
+    status="budget_exceeded",
+    execution=("fat_after_thin_failure",),
+    thin_attempts=_EXHAUSTED,
+    fat_attempts=_ONE,
+    evidence_status=None,
+    body_coverage_present=None,
+    hits_empty=True,
+    all_expressions_unresolved=True,
+    concordance_null=True,
+    detected="post_call",
+    budget_side="input",
+    required_watched=("budget_estimation_miss", "thin_failed_nonbinding"),
+    note="**EXTENSION, NOT RATIFIED TEXT — added in P2.4, flagged for owner "
+    "ratification.** The ratified matrix gives the F1 treatment to the fat "
+    "OUTPUT terminal (FAT_OUTPUT_TRUNCATION_ON_F1) and to the fat PRE-flight "
+    "terminal (FAT_PREFLIGHT_BUDGET_ON_F1), but not to the fat INPUT terminal — "
+    "FAT_INPUT_ESTIMATION_MISS admits `two_stage_attempted` only. That looks like "
+    "an ordering artifact (the D7 input rows predate D9.3's F1 treatment) rather "
+    "than a decision, because the state is reachable: F1 runs fat after an "
+    "exhausted thin, and a sub-330k window can still draw the provider's "
+    "over-window rejection. With no row, a legitimate search would die on a "
+    "ContractViolation. Every cell here is COPIED, not inferred — the budget "
+    "cells from FAT_INPUT_ESTIMATION_MISS, the execution and the watched class "
+    "from FAT_OUTPUT_TRUNCATION_ON_F1 — and the evidence side stays "
+    "UNENUMERATED exactly as its parent leaves it, rather than being filled in "
+    "while the row was open anyway.",
+)
+
 # ---------------------------------------------------------------------------
 # retry-exhausted selector failures
 # ---------------------------------------------------------------------------
@@ -359,6 +389,7 @@ TERMINAL_CONTRACTS: dict[str, TerminalContract] = {
         FAT_OUTPUT_TRUNCATION_ON_F1,
         THIN_INPUT_ESTIMATION_MISS,
         FAT_INPUT_ESTIMATION_MISS,
+        FAT_INPUT_ESTIMATION_MISS_ON_F1,
         THIN_EXHAUSTED,
         FAT_EXHAUSTED,
         COMPLETED,
@@ -483,12 +514,23 @@ def verify_result_contract(
             f"budget_side={contract.budget_side!r}; got "
             f"{sorted((r.detected, r.budget_side) for r in result.telemetry.budget_records)}",
         )
-        # A `budget_exceeded` terminal whose record says the budget FIT is the
-        # one way this contract can be satisfied field-by-field and still be
+        # A `budget_exceeded` terminal whose own decision says the budget FIT is
+        # the one way this contract can be satisfied field-by-field and still be
         # wrong about what happened.
+        #
+        # **The TERMINAL's decision is the LAST matching record, not all of
+        # them** — a distinction P1.5 could not see, having no producer. A fat
+        # pre-flight rejection carries two `pre_call`/`input` records: thin's,
+        # which passed, and fat's, which did not. Requiring every matching record
+        # to be a non-fit would forbid the passing thin record — and
+        # `BudgetRecord` exists to keep exactly those, because a series of
+        # estimates that never bind is how the estimator's calibration gets
+        # judged. Records are appended in stage order, so the decision that ended
+        # the search is the last one of its class.
         check(
-            all(not record.fits for record in matching),
-            "a budget_exceeded terminal cannot carry a fitting budget record",
+            not matching[-1].fits if matching else True,
+            "a budget_exceeded terminal's own budget decision cannot be a fit; "
+            f"got {[(r.stage, r.fits) for r in matching]}",
         )
 
     return tuple(violations)
@@ -522,6 +564,7 @@ __all__ = [
     "EMPTY_SPACE",
     "FAT_EXHAUSTED",
     "FAT_INPUT_ESTIMATION_MISS",
+    "FAT_INPUT_ESTIMATION_MISS_ON_F1",
     "FAT_OUTPUT_TRUNCATION",
     "FAT_OUTPUT_TRUNCATION_ON_F1",
     "FAT_PREFLIGHT_BUDGET",

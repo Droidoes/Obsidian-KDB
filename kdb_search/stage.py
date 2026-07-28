@@ -37,7 +37,7 @@ misconfiguration as the selector's fault.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import httpx
@@ -65,7 +65,7 @@ from .budget import (
 )
 from .constants import EXCERPT_POLICY_VERSION, MAX_ATTEMPTS_PER_STAGE
 from .prompts import load_template
-from .response import ValidatedResponse, ValidatedThinResponse
+from .response import ValidatedResponse, ValidatedThinResponse, Violations
 from .result import BudgetRecord
 
 #: What `stage_call` validated, whichever stage it ran. A union rather than a
@@ -239,6 +239,15 @@ class StageOutcome:
     #: Built here on the post-call outcomes, because this is the only place that
     #: holds both the pre-flight verdict's figures and the provider's own verdict.
     budget_record: BudgetRecord | None = None
+    #: Summed over EVERY attempt, not read off the surviving one. "Attempted" is
+    #: the operative word (§2.3): a first attempt that returned six foreign slugs
+    #: and a second that succeeded is a selector that attempted six foreign slugs,
+    #: and a per-outcome figure would report zero.
+    attempted_violations: Violations = field(default_factory=Violations)
+    #: How many attempts classified `all_entries_dropped` — its own telemetry
+    #: counter in §6.3, separate from the violation classes because it is a
+    #: property of the whole response rather than of any entry in it.
+    all_entries_dropped_occurrences: int = 0
 
     @property
     def attempts(self) -> int:
@@ -398,6 +407,10 @@ def stage_call(
         provider=spec.provider, model=spec.model, route=spec.route.api_call_type
     )
     records: list[StageRecord] = []
+    # Accumulated across attempts, never read off the surviving one — see
+    # `StageOutcome.attempted_violations`.
+    tally = Violations()
+    dropped_occurrences = 0
 
     def record(
         *,
@@ -446,6 +459,8 @@ def stage_call(
                 outcome="input_estimation_miss",
                 records=tuple(records),
                 failure_class="budget_estimation_miss",
+                attempted_violations=tally,
+                all_entries_dropped_occurrences=dropped_occurrences,
                 budget_record=_post_call_budget_record(
                     verdict=verdict,
                     spec=spec,
@@ -463,6 +478,9 @@ def stage_call(
             response.stop_reason, api_call_type=spec.route.api_call_type
         )
         validated = validate(response.text)
+        tally += validated.attempted_violations
+        if validated.classification == "all_entries_dropped":
+            dropped_occurrences += 1
 
         # D9.3 — before the generic retry path, and a conjunction.
         if normalized == "output_cap" and not _has_usable_document(validated):
@@ -483,6 +501,8 @@ def stage_call(
                 outcome="output_truncation",
                 records=tuple(records),
                 validated=validated,
+                attempted_violations=tally,
+                all_entries_dropped_occurrences=dropped_occurrences,
                 failure_class="output_truncation",
                 budget_record=_post_call_budget_record(
                     verdict=verdict,
@@ -514,6 +534,8 @@ def stage_call(
             outcome="usable",
             records=tuple(records),
             validated=validated,
+            attempted_violations=tally,
+            all_entries_dropped_occurrences=dropped_occurrences,
         )
 
     last = records[-1].failure
@@ -522,6 +544,8 @@ def stage_call(
         outcome="exhausted",
         records=tuple(records),
         failure_class=last.failure_class if last else None,
+        attempted_violations=tally,
+        all_entries_dropped_occurrences=dropped_occurrences,
     )
 
 
