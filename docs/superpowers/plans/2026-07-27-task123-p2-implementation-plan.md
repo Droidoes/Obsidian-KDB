@@ -403,9 +403,34 @@ every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, 
   Restore now covers every file any mutation touches, and the backup is only ever taken from a
   verified-green tree.
 
-### P2.1f — golden byte pins → `test_prompts_golden.py`
-- [ ] Pinned exact bytes of both rendered templates + version/SHA guard
-- [ ] **Lands after the prose review, before the D5 calibration gate.** Split from P2.1a
+### P2.1f — golden byte pins → `test_prompts_golden.py` — **DONE 2026-07-27**
+- [x] Pinned exact bytes of both rendered templates + version/SHA guard. **18 tests.** Pins are
+      hardcoded literals, never computed from the thing they check (the R2 oracle-independence
+      lesson): digest, version, `repo_path`, both half-byte counts, and the overhead figure, per
+      stage. The failure message on the digest pin states the D-115-13 obligation — rename the file
+      to bump the version, update the pin, land both with the prose change in **one** commit —
+      because a pin whose message does not say what to do gets re-blessed blindly.
+- [x] **Two pins the "exact bytes" bullet did not imply, both load-bearing.**
+      (i) **The two constants folded into the overhead are pinned separately.** The overhead is *not*
+      a pure function of the template: `template_overhead_bytes` renders `{{RETENTION_CAP}}` /
+      `{{MAX_RESULTS}}` from `M` / `MAX_RESULTS`, so widening `MAX_RESULTS` 50 → 100 adds a byte to
+      fat's wrapper with every template byte identical — the digest pin stays green while the figure
+      `fat_worst_case_request_bytes()` consumes moves. A second test proves that coupling is real
+      (renders at the pinned cap and at 10×, asserts the byte counts differ) so the constants pin
+      cannot later be "simplified" away as redundant to the digest.
+      (ii) **D10 is re-asserted on the rendered bytes.** A content hash plus byte counts stays green
+      under a length-preserving swap of the EVIDENCE and QUERY blocks, and these are the exact bytes
+      calibration is fired against.
+- [x] **`git_commit` deliberately excluded, as a recorded decision with its own test.** It moves with
+      every commit; pinning it would fail this file on each one and train the team to re-bless pins
+      without reading them, destroying the signal the other pins carry.
+- [x] Mutation-checked (standing practice): **12 mutations, 10 caught by this file, 12 at package
+      scope.** Both non-catches are recorded in the file's docstring as boundaries rather than holes —
+      the hardcoded-`version` mutation is caught by `test_prompts.py`'s version-tracks-the-filename
+      test (that file tests loader *behaviour*, this one pins *values*; duplicating would let one
+      copy rot), and loosening this file's own `==` is a review concern no assertion can defend,
+      verified non-fatal because the constants pin still catches the widening it was meant to catch.
+- [x] **Lands after the prose review, before the D5 calibration gate.** Split from P2.1a
       deliberately: the pin is the only P2 artifact coupled to prose *content*; P2.2–P2.6 couple
       only to structure (a system string and a user string exist, in D10 order), so orchestration
       proceeds on the drafts while the prose is out for review.
