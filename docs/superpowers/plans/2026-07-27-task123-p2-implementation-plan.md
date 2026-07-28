@@ -156,29 +156,88 @@ resolution removed; `ok_stop_for` flattened to one spelling; `None` swallowed by
 `kdb_search` suite 589 passed / 31 skipped; full suite **2,559 passed** / 32 skipped (was 2,513 at P1
 close, `d231331`).
 
-### P2.1a — `prompts.py`: loader, assembly, D10 ordering → `test_prompts.py`
-- [ ] `prompts/selector_thin_v1.txt`, `prompts/selector_fat_v1.txt` — drafted, not yet pinned
-- [ ] Loader: `Path(__file__).parent / "prompts" / …` (precedent: `compiler/prompt_builder.py:38`),
+### P2.1a — `prompts.py`: loader, assembly, D10 ordering → `test_prompts.py` — **DONE** 2026-07-27
+- [x] `prompts/selector_thin_v1.txt`, `prompts/selector_fat_v1.txt` — drafted, not yet pinned.
+      **One file per stage carrying BOTH halves**, split by a `<<<USER>>>` marker line: `PromptRef`
+      holds one `version`, one `sha256` and one `repo_path`, so a two-file stage would need two
+      refs — and the owner's prose review is over one rendered prompt per stage.
+- [x] Loader: `Path(__file__).parent / "prompts" / …` (precedent: `compiler/prompt_builder.py:38`),
       cached; **no `__init__.py` in `prompts/`** — package-data is declared on `kdb_search`
-      (`pyproject.toml:50`), so resource access goes through the parent package
-- [ ] `PromptRef` construction: `version` from the filename, `sha256` over the template bytes,
+      (`pyproject.toml:50`), so resource access goes through the parent package.
+      **Asserted, because it is a real trap:** `prompts.py` and `prompts/` share a name, and the
+      module only wins because a namespace-package directory is the import system's last resort —
+      adding `prompts/__init__.py` would shadow the module. Mutation-checked.
+- [x] `PromptRef` construction: `version` from the filename, `sha256` over the template bytes,
       `repo_path`, and `git_commit` — resolution decided here (see Decisions)
-- [ ] **D10 asserted on the rendered USER message, not the template source** — `EVIDENCE` before
+- [x] **D10 asserted on the rendered USER message, not the template source** — `EVIDENCE` before
       `QUERY`, both stages. A template can reorder at render time; the claim is about what the
-      model receives, so the assertion belongs where the bytes are final.
-- [ ] **Offline built-wheel prompt-loading smoke test** (blueprint §1) — deferred out of P1.0 by
-      necessity (nothing existed to load); P2.1a is the first moment a `.txt` exists. This is also
-      what proves the `Path(__file__).parent` access survives a wheel install.
-- [ ] **The `SYSTEM_TEMPLATE_BUDGET_BYTES` obligation** (`constants.py:170-176`): assert the real
+      model receives, so the assertion belongs where the bytes are final. Asserted **twice**: once
+      on slot order with content sentinels (immune to what the content contains) and once on the
+      unindented section headers (the order the model reads), plus `endswith(query)` for D10's
+      attention-position half.
+- [x] **Offline prompt-loading smoke test** (blueprint §1) — deferred out of P1.0 by
+      necessity (nothing existed to load); P2.1a is the first moment a `.txt` exists.
+      **Divergence, deliberate and recorded: not a built wheel.** `.venv` has no `setuptools`,
+      `build` or `wheel`, so building one needs a network install — offered to the owner rather
+      than substituted silently. The property is covered in two halves instead: (i) the packaging
+      **declaration** is parsed out of `pyproject.toml` and its globs expanded, so a new prompt
+      file added without a packaging update fails; (ii) resolution is proved by a subprocess with
+      `cwd` **outside the repo** and `PATH` emptied — which also pins `git_commit == "unknown"`,
+      the installed-wheel case.
+- [x] **The `SYSTEM_TEMPLATE_BUDGET_BYTES` obligation** (`constants.py:170-176`): assert the real
       rendered system block + user wrapper against 3,072 B, and raise the constant to the measured
-      figure if exceeded. **Low risk, stated so it does not read as a mid-phase failure:** the
-      static guarantee has **36,832 tokens of slack** (283,168 against 320,000), so a realistic
-      1–3 kB system block cannot break it. But raising the constant edits a ratified §7.0a figure
-      and therefore costs a **blueprint v0.15** bump — expected, not a regression.
-- [ ] Stage-2 bound assertion (blueprint §11's P2 row): with real templates,
+      figure if exceeded. **MEASURED — the constant holds, no blueprint bump:** fat **2,381 B**
+      (2,321 system + 60 wrapper, **691 B headroom**), thin **2,146 B** (2,085 + 61, **926 B
+      headroom**). Measured in **bytes**, with the widest cap value the contract allows, so the
+      figure is each stage's maximum rather than a sample. **The fat figure is the normative one** —
+      `fat_worst_case_request_bytes()` is the constant's only consumer and it is fat's static
+      guarantee that rests on it; thin is estimate-guarded with a typed `budget_estimation_miss`,
+      so thin's assertion is a bonus.
+      **The 691 B is the prose review's budget** — roughly 8 lines. Exceeding it is not a test fix:
+      it edits a ratified §7.0a figure and costs a **blueprint v0.15** bump.
+- [x] Stage-2 bound assertion (blueprint §11's P2 row): with real templates,
       `fat_worst_case_request_bytes()` stops being part-declared and becomes measured —
-      100 × 2,500 B + 4,096 B + the measured template ≤ ~257 kB, `tokens_lte_bytes` ⇒ tokens,
-      + 26k reserved output < 320k. Same assertion as the item above; stated once, tested once.
+      100 × 2,500 B + 4,096 B + the measured template = **256,477 B** ≤ ~257 kB,
+      `tokens_lte_bytes` ⇒ tokens, + 26k reserved output = **282,477 < 320,000**. Same assertion as
+      the item above; stated once, tested once.
+
+**Five things P2.1a carries beyond the bullets above.**
+
+1. **Single-pass substitution is a P10 control, not a style choice.** Sequential
+   `str.replace("{{EVIDENCE}}", …).replace("{{QUERY}}", …)` is an injection vector: an excerpt
+   containing the literal `{{QUERY}}` gets the query block substituted *into it* on the second
+   pass. `re.sub` never rescans replacement text, so a marker inside evidence or query content is
+   inert — asserted directly, and mutation-checked by reintroducing the sequential form.
+2. **Both silent-failure directions of substitution raise.** An unknown slot (`{{EVIDENC}}`) would
+   ship a brace pair to the model; a value with **no** slot would drop silently — and the concrete
+   case there is `{{MAX_RESULTS}}` disappearing from the fat prompt while the validator keeps
+   counting `over_cap` violations against a rule the selector was never told.
+3. **`max_results` is rendered into the fat prompt** (and the retention cap into thin), for exactly
+   that reason. It sits in the per-request tail *after* evidence, since D10's invariant-first
+   ordering applies to everything that varies per source, and before the query, since the query is
+   last.
+4. **The schema example inside each SYSTEM block is driven through the REAL validator** —
+   `validate_response` / `validate_thin_retention`. This is the only in-repo oracle available for
+   prompt prose: it pins that the example the model is told to copy is an example of a response the
+   validator accepts, that the fat wire carries exactly `slug` + `matched` (no reinstated D8
+   `evidence` field), and that expressions are addressed by **letter** (D11) — an integer example
+   would re-open the base ambiguity. It also puts a floor under the owner's prose review: a
+   wrongly-edited example fails a test instead of reaching a paid call.
+5. **`artifact._sha256` → `artifact.sha256_digest` (public).** `prompts.py` stamps
+   `PromptRef.sha256`, and the digest convention belongs to the artifact — sharing the function is
+   what keeps the prompt hash and the artifact hashes from becoming two conventions. Pure rename,
+   two call sites.
+
+**Verification.** 62 new tests (`kdb_search/tests/test_prompts.py`), full suite **2,559 → 2,621
+passed / 32 skipped**, green. **Mutation-checked, 20 mutations, 20 caught** — D10 reordered in each
+template; sequential `.replace`; each of the unknown-slot / unused-value / repeated-slot guards
+removed; `repo_path` computed absolute; `sha256` over the system half only; newline translation
+disabled (CRLF leaking into the digest); `version` hardcoded instead of derived; the SYSTEM-half
+slot check removed; overhead measured in characters instead of bytes; overhead measured with the
+narrowest cap; the fat example switched to integer labels; the fat example re-growing an `evidence`
+field; the result cap dropped from the wrapper; the thin example's slugs made non-copyable; the P10
+precedence clause losing its query side; the word "JSON" removed; and `prompts/__init__.py` added
+to shadow the module.
 
 ### P2.1f — golden byte pins → `test_prompts_golden.py`
 - [ ] Pinned exact bytes of both rendered templates + version/SHA guard
@@ -201,7 +260,10 @@ close, `d231331`).
       `compiler/tests/test_compile_source.py:139`'s regression pin
 - [ ] Route cannot honour `json_mode` (anthropic) ⇒ typed config error at resolution, before any
       rendering — folded into the B10 assertions above
-- [ ] The rendered prompt contains the literal word "JSON" (openai-compat 400s without it)
+- [x] The rendered prompt contains the literal word "JSON" (openai-compat 400s without it) —
+      **done in P2.1a**, since the templates existed there and the assertion was cheaper to write
+      once than to defer. Asserted over `system + user` for both stages; the word lives in the
+      SYSTEM half, which counts.
 - [ ] `assert_result_contract` at every return site
 
 ### P2.3 — `stage_call`: attempts, records, output classification
@@ -258,6 +320,15 @@ close, `d231331`).
 - [ ] H01 / H02 evidence-side injection (system-block precedence: evidence is subject matter,
       never directives)
 - [ ] H03 query-side (P10) — the query-side indent guard fixture
+- [ ] **H04 — the identity-line indent asymmetry, found during P2.1a (not in the original plan).**
+      `projection._scalar_lines` splits a field value on `"\n"` and indents every continuation line,
+      so an injected `"""` or section header renders as content and cannot terminate or forge a
+      block. **`render_thin_line` does neither** — it interpolates `title` into a single f-string —
+      so a title containing `\nQUERY:` injects an **unindented** line into the evidence block, which
+      is the one position P10's structural guard relies on. Reported rather than fixed: the thin
+      line is golden-pinned P1 code and touching it is a byte change, so the fixture comes first and
+      the remedy is the owner's call. Note the blast radius is bounded — titles come from the graph,
+      not from the wire, and `response.py` never reads identity from a response.
 - [ ] Full suite green; mutation-check the two behaviours with no other coverage (the D10 ordering
       assertion and the stop-reason normalization) per standing repo practice
 - [ ] Update `docs/TASKS.md`, this plan's checkboxes, and blueprint §11's P2 row on closure
@@ -278,6 +349,18 @@ Cached at module level so it is not a subprocess in the hot path, and it returns
 than raising in a built wheel with no `.git`. **Not load-bearing:** a dirty tree means the commit
 does not fully describe the template, which is exactly why `PromptRef` also carries `sha256` over
 the template bytes — content fidelity rests on the hash, and `git_commit` is provenance colour.
+
+**`SELECTOR_PROMPT_VERSION` shipped as `SELECTOR_FAT_PROMPT_VERSION`** (spec §2.1 names the fat
+constant without a stage word, and `SELECTOR_THIN_PROMPT_VERSION` with one). Recorded rather than
+left silent, because it is a rename of a name in ratified text: the stage word makes the pair
+symmetric, and both constants are **derived from their filenames** rather than declared, so neither
+is a figure that can drift. A spec sync can adopt the stage word at the next amendment — no
+behaviour depends on it.
+
+**`render_fat_messages` takes `max_results` with no default.** The prompt states the cap and
+`validate_response` counts `over_cap` against `request.max_results`; a default would let those two
+disagree silently, charging the selector for a rule it was told differently. Thin's `retention_cap`
+keeps its `M` default — that one genuinely is always `M`.
 
 **The golden pin is split from the loader (P2.1a/P2.1f).** Recorded as a sequencing decision, not a
 scope change: both items still land inside P2, and P2.1f still precedes the calibration gate.

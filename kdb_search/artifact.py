@@ -59,9 +59,14 @@ def _canonical(obj: object) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _sha256(text: str) -> str:
+def sha256_digest(text: str) -> str:
     """Repo convention (`ingestion/kdb_scan.py`, `common/types.py`): the digest
-    carries its algorithm prefix."""
+    carries its algorithm prefix.
+
+    Public because `prompts.py` stamps `PromptRef.sha256` with it. The digest
+    convention belongs to the artifact — sharing the function is what keeps the
+    prompt hash and the artifact hashes from being two conventions.
+    """
     return f"sha256:{hashlib.sha256(text.encode('utf-8')).hexdigest()}"
 
 
@@ -201,7 +206,7 @@ def compute_search_snapshot_hash(
 ) -> str:
     """What was searched: graph identity + ordered manifest + exact evidence bytes
     + projection-policy identity. Deliberately excludes the result."""
-    return _sha256(
+    return sha256_digest(
         _canonical(
             {
                 "graph_ref": _graph_digest(graph_ref),
@@ -249,7 +254,7 @@ def compute_artifact_integrity_hash(
     having changed, and an integrity hash that never reproduces cannot detect
     tampering.
     """
-    return _sha256(
+    return sha256_digest(
         _canonical(
             {
                 "query": {"text": query.text, "expressions": list(query.expressions)},
@@ -332,4 +337,5 @@ __all__ = [
     "build_audit_payload",
     "compute_artifact_integrity_hash",
     "compute_search_snapshot_hash",
+    "sha256_digest",
 ]
