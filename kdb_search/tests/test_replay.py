@@ -50,10 +50,6 @@ def _body(slug: str, page_type: PageType) -> str:
     return f"Body text for {slug}, a {page_type} page with enough words to excerpt."
 
 
-def _never_read(slug: str, page_type: PageType) -> str:
-    raise AssertionError(f"a body was read during replay (slug={slug!r})")
-
-
 def _archive(*script, count: int = 5, monkeypatch, body_reader=_body, **kwargs):
     """Run a real search and return the payload it archived."""
     captured: dict = {}
@@ -332,6 +328,40 @@ def test_the_thin_recall_validates_against_the_WHOLE_manifest(monkeypatch) -> No
         max_results=50,
     )
     assert recalled.outcome.validated.retained == (outside,)
+
+
+def test_a_fat_record_with_non_map_evidence_is_REFUSED_not_widened(monkeypatch) -> None:
+    """The branch is unreachable through `search.py` — thin always archives
+    `SPACE_MANIFEST_REF`, fat always archives the excerpt map — so what matters is
+    which way it fails if an archive is ever corrupt. Falling back to the manifest
+    (the first version) would re-call against a WIDER closed world than the run it
+    claims to replay, quietly accepting slugs the selector was never shown. It
+    raises instead. Reached by corrupting the record directly, since nothing in
+    production can produce it."""
+    audit, _ = _archive(monkeypatch=monkeypatch)
+    fat_index = next(
+        i for i, s in enumerate(audit.stages) if s.stage == "fat_selection"
+    )
+    stages = list(audit.stages)
+    stages[fat_index] = replace(stages[fat_index], evidence="not-a-map")
+    corrupt = replace(audit, stages=tuple(stages))
+    # Re-hash so the corruption is not merely caught by the integrity check —
+    # otherwise this would test that check a third time rather than the pool rule.
+    from kdb_search.artifact import compute_artifact_integrity_hash
+
+    corrupt = replace(
+        corrupt,
+        artifact_integrity_hash=compute_artifact_integrity_hash(
+            query=corrupt.query,
+            stages=corrupt.stages,
+            result=corrupt.result,
+            execution=corrupt.execution,
+        ),
+    )
+    with pytest.raises(replay.ReplayIntegrityError, match="not the"):
+        replay.recall_stage(
+            corrupt, stage="fat", selector=_spec(), call=fakes.NeverCalled(), max_results=50
+        )
 
 
 def test_recalling_a_stage_the_run_never_reached_is_refused(monkeypatch) -> None:

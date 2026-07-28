@@ -622,7 +622,9 @@ every test used the default cap, under which the two values coincide. That is a 
 `validate_response`'s cap cannot disagree — so two tests were added at a non-default cap, one per
 end of the pairing.
 
-### P2.5 — the §8 branch table as a parameterized oracle — **DONE** (`test_branch_table.py`, +119 tests)
+### P2.5 — the §8 branch table as a parameterized oracle — **DONE** (`test_branch_table.py`)
+*19 cases × 6 parameterized assertions + 5 table-coverage tests = **119 test IDs**; the two figures
+below are the same thing counted at different granularity.*
 - [x] One parameterized case per row of the branch-specific call-count table, each asserting
       (a) logical `call` invocations, (b) `logical_call_count == len(StageRecords)`,
       (c) `assert_result_contract` passes — **and three the bullet does not name**: (d) the script
@@ -718,7 +720,7 @@ content, at content indent, with the SYSTEM half byte-identical to the template 
 substituted — and (2) **output-side fail-closed**: every fixture *also* scripts a selector that
 **obeys** the injection, and asserts nothing foreign leaves the function. Testing only (1) proves the
 prompt is tidy while leaving a compromised selector unexercised; testing only (2) proves the
-validator works while letting the prompt structure rot. Spec §102's guarantee is output-side for
+validator works while letting the prompt structure rot. Spec §1.1's guarantee is output-side for
 exactly this reason.
 
 **One assertion had to be rewritten after it failed for the right reason.** The first pass tested

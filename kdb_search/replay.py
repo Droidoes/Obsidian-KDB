@@ -172,9 +172,23 @@ def _pool_for(
     validating a re-call against the full manifest would accept a slug the
     selector was never shown, turning the closed-world guarantee into a wider one
     than the original run had.
+
+    A fat record whose evidence is not the `{slug: excerpt}` map **raises**. The
+    first version fell back to the manifest, which is exactly the wrong direction
+    for an unreachable state: `search.py` writes `SPACE_MANIFEST_REF` for thin and
+    the excerpt map for fat, always, so a fat record carrying anything else is a
+    corrupt archive — and a corrupt archive must not silently produce a *wider*
+    closed world than the run it claims to replay.
     """
-    if _STAGE_OF[record.stage] == "thin" or not isinstance(record.evidence, dict):
+    if _STAGE_OF[record.stage] == "thin":
         return _archived_manifest(audit)
+    if not isinstance(record.evidence, dict):
+        raise ReplayIntegrityError(
+            f"the archived fat stage carries {type(record.evidence).__name__} evidence, "
+            "not the {slug: excerpt} map every fat record is written with — the pool "
+            "it was shown cannot be reconstructed, and falling back to the manifest "
+            "would re-call against a wider closed world than the original run had"
+        )
     shown = set(record.evidence)
     return tuple(e for e in _archived_manifest(audit) if e.slug in shown)
 

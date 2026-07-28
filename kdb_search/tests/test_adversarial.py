@@ -11,9 +11,9 @@ world. So each fixture asserts two separate things:
      no template slot substituted, the SYSTEM half byte-identical to the template.
   2. **Output-side fail-closed** — what happens when the injection *works*. Every
      fixture here also scripts a selector that obeys the injected instruction, and
-     asserts nothing foreign leaves the function. Spec §102's guarantee is
-     output-side for exactly this reason: containment reduces the odds, identity
-     validation makes the consequence bounded.
+     asserts nothing foreign leaves the function. Spec §1.1's identity guarantee
+     is output-side for exactly this reason: containment reduces the odds,
+     identity validation makes the consequence bounded.
 
 Testing only (1) would prove the prompt is tidy while leaving the interesting
 half — a compromised selector — unexercised. Testing only (2) would prove the
