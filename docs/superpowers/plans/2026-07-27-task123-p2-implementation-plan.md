@@ -435,27 +435,84 @@ every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, 
       only to structure (a system string and a user string exist, in D10 order), so orchestration
       proceeds on the drafts while the prose is out for review.
 
-### P2.2 — `search.py` spine: the zero-call terminals → `test_two_stage.py`
-- [ ] `graph_search` signature per §2.1; `call` injected; typed outcomes are `status` values and an
-      unexpected exception **propagates** (no catch-all — §2.1's fail-hard posture)
-- [ ] `abstain_empty_space` / `execution=not_executed` — empty or reason-stamped-empty space,
-      `call` never invoked
-- [ ] thin-preflight `budget_exceeded` / `not_executed` — zero spend, never retried
-- [ ] `InvalidGraphSearchRequest(code="max_expressions_exceeded")` — raised before any rendering,
-      body read, call or `StageRecord` (D9.2; P1 pinned the exception, P2 pins the *zero-work*)
-- [ ] Route resolution failures (`ctx_window` None, missing `tokens_lte_bytes`,
+### P2.2 — `search.py` spine: the zero-call terminals → `test_two_stage.py` — **DONE 2026-07-27**
+**33 tests, mutation 18/18.** The spine ends at one explicit seam, `search.STAGE_CALL_SEAM`, which
+raises `NotImplementedError`. That is the sub-phase boundary made executable: a zero-call terminal is
+a claim about work *not* done, so it must be reachable without the machinery that does the work — and
+if a zero-call path ever needed a scripted reply to be exercised, it would not be a zero-call path.
+- [x] `graph_search` signature per §2.1; `call` injected; typed outcomes are `status` values and an
+      unexpected exception **propagates** (no catch-all — §2.1's fail-hard posture). **`body_reader`
+      is required, not defaulted**: `get_body` lives in `kdb_graph`, which this package must not
+      import (B1), so §2.1's "default: `get_body` bound to the caller's `vault_root`" is the
+      *adapter's* default, not the core's.
+- [x] `abstain_empty_space` / `execution=not_executed` — empty or reason-stamped-empty space,
+      `call` never invoked. **`domain_missing` is stamped narrowly and deliberately:** spec §3.4
+      names two reasons (`domain_empty` | `domain_missing`) but `WatchedClass` is a *closed* literal
+      carrying only the latter, so an empty cluster under a domain that exists emits **no** watched
+      class rather than a string the type does not admit — the distinction stays recoverable from
+      `domain` being `None` or set, and `EMPTY_SPACE.required_watched` is empty so nothing is owed.
+      It also fires only for `domain_subtree`; a `whole_graph`/`explicit` space legitimately has no
+      domain, and without that guard every empty whole-graph search would report one it never had.
+- [x] thin-preflight `budget_exceeded` / `not_executed` — zero spend, never retried
+- [x] `InvalidGraphSearchRequest(code="max_expressions_exceeded")` — raised before any rendering,
+      body read, call or `StageRecord` (D9.2; P1 pinned the exception, P2 pins the *zero-work*).
+      The zero-work half is pinned *structurally*: every test drives `call=NeverCalled()` and a
+      `body_reader` that raises, so if either ran, that `AssertionError` — not
+      `InvalidGraphSearchRequest` — is what would surface. The cap boundary is tested inclusive
+      (10 valid, 11 not), without which an off-by-one rejecting every real pass-1 payload would pass.
+- [x] Route resolution failures (`ctx_window` None, missing `tokens_lte_bytes`,
       visible + hidden > `max_output_tokens`) raise **before any rendering or calling** (§8 B10)
-- [ ] `json_mode=True` on every selector `ModelRequest`, both stages — asserted, mirroring
-      `compiler/tests/test_compile_source.py:139`'s regression pin
-- [ ] Route cannot honour `json_mode` (anthropic) ⇒ typed config error at resolution, before any
-      rendering — folded into the B10 assertions above
+- [x] **Gate ORDER pinned, and recorded as a decision rather than read off the spec.** Ratified text
+      makes request validation and route resolution both "before any work" and does not order them
+      relative to each other. Chosen: **the request first**, because it is the caller's own input and
+      is judgeable without any configuration — a caller sending 11 expressions is told about the 11
+      expressions, not about a route they may not have chosen. Pinned by the one discriminating case,
+      a request that violates **both** at once; each gate tested alone passes under either ordering.
+- [x] `json_mode` **splits across two sub-phases, by necessity.** Requests are built in `stage_call`,
+      so "`json_mode=True` on every `ModelRequest`" is **P2.3**'s assertion (moved there, not
+      dropped). What lands here is the half that must fail before any work — see below.
+- [x] Route cannot honour `json_mode` (anthropic) ⇒ typed config error at resolution, before any
+      rendering. `common/call_model.py` implements `json_mode` for openai-compat (`:291`) and gemini
+      (`:232`) and **not** for anthropic, so an anthropic selector would free-form its JSON
+      *silently* — the exact Pass-2 failure `compiler/tests/test_compile_source.py:139` pins. Lives
+      in `search._require_json_mode_capable`, **not** folded into `budget.resolve_selector_route`:
+      that function's three checks are all window/output sizing, and adding a prompt-contract premise
+      would stop its name matching its contents. Tested from both sides — anthropic rejected, gemini
+      accepted — so a future "fix" cannot allow-list one provider and reject capable ones.
+- [x] **The estimate provably includes the rendered evidence.** A small-window fixture alone could
+      not show this: at a 20,000-token window the 29,000-token thin envelope busts the budget by
+      itself, so those cases pin the terminal, not the estimate's inputs. A second fixture sizes the
+      window so the envelope fits with ~11,000 tokens spare, where a 5-entity space passes and a
+      2,000-entity space does not and the only difference is the evidence.
+- [x] **The audit payload is built on every zero-call terminal** (§6 — the emptiness is the finding).
+      Observed through `telemetry.search_snapshot_hash`. The discrimination tests compare **same
+      size, same `graph_ref`, different slugs** — and separately, the same space reversed. The first
+      draft compared empty-vs-100, which differs in size *and* manifest length and so would have
+      passed on a hash tracking only `active_entity_count`: the same trap as the R2 oracle finding, an
+      assertion that looks right and proves less than its name claims. Verified by mutation (manifest
+      digest reduced to a count — both tests fail). **Open, deliberately not decided here:** how
+      the *full* payload reaches the caller. Ratified §1.1 fixes `GraphSearchResult` at seven fields
+      and `audit` is not among them, so blueprint §2.1's "audit (always, §6)" is an obligation, not a
+      field. P2.2 discharges the build obligation and shapes nothing that presupposes the answer;
+      delivery belongs with **P2.4**'s caller-persistence bullet.
 - [x] The rendered prompt contains the literal word "JSON" (openai-compat 400s without it) —
       **done in P2.1a**, since the templates existed there and the assertion was cheaper to write
       once than to defer. Asserted over `system + user` for both stages; the word lives in the
       SYSTEM half, which counts.
-- [ ] `assert_result_contract` at every return site
+- [x] `assert_result_contract` at every return site — **and proved WIRED, not merely present.** The
+      one mutation the rest of the file could not catch was deleting the guard from a return site:
+      while the spine produces conforming results, removing it changes nothing and every other test
+      stays green, so the fail-closed guarantee silently becomes decorative. Closed by patching the
+      shared field-pattern helper to emit a hit (which every zero-call terminal forbids,
+      `hits_empty=True`) and requiring `ContractViolation` at each site. That took the sweep from
+      17/18 to **18/18**.
 
 ### P2.3 — `stage_call`: attempts, records, output classification
+- [ ] **`json_mode=True` on every selector `ModelRequest`, both stages** — asserted, mirroring
+      `compiler/tests/test_compile_source.py:139`'s regression pin. **Moved here from P2.2**, which
+      could not do it: requests are built in `stage_call`, so P2.2 owns only the half that must fail
+      before any work (a route that cannot honour `json_mode` at all — done, `search.py`). Recorded so
+      the split does not read as a dropped bullet.
 - [ ] Up to 2 logical attempts per executed stage; attempt 2 only after an allowed retry class
       (transport, timeout, `unparseable_response`, `structurally_unusable_response`,
       `all_entries_dropped` — `response.RETRY_CLASSES`)
