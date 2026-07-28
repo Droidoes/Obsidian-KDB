@@ -457,6 +457,13 @@ def graph_search(
             ),
             retry_attempts=thin.retry_attempts + fat.retry_attempts,
             budget_records=tuple(budget_records),
+            # Fat's, summed over its attempts — and set on EVERY fat-executed
+            # terminal, not only the completed one. A stage that exhausted its
+            # retries on `all_entries_dropped` did return entries, and reporting
+            # 0/`None` there would enter the §8.4 per-model series as "no data"
+            # for a selector that hallucinated its whole answer twice.
+            returned_entries=fat.returned_entries,
+            valid_entry_yield=fat.valid_entry_yield,
         )
         return fat_telemetry(**{**base, **overrides})
 
@@ -507,8 +514,6 @@ def graph_search(
         hits=validated.hits,
         unresolved=accounting.unresolved_expressions,
         telemetry=both_telemetry(
-            returned_entries=validated.returned_entries,
-            valid_entry_yield=validated.valid_entry_yield,
             unattributed_hit_count=accounting.unattributed_hit_count,
             concordance=_concordance(thin, validated),
         ),

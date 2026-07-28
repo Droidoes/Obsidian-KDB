@@ -659,13 +659,49 @@ delivery is ratified.
 **Verified to be an independent oracle**, not a restatement of P2.4's: mutating `stage_call` to burn
 one spurious retry per stage fails 42 cases in this file alone.
 
-### P2.6 — `replay.py` → `test_replay.py`
-- [ ] Record replay (default): integrity hash validated, **no calls, no body reads**
-- [ ] Historical selector re-call (opt-in): **archived rendered bytes + manifest only**, stamped
+### P2.6 — `replay.py` → `test_replay.py` — **DONE** (+22 tests, mutation 14/14)
+- [x] Record replay (default): integrity hash validated, **no calls, no body reads** — pinned
+      structurally rather than by assertion: `replay_record(audit)` takes neither a `call` nor a
+      `body_reader`, so a mode that *cannot be handed* a selector cannot invoke one.
+- [x] Historical selector re-call (opt-in): **archived rendered bytes + manifest only**, stamped
       `historical_recall`. Documented at the call site: this path **bypasses the projector and the
       budget preflight by construction** — its bytes are historical. Wiring it through the normal
       path would produce different bytes and silently defeat the mode.
-- [ ] #119 byte-pinning survives: caller-supplied `context_snapshot=` writes no record (H8)
+- [x] #119 byte-pinning survives: caller-supplied `context_snapshot=` writes no record (H8) —
+      **the bullet is misfiled and its disposition is now recorded in code.** `context_snapshot` is
+      `build_context_snapshot`'s, on the COMPILER side (blueprint §3.2); `kdb_search` has no such
+      parameter anywhere and adding one to satisfy the bullet would invent exactly the
+      consumer-specific coupling R2 forbids. Asserted as an absence across `graph_search`,
+      `replay_record` and `recall_stage`, so a future reader finds the answer rather than the
+      question.
+
+**Two decisions the bullets left open, both settled by reading §5.2 rather than inferring:**
+
+- [x] **Record replay returns `ReplayedSearch`, not a `GraphSearchResult`.** §5.2's words are "the
+      persisted historical selection", and that is precisely what the archive holds:
+      `SearchAuditPayload` carries a `SearchResultSummary` plus `execution`, so **six** of
+      `GraphSearchResult`'s seven fields reconstruct exactly and `telemetry` does not reconstruct at
+      all. Parts of it could be derived (space size from the manifest, title-only counts from the fat
+      evidence, retry counts from the record count) but **`budget_records` genuinely cannot** — the
+      pre-flight verdicts were never archived. A result carrying `budget_records=()` reads as "the
+      estimates were taken and were zero", not as "this is a replay", and would enter the D5
+      calibration series as a measurement. The narrower type says where the data isn't.
+- [x] **Re-call passes an explicitly *archival* `BudgetVerdict`** (all figures zero, `fits=True`).
+      `stage_call` requires a verdict, and synthesizing a realistic one would write invented
+      `budget_estimate_tokens` into a fresh record. Note what is deliberately **not** zeroed:
+      `selector_window` comes from the route being called *now*, which is the variable the A/B is
+      changing — the one figure on such a record that means something.
+
+**`stage_call` needed no re-call accommodation**, which is the P2.3 design paying off: it takes
+`messages` as a parameter rather than rendering internally, so the archived `RenderedMessages` feed
+straight through and "bypasses the projector by construction" is literally true rather than a bypass
+hack. Re-call therefore inherits the whole attempt/retry/stop-reason contract instead of becoming a
+second place for D9.3 to drift.
+
+**Fat's re-call pool is the archived EVIDENCE, not the manifest.** Above M the two differ — the fat
+stage only ever saw thin's retained pool — and validating a re-call against the full manifest would
+accept a slug the selector was never shown, quietly widening the closed-world guarantee the original
+run had. Thin's pool *is* the manifest; both directions are tested.
 
 ### P2.7 — adversarial fixtures + close-out → `test_adversarial.py`
 - [ ] H01 / H02 evidence-side injection (system-block precedence: evidence is subject matter,

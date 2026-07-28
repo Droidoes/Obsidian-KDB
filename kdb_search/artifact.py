@@ -41,7 +41,13 @@ from .types import (
     Status,
 )
 
-ARTIFACT_SCHEMA_VERSION = 1
+#: Bumped 1 → 2 in P2.3, when `StageRecord` gained `stop_reason_raw`,
+#: `stop_reason_normalized` and `sdk_sub_retries`, and `stop_reason` entered
+#: `_stage_trace_digest`. Version 1 would otherwise name two different payload
+#: shapes AND two different integrity hashes for the same trace. Nothing is
+#: persisted yet — no adapter writes a file until P3 — so the bump costs nothing
+#: today and would cost a migration the moment one does.
+ARTIFACT_SCHEMA_VERSION = 2
 
 StageName = Literal["thin_selection", "fat_selection"]
 

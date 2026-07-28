@@ -651,6 +651,48 @@ def test_expression_accounting_is_the_CONTROLLERs_not_the_selectors() -> None:
     assert all("alpha" in hit.matched_expressions for hit in result.hits)
 
 
+def test_an_EXHAUSTED_fat_stage_reports_a_real_zero_yield_not_no_data() -> None:
+    """The §8.4 per-model series' sharpest single reading, and the one the
+    obvious implementation loses.
+
+    `StageOutcome.validated` is `None` on `exhausted` (deliberately — see its
+    docstring), so reading `returned_entries` and `valid_entry_yield` off the
+    surviving response reports 0 and `None`. But an `all_entries_dropped`
+    exhaustion means the selector returned a full document twice and every entry
+    was rejected on identity grounds — a real 0.0 yield over 8 returned entries,
+    the strongest quality signal a selector can emit, filed as its absence. Both
+    figures are therefore accumulated across attempts in the stage, not read off
+    an outcome that by design has none.
+    """
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(fakes.all_dropped_document(space)),
+        fakes.ScriptedReply(fakes.all_dropped_document(space)),
+        count=5,
+    )
+    assert result.status == "selector_failure"
+    assert result.telemetry.returned_entries == 8  # 4 entries x 2 attempts
+    assert result.telemetry.valid_entry_yield == 0.0
+    assert result.telemetry.all_entries_dropped_occurrences == 2
+
+
+def test_a_TRUNCATED_stage_still_reports_None_because_it_has_no_denominator() -> None:
+    """The other side of D9.6, so the fix above cannot become "0.0 everywhere". A
+    truncated attempt yields no usable document, hence no entry population, hence
+    no denominator — it must never dilute a model's conformance ratio."""
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space)),
+        fakes.ScriptedReply(
+            fakes.truncated_text(space), stop_reason=fakes.STOP_LENGTH_OPENAI
+        ),
+        count=5,
+    )
+    assert result.telemetry.returned_entries == 0
+    assert result.telemetry.valid_entry_yield is None
+
+
 def test_the_fat_prompt_states_the_REQUESTs_cap_not_the_global_one() -> None:
     """`render_fat_messages` takes `max_results` with no default for exactly this
     reason: the prompt states the cap and `validate_response` counts `over_cap`

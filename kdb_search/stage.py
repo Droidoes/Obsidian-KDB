@@ -248,6 +248,25 @@ class StageOutcome:
     #: counter in §6.3, separate from the violation classes because it is a
     #: property of the whole response rather than of any entry in it.
     all_entries_dropped_occurrences: int = 0
+    #: Entries the selector returned, and entries that survived validation,
+    #: summed over EVERY attempt. Accumulated for the same reason
+    #: `attempted_violations` is, and load-bearing on exactly the path where
+    #: `validated` is `None`: a stage that exhausted its retries on
+    #: `all_entries_dropped` **did** return entries, and reporting 0/`None` there
+    #: would enter the §8.4 per-model series as "no data" for a selector that
+    #: hallucinated its whole answer twice — the strongest quality signal it can
+    #: emit, recorded as its absence.
+    returned_entries: int = 0
+    validated_entries: int = 0
+
+    @property
+    def valid_entry_yield(self) -> float | None:
+        """Validated ÷ returned across the stage. `None` only when the stage
+        genuinely produced no entry population (D9.6) — a truncated attempt has
+        no denominator, an all-dropped one has a real 0.0."""
+        if self.returned_entries == 0:
+            return None
+        return self.validated_entries / self.returned_entries
 
     @property
     def attempts(self) -> int:
@@ -411,6 +430,8 @@ def stage_call(
     # `StageOutcome.attempted_violations`.
     tally = Violations()
     dropped_occurrences = 0
+    returned = 0
+    kept = 0
 
     def record(
         *,
@@ -461,6 +482,8 @@ def stage_call(
                 failure_class="budget_estimation_miss",
                 attempted_violations=tally,
                 all_entries_dropped_occurrences=dropped_occurrences,
+                returned_entries=returned,
+                validated_entries=kept,
                 budget_record=_post_call_budget_record(
                     verdict=verdict,
                     spec=spec,
@@ -479,6 +502,12 @@ def stage_call(
         )
         validated = validate(response.text)
         tally += validated.attempted_violations
+        returned += validated.returned_entries
+        kept += (
+            len(validated.hits)
+            if isinstance(validated, ValidatedResponse)
+            else len(validated.retained)
+        )
         if validated.classification == "all_entries_dropped":
             dropped_occurrences += 1
 
@@ -503,6 +532,8 @@ def stage_call(
                 validated=validated,
                 attempted_violations=tally,
                 all_entries_dropped_occurrences=dropped_occurrences,
+                returned_entries=returned,
+                validated_entries=kept,
                 failure_class="output_truncation",
                 budget_record=_post_call_budget_record(
                     verdict=verdict,
@@ -536,6 +567,8 @@ def stage_call(
             validated=validated,
             attempted_violations=tally,
             all_entries_dropped_occurrences=dropped_occurrences,
+            returned_entries=returned,
+            validated_entries=kept,
         )
 
     last = records[-1].failure
@@ -546,6 +579,8 @@ def stage_call(
         failure_class=last.failure_class if last else None,
         attempted_violations=tally,
         all_entries_dropped_occurrences=dropped_occurrences,
+        returned_entries=returned,
+        validated_entries=kept,
     )
 
 
