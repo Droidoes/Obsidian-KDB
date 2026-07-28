@@ -199,8 +199,9 @@ close, `d231331`).
       `fat_worst_case_request_bytes()` is the constant's only consumer and it is fat's static
       guarantee that rests on it; thin is estimate-guarded with a typed `budget_estimation_miss`,
       so thin's assertion is a bonus.
-      **74 B is not a state to freeze in at P2.1f** — see "Open: raise
-      `SYSTEM_TEMPLATE_BUDGET_BYTES`" below.
+      74 B is thin headroom for future prose — see "Open: raise
+      `SYSTEM_TEMPLATE_BUDGET_BYTES`" below. It does **not** gate P2.1f: the pins freeze the
+      *measured* bytes, which the constant does not move.
 - [x] Stage-2 bound assertion (blueprint §11's P2 row): with real templates,
       `fat_worst_case_request_bytes()` stops being part-declared and becomes measured —
       100 × 2,500 B + 4,096 B + the measured template = **257,094 B** ≤ ~257 kB,
@@ -294,11 +295,18 @@ confirmed the loader mechanics; four of five findings absorbed, the fifth filed.
   that codex declined to run pytest at all (cache writes). Future prompts should explicitly permit
   `-p no:cacheprovider` runs.
 
-### Open: raise `SYSTEM_TEMPLATE_BUDGET_BYTES` before P2.1f (owner call)
+### Open: raise `SYSTEM_TEMPLATE_BUDGET_BYTES` (owner call, **independent of P2.1f**)
 
 Both absorption rounds together cost fat 617 B and left **74 B** of headroom. The suite is green — the
-constant holds — but the pin lands next, and freezing a prompt 74 B under a ceiling means the next sentence
-anyone adds breaks a ratified figure.
+constant holds.
+
+**Corrected sequencing (2026-07-27).** This was twice described as a P2.1f prerequisite. It is not.
+The constant's only consumers are `budget.fat_worst_case_request_bytes()` (`budget.py:240`) and the
+two headroom assertions (`test_prompts.py:472`, `test_budget.py:341`); P2.1f pins the **measured**
+rendered bytes plus the version/SHA guard, and raising the reserve moves none of them. So the pins can
+land now, and raising the constant later costs exactly what it costs today — a blueprint amendment and
+a one-line change. What 74 B actually buys is *future prose* room: the next sentence anyone adds
+breaks a ratified figure. That is a real cost, but it is not a blocker.
 
 **The recommendation is to raise it to 4,096 B**, and the reason is that 3,072 was never a measured
 bound: it is the "~3 kB system/template" line written into the M=100 guarantee before any prompt
@@ -319,6 +327,29 @@ sentence", which is weak — a frozen v1 prompt arguably *should* be hard to ext
 changes, so the reserve does not need to do that job too, and a 4,096 B reserve lets future
 *reviewed* prompt versions evolve without a blueprint amendment for ordinary prose. That is the
 argument to record, because it survives the objection ours does not.
+
+### P2.1a — codex round 3 CLOSED (verdict **APPROVE-WITH-ITEMS**, 2026-07-27)
+
+Response: `docs/superpowers/specs/2026-07-27-task123-p2.1a-round3-codex.md`, against `37be899`.
+**R1–R4 all confirmed closed; P2.1f released; no further behavioral or prompt-prose change required.**
+
+He re-derived rather than took our word for it: 3 fields × 11 boundaries = **33/33** one-line cases
+by direct runtime probe, confirmed there is no fourth interpolation site in `render_thin_line` and
+that `render_fat_block` inherits the protection by delegation, and confirmed the R2 oracle now fails
+independently if `_LINE_BREAKS` is narrowed. On our disclosed mutation-harness defect: it "does not
+change this conclusion" — because he inspected the source and tests directly and ran his own probe
+rather than relying on our 29/29. That is the right response to the disclosure and vindicates making it.
+
+**His one item, clerical, fixed in this commit.** The P2.7 narrative still said `_single_line` was
+applied to "`slug` and `title`" — stale since R1 added `page_type`. Corrected at **both** sites (the
+defect description and the implementation note), and while there we fixed a third staleness he did
+not catch: the note claimed **12** regression tests where the count is now **50** (verified by
+`--collect-only`, not by recollection — doc-vs-implementation drift being the exact defect he flagged).
+
+Two slips in his response, recorded because neither changes the verdict and both could mislead later:
+he cited the stale text as living in `…specs/2026-07-27-task123-p2.1a-plan.md`, which does not exist
+(it is this file, `plans/…-p2-implementation-plan.md`); and his "32 expected skips" is the full-suite
+number — `kdb_search/tests` alone is 31.
 
 ### P2.1a — codex re-review absorbed (round 2, verdict **REVISE**, 2026-07-27)
 
@@ -457,8 +488,8 @@ every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, 
       not deferred to a fixture here.** Found while writing P2.1a, then made codex's F2.
       `projection._scalar_lines` splits a field value on `"\n"` and indents every continuation line,
       so an injected `"""` or section header renders as content and cannot terminate or forge a
-      block. **`render_thin_line` did neither** — it interpolates `slug` and `title` into a single
-      f-string — so a title containing `\nQUERY:` injected an **unindented** line into the evidence
+      block. **`render_thin_line` did neither** — it interpolates `slug`, `title` and `page_type`
+      into a single f-string, none of them sanitized — so a title containing `\nQUERY:` injected an **unindented** line into the evidence
       block, the one position P10's structural guard relies on, and every line-based claim about the
       block was false for that input (including `test_prompts.py`'s own).
       **Why fixed rather than fixtured, against the original filing:** (i) it is **byte-neutral on
@@ -475,9 +506,11 @@ every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, 
       **hand-authored ingested notes** — `yaml.safe_load` at `common/source_io.py:39` →
       `kdb_graph/intake.py:325`, no single-line check — which is precisely the 1,586-note vault
       queued next. Same conclusion, different path.
-      Implemented as `projection._single_line`, applied to `slug` and `title`, over the **full
-      `str.splitlines()` boundary set** (not just `\n\r`) so the invariant is stated in the terms
-      every line-based test reasons in. 12 regression tests; the anomaly is deliberately **not**
+      Implemented as `projection._single_line`, applied to **all three** interpolated fields — `slug`,
+      `title` and `page_type` (the round-1 pass exempted `page_type` on the strength of a `Literal`
+      annotation, which codex R1 correctly called out as a type hint, not a runtime check) — over the
+      **full `str.splitlines()` boundary set** (not just `\n\r`) so the invariant is stated in the terms
+      every line-based test reasons in. 50 regression tests, every field × every boundary; the anomaly is deliberately **not**
       counted — no consumer, and unlike `delimiter_collision_guard` the anomaly is removed rather
       than left in place.
 - [ ] Full suite green; mutation-check the two behaviours with no other coverage (the D10 ordering
