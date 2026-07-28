@@ -167,6 +167,24 @@ def test_an_unversioned_filename_raises_rather_than_stamping_no_provenance(monke
         load_template("thin")
 
 
+@pytest.mark.parametrize("bad", ["selector_thin.txt", "selector_thin_v.txt", "selector_thin_vX.txt",
+                                 "selector_thin_v1.md", "selector_thin_v1.txt.bak"])
+def test_the_version_parser_itself_is_typed_on_every_malformed_name(bad):
+    """Tested directly, not only through `load_template` (codex F4): the module
+    constants are computed at IMPORT, so on the real import path a malformed name
+    fails before any test can monkeypatch anything. Asserting the parser is typed
+    is the only way to cover the failure the constants would actually hit."""
+    with pytest.raises(PromptTemplateError, match="version suffix"):
+        prompts._version_of(bad)
+
+
+def test_the_version_parser_is_the_ONE_parser():
+    """`load_template` and the module constants must not each parse the name —
+    that was the drift F4 found."""
+    for stage, filename in prompts._FILENAMES.items():
+        assert load_template(stage).ref.version == prompts._version_of(filename)
+
+
 def test_a_missing_template_raises_a_packaging_fault(monkeypatch):
     monkeypatch.setitem(prompts._FILENAMES, "fat", "selector_absent_v1.txt")
     with pytest.raises(PromptTemplateError, match="packaging or install fault"):

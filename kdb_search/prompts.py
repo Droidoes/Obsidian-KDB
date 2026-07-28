@@ -64,12 +64,6 @@ _FILENAMES: dict[Stage, str] = {
     "fat": "selector_fat_v1.txt",
 }
 
-#: Spec §2.1 names these; both are DERIVED from the filename rather than
-#: declared, so the file name is the single source of the version and the two
-#: cannot drift. Renaming the file is what bumps the version.
-SELECTOR_THIN_PROMPT_VERSION = _VERSION_RE.search(_FILENAMES["thin"]).group(1)  # type: ignore[union-attr]
-SELECTOR_FAT_PROMPT_VERSION = _VERSION_RE.search(_FILENAMES["fat"]).group(1)  # type: ignore[union-attr]
-
 
 class PromptTemplateError(SearchConfigError):
     """A template is missing, malformed, or rendered with the wrong slots.
@@ -78,6 +72,33 @@ class PromptTemplateError(SearchConfigError):
     selector route: a precondition of doing any work at all, raised before any
     rendering, body read or call.
     """
+
+
+def _version_of(filename: str) -> str:
+    """The prompt version, parsed from the filename — the ONE parser.
+
+    Declared before the module constants below, and used by `load_template` too,
+    because the constants are computed at import (codex F4): a bare
+    `_VERSION_RE.search(...).group(1)` there raised `AttributeError` on a filename
+    that lost its suffix, and it raised it *before* the checked path in
+    `load_template` could ever run — so the typed failure existed but was
+    unreachable on the real import path, and no test could reach it either.
+    """
+    match = _VERSION_RE.search(filename)
+    if match is None:
+        raise PromptTemplateError(
+            f"{filename!r} carries no `_v<N>.txt` version suffix — the filename IS "
+            "the prompt version (PromptRef.version), so an unversioned name has no "
+            "provenance to stamp"
+        )
+    return match.group(1)
+
+
+#: Spec §2.1 names these; both are DERIVED from the filename rather than
+#: declared, so the file name is the single source of the version and the two
+#: cannot drift. Renaming the file is what bumps the version.
+SELECTOR_THIN_PROMPT_VERSION = _version_of(_FILENAMES["thin"])
+SELECTOR_FAT_PROMPT_VERSION = _version_of(_FILENAMES["fat"])
 
 
 @dataclass(frozen=True)
@@ -124,13 +145,7 @@ def load_template(stage: Stage) -> SelectorTemplate:
     filename = _FILENAMES[stage]
     path = _PROMPT_DIR / filename
 
-    version_match = _VERSION_RE.search(filename)
-    if version_match is None:
-        raise PromptTemplateError(
-            f"{filename!r} carries no `_v<N>.txt` version suffix — the filename IS "
-            "the prompt version (PromptRef.version), so an unversioned name has no "
-            "provenance to stamp"
-        )
+    version = _version_of(filename)
 
     try:
         # Text mode: universal newlines, so a CRLF checkout cannot move the digest.
@@ -164,7 +179,7 @@ def load_template(stage: Stage) -> SelectorTemplate:
         system=system,
         user_template=user_template,
         ref=PromptRef(
-            version=version_match.group(1),
+            version=version,
             sha256=sha256_digest(text),
             # A literal, never computed: `relative_to(repo_root)` raises under an
             # installed layout, which is the layout this has to survive.

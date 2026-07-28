@@ -186,20 +186,26 @@ close, `d231331`).
       the installed-wheel case.
 - [x] **The `SYSTEM_TEMPLATE_BUDGET_BYTES` obligation** (`constants.py:170-176`): assert the real
       rendered system block + user wrapper against 3,072 B, and raise the constant to the measured
-      figure if exceeded. **MEASURED — the constant holds, no blueprint bump:** fat **2,381 B**
-      (2,321 system + 60 wrapper, **691 B headroom**), thin **2,146 B** (2,085 + 61, **926 B
-      headroom**). Measured in **bytes**, with the widest cap value the contract allows, so the
-      figure is each stage's maximum rather than a sample. **The fat figure is the normative one** —
+      figure if exceeded. **MEASURED, and the constant still holds** — but the margin changed
+      materially when codex's F1/F3 prose landed, so both figures are recorded:
+
+      | | at first draft | after the codex absorption | headroom vs 3,072 |
+      | --- | --- | --- | --- |
+      | fat | 2,381 B (2,321 + 60) | **2,922 B** (2,862 system + 60 wrapper) | **150 B** |
+      | thin | 2,146 B (2,085 + 61) | **2,507 B** (2,446 + 61) | 565 B |
+
+      Measured in **bytes**, with the widest cap value the contract allows, so each figure is the
+      stage's maximum rather than a sample. **The fat figure is the normative one** —
       `fat_worst_case_request_bytes()` is the constant's only consumer and it is fat's static
       guarantee that rests on it; thin is estimate-guarded with a typed `budget_estimation_miss`,
       so thin's assertion is a bonus.
-      **The 691 B is the prose review's budget** — roughly 8 lines. Exceeding it is not a test fix:
-      it edits a ratified §7.0a figure and costs a **blueprint v0.15** bump.
+      **150 B is not a state to freeze in at P2.1f** — see "Open: raise
+      `SYSTEM_TEMPLATE_BUDGET_BYTES`" below.
 - [x] Stage-2 bound assertion (blueprint §11's P2 row): with real templates,
       `fat_worst_case_request_bytes()` stops being part-declared and becomes measured —
-      100 × 2,500 B + 4,096 B + the measured template = **256,477 B** ≤ ~257 kB,
-      `tokens_lte_bytes` ⇒ tokens, + 26k reserved output = **282,477 < 320,000**. Same assertion as
-      the item above; stated once, tested once.
+      100 × 2,500 B + 4,096 B + the measured template = **257,018 B** ≤ ~257 kB,
+      `tokens_lte_bytes` ⇒ tokens, + 26k reserved output = **283,018 < 320,000** (the declared-reserve
+      figures are 257,168 / 283,168). Same assertion as the item above; stated once, tested once.
 
 **Five things P2.1a carries beyond the bullets above.**
 
@@ -228,8 +234,13 @@ close, `d231331`).
    what keeps the prompt hash and the artifact hashes from becoming two conventions. Pure rename,
    two call sites.
 
-**Verification.** 62 new tests (`kdb_search/tests/test_prompts.py`), full suite **2,559 → 2,621
-passed / 32 skipped**, green. **Mutation-checked, 20 mutations, 20 caught** — D10 reordered in each
+**Verification.** 62 new tests (`kdb_search/tests/test_prompts.py`) at first draft, **80 after the
+codex absorption** (68 prompt + 12 H04 regression in `test_projection.py`); full suite **2,559 →
+2,639 passed / 32 skipped**, green. **Mutation-checked, 27 mutations, 27 caught** — the 20 below,
+plus 7 for the absorption round: title escaping removed; slug escaping removed; the `splitlines()`
+boundary set narrowed to `\n`; the escape dropping the character instead of collapsing it; the
+escape expanded to a 2-char literal (which would break byte-count preservation); `_version_of` made
+total again; and `load_template` hardcoding the version instead of calling it. D10 reordered in each
 template; sequential `.replace`; each of the unknown-slot / unused-value / repeated-slot guards
 removed; `repo_path` computed absolute; `sha256` over the system half only; newline translation
 disabled (CRLF leaking into the digest); `version` hardcoded instead of derived; the SYSTEM-half
@@ -238,6 +249,66 @@ narrowest cap; the fat example switched to integer labels; the fat example re-gr
 field; the result cap dropped from the wrapper; the thin example's slugs made non-copyable; the P10
 precedence clause losing its query side; the word "JSON" removed; and `prompts/__init__.py` added
 to shadow the module.
+
+### P2.1a — codex review absorbed (verdict **REVISE**, 2026-07-27)
+
+Review: `docs/superpowers/specs/2026-07-27-task123-p2.1a-review-codex.md`. Prompt:
+`…-p2.1a-selector-prompts-review-prompt.md`. He reproduced the byte arithmetic independently and
+confirmed the loader mechanics; four of five findings absorbed, the fifth filed.
+
+- **F1 (HIGH) — the thin prompt was internally contradictory at a binding cap. ABSORBED.** Its
+  claim that a false positive "costs almost nothing" is true only while the cap is slack; at
+  ~490-against-100 every weak retention displaces a relevant identity, so the model was told not to
+  be selective and then required to be, with no rule for resolving it — which invites truncation by
+  *position* at exactly the transition. Replaced with two explicit steps: eligibility (read every
+  identity before deciding; unsure-from-a-title is the case to keep; precision is stage 2's job),
+  then the limit (fits ⇒ return all; exceeds ⇒ rank the whole eligible set and cut, and at a binding
+  limit a weak identity is no longer free). Plus two prohibitions in both templates: **never stop
+  reading once the list could be filled**, and **never treat EVIDENCE order as a relevance signal**
+  — it is the graph's own ordering.
+- **F3 (MEDIUM) — fat had no ordering criterion and a one-directional excerpt clause. ABSORBED.**
+  Ordering now names directness and strength of positive support, centrally-about before
+  supporting-coverage, breadth across QUERY keys/themes as the tiebreaker. And the excerpt clause
+  gained its missing half: an excerpt's silence is weak evidence *against*, but **text you cannot
+  see is not evidence for anything either** — never select on an unseen body, and judge a title-only
+  entry solely on what its identity line positively shows. Without that, the honesty clause licensed
+  speculative selection.
+- **F2 (HIGH) — H04 fixed at the serializer, not left to a fixture. ABSORBED, owner-authorized.**
+  See P2.7's H04 entry, which now records the fix rather than the filing.
+- **F4 (LOW) — the version parser was unreachable on the real import path. ABSORBED.** The module
+  constants called `_VERSION_RE.search(...).group(1)` at import, *before* `load_template`'s checked
+  path and before `PromptTemplateError` was even defined — so a filename that lost its suffix raised
+  `AttributeError`, and no test could reach the typed failure. Now one `_version_of()` parser,
+  declared after the exception and used by both, with the parser itself tested directly over five
+  malformed names (the import-time path cannot be monkeypatched after import).
+- **F5 (LOW) — the wheel gap. FILED, not closed** (`docs/TASKS.md` #127). He confirms the packaging
+  declaration is correct and module-relative loading is right, and agrees it blocks neither the pin
+  nor calibration. Real build-wheel/install/import smoke lands when offline build tooling exists.
+- **One correction to the review prompt, ours:** it called precision@5 "the project's only normative
+  gate". Its **formula** is normative (spec §8.3 metric 3); the gate table has exactly one binding
+  gate — escaped foreign-identity rate — and precision@5 is not in it. Codex is right; the ranking
+  recommendation stands regardless.
+- **Process note for the next reviewer prompt:** the output-file-only guardrail was strict enough
+  that codex declined to run pytest at all (cache writes). Future prompts should explicitly permit
+  `-p no:cacheprovider` runs.
+
+### Open: raise `SYSTEM_TEMPLATE_BUDGET_BYTES` before P2.1f (owner call)
+
+The absorption cost fat 541 B and left **150 B** of headroom. The suite is green — the constant
+holds — but the pin lands next, and freezing a prompt 150 B under a ceiling means the next sentence
+anyone adds breaks a ratified figure.
+
+**The recommendation is to raise it to 4,096 B**, and the reason is that 3,072 was never a measured
+bound: it is the "~3 kB system/template" line written into the M=100 guarantee before any prompt
+existed. What the guarantee actually needs is slack against `SMALLEST_POOL_BUDGET_TOKENS`, and it has
+**36,832 tokens** of it (283,168 against 320,000). Raising the reserve by 1,024 B moves the worst
+case to 258,192 B and the guarantee to 284,192 — still ~35.8k under the pool, and 4,096 matches
+`QUERY_BLOCK_CEILING_BYTES`, so the two per-request reserves read as one scheme. Trimming instructions
+the review just added, to fit a figure invented before the instructions existed, is the wrong
+optimization.
+
+Cost: a **blueprint v0.15** amendment to §7.0/§7.0a (recompute the guarantee sum) plus the
+`constants.py` docstring. No allowance, no ceiling, no wire figure moves.
 
 ### P2.1f — golden byte pins → `test_prompts_golden.py`
 - [ ] Pinned exact bytes of both rendered templates + version/SHA guard
@@ -320,15 +391,31 @@ to shadow the module.
 - [ ] H01 / H02 evidence-side injection (system-block precedence: evidence is subject matter,
       never directives)
 - [ ] H03 query-side (P10) — the query-side indent guard fixture
-- [ ] **H04 — the identity-line indent asymmetry, found during P2.1a (not in the original plan).**
+- [x] **H04 — the identity-line indent asymmetry. FIXED in P2.1a (Joseph authorized 2026-07-27),
+      not deferred to a fixture here.** Found while writing P2.1a, then made codex's F2.
       `projection._scalar_lines` splits a field value on `"\n"` and indents every continuation line,
       so an injected `"""` or section header renders as content and cannot terminate or forge a
-      block. **`render_thin_line` does neither** — it interpolates `title` into a single f-string —
-      so a title containing `\nQUERY:` injects an **unindented** line into the evidence block, which
-      is the one position P10's structural guard relies on. Reported rather than fixed: the thin
-      line is golden-pinned P1 code and touching it is a byte change, so the fixture comes first and
-      the remedy is the owner's call. Note the blast radius is bounded — titles come from the graph,
-      not from the wire, and `response.py` never reads identity from a response.
+      block. **`render_thin_line` did neither** — it interpolates `slug` and `title` into a single
+      f-string — so a title containing `\nQUERY:` injected an **unindented** line into the evidence
+      block, the one position P10's structural guard relies on, and every line-based claim about the
+      block was false for that input (including `test_prompts.py`'s own).
+      **Why fixed rather than fixtured, against the original filing:** (i) it is **byte-neutral on
+      today's data** — 0 of the 163 fixture titles carry a line boundary, so no golden pin moves and
+      no fixture regenerates, which was the whole reason for deferring; (ii) the escape collapses one
+      character to one space, so it is **byte-count preserving** even on pathological input and no
+      ceiling or exact maximum can move because of it; (iii) a fixture alone tests the defect without
+      removing it, and a harder template delimiter does not help — an unescaped title forges that
+      too. (iv) codex's stated rationale is wrong in one respect worth recording: *KDB-authored*
+      titles were already safe (`compiler.page_writer.emit_frontmatter` raises on a newline in any
+      frontmatter string, `compiler/tests/test_page_writer.py:116`). The open channel is
+      **hand-authored ingested notes** — `yaml.safe_load` at `common/source_io.py:39` →
+      `kdb_graph/intake.py:325`, no single-line check — which is precisely the 1,586-note vault
+      queued next. Same conclusion, different path.
+      Implemented as `projection._single_line`, applied to `slug` and `title`, over the **full
+      `str.splitlines()` boundary set** (not just `\n\r`) so the invariant is stated in the terms
+      every line-based test reasons in. 12 regression tests; the anomaly is deliberately **not**
+      counted — no consumer, and unlike `delimiter_collision_guard` the anomaly is removed rather
+      than left in place.
 - [ ] Full suite green; mutation-check the two behaviours with no other coverage (the D10 ordering
       assertion and the stop-reason normalization) per standing repo practice
 - [ ] Update `docs/TASKS.md`, this plan's checkboxes, and blueprint §11's P2 row on closure

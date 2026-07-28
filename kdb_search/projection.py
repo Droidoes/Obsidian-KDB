@@ -8,6 +8,11 @@ not (opus5 G7, derived by reproducing the fixture serializer byte-exactly):
   2. blank lines are indented too (377 in the fixture).
 
 Any "tidy" of either breaks the golden tests deliberately.
+
+A third rule was added 2026-07-27 (H04, codex): **the identity line is exactly one
+line, for any input** — see `_single_line`. It is the only structural boundary in
+the block that indentation does not protect, and the whole P10 line-based argument
+rests on it.
 """
 
 from __future__ import annotations
@@ -50,9 +55,61 @@ class ProjectedEntity:
     delimiter_collision_guard: int = 0
 
 
+#: Every character `str.splitlines()` treats as a line boundary. Stated as that
+#: exact set rather than as `"\n\r"`, because the invariant below is what makes
+#: every line-based claim about the evidence block true — and `splitlines()` also
+#: breaks on `\v`, `\f`, `\x1c-\x1e`, `\x85`, `\u2028` and `\u2029`.
+_LINE_BREAKS = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+
+
+def _single_line(value: str) -> str:
+    """Collapse any line boundary in an interpolated identity field to a space.
+
+    **H04 (codex, 2026-07-27), fixed here rather than in the templates.** The
+    identity line is the ONE structural boundary in the evidence block that is not
+    indent-protected: `_scalar_lines` and `_item_lines` indent every continuation
+    line, so an injected `\"\"\"` or `QUERY:` renders as content, but this line
+    interpolates three field values into a single f-string. A title containing
+    `\\nQUERY:` therefore forged an **unindented** line — the same form the prompt
+    template uses for its section headers — and every line-based P10 claim about
+    the block was false for that input. A harder delimiter in the template does
+    not help: an unescaped title can forge that too.
+
+    Titles reach the graph from `yaml.safe_load` over hand-authored notes
+    (`common/source_io.py:39` → `kdb_graph/intake.py:325`) with no single-line
+    check, and the 1,586-note vault ingestion is queued — so this is the ingested
+    corpus, not a hypothetical. (The *KDB-authored* path was already closed:
+    `compiler.page_writer.emit_frontmatter` raises on a newline in any frontmatter
+    string.)
+
+    Collapsed to a space rather than escaped to `\\n`, on two grounds: a line
+    break in a title is malformed data, not content, so nothing meaningful is
+    lost; and one character in, one character out keeps the substitution
+    **byte-count preserving**, so no ceiling, maximum or golden figure can move
+    because of it. Byte-neutral on today's data outright — 0 of the 163 fixture
+    titles contain a line boundary.
+
+    Not counted, deliberately, by the project's own consumer-purpose rule: no
+    consumer and no decision rests on the count today, and `delimiter_collision_guard`
+    exists because the collided delimiter is *left in place*. Here the anomaly is
+    removed, so there is nothing downstream to warn about.
+    """
+    for char in _LINE_BREAKS:
+        value = value.replace(char, " ")
+    return value
+
+
 def render_thin_line(entity: SpaceEntity) -> str:
-    """Stage-1 evidence: identity only, no excerpt."""
-    return f"- slug: {entity.slug}  title: {entity.title}  type: {entity.page_type}"
+    """Stage-1 evidence: identity only, no excerpt.
+
+    Also the identity line of every stage-2 block (`render_fat_block`), so the
+    one-line guarantee holds on both stages from one place.
+    """
+    return (
+        f"- slug: {_single_line(entity.slug)}"
+        f"  title: {_single_line(entity.title)}"
+        f"  type: {entity.page_type}"
+    )
 
 
 def render_fat_block(projected: ProjectedEntity) -> str:

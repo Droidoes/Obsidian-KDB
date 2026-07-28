@@ -16,18 +16,23 @@ printed: do not normalize it, correct its spelling, complete an abbreviation,
 or compose a new one. Return slugs only. Titles and types are given for your
 judgment and are read from the graph, never from your answer.
 
-RECALL, NOT PRECISION
-Retain every identity that could plausibly be relevant to the QUERY. When in
-doubt, retain. The second pass reads each retained entity's body and makes the
-final selection, so retaining an entity that turns out to be irrelevant costs
-almost nothing, while dropping a relevant one is unrecoverable: it is never
-looked at again. Do not attempt to be selective, and do not withhold an entity
-because you cannot tell from a title alone — that is exactly the case to retain.
-Precision is the second pass's job.
+HOW TO DECIDE — TWO STEPS
+Step 1, eligibility. Read every identity in EVIDENCE before deciding anything.
+An identity is eligible whenever there is a plausible path from it to the QUERY.
+Do not withhold one because a title alone leaves you unsure: that is exactly the
+case to keep. The second pass reads each retained entity's body and makes the
+final selection, so precision among the retained is its job, not yours.
 
-Order the list best first, most plausibly relevant to least. Stop at the limit
-the USER message states; if more identities than that are plausible, keep the
-most plausible ones.
+Step 2, the limit. If the eligible identities fit within the limit the USER
+message states, return all of them. If they do not, rank the whole eligible set
+by how likely each entity's body is to help answer or explain the QUERY, and
+return the best up to the limit. Where the limit binds, every identity you keep
+displaces another, so a weak one is no longer free — choose the cut deliberately.
+Dropping a relevant identity is unrecoverable: nothing looks at it again.
+
+Never stop reading once you could fill the list, and never treat the order of
+EVIDENCE as a signal of relevance: it is the graph's own ordering and says
+nothing about the QUERY.
 
 OUTPUT
 Return one JSON object and nothing else: no markdown fences, no prose before or
