@@ -622,13 +622,42 @@ every test used the default cap, under which the two values coincide. That is a 
 `validate_response`'s cap cannot disagree — so two tests were added at a non-default cap, one per
 end of the pairing.
 
-### P2.5 — the §8 branch table as a parameterized oracle
-- [ ] One parameterized case per row of the 12-row branch-specific call-count table, each asserting
+### P2.5 — the §8 branch table as a parameterized oracle — **DONE** (`test_branch_table.py`, +119 tests)
+- [x] One parameterized case per row of the branch-specific call-count table, each asserting
       (a) logical `call` invocations, (b) `logical_call_count == len(StageRecords)`,
-      (c) `assert_result_contract` passes
-- [ ] This is P2's analog of P1.5's contract matrix: it is what proves the orchestration is
+      (c) `assert_result_contract` passes — **and three the bullet does not name**: (d) the script
+      was fully *consumed*, since a range with slack hides a branch that stops early; (e) the run
+      landed on the terminal the row NAMES, because several rows share a call count
+      (`fat_preflight_budget` and `thin_retained_zero` are both one call) and a count-only oracle
+      passes on a search that took the other branch entirely; (f) the archived per-stage attempt
+      counts sit inside that terminal's *matrix* bounds — which is where §8's table and P1.5's matrix
+      meet, two ratified statements about the same run that a single artifact cannot check alone.
+- [x] This is P2's analog of P1.5's contract matrix: it is what proves the orchestration is
       **complete** rather than working on the happy path, and the table is already ratified, so the
       oracle is not being invented alongside the code it checks.
+
+**The table prints 12 rows and names 11 distinct paths.** Row 9 —
+`budget_estimation_miss, budget_side: input — 1 attempted at the missing stage, 0 after` — is a
+*generic restatement* of rows 2 and 12, which give the same rule at thin and at fat specifically.
+Inventing a case for it would mean inventing a path the controller does not have, so its claim is
+asserted directly instead (one attempt at the stage that missed, nothing after, read off the
+archived records). Recorded rather than padded to 12.
+
+**19 cases across those 11 paths**, because a ranged row pinned at one end proves little: a row
+covered only at its low end passes a controller that never retries, only at its high end one that
+always does. The ranged rows are listed explicitly — the first attempt inferred them from a hyphen
+in the label and matched `thin-preflight`, a row with no range at all — and that check found a real
+hole: `fat exhausted` was covered only at 3 calls, so a controller burning a spurious thin retry
+before every fat stage would have passed that row.
+
+**Reaching the archive without presupposing the audit-delivery answer.** `graph_search` builds the
+payload on every path and does not return it, delivery being the open owner question. The harness
+wraps `build_audit_payload` and `assert_result_contract` in `search`'s namespace with pass-through
+recorders, so nothing about the production signature is assumed and the tests survive whatever
+delivery is ratified.
+
+**Verified to be an independent oracle**, not a restatement of P2.4's: mutating `stage_call` to burn
+one spurious retry per stage fails 42 cases in this file alone.
 
 ### P2.6 — `replay.py` → `test_replay.py`
 - [ ] Record replay (default): integrity hash validated, **no calls, no body reads**
