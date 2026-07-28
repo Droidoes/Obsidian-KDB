@@ -84,10 +84,14 @@ def _single_line(value: str) -> str:
 
     Collapsed to a space rather than escaped to `\\n`, on two grounds: a line
     break in a title is malformed data, not content, so nothing meaningful is
-    lost; and one character in, one character out keeps the substitution
-    **byte-count preserving**, so no ceiling, maximum or golden figure can move
-    because of it. Byte-neutral on today's data outright — 0 of the 163 fixture
-    titles contain a line boundary.
+    lost; and the substitution is **character-count preserving and UTF-8
+    non-expanding** — one character in, one ASCII byte out — so no ceiling,
+    maximum or golden figure can move because of it. (**Not** byte-count
+    preserving, which this docstring claimed until codex R3: `"\\u2028"` is 3 UTF-8
+    bytes and becomes 1. Non-expansion is the property the budget actually needs —
+    the rendered block can only shrink — and it is the one the test asserts.)
+    Byte-neutral on today's data outright: 0 of the 163 fixture titles contain a
+    line boundary, so nothing is rewritten at all.
 
     Not counted, deliberately, by the project's own consumer-purpose rule: no
     consumer and no decision rests on the count today, and `delimiter_collision_guard`
@@ -104,11 +108,27 @@ def render_thin_line(entity: SpaceEntity) -> str:
 
     Also the identity line of every stage-2 block (`render_fat_block`), so the
     one-line guarantee holds on both stages from one place.
+
+    **Every interpolated field is sanitized, `page_type` included** (codex R1). The
+    first pass exempted it because `SpaceEntity.page_type` is annotated with the
+    `PageType` `Literal` — which is a **type hint, not a runtime check**, and P10
+    containment must never rest on one. Nothing enforces it anywhere on the path:
+    `SpaceEntity` does no validation, `kdb_graph/schema.py:64` declares
+    `page_type STRING`, and `kdb_graph/intake.py:325` writes the producer's value
+    through unexamined. A `page_type` of `"concept\\nQUERY:"` forged an unindented
+    header exactly as a title could. The exemption was also inconsistent on its own
+    terms: the slug is sanitized precisely so the render path does not depend on a
+    guarantee made elsewhere, and this field was one position over.
+
+    Vocabulary membership is a different obligation and belongs at the
+    graph→search-space materializer, where it protects MCP, CLI and viewer too
+    instead of making each consumer rediscover the rule. That does not replace this
+    containment — see the plan's R1 entry.
     """
     return (
         f"- slug: {_single_line(entity.slug)}"
         f"  title: {_single_line(entity.title)}"
-        f"  type: {entity.page_type}"
+        f"  type: {_single_line(entity.page_type)}"
     )
 
 

@@ -191,7 +191,7 @@ close, `d231331`).
 
       | | at first draft | after the codex absorption | headroom vs 3,072 |
       | --- | --- | --- | --- |
-      | fat | 2,381 B (2,321 + 60) | **2,922 B** (2,862 system + 60 wrapper) | **150 B** |
+      | fat | 2,381 B (2,321 + 60) | **2,998 B** (2,938 system + 60 wrapper) | **74 B** |
       | thin | 2,146 B (2,085 + 61) | **2,507 B** (2,446 + 61) | 565 B |
 
       Measured in **bytes**, with the widest cap value the contract allows, so each figure is the
@@ -199,12 +199,12 @@ close, `d231331`).
       `fat_worst_case_request_bytes()` is the constant's only consumer and it is fat's static
       guarantee that rests on it; thin is estimate-guarded with a typed `budget_estimation_miss`,
       so thin's assertion is a bonus.
-      **150 B is not a state to freeze in at P2.1f** — see "Open: raise
+      **74 B is not a state to freeze in at P2.1f** — see "Open: raise
       `SYSTEM_TEMPLATE_BUDGET_BYTES`" below.
 - [x] Stage-2 bound assertion (blueprint §11's P2 row): with real templates,
       `fat_worst_case_request_bytes()` stops being part-declared and becomes measured —
-      100 × 2,500 B + 4,096 B + the measured template = **257,018 B** ≤ ~257 kB,
-      `tokens_lte_bytes` ⇒ tokens, + 26k reserved output = **283,018 < 320,000** (the declared-reserve
+      100 × 2,500 B + 4,096 B + the measured template = **257,094 B** ≤ ~257 kB,
+      `tokens_lte_bytes` ⇒ tokens, + 26k reserved output = **283,094 < 320,000** (the declared-reserve
       figures are 257,168 / 283,168). Same assertion as the item above; stated once, tested once.
 
 **Five things P2.1a carries beyond the bullets above.**
@@ -234,13 +234,15 @@ close, `d231331`).
    what keeps the prompt hash and the artifact hashes from becoming two conventions. Pure rename,
    two call sites.
 
-**Verification.** 62 new tests (`kdb_search/tests/test_prompts.py`) at first draft, **80 after the
-codex absorption** (68 prompt + 12 H04 regression in `test_projection.py`); full suite **2,559 →
-2,639 passed / 32 skipped**, green. **Mutation-checked, 27 mutations, 27 caught** — the 20 below,
-plus 7 for the absorption round: title escaping removed; slug escaping removed; the `splitlines()`
+**Verification.** 62 new tests (`kdb_search/tests/test_prompts.py`) at first draft; **118 after both
+codex rounds** (68 prompt + 50 H04 regression in `test_projection.py`, the growth almost all from R1/R2's
+every-field × every-boundary parameterization); full suite **2,559 → 2,677 passed / 32 skipped**, green.
+**Mutation-checked, 29 mutations, 29 caught** — the 20 below, plus 9 across the two absorption rounds: title escaping removed; slug escaping removed; the `splitlines()`
 boundary set narrowed to `\n`; the escape dropping the character instead of collapsing it; the
 escape expanded to a 2-char literal (which would break byte-count preservation); `_version_of` made
-total again; and `load_template` hardcoding the version instead of calling it. D10 reordered in each
+total again; `load_template` hardcoding the version instead of calling it; `page_type` escaping removed
+(the type-hint exemption restored); and the H04 test oracle narrowed back to the characters round 1
+covered. D10 reordered in each
 template; sequential `.replace`; each of the unknown-slot / unused-value / repeated-slot guards
 removed; `repo_path` computed absolute; `sha256` over the system half only; newline translation
 disabled (CRLF leaking into the digest); `version` hardcoded instead of derived; the SYSTEM-half
@@ -294,8 +296,8 @@ confirmed the loader mechanics; four of five findings absorbed, the fifth filed.
 
 ### Open: raise `SYSTEM_TEMPLATE_BUDGET_BYTES` before P2.1f (owner call)
 
-The absorption cost fat 541 B and left **150 B** of headroom. The suite is green — the constant
-holds — but the pin lands next, and freezing a prompt 150 B under a ceiling means the next sentence
+Both absorption rounds together cost fat 617 B and left **74 B** of headroom. The suite is green — the
+constant holds — but the pin lands next, and freezing a prompt 74 B under a ceiling means the next sentence
 anyone adds breaks a ratified figure.
 
 **The recommendation is to raise it to 4,096 B**, and the reason is that 3,072 was never a measured
@@ -308,7 +310,67 @@ the review just added, to fit a figure invented before the instructions existed,
 optimization.
 
 Cost: a **blueprint v0.15** amendment to §7.0/§7.0a (recompute the guarantee sum) plus the
-`constants.py` docstring. No allowance, no ceiling, no wire figure moves.
+`constants.py` docstring. No allowance, no ceiling, no wire figure moves. **Sequencing, per codex:
+record v0.15 before changing the constant**, not after.
+
+**Codex concurs (re-review Q3), with a better reason than ours.** Ours was "the prompt needs another
+sentence", which is weak — a frozen v1 prompt arguably *should* be hard to extend. His is
+**architectural capacity**: the golden pin is what forces version and review discipline on content
+changes, so the reserve does not need to do that job too, and a 4,096 B reserve lets future
+*reviewed* prompt versions evolve without a blueprint amendment for ordinary prose. That is the
+argument to record, because it survives the objection ours does not.
+
+### P2.1a — codex re-review absorbed (round 2, verdict **REVISE**, 2026-07-27)
+
+Review: `docs/superpowers/specs/2026-07-27-task123-p2.1a-rereview-codex.md`, against `568313c`. He
+ran the suite this round (the guardrail was loosened to permit `-p no:cacheprovider`), reproduced
+every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, all absorbed.
+
+- **R1 (HIGH) — H04's "exactly one line for any input" was still false: `page_type` was not
+  sanitized. ABSORBED, and this one is the real catch.** The first pass exempted the field because
+  `SpaceEntity.page_type` carries the `PageType` `Literal` — which is a **type hint, not a runtime
+  check**. Verified end to end: `SpaceEntity` validates nothing, `kdb_graph/schema.py:64` declares
+  `page_type STRING`, `kdb_graph/intake.py:325` writes the producer value through unexamined, and
+  `SpaceEntity(page_type="concept\nQUERY:")` rendered **two lines** with the second exactly `QUERY:`.
+  The exemption was also inconsistent with our own reasoning one field over: the slug is sanitized
+  precisely so the render path does not lean on a guarantee made elsewhere. Now applied to all three
+  interpolated fields.
+- **R2 (MEDIUM) — the H04 test oracle was derived from the production constant. ABSORBED.** The
+  round-1 assertion read `not set(line) & set(_LINE_BREAKS)`, so narrowing `_LINE_BREAKS` in both
+  production and the check would have stayed green — the test was asking whether the code agreed with
+  itself. It also exercised only 8 of the 11 boundaries. Replaced with a **hardcoded `H04_BREAKS`**
+  independent of production, anchored to the interpreter (each entry really splits; nothing in the
+  ordinary ranges does; there are exactly ten single-character boundaries), asserted as a *subset* of
+  the production set so a narrowed production set fails rather than narrowing the oracle with it, and
+  parameterized **every field × every boundary**.
+- **R3 (MEDIUM) — "byte-count preserving" was false. ABSORBED as a claim + test correction.**
+  `" "` is 3 UTF-8 bytes and becomes 1, so the substitution is **character-count preserving and
+  UTF-8 non-expanding**, not byte-preserving — and the round-1 test could not have caught the
+  difference, because it compared two already-sanitized renders and so said nothing about input
+  versus output. Non-expansion is the property the ceilings actually need (a sanitized render can
+  only shrink), and it is now what is asserted, over every boundary. `_single_line`'s output
+  behaviour is unchanged.
+- **R4 (LOW) — "then the rest" and a record/template discrepancy. ABSORBED.** "then the rest" read as
+  licence to include the remaining candidates, contradicting both positive-support-only and the
+  anti-padding line. And this plan claimed *both* templates forbid stopping once the list could be
+  filled while only thin said so. Fat's `HOW TO ORDER` now ends "rank the whole supported set before
+  cutting to the limit: never stop once the list could be filled, and never treat the order of
+  EVIDENCE as a signal of relevance." Cost +16 B, not the byte-neutral he predicted.
+- **Q2, the question we could not answer ourselves:** he judges the fat block **not**
+  over-instructed — `WHAT TO SELECT` defines membership, `HOW TO ORDER` defines order, and the
+  separation helps rather than dilutes. The repeated positive-support wording he calls load-bearing
+  enough to keep. Only "then the rest" needed removing.
+- **One forward obligation filed, not absorbed** (`docs/TASKS.md` **#128**): the future
+  graph→search-space materializer should validate `page_type` membership in the canonical vocabulary
+  at that boundary, where it protects MCP, CLI and the viewer too instead of making each consumer
+  rediscover the rule. Codex is explicit that this does **not** replace the local containment fix —
+  two layers, and the outer one does not exist yet.
+- **Harness defect found and fixed in our own tooling, recorded because it nearly produced a false
+  clean sweep:** the mutation harness restored only the two modules, not the test files — so the one
+  mutation that edits a test leaked into every mutation after it and "caught" them all by leaving the
+  suite broken. Worse, refreshing the backup from that tree persisted the mutation into the backup.
+  Restore now covers every file any mutation touches, and the backup is only ever taken from a
+  verified-green tree.
 
 ### P2.1f — golden byte pins → `test_prompts_golden.py`
 - [ ] Pinned exact bytes of both rendered templates + version/SHA guard
@@ -402,8 +464,10 @@ Cost: a **blueprint v0.15** amendment to §7.0/§7.0a (recompute the guarantee s
       **Why fixed rather than fixtured, against the original filing:** (i) it is **byte-neutral on
       today's data** — 0 of the 163 fixture titles carry a line boundary, so no golden pin moves and
       no fixture regenerates, which was the whole reason for deferring; (ii) the escape collapses one
-      character to one space, so it is **byte-count preserving** even on pathological input and no
-      ceiling or exact maximum can move because of it; (iii) a fixture alone tests the defect without
+      character to one space, so it is **character-count preserving and UTF-8 non-expanding** even on
+      pathological input and no ceiling or exact maximum can move because of it (round 1 claimed
+      *byte-count preserving*, which codex R3 correctly refuted: `"\u2028"` is 3 UTF-8 bytes and becomes
+      1, so the render can only shrink — which is the property the ceilings need); (iii) a fixture alone tests the defect without
       removing it, and a harder template delimiter does not help — an unescaped title forges that
       too. (iv) codex's stated rationale is wrong in one respect worth recording: *KDB-authored*
       titles were already safe (`compiler.page_writer.emit_frontmatter` raises on a newline in any

@@ -27,12 +27,13 @@ unseen body might cover the QUERY, and judge a title-only entry solely on what
 its identity line positively shows.
 
 HOW TO ORDER
-Rank by the directness and strength of that positive support, and stop at the
-limit the USER message states. Entities the QUERY is centrally about come first,
-then entities giving substantial supporting coverage, then the rest. Between two
-otherwise equal entities, prefer the one bearing on more of the QUERY — more of
-its keys, or more of its themes. Never treat the order of EVIDENCE as a signal
-of relevance: it is the graph's own ordering and says nothing about the QUERY.
+Rank by the directness and strength of that positive support. Entities the QUERY
+is centrally about come first, followed by entities giving substantial supporting
+coverage. Between two otherwise equal entities, prefer the one bearing on more of
+the QUERY — more of its keys, or more of its themes. Rank the whole supported set
+before cutting to the limit the USER message states: never stop once the list
+could be filled, and never treat the order of EVIDENCE as a signal of relevance —
+it is the graph's own ordering and says nothing about the QUERY.
 
 Attribute each selection to the entity_search_keys it answers by LETTER label,
 copying the letters printed beside those keys in the QUERY: "A", "B", and so
