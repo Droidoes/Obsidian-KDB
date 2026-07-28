@@ -134,6 +134,22 @@ class StageRecord:
     raw_response_text: str | None = None
     #: None on unparseable or transport failure.
     parsed_output: object | None = None
+    #: The provider's stop reason verbatim, and its normalization through the
+    #: closed `api_call_type` map (D9.4). **Both**, deliberately: the raw value is
+    #: the evidence and the normalized value is the decision, and an unknown raw
+    #: value must never be guessed into the budget class — a claim only checkable
+    #: if the raw value survives beside the verdict it produced. `None` on a
+    #: transport failure, where no response reached us at all.
+    stop_reason_raw: str | None = None
+    stop_reason_normalized: str | None = None
+    #: The provider SDK's OWN transport sub-retry allowance for this route (§8
+    #: G5). Recorded because it is the difference between "the selector answered
+    #: on the first try" and "the SDK quietly tried three times" — a latency and
+    #: reliability reading that is invisible otherwise, and it differs per family
+    #: (openai-family 2, gemini none). **Never an attempt**: `logical_call_count`
+    #: counts `StageRecord`s, and this number is excluded from both sides of that
+    #: identity. It is context on the attempt, not a count of them.
+    sdk_sub_retries: int = 0
     failure: StageFailure | None = None
     validation: StageValidation | None = None
     #: Stage 1 only — post-validation, post-truncation.
@@ -226,6 +242,9 @@ def _stage_trace_digest(stages: tuple[StageRecord, ...]) -> list[object]:
             "prompt": [s.prompt.version, s.prompt.sha256, s.prompt.repo_path, s.prompt.git_commit],
             "rendered_messages": [s.rendered_messages.system, s.rendered_messages.user],
             "raw_response_text": s.raw_response_text,
+            # In the integrity hash, not the snapshot hash: the stop reason is
+            # part of what HAPPENED, not of what was searched.
+            "stop_reason": [s.stop_reason_raw, s.stop_reason_normalized],
             "model": [s.model.provider, s.model.model, s.model.route],
             "failure": None if s.failure is None else [s.failure.failure_class, s.failure.detail],
             "retained_identities": list(s.retained_identities or ()),

@@ -21,7 +21,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from .constants import MAX_EXPRESSIONS, wire_vocabulary
+from .constants import M, MAX_EXPRESSIONS, wire_vocabulary
 from .types import Hit, SpaceEntity
 
 #: `usable` covers both a populated selection and the honest empty — spec §2.3's
@@ -70,6 +70,12 @@ class ValidatedResponse:
     #: Entries the selector returned, before validation — `valid_entry_yield`'s
     #: denominator, and 0 whenever there is no usable document at all.
     returned_entries: int
+    #: The parsed wire document, for `StageRecord.parsed_output`. Carried out of
+    #: the validator rather than re-parsed at the call site: a second `json.loads`
+    #: would be a second source, and the archived `parsed_output` could then
+    #: disagree with the document validation actually ran on. `None` exactly when
+    #: there was nothing to parse (`unparseable_response`).
+    document: object | None = None
 
     @property
     def valid_entry_yield(self) -> float | None:
@@ -163,7 +169,9 @@ def validate_response(
         return ValidatedResponse(failure, (), (), Violations(), 0)
 
     if not isinstance(document, dict) or not isinstance(document.get("selections"), list):
-        return ValidatedResponse("structurally_unusable_response", (), (), Violations(), 0)
+        return ValidatedResponse(
+            "structurally_unusable_response", (), (), Violations(), 0, document=document
+        )
 
     by_slug = {entity.slug: entity for entity in space}
     selections: list = document["selections"]
@@ -220,6 +228,7 @@ def validate_response(
         advisory_unresolved=advisory,
         attempted_violations=violations,
         returned_entries=len(selections),
+        document=document,
     )
 
 
@@ -287,13 +296,81 @@ def validate_thin_retention(
     return tuple(retained[:cap]), violations
 
 
+@dataclass(frozen=True)
+class ValidatedThinResponse:
+    """Stage 1's document-level counterpart to `ValidatedResponse`.
+
+    Deliberately a separate type rather than a reuse: the two stages carry
+    different payloads (`retained` slugs vs `Hit`s) and different document keys,
+    and one type spanning both would have half its fields empty on either stage.
+    What they DO share is the four-way classification and the retry predicate,
+    which is what `stage.py` consumes — so the shared surface is the field names,
+    not the class.
+    """
+
+    classification: ResponseClass
+    #: Post-validation, post-truncation, in the selector's own returned order —
+    #: which is the ranked order stage 1 promises (spec §3.4).
+    retained: tuple[str, ...]
+    attempted_violations: Violations
+    returned_entries: int
+    document: object | None = None
+
+    @property
+    def should_retry(self) -> bool:
+        return self.classification in RETRY_CLASSES
+
+
+def validate_thin_response(
+    raw: str, *, space: tuple[SpaceEntity, ...], cap: int = M
+) -> ValidatedThinResponse:
+    """Classify and salvage one stage-1 response — parse, structure, then the
+    per-entry rule via `validate_thin_retention`.
+
+    **The classification is read off the RETURNED entry count, never the
+    validated one**, and that is the whole reason this function exists rather
+    than the controller calling `validate_thin_retention` on a hand-parsed list.
+    `{"retained": []}` and a document whose every slug is foreign both validate
+    to `retained == ()` — byte-identical post-validation state — and they take
+    opposite branches: the first is an honest empty (D3's terminal, never
+    retried), the second is `all_entries_dropped` (an allowed retry class, §8
+    B11). A controller branching on the validated list collapses them, and a
+    malfunctioning selector then reads as an honest empty — exactly what D3's
+    watched class exists to prevent. `fakes.retained_all_foreign_document`
+    carries the same warning from the input side.
+    """
+    document, failure = _parse(raw)
+    if failure is not None:
+        return ValidatedThinResponse(failure, (), Violations(), 0)
+
+    if not isinstance(document, dict) or not isinstance(document.get("retained"), list):
+        return ValidatedThinResponse(
+            "structurally_unusable_response", (), Violations(), 0, document=document
+        )
+
+    entries: list = document["retained"]
+    retained, violations = validate_thin_retention(entries, space=space, cap=cap)
+    classification: ResponseClass = (
+        "all_entries_dropped" if entries and not retained else "usable"
+    )
+    return ValidatedThinResponse(
+        classification=classification,
+        retained=retained,
+        attempted_violations=violations,
+        returned_entries=len(entries),
+        document=document,
+    )
+
+
 __all__ = [
     "ExpressionAccounting",
     "ResponseClass",
     "RETRY_CLASSES",
     "ValidatedResponse",
+    "ValidatedThinResponse",
     "Violations",
     "resolve_accounting",
     "validate_response",
+    "validate_thin_response",
     "validate_thin_retention",
 ]

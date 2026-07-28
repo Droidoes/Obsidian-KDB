@@ -507,28 +507,65 @@ if a zero-call path ever needed a scripted reply to be exercised, it would not b
       `hits_empty=True`) and requiring `ContractViolation` at each site. That took the sweep from
       17/18 to **18/18**.
 
-### P2.3 — `stage_call`: attempts, records, output classification
-- [ ] **`json_mode=True` on every selector `ModelRequest`, both stages** — asserted, mirroring
+### P2.3 — `stage_call`: attempts, records, output classification — **DONE** (`stage.py`, +62 tests)
+Shipped as **`kdb_search/stage.py`**, a module of its own rather than more of `search.py`: `graph_search`
+decides *which* stages run, `stage_call` owns what happens inside one. `search.py` is untouched — the
+`STAGE_CALL_SEAM` still raises, and P2.2's zero-call terminals stay provable without the machinery that
+spends. Wiring is P2.4's.
+
+- [x] **`json_mode=True` on every selector `ModelRequest`, both stages** — asserted, mirroring
       `compiler/tests/test_compile_source.py:139`'s regression pin. **Moved here from P2.2**, which
       could not do it: requests are built in `stage_call`, so P2.2 owns only the half that must fail
       before any work (a route that cannot honour `json_mode` at all — done, `search.py`). Recorded so
       the split does not read as a dropped bullet.
-- [ ] Up to 2 logical attempts per executed stage; attempt 2 only after an allowed retry class
+- [x] Up to 2 logical attempts per executed stage; attempt 2 only after an allowed retry class
       (transport, timeout, `unparseable_response`, `structurally_unusable_response`,
       `all_entries_dropped` — `response.RETRY_CLASSES`)
-- [ ] One `StageRecord` per logical attempt **including failures**; `logical_call_count ==
+- [x] One `StageRecord` per logical attempt **including failures**; `logical_call_count ==
       len(StageRecords)` (§6 invariant, already hashed by `artifact.py`)
-- [ ] Immediate retry, no backoff — pass-1's posture deliberately (§8 G5b, precedent
+- [x] Immediate retry, no backoff — pass-1's posture deliberately (§8 G5b, precedent
       `ingestion/enrich/pass1_caller.py:179`); the stage entry records the provider's *actual* SDK
-      sub-retry policy (openai-family `max_retries=2`; **gemini none**), never counted as an attempt
-- [ ] **Post-call output-budget classification at this one site, governing BOTH stages** (D9.3/D9.4):
+      sub-retry policy (openai-family `max_retries=2`; **gemini none**), never counted as an attempt.
+      Shipped as `StageRecord.sdk_sub_retries` + `stage._SDK_SUB_RETRIES`; the no-backoff posture is
+      asserted by a test that fails the run if `time.sleep` is called, so a backoff layer has to break
+      a test to arrive rather than sliding in as an improvement.
+- [x] **Post-call output-budget classification at this one site, governing BOTH stages** (D9.3/D9.4):
       predicate is *normalized cap stop **AND** no complete usable document*; raw + normalized stop
       reason archived; unknown stop reason **never** guessed into the budget class; classified
       **before** the generic `unparseable_response` retry; never retried; terminal (F1 does not apply)
-- [ ] A complete usable document that merely carries a cap stop is validated **normally**, the stop
+- [x] A complete usable document that merely carries a cap stop is validated **normally**, the stop
       recorded in telemetry (R1 salvage; `compiler.py:405-409`'s carrier-metadata ruling)
-- [ ] `budget_estimation_miss` — typed `budget_exceeded` / `detected: post_call` /
+- [x] `budget_estimation_miss` — typed `budget_exceeded` / `detected: post_call` /
       `budget_side: input`, attempted once, never retried, excluded from the §8.4 gate series
+
+**Three things the bullets did not say, decided here:**
+
+- [x] **`response.validate_thin_response` — a thin-side document classifier that did not exist.**
+      `validate_thin_retention` takes an already-parsed *list*; nothing did parse → structure → four-way
+      classification for the thin wire, so `stage_call` had no way to classify a thin response at all.
+      Added to `response.py` rather than inlined here, so `_parse` stays a single source. **Its
+      classification reads the RETURNED entry count, never the validated one** — which is the whole
+      reason it exists: `{"retained": []}` and an all-foreign document both validate to `retained == ()`,
+      and they take opposite branches (D3's honest empty, never retried, vs `all_entries_dropped`, an
+      allowed retry class). `fakes.retained_all_foreign_document` was already carrying that warning from
+      the input side with no production counterpart to warn *about*.
+- [x] **`StageRecord` gained `stop_reason_raw` / `stop_reason_normalized`.** §8 requires both archived
+      per record and the dataclass had neither — only `BudgetRecord` carried a finish reason, which is
+      the wrong home: a stop reason exists on every attempt, not only on the ones that end in a budget
+      event. Folded into the integrity hash (what *happened*) and deliberately not the snapshot hash
+      (what was *searched*).
+- [x] **`StageOutcome.validated` is `None` on `exhausted`, on purpose**, though the last attempt may well
+      have parsed. A retry-exhausted stage produced no usable answer by definition, and exposing its
+      final document invites precisely the F1 bug the path exists to prevent — reading a thin retention
+      off a stage whose failure is what makes the retention non-binding. The attempts stay fully
+      archived in `records`; the field is what a *consumer* may act on.
+
+**Mutation sweep: 28 designed, 28 caught** — including both behaviours P2.7 names as otherwise
+uncovered (the stop-reason normalizer, the retry-class predicate). The sweep deliberately includes the
+mutations that look harmless: `all_entries_dropped` dropped from the usable-document set, the D9.3
+conjunction weakened to a bare cap-stop test, that same check moved *after* the generic retry, the
+unrelated-400 `raise` swallowed, and the thin classifier branching on the validated list. Every one
+changes a real outcome; none is caught by a status assertion alone.
 
 ### P2.4 — the two-stage flow → `test_two_stage.py`
 - [ ] thin → fat order; thin **always** runs (R4 as amended — the masking-asymmetry rationale)
