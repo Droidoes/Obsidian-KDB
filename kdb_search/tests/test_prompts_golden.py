@@ -69,34 +69,41 @@ from kdb_search.constants import M, MAX_RESULTS, SYSTEM_TEMPLATE_BUDGET_BYTES
 #: `sha256_digest` over the loaded template TEXT (both halves, marker included).
 #: Text mode, so a CRLF checkout cannot move it — `prompts.py` rule 3.
 GOLDEN_DIGESTS: dict[Stage, str] = {
-    "thin": "sha256:415c97f9c217aef939c6b2bcfbb1eecc1207cf85a0d8616c2aa64d5aab3ed2d3",
-    "fat": "sha256:b4679b90fc62cc1675f4205f8b6e9c40155339b9bb263eb905fc1625649a37d4",
+    "thin": "sha256:32f78aca99f91a44965db27149f1cbcf372ff15fd31e5dc0afdd950b6fee2fd4",
+    "fat": "sha256:3083b4745d9cf77419a32eb80f0a0f8585b901e93cd7e3bb78a9ae104858a7d9",
 }
 
-GOLDEN_VERSIONS: dict[Stage, str] = {"thin": "1", "fat": "1"}
+GOLDEN_VERSIONS: dict[Stage, str] = {"thin": "2", "fat": "2"}
 
 GOLDEN_REPO_PATHS: dict[Stage, str] = {
-    "thin": "kdb_search/prompts/selector_thin_v1.txt",
-    "fat": "kdb_search/prompts/selector_fat_v1.txt",
+    "thin": "kdb_search/prompts/selector_thin_v2.txt",
+    "fat": "kdb_search/prompts/selector_fat_v2.txt",
 }
 
 #: Bytes of each half as loaded (system) and as declared (user template, slots
 #: unexpanded). Split out from the overhead below because these two ARE pure
 #: functions of the file, where the overhead is not.
 GOLDEN_HALF_BYTES: dict[Stage, tuple[int, int]] = {
-    "thin": (2_446, 96),
-    "fat": (2_938, 94),
+    "thin": (2_460, 96),
+    "fat": (3_014, 94),
 }
 
 #: `template_overhead_bytes` — system + rendered wrapper, content slots empty,
 #: widest cap. A function of the template AND of the two constants pinned below.
 #: These are the figures in the blueprint's §7.0 byte table; fat is the normative
-#: one (`budget.fat_worst_case_request_bytes()` is the only consumer).
-GOLDEN_OVERHEAD_BYTES: dict[Stage, int] = {"thin": 2_507, "fat": 2_998}
+#: one — it is the fill's fixed overhead, the constant `search.graph_search` starts
+#: accumulating from before the first entity is offered a place in the stage-2 pool
+#: (`rendered_request_bytes("")`). It was `budget.fat_worst_case_request_bytes()`
+#: until v0.16, which is deleted with the static guarantee it served.
+GOLDEN_OVERHEAD_BYTES: dict[Stage, int] = {"thin": 2_521, "fat": 3_074}
 
 #: The constants `template_overhead_bytes` substitutes. Pinned so that changing
 #: one fails HERE — naming the coupling — instead of silently moving the overhead.
-GOLDEN_OVERHEAD_INPUTS = {"M": 100, "MAX_RESULTS": 50}
+#: M moved 100 -> 150 at v0.16 (D-123-A). The overhead itself did NOT move:
+#: "100" and "150" are both 3 characters, so the rendered thin wrapper is
+#: byte-identical and the digest pins stay put. That is exactly why this pin
+#: exists separately from the digest — the coupling is real even when invisible.
+GOLDEN_OVERHEAD_INPUTS = {"M": 150, "MAX_RESULTS": 50}
 
 STAGES: tuple[Stage, ...] = ("thin", "fat")
 
@@ -175,7 +182,7 @@ def test_overhead_bytes_are_pinned(stage: Stage) -> None:
         f"{stage} template overhead moved {GOLDEN_OVERHEAD_BYTES[stage]} → {actual} B. "
         "If a template changed, see the digest pin. If not, a constant folded into "
         "the rendered wrapper changed (M / MAX_RESULTS) — recompute the §7.0 table "
-        "and, for fat, the static guarantee."
+        "and re-derive the fill's fixed overhead."
     )
 
 

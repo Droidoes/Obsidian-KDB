@@ -6,12 +6,17 @@ Two quantities that look interchangeable and are not:
     the pre-flight guard runs on. It can under-call; the 0.8 headroom explicitly
     carries that density variance, and the "never underestimates" claim is
     withdrawn (opus5 J3).
-  * `worst_case_input_tokens` — the **pathological bound** (`tokens == bytes`) that
-    the M=100 static guarantee rests on, valid only under `tokens_lte_bytes`.
+  * `worst_case_input_tokens` — the **pathological bound** (`tokens == bytes`),
+    valid only under `tokens_lte_bytes`. It is what proves the OUTPUT allowances
+    cover the exact max serialization; it no longer bounds the input, because the
+    M=100 static guarantee it served is withdrawn (D-123-D).
 
-The guarantee is a proof; the estimate is a guard. Conflating them would turn a
+A bound is a proof; the estimate is a guard. Conflating them would turn a
 by-construction argument into a measurement, which is the exact regression the
 K1→L1→M1→N2 lineage closed.
+
+Fat's input is bounded by `fat_input_byte_allowance` and the fill that spends it:
+a request that does not fit is never constructed (D-123-B).
 
 D9 keeps **four** output quantities distinct, because `max_tokens` caps the whole
 completion rather than the visible JSON: the visible response, the hidden
@@ -30,15 +35,11 @@ from common.model_pool import ModelSpec
 from .constants import (
     BUDGET_HEADROOM,
     ESTIMATOR_BYTES_PER_TOKEN,
-    EXCERPT_BLOCK_CEILING_BYTES,
     HIDDEN_OUTPUT_RESERVE,
     M,
     MAX_EXPRESSIONS,
     MAX_RESULTS,
     MAX_SLUG_LEN,
-    QUERY_BLOCK_CEILING_BYTES,
-    SMALLEST_POOL_BUDGET_TOKENS,
-    SYSTEM_TEMPLATE_BUDGET_BYTES,
     VISIBLE_OUTPUT_ALLOWANCE_FAT,
     VISIBLE_OUTPUT_ALLOWANCE_THIN,
     WIRE_JSON_SEPARATORS,
@@ -227,29 +228,33 @@ def preflight(stage: Stage, *, rendered_bytes: int, spec: ModelSpec) -> BudgetVe
 
 
 # ---------------------------------------------------------------------------
-# the M=100 static guarantee (D7) — sizing, not measurement
+# the stage-2 fill allowance (D-123-B) — replaces the M=100 static guarantee
 # ---------------------------------------------------------------------------
 
 
-def fat_worst_case_request_bytes(*, retained: int = M) -> int:
-    """Fat's absolute worst case: every retained entity at the policy-v2 ceiling,
-    a saturated query block, and the declared system/template reserve."""
-    return (
-        retained * EXCERPT_BLOCK_CEILING_BYTES
-        + QUERY_BLOCK_CEILING_BYTES
-        + SYSTEM_TEMPLATE_BUDGET_BYTES
-    )
+def fat_input_byte_allowance(spec: ModelSpec) -> int:
+    """The most input the fat request may render to, in bytes, for this route.
 
+    **The single source of truth the fill accumulates against.** Derived from
+    `preflight`'s own inequality rather than restated beside it, so the two cannot
+    drift:
 
-def fat_static_guarantee_tokens(*, retained: int = M) -> int:
-    """The guarantee's total: the pathological input bound plus the fat stage's
-    provider-total reserved output. Compared against
-    `SMALLEST_POOL_BUDGET_TOKENS`, it holds BY CONSTRUCTION — no estimation
-    anywhere in fat's safety path at pool windows.
+        fits  <=>  ceil(bytes / K) + reserved <= budget
+              <=>  bytes <= (budget - reserved) * K            [K = bytes/token]
+
+    The second step is exact for integer `bytes`, not an approximation — which is
+    what lets a pool filled exactly to this allowance be guaranteed to pass the
+    pre-flight that follows it. `test_budget.py` asserts both directions on the
+    boundary; a fill that fit but failed its own pre-flight would be a defect in
+    the one place this design promises cannot happen.
+
+    Negative in principle (a route whose reserved output exceeds its whole
+    budget); clamped to 0, where the fill accepts nothing and the caller returns
+    the narrowed `FAT_PREFLIGHT_BUDGET` terminal. `resolve_selector_route` already
+    refuses such a route, so this is belt-and-braces, not a live path.
     """
-    return worst_case_input_tokens(fat_worst_case_request_bytes(retained=retained)) + (
-        reserved_output_tokens("fat")
-    )
+    headroom = context_budget(spec) - reserved_output_tokens("fat")
+    return max(0, headroom * ESTIMATOR_BYTES_PER_TOKEN)
 
 
 __all__ = [
@@ -258,8 +263,7 @@ __all__ = [
     "context_budget",
     "estimate_input_tokens",
     "exact_max_visible_bytes",
-    "fat_static_guarantee_tokens",
-    "fat_worst_case_request_bytes",
+    "fat_input_byte_allowance",
     "hidden_output_reserve",
     "preflight",
     "provider_max_tokens",

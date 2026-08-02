@@ -27,10 +27,15 @@ from common.paths import PageType
 
 from kdb_search import replay, search
 from kdb_search.artifact import SPACE_MANIFEST_REF, TITLE_ONLY_MARKER
+from kdb_search.constants import M
 from kdb_search.tests import fakes
 from kdb_search.types import GraphSearchRequest, QueryPayload
 
 SPACE = fakes.make_space(5)
+
+
+#: "Above M" as a derivation, not a literal — see the note in `test_two_stage.py`.
+ABOVE_M = M + 20
 
 
 def _spec(**overrides) -> ModelSpec:
@@ -145,7 +150,7 @@ def test_an_abstaining_run_replays_as_faithfully_as_a_successful_one(
     """§6 — the audit exists on every path, and its emptiness is the finding.
     A replay that only worked for successful searches would be unable to answer
     the question the record was kept for."""
-    count = 5 if not terminal_script else 120
+    count = 5 if not terminal_script else ABOVE_M
     audit, live = _archive(*terminal_script, count=count, monkeypatch=monkeypatch)
     replayed = replay.replay_record(audit)
     assert (replayed.status, replayed.execution) == (live.status, live.execution)
@@ -281,11 +286,11 @@ def test_the_recall_validates_against_the_pool_the_stage_ACTUALLY_SAW(
     two differ — the fat stage only ever saw thin's retained pool — and validating
     a re-call against the full manifest would accept a slug the selector was never
     shown, quietly widening the closed-world guarantee the original run had."""
-    large = fakes.make_space(120)
+    large = fakes.make_space(ABOVE_M)
     audit, _ = _archive(
         fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in large[:3]]})),
         fakes.ScriptedReply(fakes.usable_document(large, count=2)),
-        count=120,
+        count=ABOVE_M,
         monkeypatch=monkeypatch,
     )
     # The challenger names an entity that is in the manifest but was NOT pooled.
@@ -312,11 +317,11 @@ def test_the_thin_recall_validates_against_the_WHOLE_manifest(monkeypatch) -> No
     """The counterpart: thin's closed world IS the manifest, so a re-called thin
     may legitimately retain anything in it — including entities the archived fat
     pool never contained."""
-    large = fakes.make_space(120)
+    large = fakes.make_space(ABOVE_M)
     audit, _ = _archive(
         fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in large[:3]]})),
         fakes.ScriptedReply(fakes.usable_document(large, count=2)),
-        count=120,
+        count=ABOVE_M,
         monkeypatch=monkeypatch,
     )
     outside = large[50].slug
@@ -368,7 +373,7 @@ def test_recalling_a_stage_the_run_never_reached_is_refused(monkeypatch) -> None
     """A D3 run has no fat stage. Re-calling one would mean synthesizing a
     request that was never made, which is the opposite of what this mode is."""
     audit, _ = _archive(
-        fakes.ScriptedReply(fakes.retained_empty_document()), count=120, monkeypatch=monkeypatch
+        fakes.ScriptedReply(fakes.retained_empty_document()), count=ABOVE_M, monkeypatch=monkeypatch
     )
     with pytest.raises(replay.ReplayIntegrityError, match="no 'fat' stage"):
         replay.recall_stage(

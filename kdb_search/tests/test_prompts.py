@@ -15,8 +15,8 @@ this file is worth its length:
     once with the unindented section headers (the order the model reads). A
     template can reorder at render time; the claim is about what is received.
   * **The byte budget is measured, not declared.** `SYSTEM_TEMPLATE_BUDGET_BYTES`
-    was a reserve until this file; the assertions here are what convert
-    `budget.fat_worst_case_request_bytes()` from part-declared to measured.
+    was a reserve until this file; the assertions here are what make it the
+    measured fixed overhead the stage-2 fill starts from (D-123-B).
 """
 
 from __future__ import annotations
@@ -32,18 +32,12 @@ import pytest
 
 from kdb_search import prompts
 from kdb_search.artifact import RenderedMessages, sha256_digest
-from kdb_search.budget import (
-    fat_static_guarantee_tokens,
-    fat_worst_case_request_bytes,
-    reserved_output_tokens,
-    worst_case_input_tokens,
-)
+from common.model_pool import resolve_models_json
+from kdb_search.budget import fat_input_byte_allowance
 from kdb_search.constants import (
-    EXCERPT_BLOCK_CEILING_BYTES,
     M,
     MAX_RESULTS,
     QUERY_BLOCK_CEILING_BYTES,
-    SMALLEST_POOL_BUDGET_TOKENS,
     SYSTEM_TEMPLATE_BUDGET_BYTES,
     expression_labels,
 )
@@ -112,7 +106,7 @@ def test_the_prompts_MODULE_wins_over_the_prompts_DATA_directory():
 @pytest.mark.parametrize("stage", STAGES)
 def test_version_comes_from_the_filename(stage):
     template = load_template(stage)
-    assert template.ref.version == "1"
+    assert template.ref.version == "2"
     assert template.ref.repo_path.endswith(f"_v{template.ref.version}.txt")
 
 
@@ -235,7 +229,7 @@ def test_no_substitution_slot_survives_into_either_rendered_half(stage):
 
 
 def test_a_slot_in_the_system_half_raises(monkeypatch, tmp_path):
-    bad = tmp_path / "selector_thin_v1.txt"
+    bad = tmp_path / prompts._FILENAMES["thin"]
     bad.write_text("system says {{EVIDENCE}}\n<<<USER>>>\nEVIDENCE:\n{{EVIDENCE}}\n")
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
     with pytest.raises(PromptTemplateError, match="SYSTEM half"):
@@ -243,7 +237,7 @@ def test_a_slot_in_the_system_half_raises(monkeypatch, tmp_path):
 
 
 def test_a_missing_section_marker_raises(monkeypatch, tmp_path):
-    bad = tmp_path / "selector_thin_v1.txt"
+    bad = tmp_path / prompts._FILENAMES["thin"]
     bad.write_text("no marker at all\n")
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
     with pytest.raises(PromptTemplateError, match="section marker exactly once"):
@@ -256,7 +250,7 @@ def test_a_CRLF_checkout_moves_neither_the_digest_nor_the_rendered_bytes(monkeyp
     and renders identically to the LF original — and P2.1f's pins survive it.
     `read_bytes()` would make both the hash and the prompt platform-dependent."""
     lf = "system JSON\n<<<USER>>>\nEVIDENCE:\n{{EVIDENCE}}\n{{RETENTION_CAP}}\nQUERY:\n{{QUERY}}\n"
-    (tmp_path / "selector_thin_v1.txt").write_bytes(lf.replace("\n", "\r\n").encode())
+    (tmp_path / prompts._FILENAMES["thin"]).write_bytes(lf.replace("\n", "\r\n").encode())
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
 
     template = load_template("thin")
@@ -332,7 +326,7 @@ def test_a_slot_marker_INSIDE_evidence_is_inert(stage):
 
 def test_an_unknown_slot_in_the_user_template_raises(monkeypatch, tmp_path):
     """A typo'd `{{EVIDENC}}` must fail, not ship a brace pair to the model."""
-    (tmp_path / "selector_thin_v1.txt").write_text(
+    (tmp_path / prompts._FILENAMES["thin"]).write_text(
         "system\n<<<USER>>>\nEVIDENCE:\n{{EVIDENC}}\nQUERY:\n{{QUERY}}\n"
     )
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
@@ -344,7 +338,7 @@ def test_a_value_with_no_slot_raises_rather_than_dropping_silently(monkeypatch, 
     """The failure this guards is specific: drop `{{MAX_RESULTS}}` from the fat
     template and the result cap silently leaves the prompt while the selector is
     still measured against it (`over_cap` violations)."""
-    (tmp_path / "selector_fat_v1.txt").write_text(
+    (tmp_path / prompts._FILENAMES["fat"]).write_text(
         "system\n<<<USER>>>\nEVIDENCE:\n{{EVIDENCE}}\nQUERY:\n{{QUERY}}\n"
     )
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
@@ -355,7 +349,7 @@ def test_a_value_with_no_slot_raises_rather_than_dropping_silently(monkeypatch, 
 def test_a_repeated_slot_raises(monkeypatch, tmp_path):
     """Rendering the evidence twice would double the largest block in the request
     and break every byte figure downstream."""
-    (tmp_path / "selector_thin_v1.txt").write_text(
+    (tmp_path / prompts._FILENAMES["thin"]).write_text(
         "system\n<<<USER>>>\n{{EVIDENCE}}\n{{EVIDENCE}}\n{{RETENTION_CAP}}\n{{QUERY}}\n"
     )
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
@@ -462,11 +456,13 @@ def test_template_overhead_fits_the_declared_reserve(stage):
     measurement. Bytes, not characters — this prose is em-dash-dense and an
     em-dash is 3 bytes.
 
-    The **fat** case is the normative one: `fat_worst_case_request_bytes()` is the
-    constant's only consumer, and it is fat's static guarantee that rests on it.
-    Thin is budgeted by estimate with a typed `budget_estimation_miss`, so thin's
-    assertion is a bonus rather than a proof — but an overrun there is still a
-    finding for the owner, not grounds to widen a ratified figure.
+    The **fat** case is the normative one: the constant is the fill's fixed
+    overhead — the bytes already spent before the first entity is offered a place
+    — so an understated reserve would let the fill accept an entity the request
+    cannot actually carry. Thin is budgeted by estimate with a typed
+    `budget_estimation_miss`, so thin's assertion is a bonus rather than a proof —
+    but an overrun there is still a finding for the owner, not grounds to widen a
+    ratified figure.
     """
     measured = template_overhead_bytes(stage)
     assert measured <= SYSTEM_TEMPLATE_BUDGET_BYTES, (
@@ -494,7 +490,7 @@ def test_overhead_is_measured_in_BYTES_not_characters(monkeypatch, tmp_path):
     """Stated over a synthetic template rather than the real one so the assertion
     has no premise about today's prose. It is not hypothetical, though: the thin
     template already carries an em-dash, and the whole budget is a byte budget."""
-    (tmp_path / "selector_thin_v1.txt").write_text(
+    (tmp_path / prompts._FILENAMES["thin"]).write_text(
         "em—dash\n<<<USER>>>\n{{EVIDENCE}}{{RETENTION_CAP}}{{QUERY}}\n", encoding="utf-8"
     )
     monkeypatch.setattr(prompts, "_PROMPT_DIR", tmp_path)
@@ -502,21 +498,21 @@ def test_overhead_is_measured_in_BYTES_not_characters(monkeypatch, tmp_path):
     assert template_overhead_bytes("thin") == 12
 
 
-def test_the_fat_stage_2_bound_holds_with_the_MEASURED_template():
-    """Blueprint §11's P2 row: fat's worst case stops being part-declared.
+def test_the_measured_template_leaves_the_fill_room_on_every_pool_route():
+    """Blueprint §11's P2 row, restated for D-123-B. There is no `M x ceiling`
+    worst case any more; what has to hold is that the fill's FIXED overhead — the
+    measured wrapper plus a saturated query block — leaves usable room on the
+    smallest route, or the fill would seat nothing and the narrowed
+    FAT_PREFLIGHT_BUDGET terminal would be the normal outcome.
 
-    Real worst case = M x the policy-v2 block ceiling + the query ceiling + the
-    measured wrapper; `tokens_lte_bytes` turns bytes into a token bound, and the
-    provider-total reserved output is added on top.
+    Measured against the fixture's largest real entity (2,209 B), not a synthetic
+    one: the claim is about this corpus.
     """
-    real = (
-        M * EXCERPT_BLOCK_CEILING_BYTES
-        + QUERY_BLOCK_CEILING_BYTES
-        + template_overhead_bytes("fat")
-    )
-    assert real <= fat_worst_case_request_bytes()
-    total = worst_case_input_tokens(real) + reserved_output_tokens("fat")
-    assert total <= fat_static_guarantee_tokens() < SMALLEST_POOL_BUDGET_TOKENS
+    fixed = template_overhead_bytes("fat") + QUERY_BLOCK_CEILING_BYTES
+    assert fixed <= SYSTEM_TEMPLATE_BUDGET_BYTES + QUERY_BLOCK_CEILING_BYTES
+    for model_id in ("gemini-3.6-flash", "gpt-5.4-mini", "deepseek-v4-flash"):
+        allowance = fat_input_byte_allowance(resolve_models_json(model_id))
+        assert allowance - fixed > M * 2_209, model_id
 
 
 # ---------------------------------------------------------------------------

@@ -75,6 +75,15 @@ class SearchTelemetry:
 
     eligible_space_size: int = 0
     stage1_retained: int = 0
+    #: Entities actually sent to fat (D-123-B). Was `min(retained, M)` and now
+    #: varies with the budget, so it is reported rather than inferred.
+    stage2_pool_size: int = 0
+    #: True when the fill stopped on the budget rather than on running out of
+    #: candidates — i.e. at least one retained entity was NOT presented to fat.
+    #: Expected to be permanently false at current corpus density (bodies would
+    #: have to average ~19x live reality to bind at M=150); it is a fail-safe, and
+    #: this is the flag that says whether the fail-safe has ever engaged.
+    stage2_budget_bound: bool = False
     stage2_hydrated: int = 0
     stage2_title_only: int = 0
     returned_entries: int = 0

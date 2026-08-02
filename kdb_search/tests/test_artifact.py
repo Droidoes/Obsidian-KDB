@@ -32,7 +32,6 @@ from kdb_search.artifact import (
     compute_artifact_integrity_hash,
     compute_search_snapshot_hash,
 )
-from kdb_search.constants import EXCERPT_POLICY_VERSION
 from kdb_search.projection import render_query_block
 from kdb_search.types import GraphSnapshotRef, Hit, QueryPayload, SpaceEntity
 
@@ -64,7 +63,6 @@ def _stage(**overrides) -> StageRecord:
         evidence={"warren-buffett": "an excerpt", "owner-earnings": TITLE_ONLY_MARKER},
         latency_ms=1_200,
         cost=0.0004,
-        excerpt_policy_version=EXCERPT_POLICY_VERSION,
         raw_response_text='{"selections":[{"slug":"warren-buffett","matched":["A"]}]}',
         parsed_output={"selections": [{"slug": "warren-buffett", "matched": ["A"]}]},
         validation=StageValidation(dropped={"foreign_slug": 0}, coerced={}, counts={"returned": 1}),
@@ -127,10 +125,10 @@ def test_a_selector_failure_produces_a_payload_carrying_the_failed_attempts():
         stages=(
             _stage(stage="thin_selection", attempt=1, raw_response_text="{ truncated",
                    parsed_output=None, failure=StageFailure("unparseable_response", "no document"),
-                   evidence=SPACE_MANIFEST_REF, excerpt_policy_version=None),
+                   evidence=SPACE_MANIFEST_REF),
             _stage(stage="thin_selection", attempt=2, raw_response_text="also bad",
                    parsed_output=None, failure=StageFailure("unparseable_response", "no document"),
-                   evidence=SPACE_MANIFEST_REF, excerpt_policy_version=None),
+                   evidence=SPACE_MANIFEST_REF),
         ),
         result=_result(hits=(), status="selector_failure", evidence_status="not_applicable",
                        body_coverage=None),
@@ -170,11 +168,10 @@ def test_malformed_raw_response_text_is_archived_verbatim():
 
 def test_stage_one_records_the_manifest_reference_not_a_copy_of_the_evidence():
     stage = _stage(stage="thin_selection", evidence=SPACE_MANIFEST_REF,
-                   excerpt_policy_version=None, retained_identities=("warren-buffett",))
+                   retained_identities=("warren-buffett",))
     p = _payload(stages=(stage,))
     assert p.stages[0].evidence == SPACE_MANIFEST_REF
     assert p.stages[0].retained_identities == ("warren-buffett",)
-    assert p.stages[0].excerpt_policy_version is None
 
 
 def test_a_title_only_entity_is_marked_in_the_evidence():
@@ -261,15 +258,22 @@ def test_a_single_evidence_byte_moves_the_snapshot_hash():
     assert baseline != nudged
 
 
-def test_the_projection_policy_identity_moves_the_snapshot_hash():
-    """Policy v1 and v2 can produce identical bytes on a corpus the ceiling does
-    not bind — so the policy must be hashed explicitly, or a re-projection under
-    new rules would look like the same snapshot."""
-    v2 = compute_search_snapshot_hash(graph_ref=GRAPH, manifest=MANIFEST, stages=(_stage(),))
-    v1 = compute_search_snapshot_hash(
-        graph_ref=GRAPH, manifest=MANIFEST, stages=(_stage(),), excerpt_policy_version="1"
+def test_the_evidence_bytes_alone_now_identify_the_projection():
+    """`excerpt_policy_version` was a fourth hashed term; D-123-C retires it. It
+    existed because policy v1 and v2 could produce IDENTICAL bytes on a corpus the
+    ceiling did not bind, so the policy had to be hashed explicitly or a
+    re-projection under new rules would look like the same snapshot.
+
+    With no policy there is no such collision to guard against: different bodies
+    mean different evidence bytes, and identical bytes mean the same projection.
+    Asserted in the direction that still matters."""
+    baseline = compute_search_snapshot_hash(graph_ref=GRAPH, manifest=MANIFEST, stages=(_stage(),))
+    reprojected = compute_search_snapshot_hash(
+        graph_ref=GRAPH,
+        manifest=MANIFEST,
+        stages=(_stage(evidence={"warren-buffett": "the same body, delivered whole"}),),
     )
-    assert v2 != v1
+    assert baseline != reprojected
 
 
 @pytest.mark.parametrize(

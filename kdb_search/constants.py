@@ -15,9 +15,14 @@ from common.paths import MAX_SLUG_LEN  # noqa: F401  — re-exported: one slug b
 # selection caps
 # ---------------------------------------------------------------------------
 
-#: Thin retention + fat hydration cap (D7). Sized so the fat request's absolute
-#: worst case fits the configured pool's smallest budget by construction.
-M = 100
+#: **Thin's retention ceiling, and nothing else (D-123-A, 2026-08-02).** Also the
+#: small-space threshold. It was 100 and doubled as fat's hydration cap, sized so
+#: `M x EXCERPT_BLOCK_CEILING_BYTES` fit the smallest pool budget by construction.
+#: That guarantee is withdrawn (D-123-D): the stage-2 pool is now filled to the
+#: 0.8 budget entity by entity, so a request that does not fit is never built and
+#: no per-entity ceiling is needed to bound one. `M` is no longer an input to any
+#: guarantee — raising it costs recall reach, not safety.
+M = 150
 
 #: Global result cap (spec §3.2 merged page_cap). `max_results` may be lower.
 MAX_RESULTS = 50
@@ -93,20 +98,18 @@ def wire_vocabulary(count: int) -> tuple[str, ...]:
 # projection ceilings
 # ---------------------------------------------------------------------------
 
-#: Excerpt policy version recorded in the artifact.
-EXCERPT_POLICY_VERSION = "2"
-
-#: Policy-v1 word cap (a safety bound, not a sizing lever — SD-3).
-EXCERPT_WORD_CAP = 250
-
-#: Sentence extension window: +10% of the word cap.
-EXCERPT_SENTENCE_EXTENSION_WORDS = EXCERPT_WORD_CAP // 10
-
-#: Policy v2: the *rendered* per-entity fat block (identity line + excerpt field
-#: + delimiters) never exceeds this. The word cap alone cannot bound bytes — one
-#: 200-character URL is one "word". Binds on nothing in fixture v1 (largest
-#: rendered block 2,209 B), which is why v1 needed no regeneration.
-EXCERPT_BLOCK_CEILING_BYTES = 2_500
+#: **Body truncation is gone (D-123-C, 2026-08-02).** `EXCERPT_WORD_CAP` (250),
+#: `EXCERPT_SENTENCE_EXTENSION_WORDS` (25), `EXCERPT_BLOCK_CEILING_BYTES` (2,500)
+#: and `EXCERPT_POLICY_VERSION` all lived here. Measured against the data they
+#: protected: the byte ceiling had fired 0/163 fixture and 0/83 live, the word cap
+#: 2/163 and 0/83. The reason is structural, not luck — pass-2 writes these pages,
+#: so their length is governed by the compiler's own prompt contract (live max 129
+#: words / 976 B). Fat now receives whole bodies, and the fill bounds the request.
+#:
+#: The query ceiling below is deliberately NOT removed with them: pass-1 metadata
+#: is model-authored and genuinely unbounded, unlike a compiled body. It is filed
+#: as a separate candidate, to be decided the same way — by measuring how often it
+#: binds on real pass-1 output first.
 
 #: The rendered query block ceiling, enforced by per-field allocations below.
 QUERY_BLOCK_CEILING_BYTES = 4_096
@@ -138,7 +141,21 @@ QUERY_FIELD_ALLOCATIONS = {
 #: Visible-JSON allowances. Each is >= the exact max serialization of the
 #: fully-bounded wire under `tokens_lte_bytes` (tokens <= bytes), so no
 #: bytes-per-token density step survives anywhere in the output path.
-VISIBLE_OUTPUT_ALLOWANCE_THIN = 13_000
+#:
+#: **THIN raised 13,000 -> 20,000 at v0.16 — a forced consequence of D-123-A, not
+#: a free choice.** Thin's wire is a retained-slug list bounded by `M x
+#: MAX_SLUG_LEN`, so M 100 -> 150 moves its exact maximum 12,314 -> 18,464 B,
+#: straight through the old allowance. D8(iii)'s ratified rule is that the
+#: allowance *derives* from the exact maximum, so it follows M rather than being
+#: re-decided; 20,000 keeps roughly the relative headroom 13,000 gave 12,314
+#: (8.3% vs 5.6%). `PROVIDER_MAX_TOKENS_THIN` becomes 36,000, still far under the
+#: pool's smallest `max_output_tokens` (gemini-3.6-flash, 65,536) — asserted at
+#: route resolution.
+#:
+#: The amendment did not anticipate this: D-123-A reasoned that M was no longer an
+#: input to any guarantee, which is true of the INPUT budget and false of the
+#: output wire. Recorded rather than absorbed silently.
+VISIBLE_OUTPUT_ALLOWANCE_THIN = 20_000
 VISIBLE_OUTPUT_ALLOWANCE_FAT = 10_000
 
 #: Owner-selected POLICY reserve for hidden reasoning/thought tokens (D9,
@@ -167,14 +184,29 @@ ESTIMATOR_BYTES_PER_TOKEN = 4
 BUDGET_HEADROOM = 0.8
 
 
-#: Declared byte budget for the rendered system block + user wrapper — the
-#: "~3 kB system/template" line in the M=100 static guarantee (blueprint §7.0a).
-#: Recorded as a constant rather than left as prose so the guarantee is a checkable
-#: sum. **P2 obligation:** the real rendered templates must be asserted against
-#: this, and this figure raised (with the guarantee recomputed) if they exceed it.
-#: Until then it is a declared reserve, not a measurement.
-SYSTEM_TEMPLATE_BUDGET_BYTES = 3_072
+#: Byte budget for the rendered system block + user wrapper (blueprint §7.0a).
+#: Recorded as a constant rather than prose so the reserve is a checkable sum.
+#: It was the template term of the M=100 static guarantee; with that guarantee
+#: withdrawn (D-123-D) it is the fill's fixed overhead — the bytes already spent
+#: before the first entity is offered a place in the pool.
+#:
+#: **Raised 3,072 → 4,096 at v0.15 (2026-08-02, Joseph).** The P2 obligation is
+#: discharged — both templates are now measured against this by
+#: `test_prompts_golden.py`. 3,072 was never a measured bound: it was the
+#: "~3 kB system/template" line written into the guarantee before any prompt
+#: existed, and the v2 prose left it 74 B of headroom, so the next reviewed
+#: sentence would have broken a ratified figure.
+#:
+#: The reason to raise it rather than trim prose is **architectural capacity**
+#: (codex): the golden pin already forces version + review discipline on content
+#: changes, so the reserve does not need to do that job too. 4,096 matches
+#: `QUERY_BLOCK_CEILING_BYTES`, so the two per-request reserves read as one
+#: scheme.
+SYSTEM_TEMPLATE_BUDGET_BYTES = 4_096
 
 #: The pool's smallest effective context budget: gpt-5.4-mini's 400,000 window at
-#: BUDGET_HEADROOM. The M=100 static guarantee is stated against this.
+#: BUDGET_HEADROOM. It no longer carries a static guarantee (D-123-D) — the fill
+#: bounds the request against each route's own budget at request time, which is
+#: the stronger property. Kept as the figure sizing claims are stated against:
+#: at 150 entities, live body density fills 5.3% of it.
 SMALLEST_POOL_BUDGET_TOKENS = 320_000

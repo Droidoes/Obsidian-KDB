@@ -39,6 +39,8 @@ from common.wiki_io import ContentNotFoundError
 from kdb_search.budget import provider_max_tokens
 
 from kdb_search import search
+from kdb_search.budget import fat_input_byte_allowance
+from kdb_search.constants import M
 from kdb_search.contracts import TERMINAL_CONTRACTS, ContractViolation
 from kdb_search.tests import fakes
 from kdb_search.types import (
@@ -51,6 +53,14 @@ from kdb_search.types import (
 # --------------------------------------------------------------------------
 # fixtures
 # --------------------------------------------------------------------------
+
+
+#: "Above M" as a derivation, not a literal. It was hardcoded 120, which silently
+#: became "below M" the moment D-123-A raised M 100 -> 150 — every above-M branch
+#: then tested the small-space path instead, and the assertions failed rather than
+#: quietly passing only because they are specific. Derived so the next M move
+#: cannot repeat it.
+ABOVE_M = M + 20
 
 
 def _spec(**overrides) -> ModelSpec:
@@ -541,11 +551,17 @@ def _ok_body_reader(slug: str, page_type: PageType) -> str:
     return f"Body text for {slug}, a {page_type} page with enough words to excerpt."
 
 
-def _long_body_reader(slug: str, page_type: PageType) -> str:
-    """A body big enough that the fat evidence, and only the fat evidence, busts
-    the window — which is what makes the fat pre-flight tests measure the fat
-    request rather than re-testing the thin one."""
-    return " ".join(f"word{n}" for n in range(400))
+def _oversized_body_reader(slug: str, page_type: PageType) -> str:
+    """One body so large that it alone cannot fit the fat request (D-123-B).
+
+    **The terminal changed shape.** Before fill-to-budget this was 90 moderately
+    long bodies against a small window: the assembled request busted, so the
+    pre-flight refused it. The fill would now simply seat fewer of them and
+    succeed — correctly. `FAT_PREFLIGHT_BUDGET` can only fire when **not even one
+    entity fits**, so the only thing that still reaches it is a single oversized
+    body. ~120 kB against an 88 kB allowance.
+    """
+    return " ".join(f"word{n}" for n in range(15_000))
 
 
 def _missing_for(*slugs: str):
@@ -811,13 +827,13 @@ def test_stage_two_is_presented_in_MANIFEST_order_not_thins_ranked_order() -> No
     retention reversed; the fat evidence must still ascend by slug. Without this,
     fat inherits thin's ranking and the two stages stop being independent
     judgments, which is what the concordance series is trying to measure."""
-    space = fakes.make_space(120)  # N > M, so thin's list actually selects
+    space = fakes.make_space(ABOVE_M)  # N > M, so thin's list actually selects
     retained = list(space[:30])
     document = fakes._dump({"retained": [e.slug for e in reversed(retained)]})
     _, selector = _search_with(
         fakes.ScriptedReply(document),
         fakes.ScriptedReply(fakes.usable_document(space, count=2)),
-        count=120,
+        count=ABOVE_M,
     )
     fat_prompt = selector.requests[1].prompt
     positions = [fat_prompt.index(e.slug) for e in retained]
@@ -825,12 +841,12 @@ def test_stage_two_is_presented_in_MANIFEST_order_not_thins_ranked_order() -> No
 
 
 def test_above_M_stage_two_is_thins_VALIDATED_retention() -> None:
-    space = fakes.make_space(120)
+    space = fakes.make_space(ABOVE_M)
     kept = space[:4]
     _, selector = _search_with(
         fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in kept]})),
         fakes.ScriptedReply(fakes.usable_document(space, count=2)),
-        count=120,
+        count=ABOVE_M,
     )
     fat_prompt = selector.requests[1].prompt
     assert all(entity.slug in fat_prompt for entity in kept)
@@ -882,7 +898,7 @@ def test_F1_does_NOT_apply_above_M() -> None:
     result, selector = _search_with(
         fakes.ScriptedReply(fakes.unparseable_text()),
         fakes.ScriptedReply(fakes.unparseable_text()),
-        count=120,
+        count=ABOVE_M,
     )
     selector.assert_consumed()
     assert result.status == "selector_failure"
@@ -898,7 +914,7 @@ def test_thin_exhaustion_above_M_records_WHICH_class_exhausted_it() -> None:
     result = _search(
         fakes.ScriptedReply(fakes.thin_structurally_unusable_document()),
         fakes.ScriptedReply(fakes.thin_structurally_unusable_document()),
-        count=120,
+        count=ABOVE_M,
     )
     assert result.telemetry.selector_failure_class == "structurally_unusable_response"
 
@@ -919,7 +935,7 @@ def test_D3_skips_the_fat_call_entirely() -> None:
     second call — and the watched class is what keeps it out of the honest-empty
     bucket in the KPI series."""
     result, selector = _search_with(
-        fakes.ScriptedReply(fakes.retained_empty_document()), count=120
+        fakes.ScriptedReply(fakes.retained_empty_document()), count=ABOVE_M
     )
     selector.assert_consumed()
     assert result.status == "completed"
@@ -939,9 +955,9 @@ def test_D3_is_reached_only_by_an_HONEST_empty_not_by_a_hallucination() -> None:
     is an allowed retry class that exhausts thin over two. A controller branching
     on the validated list collapses them, and a malfunctioning selector then reads
     as an honest empty — exactly what D3's watched class exists to prevent."""
-    space = fakes.make_space(120)
+    space = fakes.make_space(ABOVE_M)
     honest, honest_selector = _search_with(
-        fakes.ScriptedReply(fakes.retained_empty_document()), count=120
+        fakes.ScriptedReply(fakes.retained_empty_document()), count=ABOVE_M
     )
     honest_selector.assert_consumed()
     assert honest.status == "completed"
@@ -950,7 +966,7 @@ def test_D3_is_reached_only_by_an_HONEST_empty_not_by_a_hallucination() -> None:
     foreign, foreign_selector = _search_with(
         fakes.ScriptedReply(fakes.retained_all_foreign_document(space)),
         fakes.ScriptedReply(fakes.retained_all_foreign_document(space)),
-        count=120,
+        count=ABOVE_M,
     )
     foreign_selector.assert_consumed()
     assert foreign.status == "selector_failure"
@@ -1006,12 +1022,12 @@ def test_a_missing_body_degrades_to_title_only_rather_than_dropping_the_entity()
 
 
 def test_concordance_is_the_fraction_of_fats_top_ten_inside_thins_top_twenty() -> None:
-    space = fakes.make_space(120)
+    space = fakes.make_space(ABOVE_M)
     result = _search(
         fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space[:4]]})),
         # Fat returns 4 hits, of which the first 2 are in thin's list.
         fakes.ScriptedReply(fakes.usable_document(space, count=4)),
-        count=120,
+        count=ABOVE_M,
     )
     assert result.telemetry.concordance == pytest.approx(1.0)
 
@@ -1047,13 +1063,13 @@ def test_concordance_measures_thins_TOP_TWENTY_not_its_whole_retention() -> None
     slugs; fat's hits sit at positions 0-1, inside the top 20, while a
     whole-retention reading would score identically for a hit at position 39 —
     and the series would stop discriminating exactly where ranking matters."""
-    space = fakes.make_space(120)
+    space = fakes.make_space(ABOVE_M)
     result = _search(
         fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space[:40]]})),
         fakes.ScriptedReply(
             fakes._dump({"selections": [{"slug": space[39].slug, "matched": ["A"]}]})
         ),
-        count=120,
+        count=ABOVE_M,
     )
     assert result.telemetry.concordance == 0.0
 
@@ -1064,10 +1080,16 @@ def test_concordance_measures_thins_TOP_TWENTY_not_its_whole_retention() -> None
 
 
 def _fat_only_budget_spec() -> ModelSpec:
-    """A window that fits thin's identity-only evidence and not fat's excerpts.
-    The two stages differ by exactly the bodies, which is what makes this the fat
-    pre-flight and not a second thin one."""
-    return _spec(ctx_window=45_000, max_output_tokens=128_000)
+    """A window that fits thin's identity-only evidence and not one oversized
+    body. 0.8 x 60,000 = 48,000 tokens; fat reserves 26,000, leaving an 88,000 B
+    input allowance. Thin reserves 36,000 and needs ~1,750, so it passes — the two
+    stages still differ by exactly the bodies, which is what makes this the fat
+    pre-flight and not a second thin one.
+
+    Was 45,000, which no longer fits THIN: D-123-A carried
+    `VISIBLE_OUTPUT_ALLOWANCE_THIN` 13,000 -> 20,000, so thin's provider total is
+    36,000 and a 36,000-token budget leaves it no input room at all."""
+    return _spec(ctx_window=60_000, max_output_tokens=128_000)
 
 
 def test_the_fat_preflight_stops_the_search_with_NO_fat_call() -> None:
@@ -1075,7 +1097,7 @@ def test_the_fat_preflight_stops_the_search_with_NO_fat_call() -> None:
         fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
         count=90,
         selector=_fat_only_budget_spec(),
-        body_reader=_long_body_reader,
+        body_reader=_oversized_body_reader,
     )
     selector.assert_consumed()
     assert result.status == "budget_exceeded"
@@ -1096,7 +1118,7 @@ def test_the_fat_preflight_terminal_reports_NOT_APPLICABLE_evidence() -> None:
         fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
         count=90,
         selector=_fat_only_budget_spec(),
-        body_reader=_long_body_reader,
+        body_reader=_oversized_body_reader,
     )
     assert result.evidence_status == "not_applicable"
     assert result.body_coverage is None
@@ -1112,7 +1134,7 @@ def test_the_named_F1_interaction_keeps_BOTH_markers() -> None:
         fakes.ScriptedReply(fakes.unparseable_text()),
         count=90,
         selector=_fat_only_budget_spec(),
-        body_reader=_long_body_reader,
+        body_reader=_oversized_body_reader,
     )
     selector.assert_consumed()
     assert result.status == "budget_exceeded"
@@ -1289,18 +1311,208 @@ def test_every_terminal_produces_a_snapshot_hash(terminal: str) -> None:
     if terminal == "completed":
         result = _search(count=5)
     elif terminal == "d3":
-        result = _search(fakes.ScriptedReply(fakes.retained_empty_document()), count=120)
+        result = _search(fakes.ScriptedReply(fakes.retained_empty_document()), count=ABOVE_M)
     elif terminal == "thin_exhausted":
         result = _search(
             fakes.ScriptedReply(fakes.unparseable_text()),
             fakes.ScriptedReply(fakes.unparseable_text()),
-            count=120,
+            count=ABOVE_M,
         )
     else:
         result = _search(
             fakes.ScriptedReply(fakes.retained_document(fakes.make_space(90))),
             count=90,
             selector=_fat_only_budget_spec(),
-            body_reader=_long_body_reader,
+            body_reader=_oversized_body_reader,
         )
     assert result.telemetry.search_snapshot_hash is not None
+
+
+# --------------------------------------------------------------------------
+# the stage-2 fill (D-123-B) — dynamic pool, 1..M
+#
+# The fill replaced the M x per-entity-ceiling static guarantee. Its contract has
+# five independent parts, asserted separately on purpose: a fill that simply
+# returned everything would pass an order-only test, and one that returned a
+# single entity would pass a never-over-budget test.
+# --------------------------------------------------------------------------
+
+
+def _sized_body_reader(size: int):
+    """Bodies of a known byte size, so a budget can be chosen that binds."""
+
+    def read(slug: str, page_type: PageType) -> str:
+        return "w" * size
+
+    return read
+
+
+def _fill_binds_spec() -> ModelSpec:
+    """0.8 x 60,000 = 48,000 tokens; fat reserves 26,000, so the input allowance
+    is (48,000 - 26,000) x 4 = 88,000 B. Against 8 kB bodies that seats roughly
+    ten of them — a fill that genuinely binds."""
+    return _spec(ctx_window=60_000, max_output_tokens=128_000)
+
+
+def test_the_fill_stops_on_the_budget_and_says_so() -> None:
+    """Without this the fill is untested at current corpus density: real bodies
+    never reach the bound (they would have to average ~19x live reality), so only
+    synthetic oversized bodies exercise the stop condition at all."""
+    space = fakes.make_space(ABOVE_M)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space]})),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=ABOVE_M,
+        selector=_fill_binds_spec(),
+        body_reader=_sized_body_reader(8_000),
+    )
+    assert result.status == "completed"
+    assert result.telemetry.stage2_budget_bound is True
+    assert 0 < result.telemetry.stage2_pool_size < len(space)
+
+
+def test_the_filled_request_never_exceeds_the_allowance() -> None:
+    """The by-construction property, measured on the bytes actually sent rather
+    than on the accumulator that chose them."""
+    space = fakes.make_space(ABOVE_M)
+    spec = _fill_binds_spec()
+    _, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space]})),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=ABOVE_M,
+        selector=spec,
+        body_reader=_sized_body_reader(8_000),
+    )
+    request = selector.requests[1]
+    rendered = len(request.system.encode()) + len(request.prompt.encode())
+    assert rendered <= fat_input_byte_allowance(spec)
+
+
+def test_the_fill_seats_at_least_one_entity_whenever_one_fits() -> None:
+    """The boundary between a bound fill and the FAT_PREFLIGHT_BUDGET terminal.
+    One body just under the whole allowance must still be sent, not refused."""
+    space = fakes.make_space(3)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space]})),
+        fakes.ScriptedReply(fakes.usable_document(space, count=1)),
+        count=3,
+        selector=_fill_binds_spec(),
+        body_reader=_sized_body_reader(70_000),
+    )
+    assert result.status == "completed"
+    assert result.telemetry.stage2_pool_size == 1
+    assert result.telemetry.stage2_budget_bound is True
+
+
+def test_an_unbound_fill_reports_neither_a_bound_nor_a_short_pool() -> None:
+    """The negative case — at live density the flag must stay false, or it is
+    useless as the signal that the fail-safe has engaged."""
+    space = fakes.make_space(ABOVE_M)
+    result = _search(
+        fakes.ScriptedReply(fakes._dump({"retained": [e.slug for e in space[:30]]})),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
+        count=ABOVE_M,
+    )
+    assert result.telemetry.stage2_budget_bound is False
+    assert result.telemetry.stage2_pool_size == 30
+
+
+def test_MEMBERSHIP_is_decided_by_thins_rank_not_by_manifest_position() -> None:
+    """Half of §3.4's split. Thin ranks the manifest's TAIL first, so a fill that
+    walked the manifest would seat the head instead — the two orders disagree
+    completely, which is what makes this assertion mean something."""
+    space = fakes.make_space(ABOVE_M)
+    ranked = list(reversed([e.slug for e in space]))
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": ranked})),
+        # A hit on a SEATED slug: thin ranked the tail first, so the manifest head
+        # is exactly what the fill declines — a canned document built from
+        # `space[:2]` would be validated as foreign and trigger a retry.
+        fakes.ScriptedReply(
+            fakes._dump({"selections": [{"slug": space[-1].slug, "matched": ["A"]}]})
+        ),
+        count=ABOVE_M,
+        selector=_fill_binds_spec(),
+        body_reader=_sized_body_reader(8_000),
+    )
+    seated = result.telemetry.stage2_pool_size
+    assert 0 < seated < len(space)
+    prompt = selector.requests[1].prompt
+    for slug in ranked[:seated]:
+        assert slug in prompt, f"{slug} was in thin's top {seated} and must be seated"
+    for slug in ranked[seated:]:
+        assert slug not in prompt, f"{slug} was below thin's cut and must not be seated"
+
+
+def test_PRESENTATION_order_stays_the_manifest_even_when_rank_decided_the_cut() -> None:
+    """The other half. The entities thin ranked LAST are the ones seated above, so
+    if the fill also dictated order they would appear reversed. Spec §3.4 keeps
+    fat's judgment unanchored to thin's ranking, and that survives D-123-B."""
+    space = fakes.make_space(ABOVE_M)
+    ranked = list(reversed([e.slug for e in space]))
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes._dump({"retained": ranked})),
+        # A hit on a SEATED slug: thin ranked the tail first, so the manifest head
+        # is exactly what the fill declines — a canned document built from
+        # `space[:2]` would be validated as foreign and trigger a retry.
+        fakes.ScriptedReply(
+            fakes._dump({"selections": [{"slug": space[-1].slug, "matched": ["A"]}]})
+        ),
+        count=ABOVE_M,
+        selector=_fill_binds_spec(),
+        body_reader=_sized_body_reader(8_000),
+    )
+    prompt = selector.requests[1].prompt
+    seated = [e.slug for e in space if f"- slug: {e.slug}" in prompt]
+    assert seated == sorted(seated), "manifest order is slug-ascending by construction"
+    assert seated != [s for s in ranked if s in seated], "and it is NOT thin's order"
+
+
+def test_a_pool_filled_to_the_LAST_BYTE_still_passes_its_own_pre_flight() -> None:
+    """The invariant the whole design rests on, tested where it can actually fail.
+
+    The fill accepts on an accumulator (`overhead + sum(stream_contribution)`);
+    the pre-flight then re-measures the true rendering. Those are two different
+    computations, and if the accumulator ever UNDER-counts, a pool would be
+    accepted by the fill and refused by the pre-flight it was built to satisfy.
+    It cannot today — `"\\n".join()` over n blocks costs n-1 separators while the
+    accumulator charges n, so it overstates by exactly one byte — but the other
+    tests all run with kilobytes of slack, where a sign error would hide.
+
+    This one walks the body size up until the fill is one entity from refusing,
+    then asserts the real rendered request fits.
+    """
+    spec = _fill_binds_spec()
+    allowance = fat_input_byte_allowance(spec)
+    space = fakes.make_space(1)
+
+    def run(size: int):
+        return _search_with(
+            fakes.ScriptedReply(fakes._dump({"retained": [space[0].slug]})),
+            fakes.ScriptedReply(fakes.usable_document(space, count=1)),
+            count=1,
+            selector=spec,
+            body_reader=_sized_body_reader(size),
+        )
+
+    # Largest body the fill still seats, to the byte.
+    low, high = 1, allowance
+    while low < high:
+        mid = (low + high + 1) // 2
+        result, _ = run(mid)
+        if result.telemetry.stage2_pool_size == 1:
+            low = mid
+        else:
+            high = mid - 1
+
+    result, selector = run(low)
+    assert result.telemetry.stage2_pool_size == 1
+    request = selector.requests[1]
+    rendered = len(request.system.encode()) + len(request.prompt.encode())
+    assert rendered <= allowance, f"the fill seated a pool its pre-flight refuses: {rendered} > {allowance}"
+    assert allowance - rendered <= 2, f"not actually at the boundary — {allowance - rendered} B of slack"
+
+    # And one byte more is refused, so the boundary is the fill's, not an artefact.
+    refused, _ = run(low + 1)
+    assert refused.status == "budget_exceeded"
+    assert refused.telemetry.stage2_pool_size == 0

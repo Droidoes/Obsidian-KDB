@@ -20,8 +20,9 @@ HOW TO DECIDE — TWO STEPS
 Step 1, eligibility. Read every identity in EVIDENCE before deciding anything.
 An identity is eligible whenever there is a plausible path from it to the QUERY.
 Do not withhold one because a title alone leaves you unsure: that is exactly the
-case to keep. The second pass reads each retained entity's body and makes the
-final selection, so precision among the retained is its job, not yours.
+case to keep. The second pass reads an excerpt of each retained entity's body
+and makes the final selection, so precision among the retained is its job, not
+yours.
 
 Step 2, the limit. If the eligible identities fit within the limit the USER
 message states, return all of them. If they do not, rank the whole eligible set

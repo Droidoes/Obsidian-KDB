@@ -43,6 +43,7 @@ from common.paths import PageType
 from common.wiki_io import ContentNotFoundError
 
 from kdb_search import search
+from kdb_search.constants import M
 from kdb_search.contracts import TERMINAL_CONTRACTS
 from kdb_search.tests import fakes
 from kdb_search.types import GraphSearchRequest, QueryPayload
@@ -50,6 +51,14 @@ from kdb_search.types import GraphSearchRequest, QueryPayload
 # --------------------------------------------------------------------------
 # the harness
 # --------------------------------------------------------------------------
+
+
+#: "Above M" as a derivation, not a literal. It was hardcoded 120, which silently
+#: became "below M" the moment D-123-A raised M 100 -> 150 — every above-M branch
+#: then tested the small-space path instead, and the assertions failed rather than
+#: quietly passing only because they are specific. Derived so the next M move
+#: cannot repeat it.
+ABOVE_M = M + 20
 
 
 def _spec(**overrides) -> ModelSpec:
@@ -71,17 +80,27 @@ def _tiny_window_spec() -> ModelSpec:
 
 
 def _fat_only_budget_spec() -> ModelSpec:
-    """Fits thin's identity-only evidence and not fat's excerpts, so the fat
-    pre-flight is what binds — row 8."""
-    return _spec(ctx_window=45_000, max_output_tokens=128_000)
+    """Fits thin's identity-only evidence and not one oversized body, so the fat
+    pre-flight is what binds — row 8. Was 45,000, which no longer fits THIN after
+    D-123-A carried its output allowance to 20,000."""
+    return _spec(ctx_window=60_000, max_output_tokens=128_000)
 
 
 def _body(slug: str, page_type: PageType) -> str:
     return f"Body text for {slug}, a {page_type} page with enough words to excerpt."
 
 
-def _long_body(slug: str, page_type: PageType) -> str:
-    return " ".join(f"word{n}" for n in range(400))
+def _oversized_body(slug: str, page_type: PageType) -> str:
+    """One body so large that it alone cannot fit the fat request (D-123-B).
+
+    **The terminal changed shape.** Before fill-to-budget this was 90 moderately
+    long bodies against a small window: the assembled request busted, so the
+    pre-flight refused it. The fill would now simply seat fewer of them and
+    succeed — correctly. `FAT_PREFLIGHT_BUDGET` can only fire when **not even one
+    entity fits**, so the only thing that still reaches it is a single oversized
+    body. ~120 kB against an 88 kB allowance.
+    """
+    return " ".join(f"word{n}" for n in range(15_000))
 
 
 def _missing_body(slug: str, page_type: PageType) -> str:
@@ -151,7 +170,7 @@ def _execute(
 # --------------------------------------------------------------------------
 
 SMALL = fakes.make_space(5)
-LARGE = fakes.make_space(120)
+LARGE = fakes.make_space(ABOVE_M)
 POOLED = fakes.make_space(90)
 
 #: `(id, table row, expected calls (low, high), terminal, script factory, kwargs)`.
@@ -173,7 +192,7 @@ ROWS: list[tuple] = [
         (0, 0),
         "thin_preflight_budget",
         lambda: (),
-        dict(count=120, selector_spec=_tiny_window_spec()),
+        dict(count=ABOVE_M, selector_spec=_tiny_window_spec()),
     ),
     (
         "thin-estimation-miss",
@@ -189,7 +208,7 @@ ROWS: list[tuple] = [
         (1, 1),
         "thin_retained_zero",
         lambda: (fakes.ScriptedReply(fakes.retained_empty_document()),),
-        dict(count=120),
+        dict(count=ABOVE_M),
     ),
     (
         "D3-after-a-retry",
@@ -200,7 +219,7 @@ ROWS: list[tuple] = [
             fakes.ScriptedReply(fakes.unparseable_text()),
             fakes.ScriptedReply(fakes.retained_empty_document()),
         ),
-        dict(count=120),
+        dict(count=ABOVE_M),
     ),
     (
         "completed-clean",
@@ -235,7 +254,7 @@ ROWS: list[tuple] = [
             fakes.ScriptedReply(fakes.unparseable_text()),
             fakes.ScriptedReply(fakes.unparseable_text()),
         ),
-        dict(count=120),
+        dict(count=ABOVE_M),
     ),
     (
         "F1-fat-clean",
@@ -293,7 +312,7 @@ ROWS: list[tuple] = [
         (1, 1),
         "fat_preflight_budget",
         lambda: (fakes.ScriptedReply(fakes.retained_document(POOLED)),),
-        dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_long_body),
+        dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_oversized_body),
     ),
     (
         "fat-preflight-budget-on-F1",
@@ -304,7 +323,7 @@ ROWS: list[tuple] = [
             fakes.ScriptedReply(fakes.unparseable_text()),
             fakes.ScriptedReply(fakes.unparseable_text()),
         ),
-        dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_long_body),
+        dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_oversized_body),
     ),
     (
         "thin-output-truncation",

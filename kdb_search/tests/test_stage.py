@@ -32,7 +32,7 @@ from common.model_pool import ModelRoute, ModelSpec
 from kdb_search import stage
 from kdb_search.artifact import SPACE_MANIFEST_REF
 from kdb_search.budget import BudgetVerdict, provider_max_tokens, visible_output_allowance
-from kdb_search.constants import EXCERPT_POLICY_VERSION, M, MAX_ATTEMPTS_PER_STAGE
+from kdb_search.constants import M, MAX_ATTEMPTS_PER_STAGE
 from kdb_search.prompts import load_template
 from kdb_search.response import (
     validate_response,
@@ -315,24 +315,23 @@ def test_cost_is_computed_from_the_route_prices_and_the_attempt_tokens() -> None
     assert outcome.records[0].cost == pytest.approx(3.0 * 2 + 5.0 * 1)
 
 
-def test_thin_records_carry_retained_identities_and_no_excerpt_policy() -> None:
+def test_thin_records_carry_retained_identities() -> None:
     outcome, _ = _run(fakes.ScriptedReply(fakes.retained_document(SPACE, count=2)))
     record = outcome.records[0]
     assert record.retained_identities == tuple(e.slug for e in SPACE[:2])
-    assert record.excerpt_policy_version is None
 
 
-def test_fat_records_carry_the_excerpt_policy_and_no_retained_identities() -> None:
-    """The two stage-specific `StageRecord` fields, each asserted absent on the
-    other stage — a record that filled both would archive a thin retention for a
-    fat call and make the replay reader's stage inference wrong."""
+def test_fat_records_carry_evidence_and_no_retained_identities() -> None:
+    """`retained_identities` is thin-only, asserted absent on fat — a record that
+    filled it for a fat call would archive a thin retention and make the replay
+    reader's stage inference wrong. (It was one of TWO stage-specific fields;
+    `excerpt_policy_version` was the other, retired with the policy by D-123-C.)"""
     outcome, _ = _run(
         fakes.ScriptedReply(fakes.usable_document(SPACE)),
         stage_name="fat",
         evidence={SPACE[0].slug: "body text"},
     )
     record = outcome.records[0]
-    assert record.excerpt_policy_version == EXCERPT_POLICY_VERSION
     assert record.retained_identities is None
     assert record.evidence == {SPACE[0].slug: "body text"}
 

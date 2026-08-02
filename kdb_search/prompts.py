@@ -60,8 +60,8 @@ _SLOT = re.compile(r"\{\{[^{}]*\}\}")
 _VERSION_RE = re.compile(r"_v(\d+)\.txt\Z")
 
 _FILENAMES: dict[Stage, str] = {
-    "thin": "selector_thin_v1.txt",
-    "fat": "selector_fat_v1.txt",
+    "thin": "selector_thin_v2.txt",
+    "fat": "selector_fat_v2.txt",
 }
 
 
@@ -262,10 +262,14 @@ def template_overhead_bytes(stage: Stage) -> int:
     slots empty — the quantity `SYSTEM_TEMPLATE_BUDGET_BYTES` reserves.
 
     Measured with the widest cap value the contract allows, so the figure is the
-    stage's maximum and not a sample. The evidence stream (M x
-    `EXCERPT_BLOCK_CEILING_BYTES`) and the query block
-    (`QUERY_BLOCK_CEILING_BYTES`) are budgeted separately by
-    `budget.fat_worst_case_request_bytes()`; this is everything else.
+    stage's maximum and not a sample. This is the **fixed** part of the request —
+    the bytes already spent before the first entity is offered a place in the fat
+    pool. The variable parts are budgeted elsewhere: the evidence stream by the
+    fill, which accumulates `projection.stream_contribution_bytes` per entity
+    against `budget.fat_input_byte_allowance` (D-123-B), and the query block by
+    `QUERY_BLOCK_CEILING_BYTES`. (It read "the evidence stream (M x
+    `EXCERPT_BLOCK_CEILING_BYTES`)" until v0.16 — that constant is deleted and the
+    fill budgets no such product.)
     """
     messages = (
         render_thin_messages(evidence="", query="", retention_cap=M)

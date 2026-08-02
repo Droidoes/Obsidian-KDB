@@ -12,7 +12,6 @@ import re
 import pytest
 
 from common.wiki_io import ContentNotFoundError
-from kdb_search.constants import EXCERPT_BLOCK_CEILING_BYTES, EXCERPT_POLICY_VERSION
 from kdb_search.projection import (
     ProjectedEntity,
     _LINE_BREAKS,
@@ -50,7 +49,7 @@ def test_thin_line_has_no_excerpt_and_two_space_field_separators():
 
 def test_fat_block_grammar_identity_line_delimiters_and_four_space_content():
     e = SpaceEntity(slug="a-slug", title="A Title", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="line one\nline two", truncated=False))
+    block = render_fat_block(ProjectedEntity(entity=e, excerpt="line one\nline two"))
     assert block == (
         '- slug: a-slug  title: A Title  type: concept\n'
         '  excerpt: """\n'
@@ -65,7 +64,7 @@ def test_g7_clause_1_trailing_newline_emits_a_final_whitespace_line():
     empty field line, rendered as four spaces. 161/163 fixture excerpts end
     with a newline, so this clause is load-bearing on almost the whole corpus."""
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body\n", truncated=False))
+    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body\n"))
     lines = block.split("\n")
     assert lines[2] == "    body"
     assert lines[3] == "    ", "trailing newline must emit a whitespace-only 4-space line"
@@ -74,7 +73,7 @@ def test_g7_clause_1_trailing_newline_emits_a_final_whitespace_line():
 
 def test_g7_clause_2_blank_lines_are_indented_too():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="a\n\nb", truncated=False))
+    block = render_fat_block(ProjectedEntity(entity=e, excerpt="a\n\nb"))
     assert block.split("\n")[3] == "    ", "interior blank lines carry the 4-space indent"
 
 
@@ -82,7 +81,7 @@ def test_only_the_exact_two_space_delimiter_line_terminates_the_block():
     # An excerpt carrying its own triple-quote line cannot close the block early:
     # content sits at 4 spaces, the terminator at 2.
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt='before\n"""\nafter', truncated=False))
+    block = render_fat_block(ProjectedEntity(entity=e, excerpt='before\n"""\nafter'))
     assert block.count('  """') == 2, "opening + closing delimiter only"
     assert '    """' in block, "the collided delimiter is indented as content"
     assert block.endswith('  """')
@@ -158,7 +157,7 @@ def test_h04_the_fat_block_keeps_its_grammar_under_a_forged_title():
     its structural meaning here.
     """
     e = SpaceEntity(slug="s", title='T\n  excerpt: """', page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body", truncated=False))
+    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body"))
     lines = block.split("\n")
     assert len(lines) == 4
     assert lines[0].startswith("- slug: s  title: T ")
@@ -211,64 +210,51 @@ def test_delimiter_collision_is_counted_not_silently_allowed():
 
 
 # --------------------------------------------------------------------------
-# excerpt policy v1 caps (word cap + sentence extension)
+# bodies are delivered WHOLE — D-123-C, 2026-08-02
+#
+# What used to live here: a 250-word cap with a sentence-extension window, and a
+# 2,500 B per-entity rendered ceiling enforced by binary search. Both are gone.
+# Measured against the data they protected, the byte ceiling had fired 0/163
+# fixture and 0/83 live, the word cap 2/163 and 0/83 — because pass-2 writes these
+# pages, so their length is governed by the compiler's prompt contract, not by
+# chance. Sizing moved one level up to search's fill, which can decline to include
+# an entity rather than corrupt one.
 # --------------------------------------------------------------------------
 
-def test_short_body_is_verbatim():
+def test_a_short_body_is_verbatim():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
     body = "One two three. Four five."
     assert project_entity(e, body_reader=lambda *_: body).excerpt == body
 
 
-def test_word_cap_extends_to_sentence_end_within_ten_percent():
+def test_a_body_far_over_the_retired_word_cap_is_ALSO_verbatim():
+    """The direct inverse of the deleted cap tests: 800 words, nothing cut."""
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    # 250 words, then 5 more completing the sentence => within the +10% (25 word) window
-    body = " ".join(["w"] * 250) + " tail tail tail tail end. Next sentence here."
-    ex = project_entity(e, body_reader=lambda *_: body).excerpt
-    assert ex.endswith("end."), "extend to the sentence end when it lands inside the window"
-    assert "Next sentence" not in ex
+    body = " ".join(["word"] * 800) + " final clause here."
+    p = project_entity(e, body_reader=lambda *_: body)
+    assert p.excerpt == body
+    assert len(p.excerpt.split()) == 803
 
 
-def test_word_cap_hard_cuts_when_no_sentence_end_inside_the_window():
-    e = SpaceEntity(slug="s", title="T", page_type="concept")
-    body = " ".join(["w"] * 250) + " " + " ".join(["x"] * 100) + "."
-    ex = project_entity(e, body_reader=lambda *_: body).excerpt
-    assert len(ex.split()) == 250, "no sentence end in the window => hard cut at word 250"
-
-
-# --------------------------------------------------------------------------
-# excerpt policy v2 — the hard byte ceiling (opus5 H1 / codex confirmation #3)
-# --------------------------------------------------------------------------
-
-def test_rendered_block_never_exceeds_the_byte_ceiling():
+def test_a_body_far_over_the_retired_byte_ceiling_is_ALSO_verbatim():
+    """60 x 200 chars — 12 kB, ~5x the retired 2,500 B ceiling."""
     e = SpaceEntity(slug="s" * 40, title="T" * 60, page_type="concept")
-    # 60 lines x 200 chars: well under the 250-word cap, far over the byte ceiling
     body = "\n".join(["x" * 200] * 60)
     p = project_entity(e, body_reader=lambda *_: body)
-    assert stream_contribution_bytes(p) <= EXCERPT_BLOCK_CEILING_BYTES
-    assert p.truncated is True
+    assert p.excerpt == body
+    assert stream_contribution_bytes(p) > 12_000
 
 
-def test_byte_truncation_takes_precedence_over_the_no_mid_sentence_rule():
-    """When the ceiling binds, the sentence rule yields (codex confirmation minor)."""
+def test_multibyte_content_survives_whole():
+    """The retired ceiling needed a character-boundary binary search to avoid
+    splitting a multi-byte sequence. Nothing is sliced now, so the property holds
+    for free — asserted anyway, because it is what the deleted machinery bought."""
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    # Long words: the 250-word cap is satisfied while the byte ceiling is not,
-    # which is the only regime where the two rules can actually conflict.
-    body = " ".join(["antidisestablishmentarianism" * 2] * 200) + " final clause here."
+    body = "\u00e9" * 4000
     p = project_entity(e, body_reader=lambda *_: body)
-    assert p.truncated is True
-    assert stream_contribution_bytes(p) <= EXCERPT_BLOCK_CEILING_BYTES
-    assert not p.excerpt.endswith("."), "a mid-sentence cut is correct here — bytes win"
-
-
-def test_truncation_lands_on_a_character_boundary():
-    e = SpaceEntity(slug="s", title="T", page_type="concept")
-    body = "é" * 4000  # 2 bytes each — a naive byte slice would split one
-    p = project_entity(e, body_reader=lambda *_: body)
-    rendered = render_fat_block(p)
-    assert stream_contribution_bytes(p) <= EXCERPT_BLOCK_CEILING_BYTES
-    rendered.encode().decode()  # would raise on a split multi-byte character
-    assert "�" not in p.excerpt
+    assert p.excerpt == body
+    render_fat_block(p).encode().decode()
+    assert "\ufffd" not in p.excerpt
 
 
 def test_projection_is_deterministic():
@@ -279,8 +265,12 @@ def test_projection_is_deterministic():
     assert a.excerpt == b.excerpt and render_fat_block(a) == render_fat_block(b)
 
 
-def test_policy_version_is_two():
-    assert EXCERPT_POLICY_VERSION == "2"
+def test_the_projection_carries_no_truncation_flag_at_all():
+    """`ProjectedEntity.truncated` was computed on every projection and read by
+    nothing. Asserted as an absence so it cannot quietly return."""
+    import dataclasses
+
+    assert "truncated" not in {f.name for f in dataclasses.fields(ProjectedEntity)}
 
 
 # --------------------------------------------------------------------------
@@ -303,25 +293,32 @@ def test_missing_body_degrades_to_title_only_and_is_flagged():
 # the frozen fixture is the byte authority
 # --------------------------------------------------------------------------
 
-def test_every_fixture_entity_renders_under_the_ceiling_and_the_max_is_2209_bytes():
-    """Policy v2's ceiling binds on NOTHING in fixture v1 (largest block 2,209 B)
-    — the proof that no regeneration and no checksum change was needed."""
+def test_every_fixture_entity_projects_verbatim_and_the_max_is_2209_bytes():
+    """The fixture's byte figures are unchanged by D-123-C, which is the point:
+    the retired ceiling bound on nothing here, so removing it moves no byte.
+
+    The two entities frozen under excerpt policy v1 keep their capped tail text —
+    they are absent from the current wiki, so their full bodies are unrecoverable
+    and re-freezing is impossible. A known, documented 2/163 divergence from what
+    live code would now produce; checksums untouched, the 39 adjudicated D7 probes
+    not re-opened.
+    """
     blocks, contributions = {}, {}
     for row in _identities():
         e = _entity(row)
         frozen = _frozen_excerpt(row["slug"], row["page_type"])
         p = project_entity(e, body_reader=lambda *_, _f=frozen: _f)
-        assert p.truncated is False, f"{row['slug']}: ceiling must not bind in fixture v1"
+        assert p.excerpt == frozen, f"{row['slug']}: the body must pass through whole"
         blocks[row["slug"]] = len(render_fat_block(p).encode())
         contributions[row["slug"]] = stream_contribution_bytes(p)
 
     assert len(blocks) == 163
     # Both readings of "largest rendered block", reconciled: the bare block per
-    # spec §4's enumeration, and the stream contribution the ratified 2,209 B
-    # figure was measured as. The ceiling governs the latter.
+    # spec §4's enumeration, and the stream contribution the ratified figure was
+    # measured as. The fill accumulates the latter.
+    #
     assert max(blocks.values()) == 2208, f"largest bare block moved: {max(blocks.values())}"
     assert max(contributions.values()) == 2209, f"largest contribution moved: {max(contributions.values())}"
-    assert max(contributions.values()) < EXCERPT_BLOCK_CEILING_BYTES
 
 
 def test_fixture_excerpts_exercise_both_g7_clauses():

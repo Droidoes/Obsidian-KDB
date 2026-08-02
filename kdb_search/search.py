@@ -42,8 +42,15 @@ now pins. Silent is the problem, so it is made loud at resolution.
     controller-side rather than asked for in a prompt. That is also what makes
     the F1 path work with no thin output at all.
   * **Stage 2 is presented in MANIFEST order, never thin's ranked order**, so
-    fat's judgment stays unanchored to thin's. Thin's ranking survives in its
-    `StageRecord` and feeds exactly one consumer: the concordance metric.
+    fat's judgment stays unanchored to thin's.
+
+**D-123-B splits those two words apart, and the distinction is easy to misread.**
+Thin's rank decides **membership** — it always did, since the cut to `M` was made
+from thin's list — and §3.4 governs **presentation**. The fill extends the cut
+from "top M" to "top K that fit the 0.8 budget", which reuses the mechanism §3.4
+already permits rather than amending it. Select by rank; present in manifest
+order. That also gives thin's `BEST FIRST` a second consumer beyond the
+concordance metric: it now decides who survives a binding budget.
 
 **The audit payload is built on every terminal, including the zero-call ones**
 (§6 — their emptiness is the finding, not a reason to skip the record). How the
@@ -345,11 +352,15 @@ def graph_search(
             stages=thin.records,
         )
 
-    # 6. Stage-2 composition. `N <= M` is retain-all **regardless of the thin
+    # 6. Stage-2 membership. `N <= M` is retain-all **regardless of the thin
     #    response** (codex #3): a recall-oriented selector can omit an identity by
     #    judgment, and validation cannot distinguish omission from judgment, so
     #    the guarantee is enforced controller-side rather than requested in a
     #    prompt. It is also what makes the F1 path work without thin's output.
+    #
+    #    **D-123-B qualifies it:** retain-all means every eligible identity is
+    #    OFFERED to the fill, not that every one is sent. The budget can still
+    #    decline the tail — step 7.
     small_space = len(space.entities) <= M
 
     if thin_failed and not small_space:
@@ -362,14 +373,11 @@ def graph_search(
         )
 
     if small_space:
-        stage2 = space.entities
+        candidates = space.entities
     else:
         retained = set(thin.validated.retained) if thin.validated else set()
-        # Manifest order, NOT thin's ranked order — fat's judgment stays
-        # unanchored to thin's (spec §3.4). Thin's ranking survives in the
-        # StageRecord and feeds concordance only.
-        stage2 = tuple(entity for entity in space.entities if entity.slug in retained)
-        if not stage2:
+        candidates = tuple(entity for entity in space.entities if entity.slug in retained)
+        if not candidates:
             # D3 — no fat call. `completed` with the watched class, so the KPI
             # series can tell it apart from an honest empty selection.
             return finish(
@@ -380,14 +388,87 @@ def graph_search(
                 stages=thin.records,
             )
 
-    # 7. Fat evidence. Bodies are read HERE — inside search, never by the caller
-    #    (§1.1) — and a missing body degrades the entity to title-only rather
-    #    than dropping it.
-    projected = tuple(
-        projection.project_entity(entity, body_reader=body_reader) for entity in stage2
+    # 7. Fat evidence + the fill (D-123-B). Bodies are read HERE — inside search,
+    #    never by the caller (§1.1) — a missing body degrades the entity to
+    #    title-only rather than dropping it, and a present body is delivered
+    #    WHOLE (D-123-C).
+    #
+    #    Entities are projected in THIN'S RANK order and accumulated until the
+    #    next one would exceed the 0.8 budget, so **a request that does not fit is
+    #    never constructed**. This replaced `M x per-entity ceiling` as fat's
+    #    boundedness argument and is stronger than it: the old guarantee held only
+    #    while the ceiling held, and the ceiling held by corrupting evidence.
+    #
+    #    Rank decides MEMBERSHIP; §3.4 governs PRESENTATION, and the pool is
+    #    presented in manifest order below — so extending the cut from "top M" to
+    #    "top K that fit" reuses the mechanism §3.4 already permits rather than
+    #    amending it. This is also thin's `BEST FIRST` earning a second consumer
+    #    beyond the concordance diagnostic: it now decides who survives a binding
+    #    budget.
+    rank = (
+        {slug: i for i, slug in enumerate(thin.validated.retained)}
+        if thin.validated
+        else {}
     )
+    fill_order = sorted(candidates, key=lambda entity: rank.get(entity.slug, len(rank)))
+
+    def rendered_request_bytes(evidence: str) -> int:
+        messages = render_fat_messages(
+            evidence=evidence,
+            query=request.query.text,
+            max_results=request.max_results,
+        )
+        return len(messages.system.encode()) + len(messages.user.encode())
+
+    allowance = budget.fat_input_byte_allowance(selector)
+    overhead = rendered_request_bytes("")
+    accepted: list[projection.ProjectedEntity] = []
+    used = overhead
+    declined_cost = 0
+    for entity in fill_order:
+        candidate = projection.project_entity(entity, body_reader=body_reader)
+        cost = projection.stream_contribution_bytes(candidate)
+        if used + cost > allowance:
+            declined_cost = cost
+            break
+        accepted.append(candidate)
+        used += cost
+
+    # Presentation order: manifest, never thin's (spec §3.4).
+    by_slug = {entity.entity.slug: entity for entity in accepted}
+    projected = tuple(by_slug[e.slug] for e in space.entities if e.slug in by_slug)
+    stage2 = tuple(entity.entity for entity in projected)
     title_only = sum(1 for entity in projected if entity.excerpt is None)
     hydrated = len(projected) - title_only
+
+    def fat_telemetry(**overrides) -> SearchTelemetry:
+        base = dict(
+            stage2_pool_size=len(projected),
+            stage2_budget_bound=len(projected) < len(fill_order),
+            stage2_hydrated=hydrated,
+            stage2_title_only=title_only,
+        )
+        return thin_telemetry(**{**base, **overrides})
+
+    # 8. The narrowed pre-flight terminal (D6, narrowed by D-123-B / §7.1). Under
+    #    fill-to-budget this can fire for exactly one reason: **not even one
+    #    entity fits.** Evidence status stays `not_applicable` and `body_coverage`
+    #    stays `None` even though a body was just read — the ratified contract
+    #    distinguishes this terminal from the post-call one by whether the pool
+    #    was PRESENTED, and here it never was.
+    if not projected:
+        verdict = budget.preflight(
+            "fat", rendered_bytes=overhead + declined_cost, spec=selector
+        )
+        budget_records.append(_budget_record(verdict, selector))
+        return finish(
+            "fat_preflight_budget_on_f1" if thin_failed else "fat_preflight_budget",
+            status="budget_exceeded",
+            execution="thin_attempted",
+            telemetry=fat_telemetry(),
+            stages=thin.records,
+        )
+
     fat_evidence = {
         entity.entity.slug: (
             TITLE_ONLY_MARKER if entity.excerpt is None else entity.excerpt
@@ -399,32 +480,16 @@ def graph_search(
         query=request.query.text,
         max_results=request.max_results,
     )
+    # The fill already bounded this; the pre-flight re-measures the true rendering
+    # and is the authority on the record. `fits` is True by construction here —
+    # asserted in `test_budget.py`, because a pool that fit its own fill but
+    # failed its own pre-flight would break the one property this design promises.
     fat_verdict = budget.preflight(
         "fat",
         rendered_bytes=len(fat_messages.system.encode()) + len(fat_messages.user.encode()),
         spec=selector,
     )
     budget_records.append(_budget_record(fat_verdict, selector))
-
-    def fat_telemetry(**overrides) -> SearchTelemetry:
-        base = dict(
-            stage2_hydrated=hydrated,
-            stage2_title_only=title_only,
-        )
-        return thin_telemetry(**{**base, **overrides})
-
-    # 8. Fat pre-flight (D6). Evidence status stays `not_applicable` and
-    #    `body_coverage` stays `None` even though the bodies were just read: the
-    #    ratified contract distinguishes this terminal from the post-call one by
-    #    whether the pool was PRESENTED, and here it never was.
-    if not fat_verdict.fits:
-        return finish(
-            "fat_preflight_budget_on_f1" if thin_failed else "fat_preflight_budget",
-            status="budget_exceeded",
-            execution="thin_attempted",
-            telemetry=fat_telemetry(),
-            stages=thin.records,
-        )
 
     # ---- stage 2 ------------------------------------------------------------
     fat = stage_call(

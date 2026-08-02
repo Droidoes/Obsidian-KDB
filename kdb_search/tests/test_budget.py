@@ -3,7 +3,8 @@
 **Structural only.** Measurement assertions live at the D5 calibration gate at the
 end of P2 (H3) — nothing here claims a real bytes-per-token ratio. What is asserted
 is arithmetic and contract: the exact serialized maxima, the four envelope
-quantities, route preconditions, and the M=100 static guarantee.
+quantities, route preconditions, and the stage-2 fill allowance that replaced the
+M=100 static guarantee (D-123-B/D).
 
 The synthetic schema-maximum documents are the executable authority for §7.0a.
 They are built mechanically from `WIRE_JSON_SEPARATORS`, `expression_labels()` and
@@ -25,8 +26,7 @@ from kdb_search.budget import (
     context_budget,
     estimate_input_tokens,
     exact_max_visible_bytes,
-    fat_static_guarantee_tokens,
-    fat_worst_case_request_bytes,
+    fat_input_byte_allowance,
     hidden_output_reserve,
     preflight,
     provider_max_tokens,
@@ -40,14 +40,12 @@ from kdb_search.budget import (
 from kdb_search.constants import (
     BUDGET_HEADROOM,
     ESTIMATOR_BYTES_PER_TOKEN,
-    EXCERPT_BLOCK_CEILING_BYTES,
     HIDDEN_OUTPUT_RESERVE,
     M,
     MAX_EXPRESSIONS,
     MAX_RESULTS,
     MAX_SLUG_LEN,
     QUERY_BLOCK_CEILING_BYTES,
-    SMALLEST_POOL_BUDGET_TOKENS,
     SYSTEM_TEMPLATE_BUDGET_BYTES,
     VISIBLE_OUTPUT_ALLOWANCE_FAT,
     VISIBLE_OUTPUT_ALLOWANCE_THIN,
@@ -85,9 +83,11 @@ def test_the_serializer_is_the_named_constant_not_a_default():
     assert json.dumps(obj) != json.dumps(obj, separators=WIRE_JSON_SEPARATORS)
 
 
-def test_thin_exact_max_is_12314_bytes_and_fits_its_allowance():
+def test_thin_exact_max_is_18464_bytes_and_fits_its_allowance():
+    """Was 12,314 at M=100. Thin's wire is `M x MAX_SLUG_LEN` bounded, so the
+    maximum tracks M — and D-123-A's M=150 carried the allowance up with it."""
     exact = exact_max_visible_bytes("thin")
-    assert exact == 12_314, f"thin exact max moved: {exact}"
+    assert exact == 18_464, f"thin exact max moved: {exact}"
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_THIN
     # Under tokens_lte_bytes, bytes bound tokens — no density step anywhere.
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_THIN, "tokens <= bytes <= allowance"
@@ -97,7 +97,7 @@ def test_fat_exact_max_is_9271_bytes_and_fits_its_allowance():
     """D11: letter labels quote where indices did not — `"A"` costs 3 B against
     `0`'s 1 B, over 51 label lists (50 selections + `unresolved`) = +1,020 B, so
     8,251 -> 9,271. The allowance stays 10,000: 9,271 <= 10,000 is a proof under
-    `tokens_lte_bytes`, and raising it would eat the static guarantee's spare."""
+    `tokens_lte_bytes`."""
     exact = exact_max_visible_bytes("fat")
     assert exact == 9_271, f"fat exact max moved: {exact}"
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_FAT
@@ -113,7 +113,7 @@ def test_the_thin_maximum_is_unmoved_by_labels():
     """D11 touches only expression addressing, and thin's wire carries none —
     it is a retained-slug list. Pinned so a future reader cannot read the fat
     move as a change to the whole wire."""
-    assert exact_max_visible_bytes("thin") == 12_314
+    assert exact_max_visible_bytes("thin") == 18_464
 
 
 def test_the_fat_document_is_built_from_the_declared_maxima_and_letter_labels():
@@ -183,9 +183,20 @@ def test_visible_and_provider_quantities_are_distinct(stage, visible):
     )
 
 
-def test_the_provider_totals_are_29000_thin_and_26000_fat():
-    assert provider_max_tokens("thin") == 29_000
+def test_the_provider_totals_are_36000_thin_and_26000_fat():
+    """Thin was 29,000 before D-123-A carried its visible allowance 13,000 ->
+    20,000. Fat is unmoved: its wire is bounded by MAX_RESULTS and
+    MAX_EXPRESSIONS, neither of which M touches."""
+    assert provider_max_tokens("thin") == 36_000
     assert provider_max_tokens("fat") == 26_000
+
+
+def test_the_thin_provider_total_still_clears_every_pool_route():
+    """The constraint that would have blocked M=150 if it bound. gemini-3.6-flash
+    is the binding route at 65,536."""
+    for entry in load_pool():
+        limit = entry.get("max_output_tokens")
+        assert limit is not None and provider_max_tokens("thin") < limit, entry["id"]
 
 
 def test_the_hidden_reserve_is_a_policy_figure_not_derived_from_the_wire():
@@ -333,55 +344,68 @@ def test_the_verdict_is_deterministic_which_is_why_it_is_never_retried(stage):
 
 
 # --------------------------------------------------------------------------
-# the M=100 static guarantee (D7) — sizing, not measurement
+# the stage-2 fill allowance (D-123-B) — replaces the M=100 static guarantee
+#
+# What used to live here: `fat_worst_case_request_bytes()` (M x 2,500 B evidence
+# + 4,096 query + 4,096 template = 258,192 B), `fat_static_guarantee_tokens()`
+# (284,192 < 320,000), and a test asserting the guarantee BREAKS at retained=150
+# — M=100 was load-bearing precisely because the guarantee was sized on it.
+#
+# That whole scheme is withdrawn (D-123-D). Boundedness no longer comes from
+# `M x per-entity ceiling` holding; it comes from never constructing a request
+# that does not fit. The property below is what replaced it, and it is stronger:
+# the old guarantee held only while the per-entity ceiling held, and the ceiling
+# held by corrupting evidence.
 # --------------------------------------------------------------------------
 
-def test_the_fat_worst_case_is_the_declared_sum():
-    assert fat_worst_case_request_bytes() == (
-        M * EXCERPT_BLOCK_CEILING_BYTES + QUERY_BLOCK_CEILING_BYTES + SYSTEM_TEMPLATE_BUDGET_BYTES
-    )
-    assert fat_worst_case_request_bytes() == 257_168
+def test_the_allowance_is_exactly_the_preflight_boundary():
+    """The load-bearing property. `fat_input_byte_allowance` is derived from
+    `preflight`'s own inequality, so a pool filled exactly to it MUST pass the
+    pre-flight that follows — and one byte more must fail. A drift between the two
+    would break the single thing the fill design promises."""
+    spec = _spec(ctx_window=100_000)
+    allowance = fat_input_byte_allowance(spec)
+    assert preflight("fat", rendered_bytes=allowance, spec=spec).fits is True
+    assert preflight("fat", rendered_bytes=allowance + 1, spec=spec).fits is False
 
 
-def test_the_static_guarantee_holds_against_the_smallest_pool_budget():
-    """D7: fat's absolute worst case fits BY CONSTRUCTION — codex's 381 kB
-    counterexample dies by sizing, not by measurement."""
-    total = fat_static_guarantee_tokens()
-    assert total == 283_168, f"the guarantee's total moved: {total}"
-    assert total < SMALLEST_POOL_BUDGET_TOKENS
-    assert SMALLEST_POOL_BUDGET_TOKENS - total > 0
+@pytest.mark.parametrize("window", [50_000, 100_000, 128_000, 400_000, 1_000_000])
+def test_the_boundary_is_exact_at_every_window_not_just_one(window):
+    """`ceil(b/K) <= budget - reserved  <=>  b <= (budget - reserved) * K` is an
+    identity for integer b, not an approximation — so the boundary is exact at
+    every window, including ones where the division does not land evenly."""
+    spec = _spec(ctx_window=window)
+    allowance = fat_input_byte_allowance(spec)
+    assert preflight("fat", rendered_bytes=allowance, spec=spec).fits is True
+    assert preflight("fat", rendered_bytes=allowance + 1, spec=spec).fits is False
 
 
-def test_the_guarantee_uses_the_pathological_bound_not_the_estimate():
-    """If it used bytes/4 it would claim ~4x more headroom than it has, and would
-    be a measurement dressed as a proof."""
-    assert fat_static_guarantee_tokens() > estimate_input_tokens(
-        fat_worst_case_request_bytes()
-    ) + reserved_output_tokens("fat")
-
-
-def test_the_guarantee_covers_every_pool_route():
-    """Stated against the smallest budget, so it holds for the whole pool."""
-    for entry in load_pool():
-        window = entry.get("ctx_window")
-        assert window is not None
-        assert fat_static_guarantee_tokens() < math.floor(window * BUDGET_HEADROOM), entry["id"]
-
-
-def test_fat_needs_no_estimation_in_its_safety_path_at_pool_windows():
-    """The D6 preflight still runs (one method, both stages) but never reaches the
-    guard at pool windows — that is what "no estimation in fat's safety path" means."""
+def test_every_pool_route_can_afford_at_least_one_entity():
+    """A route whose allowance could not seat a single maximal entity would make
+    the narrowed FAT_PREFLIGHT_BUDGET terminal the normal outcome rather than the
+    pathological one."""
     for model_id in D4_COHORT:
         spec = resolve_models_json(model_id)
-        verdict = preflight("fat", rendered_bytes=fat_worst_case_request_bytes(), spec=spec)
-        assert verdict.fits, model_id
+        allowance = fat_input_byte_allowance(spec)
+        assert allowance > SYSTEM_TEMPLATE_BUDGET_BYTES + QUERY_BLOCK_CEILING_BYTES + 2_209, model_id
 
 
-def test_the_guarantee_scales_with_m_and_would_fail_at_a_larger_retention():
-    """M=100 is load-bearing, not incidental: the constant is what makes the
-    guarantee true, so a much larger M must break it."""
-    assert fat_static_guarantee_tokens(retained=100) < SMALLEST_POOL_BUDGET_TOKENS
-    assert fat_static_guarantee_tokens(retained=150) > SMALLEST_POOL_BUDGET_TOKENS
+def test_the_allowance_dwarfs_live_body_density_at_the_M_ceiling():
+    """The fill is a fail-safe, not an active mechanism. At M=150 and the fixture's
+    own density (84.9 kB), the pool uses a single-digit percentage of the smallest
+    route's allowance — bodies would have to average ~19x live reality to bind."""
+    spec = resolve_models_json("gpt-5.4-mini")
+    allowance = fat_input_byte_allowance(spec)
+    fixture_density_at_150 = 84_900
+    assert fixture_density_at_150 / allowance < 0.10
+
+
+def test_the_allowance_is_never_negative():
+    """Clamped, so the fill degrades to "nothing fits" rather than to a nonsense
+    bound. `resolve_selector_route` refuses such a route first; this is the guard
+    behind that guard."""
+    spec = _spec(ctx_window=1)
+    assert fat_input_byte_allowance(spec) == 0
 
 
 # --------------------------------------------------------------------------

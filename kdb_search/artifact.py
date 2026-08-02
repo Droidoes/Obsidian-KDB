@@ -29,7 +29,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Literal
 
-from .constants import EXCERPT_POLICY_VERSION
 from .projection import RenderedQuery
 from .types import (
     EvidenceStatus,
@@ -133,8 +132,6 @@ class StageRecord:
     evidence: dict[str, str] | str
     latency_ms: int
     cost: float
-    #: Stage 2 only.
-    excerpt_policy_version: str | None = None
     #: Verbatim, including malformed output — the malformed and timeout cases are
     #: exactly the failure-audit cases.
     raw_response_text: str | None = None
@@ -187,7 +184,6 @@ class SearchAuditPayload:
     #: statement about the ARTIFACT, so it lands here rather than on the ratified
     #: request type. `None` for a caller that supplied `text` directly.
     rendered_query: RenderedQuery | None = None
-    excerpt_policy_version: str = EXCERPT_POLICY_VERSION
 
     @property
     def logical_call_count(self) -> int:
@@ -224,17 +220,22 @@ def compute_search_snapshot_hash(
     graph_ref: GraphSnapshotRef,
     manifest: tuple[SpaceEntity, ...],
     stages: tuple[StageRecord, ...],
-    excerpt_policy_version: str = EXCERPT_POLICY_VERSION,
 ) -> str:
-    """What was searched: graph identity + ordered manifest + exact evidence bytes
-    + projection-policy identity. Deliberately excludes the result."""
+    """What was searched: graph identity + ordered manifest + exact evidence bytes.
+    Deliberately excludes the result.
+
+    **`excerpt_policy_version` was a fourth term and is gone (D-123-C/§12).** It
+    identified the transformation applied to bodies; with bodies delivered whole
+    there is no transformation, and the evidence digest already carries the exact
+    bytes the policy used to describe. Snapshot hashes move across this change
+    either way — the evidence bytes themselves changed.
+    """
     return sha256_digest(
         _canonical(
             {
                 "graph_ref": _graph_digest(graph_ref),
                 "manifest": _manifest_digest(manifest),
                 "evidence": _evidence_digest(stages),
-                "excerpt_policy_version": excerpt_policy_version,
             }
         )
     )

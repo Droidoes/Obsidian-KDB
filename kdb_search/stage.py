@@ -63,7 +63,7 @@ from .budget import (
     provider_max_tokens,
     visible_output_allowance,
 )
-from .constants import EXCERPT_POLICY_VERSION, MAX_ATTEMPTS_PER_STAGE
+from .constants import MAX_ATTEMPTS_PER_STAGE
 from .prompts import load_template
 from .response import ValidatedResponse, ValidatedThinResponse, Violations
 from .result import BudgetRecord
@@ -449,7 +449,6 @@ def stage_call(
             evidence=evidence,
             latency_ms=response.latency_ms if response else 0,
             cost=_cost(spec, response) if response else 0.0,
-            excerpt_policy_version=EXCERPT_POLICY_VERSION if stage == "fat" else None,
             raw_response_text=response.text if response else None,
             parsed_output=validated.document if validated else None,
             stop_reason_raw=response.stop_reason if response else None,
