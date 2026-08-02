@@ -1,0 +1,37 @@
+{
+  "artifact": "task123_search_calibration_v1",
+  "generated_at": "2026-08-02T12:40:12-04:00",
+  "decision": "D5 \u2014 estimator calibration contract (spec \u00a70, blueprint \u00a77)",
+  "counting_source": "provider_reported_usage",
+  "query_source": "empty_query_slot",
+  "entity_count": 163,
+  "rendered_bytes": 16863,
+  "estimator_bytes_per_token_under_test": 4,
+  "measurements": [
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:ebf5acc6b45d0bc0fc1bb728467248571e97c9b67d1ca0d9b5dc6ba5c206d712",
+      "prompt_version": "2",
+      "model_id": "gemini-3.6-flash",
+      "input_tokens": 4542,
+      "bytes_per_token": 3.7127
+    },
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:ebf5acc6b45d0bc0fc1bb728467248571e97c9b67d1ca0d9b5dc6ba5c206d712",
+      "prompt_version": "2",
+      "model_id": "deepseek-v4-flash",
+      "input_tokens": 4481,
+      "bytes_per_token": 3.7632
+    }
+  ],
+  "failures": [
+    {
+      "model_id": "gpt-5.4-mini",
+      "stage": "call",
+      "error": "RateLimitError: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}"
+    }
+  ]
+}
