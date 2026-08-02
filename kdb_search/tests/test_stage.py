@@ -753,3 +753,77 @@ def test_every_attempt_renders_the_SAME_bytes() -> None:
     )
     assert selector.requests[0].prompt == selector.requests[1].prompt
     assert {r.rendered_messages for r in outcome.records} == {_messages("thin")}
+
+
+# --------------------------------------------------------------------------
+# provider-reported input tokens — the estimator's live calibration series
+#
+# Joseph's ruling closing Fork C (2026-08-02): "3.713 is as good as 4 ... the
+# matter of fact is that we don't know ... we need to keep the stats for the real
+# ratio when we run the tests end-to-end."
+#
+# The gap this closes: `BudgetRecord` says a passing series is "exactly how the
+# estimator's calibration is judged", but it carries only OUR estimate — and
+# `budget_estimation_miss` fires only when the provider REFUSES the request, so
+# an under-estimate that still fits was invisible. The provider's own count is
+# what makes the claim checkable.
+# --------------------------------------------------------------------------
+
+
+def test_a_successful_call_archives_the_providers_own_input_token_count() -> None:
+    outcome, _ = _run(fakes.ScriptedReply(fakes.retained_document(SPACE), input_tokens=4_542))
+    assert outcome.records[0].provider_input_tokens == 4_542
+
+
+def test_the_measured_ratio_derives_from_the_archived_bytes_and_tokens() -> None:
+    """Stored raw, derived on read. The bytes are already in `rendered_messages`,
+    so persisting a ratio as well would be parallel storage of something the
+    record can compute — and the two could then disagree."""
+    outcome, _ = _run(fakes.ScriptedReply(fakes.retained_document(SPACE), input_tokens=100))
+    record = outcome.records[0]
+    sent = len(record.rendered_messages.system.encode()) + len(
+        record.rendered_messages.user.encode()
+    )
+    assert record.measured_bytes_per_token == pytest.approx(sent / 100)
+
+
+def test_a_transport_failure_archives_no_token_count_rather_than_zero() -> None:
+    """No response reached us, so there is no measurement — and 0 would enter the
+    calibration series as an infinitely bad ratio rather than as absent data. The
+    same rule `valid_entry_yield` follows at zero returned (D9.6)."""
+    outcome, _ = _run(
+        fakes.transport_failure(), fakes.ScriptedReply(fakes.retained_document(SPACE))
+    )
+    record = outcome.records[0]
+    assert record.failure.failure_class == "transport"
+    assert record.provider_input_tokens is None
+    assert record.measured_bytes_per_token is None
+
+
+def test_the_two_stages_are_measured_SEPARATELY() -> None:
+    """Thin's evidence is slug-heavy identity lines; fat's carries whole prose
+    bodies. Those tokenize at genuinely different densities, so one blended
+    figure would hide the spread the series exists to show."""
+    thin, _ = _run(fakes.ScriptedReply(fakes.retained_document(SPACE), input_tokens=4_542))
+    fat, _ = _run(
+        fakes.ScriptedReply(fakes.usable_document(SPACE), input_tokens=9_001),
+        stage_name="fat",
+        evidence={SPACE[0].slug: "body text"},
+    )
+    assert thin.records[0].stage == "thin_selection"
+    assert fat.records[0].stage == "fat_selection"
+    assert (thin.records[0].provider_input_tokens, fat.records[0].provider_input_tokens) == (
+        4_542,
+        9_001,
+    )
+
+
+def test_every_attempt_carries_its_own_count_including_the_failed_one() -> None:
+    """A retried stage sends the same bytes twice. Both attempts are archived, so
+    a per-model series built from the records must not silently drop the first —
+    it is a real measurement of a real request we paid for."""
+    outcome, _ = _run(
+        fakes.ScriptedReply(fakes.unparseable_text(), input_tokens=4_500),
+        fakes.ScriptedReply(fakes.retained_document(SPACE), input_tokens=4_500),
+    )
+    assert [r.provider_input_tokens for r in outcome.records] == [4_500, 4_500]

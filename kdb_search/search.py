@@ -98,6 +98,21 @@ from .types import (
     Status,
 )
 
+def _measured_ratio(stages: tuple[StageRecord, ...], stage: str) -> float | None:
+    """That stage's real bytes-per-token, or `None` if it was never measured.
+
+    First measuring attempt wins, and the choice is safe rather than arbitrary:
+    every attempt of a stage re-sends the **same rendered bytes**, so a retry
+    cannot report a different ratio. What a later attempt can be is *unmeasured*
+    — a transport failure carries no token count — which is why this skips
+    `None`s instead of simply reading `stages[0]`.
+    """
+    for record in stages:
+        if record.stage == stage and record.measured_bytes_per_token is not None:
+            return record.measured_bytes_per_token
+    return None
+
+
 def _empty_space_watched(space: SearchSpaceRef) -> tuple[WatchedClass, ...]:
     """`domain_missing` when a domain-scoped space has no domain at all (§1.2).
 
@@ -280,6 +295,14 @@ def graph_search(
         return site, which is the mutation P2.2's sweep showed the rest of the
         suite cannot catch.
         """
+        # Derived HERE rather than in each branch's telemetry closure: `finish`
+        # is the one site every post-thin terminal returns through, and the
+        # stages are only complete at this point.
+        telemetry = replace(
+            telemetry,
+            thin_bytes_per_token=_measured_ratio(stages, "thin_selection"),
+            fat_bytes_per_token=_measured_ratio(stages, "fat_selection"),
+        )
         result = GraphSearchResult(
             hits=hits,
             unresolved_expressions=(

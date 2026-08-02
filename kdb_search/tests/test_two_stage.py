@@ -1516,3 +1516,67 @@ def test_a_pool_filled_to_the_LAST_BYTE_still_passes_its_own_pre_flight() -> Non
     refused, _ = run(low + 1)
     assert refused.status == "budget_exceeded"
     assert refused.telemetry.stage2_pool_size == 0
+
+
+# --------------------------------------------------------------------------
+# the live bytes-per-token series, surfaced on the RESULT (Joseph, 2026-08-02)
+#
+# The StageRecords are the authority; these are a read-only VIEW over them, so
+# the caller can watch the estimator's real calibration before P3a's envelope
+# sink exists. Joseph, closing Fork C: "we need to keep the stats for the real
+# ratio when we run the tests end-to-end."
+# --------------------------------------------------------------------------
+
+
+def test_a_two_stage_search_surfaces_BOTH_stages_measured_ratios() -> None:
+    """Separately, never blended: thin sends slug-heavy identity lines and fat
+    sends whole prose bodies, which tokenize at genuinely different densities.
+    One combined figure would hide exactly the spread the series exists to show.
+    """
+    space = fakes.make_space(5)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_document(space), input_tokens=400),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2), input_tokens=800),
+        count=5,
+    )
+    assert result.telemetry.thin_bytes_per_token is not None
+    assert result.telemetry.fat_bytes_per_token is not None
+    assert result.telemetry.thin_bytes_per_token != result.telemetry.fat_bytes_per_token
+
+
+def test_the_surfaced_ratio_is_the_BYTES_ACTUALLY_SENT_over_the_tokens_reported() -> None:
+    """Checked against the request the fake selector received, not against the
+    telemetry restating itself. The measurement is only worth surfacing if it is
+    the real quotient of what went on the wire and what the provider counted."""
+    space = fakes.make_space(5)
+    result, selector = _search_with(
+        fakes.ScriptedReply(fakes.retained_document(space), input_tokens=400),
+        fakes.ScriptedReply(fakes.usable_document(space, count=2), input_tokens=800),
+        count=5,
+    )
+    thin_request, fat_request = selector.requests
+    thin_sent = len(thin_request.system.encode()) + len(thin_request.prompt.encode())
+    fat_sent = len(fat_request.system.encode()) + len(fat_request.prompt.encode())
+    assert result.telemetry.thin_bytes_per_token == pytest.approx(thin_sent / 400)
+    assert result.telemetry.fat_bytes_per_token == pytest.approx(fat_sent / 800)
+
+
+def test_a_thin_only_terminal_reports_thin_and_leaves_fat_null() -> None:
+    """D3 — thin retained nothing above M, so no fat call was made. `None` means
+    "not measured", which must stay distinguishable from a measured value."""
+    space = fakes.make_space(ABOVE_M)
+    result = _search(
+        fakes.ScriptedReply(fakes.retained_empty_document(), input_tokens=4_500),
+        count=ABOVE_M,
+    )
+    assert result.telemetry.thin_bytes_per_token is not None
+    assert result.telemetry.fat_bytes_per_token is None
+
+
+def test_a_zero_call_terminal_measures_nothing() -> None:
+    """An abstention spends nothing, so there is no request to measure. Reporting
+    0.0 here would enter the calibration series as a real observation."""
+    result = _run(_request(count=0))
+    assert result.status == "abstain_empty_space"
+    assert result.telemetry.thin_bytes_per_token is None
+    assert result.telemetry.fat_bytes_per_token is None

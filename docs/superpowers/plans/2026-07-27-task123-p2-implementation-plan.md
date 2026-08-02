@@ -820,12 +820,21 @@ manifest untouched). P2.1f's pins are frozen, which was its precondition.
       (429 `insufficient_quota`). Gate **two-thirds discharged, ruling PROVISIONAL**.
 - [x] Measurements persisted to the **sibling calibration artifact** — fixture manifest untouched
       (fingerprinted before and after, asserted unchanged): `benchmark/truth/task123_search_calibration_v1.json`
-- [ ] **#126 sequencing, recorded rather than assumed (codex F3):** #126 is on record as "a
-      prerequisite of the **D5 calibration gate** and **P5a**, which consume real keys". D5 was
-      fired with the **empty query slot**, so it consumed **no** keys — the dependency is
-      *sidestepped*, not violated, and the measured density is the slug-heavy (conservative) end
-      since a real query block adds ≤ 4,096 B of prose, which tokenizes nearer 4. **Needs an
-      explicit owner ruling** that empty-slot calibration satisfies D5, or a re-fire after #126.
+- [x] **#126 sequencing — RULED 2026-08-02 (Joseph): empty-slot calibration SATISFIES D5.**
+      #126 is on record as "a prerequisite of the **D5 calibration gate** and **P5a**, which
+      consume real keys". D5 was fired with the **empty query slot**, so it consumed **no** keys —
+      the dependency is *sidestepped*, not violated, and the measured density is the slug-heavy
+      (conservative) end since a real query block adds ≤ 4,096 B of prose, which tokenizes nearer
+      4. Joseph's ruling: *"3.713 is as good as 4… the matter of fact is that we don't know… we
+      need to keep the stats for the real ratio when we run the tests end-to-end."* **No re-fire.**
+      The prerequisite is retained for **P5a**, where key *content* is load-bearing for selector
+      quality; it was over-applied to D5, where only byte density matters and the keys are
+      ≤ 1,280 B of a ~21 kB request, changed in content rather than volume.
+      **Superseding follow-up:** the synthetic gate is replaced as the primary evidence by
+      **live bytes-per-token telemetry** — a frozen fixture can only characterise the frozen
+      input, whereas every real call measures the true evidence+query blend at production's own
+      mix. Filed separately; `budget_estimate_tokens` is recorded today but the provider's
+      *actual* input tokens are not, so the ratio is not yet derivable from a run.
 - [x] Requires P2.1f frozen first (calibration is against the pinned prompts) — frozen
 
 **Figures at the v2 pins** (empty query slot, 163 identities): rendered **16,863 B** = system

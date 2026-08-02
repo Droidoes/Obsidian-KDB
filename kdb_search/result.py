@@ -102,6 +102,26 @@ class SearchTelemetry:
     #: fat top-10 ∩ thin top-20 ÷ len(fat top-10). `None` when fat produced no
     #: validated hits or no fat stage ran (codex #12).
     concordance: float | None = None
+    #: The MEASURED bytes-per-token of the request each stage actually sent —
+    #: rendered bytes over the provider's own reported prompt-token count.
+    #: `None` where the stage never ran or no response reached us; never 0.
+    #:
+    #: **A read-only VIEW over the archived `StageRecord`s, not a second store**
+    #: (`StageRecord.measured_bytes_per_token` is the authority). Surfaced here
+    #: because the caller cannot see `StageRecord`s at all yet — the envelope
+    #: sink is P3a — and Joseph's ruling closing Fork C is that the estimator's
+    #: calibration must be a live series rather than a frozen synthetic gate:
+    #: *"we need to keep the stats for the real ratio when we run the tests
+    #: end-to-end."*
+    #:
+    #: **Reported per stage, deliberately never blended.** Thin sends slug-heavy
+    #: identity lines; fat sends whole prose bodies. Those tokenize at genuinely
+    #: different densities, and one combined figure would hide exactly the spread
+    #: the series exists to show. Compare each against
+    #: `ESTIMATOR_BYTES_PER_TOKEN`: below it means the pre-flight under-estimated
+    #: that request and the 0.8 headroom absorbed the difference.
+    thin_bytes_per_token: float | None = None
+    fat_bytes_per_token: float | None = None
     watched: tuple[WatchedClass, ...] = ()
     search_snapshot_hash: str | None = None
     artifact_ref: str | None = None

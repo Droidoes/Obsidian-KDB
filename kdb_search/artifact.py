@@ -132,6 +132,20 @@ class StageRecord:
     evidence: dict[str, str] | str
     latency_ms: int
     cost: float
+    #: The provider's OWN reported prompt-token count for this attempt. `None`
+    #: when no response reached us at all (transport failure) — never 0, which
+    #: would enter the calibration series as an infinitely bad ratio rather than
+    #: as absent data (the rule `valid_entry_yield` follows at zero returned).
+    #:
+    #: **Why it is archived (Joseph, 2026-08-02, closing Fork C).** The pre-flight
+    #: predicts cost as `bytes / ESTIMATOR_BYTES_PER_TOKEN`, and `BudgetRecord`
+    #: claims a passing series is "exactly how the estimator's calibration is
+    #: judged" — but that series carries only our own estimate, and
+    #: `budget_estimation_miss` fires only when the provider REFUSES the request.
+    #: An under-estimate that still fit was invisible. This is the counterpart
+    #: that makes the claim checkable, and it turns every live call into a
+    #: calibration data point instead of relying on a frozen synthetic gate.
+    provider_input_tokens: int | None = None
     #: Verbatim, including malformed output — the malformed and timeout cases are
     #: exactly the failure-audit cases.
     raw_response_text: str | None = None
@@ -157,6 +171,25 @@ class StageRecord:
     validation: StageValidation | None = None
     #: Stage 1 only — post-validation, post-truncation.
     retained_identities: tuple[str, ...] | None = None
+
+    @property
+    def measured_bytes_per_token(self) -> float | None:
+        """This attempt's REAL bytes-per-token, or `None` with no measurement.
+
+        Derived, never stored: the bytes are already in `rendered_messages`, so
+        persisting the ratio too would be a parallel store of something the
+        record computes — and the two could then disagree.
+
+        Compare against `ESTIMATOR_BYTES_PER_TOKEN`: a value BELOW it means the
+        pre-flight under-estimated this request, and the 0.8 headroom is what
+        absorbed the difference.
+        """
+        if not self.provider_input_tokens:
+            return None
+        sent = len(self.rendered_messages.system.encode()) + len(
+            self.rendered_messages.user.encode()
+        )
+        return sent / self.provider_input_tokens
 
 
 @dataclass(frozen=True)

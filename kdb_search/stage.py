@@ -449,6 +449,7 @@ def stage_call(
             evidence=evidence,
             latency_ms=response.latency_ms if response else 0,
             cost=_cost(spec, response) if response else 0.0,
+            provider_input_tokens=response.input_tokens if response else None,
             raw_response_text=response.text if response else None,
             parsed_output=validated.document if validated else None,
             stop_reason_raw=response.stop_reason if response else None,

@@ -467,3 +467,27 @@ def test_manifest_title_and_page_type_move_the_snapshot_hash(mutation):
     assert compute_search_snapshot_hash(
         graph_ref=GRAPH, manifest=MANIFEST, stages=()
     ) != compute_search_snapshot_hash(graph_ref=GRAPH, manifest=altered, stages=())
+
+
+def test_the_provider_token_count_is_archived_but_NOT_hashed():
+    """It sits with `cost` and `latency_ms`, which the integrity digest also
+    excludes — and for the same reason.
+
+    The digest covers what HAPPENED semantically: the rendered bytes, the raw
+    response, the stop reason, the validation outcome. `stop_reason` is in
+    because it DRIVES the budget classification. A token count drives nothing —
+    it is a pure measurement of the call, and `cost` is literally derived from
+    it. Hashing it would make two runs of an identical request differ whenever a
+    provider re-tokenized, which is not what an integrity hash is for.
+
+    Asserted so a later reader does not "fix" the omission.
+    """
+    baseline = compute_artifact_integrity_hash(
+        query=QUERY, stages=(_stage(provider_input_tokens=4_542),),
+        result=_result(), execution="two_stage_attempted",
+    )
+    remeasured = compute_artifact_integrity_hash(
+        query=QUERY, stages=(_stage(provider_input_tokens=9_999),),
+        result=_result(), execution="two_stage_attempted",
+    )
+    assert baseline == remeasured
