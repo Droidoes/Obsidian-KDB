@@ -792,34 +792,6 @@ def test_the_salvage_rule_survives_the_whole_flow() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_stage_two_is_EVERY_eligible_identity_when_N_is_at_or_below_M() -> None:
-    """codex #3, enforced controller-side. Thin retains exactly one slug; the fat
-    call still sees all five — a recall-oriented selector can omit an identity by
-    judgment and validation cannot tell omission from judgment, so the guarantee
-    cannot be requested in a prompt."""
-    space = fakes.make_space(5)
-    _, selector = _search_with(
-        fakes.ScriptedReply(fakes.retained_document(space, count=1)),
-        fakes.ScriptedReply(fakes.usable_document(space, count=1)),
-        count=5,
-    )
-    fat_prompt = selector.requests[1].prompt
-    for entity in space:
-        assert entity.slug in fat_prompt
-
-
-def test_a_thin_stage_that_retains_NOTHING_still_gets_the_whole_space_at_N_le_M() -> None:
-    """The same rule at its extreme, and the boundary against D3: below M an empty
-    retention is not the D3 terminal, because retain-all overrides it."""
-    space = fakes.make_space(5)
-    result, selector = _search_with(
-        fakes.ScriptedReply(fakes.retained_empty_document()),
-        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
-        count=5,
-    )
-    assert result.status == "completed"
-    assert selector.calls == 2
-    assert "thin_retained_zero" not in result.telemetry.watched
 
 
 def test_stage_two_is_presented_in_MANIFEST_order_not_thins_ranked_order() -> None:
@@ -858,24 +830,6 @@ def test_above_M_stage_two_is_thins_VALIDATED_retention() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_F1_proceeds_to_fat_after_an_exhausted_thin_when_N_is_below_M() -> None:
-    """opus5 F1/G8.1. Thin burns both attempts, and because retain-all does not
-    need thin's answer the search still has a complete stage-2 input — so
-    abstaining would discard a working fat call for a stage whose output was
-    never binding."""
-    space = fakes.make_space(5)
-    result, selector = _search_with(
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
-        count=5,
-    )
-    selector.assert_consumed()
-    assert result.status == "completed"
-    assert result.execution == "fat_after_thin_failure"
-    assert "thin_failed_nonbinding" in result.telemetry.watched
-    assert selector.calls == 3
-
 
 def test_F1_reports_concordance_as_NULL_not_zero() -> None:
     """The distinction the metric depends on. Thin produced no validated ranking
@@ -891,20 +845,6 @@ def test_F1_reports_concordance_as_NULL_not_zero() -> None:
     )
     assert result.telemetry.concordance is None
 
-
-def test_F1_does_NOT_apply_above_M() -> None:
-    """The partition. Above M there is no stage-2 input without thin, so the
-    search fails rather than inventing one — and the fat call never happens."""
-    result, selector = _search_with(
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        count=ABOVE_M,
-    )
-    selector.assert_consumed()
-    assert result.status == "selector_failure"
-    assert result.execution == "thin_attempted"
-    assert result.telemetry.selector_failure_class == "unparseable_response"
-    assert selector.calls == 2
 
 
 def test_thin_exhaustion_above_M_records_WHICH_class_exhausted_it() -> None:
@@ -1044,18 +984,22 @@ def test_concordance_is_null_when_fat_produced_no_validated_hits() -> None:
     assert result.telemetry.concordance is None
 
 
-def test_a_thin_stage_that_RAN_and_retained_nothing_gives_a_real_zero() -> None:
-    """The third null case, from its negative side. Thin ran fine and honestly
-    retained nothing, so the ranked list exists and is empty — 0.0 is a real
-    measurement (fat found what thin did not) and must not be flattened into the
-    F1 null, which means no comparison happened at all."""
+def test_a_thin_stage_that_RAN_and_retained_nothing_ENDS_the_search() -> None:
+    """Behaviour change, 2026-08-02. This used to be the third concordance case:
+    at N <= M, retain-all sent the whole space to fat anyway, so thin's honest
+    empty produced a real 0.0 (fat found what thin did not).
+
+    With `small_space` gone there is no retain-all, so an honestly empty thin is
+    D3 at every N — no fat call, and concordance is `None` because no comparison
+    happened rather than because the comparison scored zero. The genuine 0.0 is
+    still reachable and still tested: see the top-twenty test below, where thin
+    retains 40 slugs and fat's hit sits outside the window."""
     space = fakes.make_space(5)
-    result = _search(
-        fakes.ScriptedReply(fakes.retained_empty_document()),
-        fakes.ScriptedReply(fakes.usable_document(space, count=2)),
-        count=5,
-    )
-    assert result.telemetry.concordance == 0.0
+    result = _search(fakes.ScriptedReply(fakes.retained_empty_document()), count=5)
+    assert result.status == "completed"
+    assert "thin_retained_zero" in result.telemetry.watched
+    assert result.hits == ()
+    assert result.telemetry.concordance is None
 
 
 def test_concordance_measures_thins_TOP_TWENTY_not_its_whole_retention() -> None:
@@ -1124,24 +1068,6 @@ def test_the_fat_preflight_terminal_reports_NOT_APPLICABLE_evidence() -> None:
     assert result.body_coverage is None
 
 
-def test_the_named_F1_interaction_keeps_BOTH_markers() -> None:
-    """`FAT_PREFLIGHT_BUDGET_ON_F1`. `execution` stays `thin_attempted` — NOT
-    `fat_after_thin_failure`, which means the fat call ran — while the
-    `thin_failed_nonbinding` class is preserved, so the record shows both that
-    thin failed and that the budget, not the failure, is what ended the search."""
-    result, selector = _search_with(
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        count=90,
-        selector=_fat_only_budget_spec(),
-        body_reader=_oversized_body_reader,
-    )
-    selector.assert_consumed()
-    assert result.status == "budget_exceeded"
-    assert result.execution == "thin_attempted"
-    assert "thin_failed_nonbinding" in result.telemetry.watched
-    assert selector.calls == 2
-
 
 # --------------------------------------------------------------------------
 # the post-call fat terminals
@@ -1186,19 +1112,6 @@ def test_a_truncated_THIN_response_ends_the_search_without_a_fat_call() -> None:
     assert result.evidence_status == "not_applicable"
 
 
-def test_a_fat_truncation_on_the_F1_path_keeps_the_F1_execution_and_class() -> None:
-    space = fakes.make_space(5)
-    result = _search(
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(
-            fakes.truncated_text(space), stop_reason=fakes.STOP_LENGTH_OPENAI
-        ),
-        count=5,
-    )
-    assert result.execution == "fat_after_thin_failure"
-    assert "thin_failed_nonbinding" in result.telemetry.watched
-
 
 def test_a_thin_over_window_rejection_is_watched_as_an_estimation_miss() -> None:
     result, selector = _search_with(
@@ -1210,27 +1123,6 @@ def test_a_thin_over_window_rejection_is_watched_as_an_estimation_miss() -> None
     post = [r for r in result.telemetry.budget_records if r.detected == "post_call"]
     assert [(r.detected, r.budget_side) for r in post] == [("post_call", "input")]
 
-
-def test_a_fat_over_window_rejection_on_F1_has_a_contract_row_at_all() -> None:
-    """The gap P2.4 found in the ratified matrix. The F1 treatment reached the
-    fat PRE-flight and OUTPUT terminals but not the fat INPUT one, which reads as
-    an ordering artifact — the D7 rows predate D9.3's F1 treatment — rather than a
-    decision, since the state is reachable. Without a row this legitimate search
-    dies on a `ContractViolation`, so P2.4 added
-    `fat_input_estimation_miss_on_f1` with every cell COPIED from the two rows
-    that bracket it, marked EXTENSION, and flagged for ratification."""
-    result = _search(
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.ScriptedReply(fakes.unparseable_text()),
-        fakes.context_length_rejection_openai(),
-        count=5,
-    )
-    assert result.status == "budget_exceeded"
-    assert result.execution == "fat_after_thin_failure"
-    assert set(result.telemetry.watched) == {
-        "thin_failed_nonbinding",
-        "budget_estimation_miss",
-    }
 
 
 def test_a_fat_stage_that_exhausts_its_retries_is_a_selector_failure() -> None:

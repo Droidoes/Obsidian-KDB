@@ -26,11 +26,10 @@ from .types import (
 )
 
 #: Named telemetry classes the ratified terminals refer to by name. Closed on
-#: purpose — a contract that says "paired with `thin_failed_nonbinding`" needs the
+#: purpose — a contract that says "paired with `thin_retained_zero`" needs the
 #: name to be checkable, not a free-form string.
 WatchedClass = Literal[
-    "thin_failed_nonbinding",  # F1: thin exhausted, N ≤ M, fat ran anyway
-    "thin_retained_zero",  # D3: thin retained nothing over N > M
+    "thin_retained_zero",  # D3: thin ran and retained nothing (any N)
     "domain_missing",  # §1.2: pass-1 domain missing/null ⇒ empty space
     "budget_estimation_miss",  # D7: the estimate was under, the provider was not
 ]

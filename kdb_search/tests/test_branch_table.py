@@ -204,7 +204,7 @@ ROWS: list[tuple] = [
     ),
     (
         "D3-first-attempt",
-        "D3 thin-retained-zero (N>M) — 1-2 thin, 0 fat",
+        "D3 thin-retained-zero — 1-2 thin, 0 fat",
         (1, 1),
         "thin_retained_zero",
         lambda: (fakes.ScriptedReply(fakes.retained_empty_document()),),
@@ -212,7 +212,7 @@ ROWS: list[tuple] = [
     ),
     (
         "D3-after-a-retry",
-        "D3 thin-retained-zero (N>M) — 1-2 thin, 0 fat",
+        "D3 thin-retained-zero — 1-2 thin, 0 fat",
         (2, 2),
         "thin_retained_zero",
         lambda: (
@@ -257,31 +257,6 @@ ROWS: list[tuple] = [
         dict(count=ABOVE_M),
     ),
     (
-        "F1-fat-clean",
-        "thin exhausted, N<=M -> fat (F1) — 2 thin + 1-2 fat = 3-4",
-        (3, 3),
-        "completed",
-        lambda: (
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.usable_document(SMALL, count=2)),
-        ),
-        dict(count=5),
-    ),
-    (
-        "F1-fat-retried",
-        "thin exhausted, N<=M -> fat (F1) — 2 thin + 1-2 fat = 3-4",
-        (4, 4),
-        "completed",
-        lambda: (
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.usable_document(SMALL, count=2)),
-        ),
-        dict(count=5),
-    ),
-    (
         "fat-exhausted",
         "fat exhausted — 1-2 thin + 2 fat = 3-4",
         (3, 3),
@@ -315,19 +290,20 @@ ROWS: list[tuple] = [
         dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_oversized_body),
     ),
     (
-        "fat-preflight-budget-on-F1",
+        # The row's HIGH end — a thin RETRY, since F1 no longer supplies one.
+        "fat-preflight-budget-after-a-thin-retry",
         "fat budget_exceeded, pre-call (D6) — 1-2 thin, 0 fat",
         (2, 2),
-        "fat_preflight_budget_on_f1",
+        "fat_preflight_budget",
         lambda: (
             fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
+            fakes.ScriptedReply(fakes.retained_document(POOLED)),
         ),
         dict(count=90, selector_spec=_fat_only_budget_spec(), body_reader=_oversized_body),
     ),
     (
         "thin-output-truncation",
-        "output truncation at thin (D9) — 1 thin, 0 fat; terminal, F1 does not apply",
+        "output truncation at thin (D9) — 1 thin, 0 fat; terminal",
         (1, 1),
         "thin_output_truncation",
         lambda: (
@@ -351,13 +327,16 @@ ROWS: list[tuple] = [
         dict(count=5),
     ),
     (
-        "fat-output-truncation-on-F1",
+        # The row's HIGH end. It used to come from the F1 variant (an exhausted
+        # thin, then fat); with F1 removed the reachable 2-thin case is a thin
+        # RETRY, which is what a range asserted at one end only would miss.
+        "fat-output-truncation-after-a-thin-retry",
         "output truncation at fat (D9) — 1-2 thin + 1 fat, 0 after",
         (3, 3),
-        "fat_output_truncation_on_f1",
+        "fat_output_truncation",
         lambda: (
             fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
+            fakes.ScriptedReply(fakes.retained_document(SMALL)),
             fakes.ScriptedReply(
                 fakes.truncated_text(SMALL), stop_reason=fakes.STOP_LENGTH_OPENAI
             ),
@@ -366,7 +345,7 @@ ROWS: list[tuple] = [
     ),
     (
         "fat-estimation-miss",
-        "fat budget_estimation_miss (sub-330k windows only) — 1-2 thin + 1 fat attempted",
+        "fat budget_estimation_miss — 1-2 thin + 1 fat attempted",
         (2, 2),
         "fat_input_estimation_miss",
         lambda: (
@@ -376,18 +355,15 @@ ROWS: list[tuple] = [
         dict(count=5),
     ),
     (
-        "fat-estimation-miss-on-F1",
-        # Same TABLE row as the case above — the table counts calls and does not
-        # split on F1. What is new here is the matrix row, which did not exist
-        # (`FAT_INPUT_ESTIMATION_MISS_ON_F1`, the P2.4 extension), and that
-        # distinction belongs in the contract, not in the call table.
-        "fat budget_estimation_miss (sub-330k windows only) — 1-2 thin + 1 fat attempted",
+        # The row's HIGH end — a thin RETRY, since F1 no longer supplies one.
+        "fat-estimation-miss-after-a-thin-retry",
+        "fat budget_estimation_miss — 1-2 thin + 1 fat attempted",
         (3, 3),
-        "fat_input_estimation_miss_on_f1",
+        "fat_input_estimation_miss",
         lambda: (
             fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.ScriptedReply(fakes.unparseable_text()),
-            fakes.context_length_rejection_openai(),
+            fakes.ScriptedReply(fakes.retained_document(SMALL)),
+            fakes.context_length_rejection_gemini(),
         ),
         dict(count=5),
     ),
@@ -486,7 +462,7 @@ def test_every_row_of_the_blueprint_table_is_exercised() -> None:
     retry through.
     """
     exercised = {row[1] for row in ROWS}
-    assert len(exercised) == 11, sorted(exercised)
+    assert len(exercised) == 10, sorted(exercised)
 
 
 def test_the_generic_input_miss_row_holds_at_BOTH_stages() -> None:
@@ -517,13 +493,12 @@ def test_every_producible_terminal_in_the_matrix_has_a_row_here() -> None:
 #: coverage check below assert something about a row that has no range at all.
 RANGED_TABLE_ROWS: frozenset[str] = frozenset(
     {
-        "D3 thin-retained-zero (N>M) — 1-2 thin, 0 fat",
+        "D3 thin-retained-zero — 1-2 thin, 0 fat",
         "normal completed — 1-2 thin + 1-2 fat = 2-4",
-        "thin exhausted, N<=M -> fat (F1) — 2 thin + 1-2 fat = 3-4",
         "fat exhausted — 1-2 thin + 2 fat = 3-4",
         "fat budget_exceeded, pre-call (D6) — 1-2 thin, 0 fat",
         "output truncation at fat (D9) — 1-2 thin + 1 fat, 0 after",
-        "fat budget_estimation_miss (sub-330k windows only) — 1-2 thin + 1 fat attempted",
+        "fat budget_estimation_miss — 1-2 thin + 1 fat attempted",
     }
 )
 

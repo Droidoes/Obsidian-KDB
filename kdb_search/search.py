@@ -338,10 +338,7 @@ def graph_search(
             ),
         )
 
-    thin_failed = thin.outcome == "exhausted"
-    watched: tuple[WatchedClass, ...] = (
-        ("thin_failed_nonbinding",) if thin_failed else ()
-    )
+    watched: tuple[WatchedClass, ...] = ()
 
     def thin_telemetry(**overrides) -> SearchTelemetry:
         base = dict(
@@ -384,9 +381,7 @@ def graph_search(
     #    **D-123-B qualifies it:** retain-all means every eligible identity is
     #    OFFERED to the fill, not that every one is sent. The budget can still
     #    decline the tail — step 7.
-    small_space = len(space.entities) <= M
-
-    if thin_failed and not small_space:
+    if thin.outcome == "exhausted":
         return finish(
             "thin_exhausted",
             status="selector_failure",
@@ -395,21 +390,18 @@ def graph_search(
             stages=thin.records,
         )
 
-    if small_space:
-        candidates = space.entities
-    else:
-        retained = set(thin.validated.retained) if thin.validated else set()
-        candidates = tuple(entity for entity in space.entities if entity.slug in retained)
-        if not candidates:
-            # D3 — no fat call. `completed` with the watched class, so the KPI
-            # series can tell it apart from an honest empty selection.
-            return finish(
-                "thin_retained_zero",
-                status="completed",
-                execution="thin_attempted",
-                telemetry=thin_telemetry(watched=watched + ("thin_retained_zero",)),
-                stages=thin.records,
-            )
+    retained = set(thin.validated.retained) if thin.validated else set()
+    candidates = tuple(entity for entity in space.entities if entity.slug in retained)
+    if not candidates:
+        # D3 — no fat call. `completed` with the watched class, so the KPI
+        # series can tell it apart from an honest empty selection.
+        return finish(
+            "thin_retained_zero",
+            status="completed",
+            execution="thin_attempted",
+            telemetry=thin_telemetry(watched=watched + ("thin_retained_zero",)),
+            stages=thin.records,
+        )
 
     # 7. Fat evidence + the fill (D-123-B). Bodies are read HERE — inside search,
     #    never by the caller (§1.1) — a missing body degrades the entity to
@@ -485,7 +477,7 @@ def graph_search(
         )
         budget_records.append(_budget_record(verdict, selector))
         return finish(
-            "fat_preflight_budget_on_f1" if thin_failed else "fat_preflight_budget",
+            "fat_preflight_budget",
             status="budget_exceeded",
             execution="thin_attempted",
             telemetry=fat_telemetry(),
@@ -533,7 +525,7 @@ def graph_search(
         budget_records.append(fat.budget_record)
 
     stages = thin.records + fat.records
-    execution: Execution = "fat_after_thin_failure" if thin_failed else "two_stage_attempted"
+    execution: Execution = "two_stage_attempted"
     evidence_status: EvidenceStatus = "complete" if title_only == 0 else "partial"
     body_coverage = hydrated / len(projected)
 
@@ -557,7 +549,7 @@ def graph_search(
 
     if fat.outcome == "output_truncation":
         return finish(
-            "fat_output_truncation_on_f1" if thin_failed else "fat_output_truncation",
+            "fat_output_truncation",
             status="budget_exceeded",
             execution=execution,
             telemetry=both_telemetry(),
@@ -567,9 +559,7 @@ def graph_search(
         )
     if fat.outcome == "input_estimation_miss":
         return finish(
-            "fat_input_estimation_miss_on_f1"
-            if thin_failed
-            else "fat_input_estimation_miss",
+            "fat_input_estimation_miss",
             status="budget_exceeded",
             execution=execution,
             telemetry=both_telemetry(

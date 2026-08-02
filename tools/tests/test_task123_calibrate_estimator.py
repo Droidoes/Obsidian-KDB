@@ -431,3 +431,133 @@ def test_resolution_goes_through_the_selector_gate_not_just_the_pool(monkeypatch
 def test_the_cohort_is_the_three_D4_candidates():
     assert cal.D4_COHORT == ("gemini-3.6-flash", "gpt-5.4-mini", "deepseek-v4-flash")
     assert len(cal.D4_COHORT) == cal.CALL_CEILING
+
+
+# --------------------------------------------------------------------------
+# merging a later single-candidate run into an existing artifact
+#
+# The writer used to OVERWRITE. gpt-5.4-mini failed its D5 call on 2026-08-02
+# (429, no credits), so the row that closes the gate has to arrive in a separate
+# run — and under overwrite semantics that run would have destroyed the two
+# measurements already paid for.
+#
+# Merging is only safe if the two runs measured the SAME THING (codex F5).
+# Otherwise a later re-run silently files incomparable numbers under one header.
+# --------------------------------------------------------------------------
+
+
+def _row(model_id: str, tokens: int = 4_500) -> dict:
+    return {
+        "counting_source": cal.COUNTING_SOURCE,
+        "fixture_version": "1",
+        "input_sha256": "sha256:abc",
+        "prompt_version": "2",
+        "model_id": model_id,
+        "input_tokens": tokens,
+        "bytes_per_token": 3.7,
+    }
+
+
+def _artifact(calibration, rows, failures=(), **header) -> dict:
+    doc = cal._artifact_json(calibration, [], list(failures))
+    doc["measurements"] = list(rows)
+    doc.update(header)
+    return doc
+
+
+def _write(path: pathlib.Path, doc: dict) -> None:
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+
+
+def test_a_later_run_KEEPS_the_rows_it_did_not_measure(tmp_path, calibration):
+    """The whole point. A single-candidate re-fire must not cost the rows that
+    were already paid for."""
+    target = tmp_path / "cal.json"
+    _write(target, _artifact(calibration, [_row("gemini-3.6-flash"), _row("deepseek-v4-flash")]))
+
+    cal.write_artifact(calibration, [cal.Measurement(**_row("gpt-5.4-mini"))], [], path=target)
+
+    ids = [m["model_id"] for m in json.loads(target.read_text())["measurements"]]
+    assert sorted(ids) == ["deepseek-v4-flash", "gemini-3.6-flash", "gpt-5.4-mini"]
+
+
+def test_a_remeasured_candidate_REPLACES_its_own_row_rather_than_doubling_it(
+    tmp_path, calibration
+):
+    target = tmp_path / "cal.json"
+    _write(target, _artifact(calibration, [_row("gemini-3.6-flash", tokens=1)]))
+
+    cal.write_artifact(
+        calibration, [cal.Measurement(**_row("gemini-3.6-flash", tokens=4_542))], [], path=target
+    )
+
+    rows = json.loads(target.read_text())["measurements"]
+    assert [r["input_tokens"] for r in rows] == [4_542]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("rendered_bytes", 999),
+        ("query_source", "query_file:something.json"),
+        ("entity_count", 42),
+        ("estimator_bytes_per_token_under_test", 3),
+        ("counting_source", "guessed"),
+    ],
+)
+def test_a_run_that_measured_something_ELSE_is_REFUSED_not_merged(
+    tmp_path, calibration, field, value
+):
+    """The guard codex F5 asked for. Merging by model_id alone would file
+    incomparable measurements under one header — a header that then describes
+    neither of them."""
+    target = tmp_path / "cal.json"
+    _write(target, _artifact(calibration, [_row("gemini-3.6-flash")], **{field: value}))
+
+    with pytest.raises(cal.CalibrationArtifactMismatch, match=field):
+        cal.write_artifact(
+            calibration, [cal.Measurement(**_row("gpt-5.4-mini"))], [], path=target
+        )
+
+
+def test_the_refusal_leaves_the_existing_artifact_UNTOUCHED(tmp_path, calibration):
+    """A refusal that had already truncated the file would destroy exactly what
+    the guard exists to protect."""
+    target = tmp_path / "cal.json"
+    _write(target, _artifact(calibration, [_row("gemini-3.6-flash")], rendered_bytes=999))
+    before = target.read_text()
+
+    with pytest.raises(cal.CalibrationArtifactMismatch):
+        cal.write_artifact(
+            calibration, [cal.Measurement(**_row("gpt-5.4-mini"))], [], path=target
+        )
+
+    assert target.read_text() == before
+
+
+def test_a_row_that_now_SUCCEEDS_clears_its_earlier_failure(tmp_path, calibration):
+    """gpt-5.4-mini's 429 must not sit in the artifact beside its own successful
+    measurement, reading as though the candidate both failed and succeeded."""
+    target = tmp_path / "cal.json"
+    _write(
+        target,
+        _artifact(
+            calibration,
+            [_row("gemini-3.6-flash")],
+            failures=[{"model_id": "gpt-5.4-mini", "stage": "call", "error": "429"}],
+        ),
+    )
+
+    cal.write_artifact(calibration, [cal.Measurement(**_row("gpt-5.4-mini"))], [], path=target)
+
+    doc = json.loads(target.read_text())
+    assert doc["failures"] == []
+    assert {m["model_id"] for m in doc["measurements"]} == {"gemini-3.6-flash", "gpt-5.4-mini"}
+
+
+def test_writing_where_no_artifact_exists_is_still_a_plain_write(tmp_path, calibration):
+    target = tmp_path / "fresh.json"
+    cal.write_artifact(calibration, [cal.Measurement(**_row("gemini-3.6-flash"))], [], path=target)
+    assert [m["model_id"] for m in json.loads(target.read_text())["measurements"]] == [
+        "gemini-3.6-flash"
+    ]

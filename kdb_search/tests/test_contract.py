@@ -173,7 +173,6 @@ def test_the_matrix_covers_every_execution_value():
         "not_executed",
         "thin_attempted",
         "two_stage_attempted",
-        "fat_after_thin_failure",
     }
 
 
@@ -186,7 +185,7 @@ def _other(value, allowed: tuple) -> object:
     """Some value the contract forbids."""
     for candidate in ("completed", "abstain_empty_space", "budget_exceeded", "selector_failure",
                       "not_executed", "thin_attempted", "two_stage_attempted",
-                      "fat_after_thin_failure", "not_applicable", "complete", "partial"):
+                      "not_applicable", "complete", "partial"):
         if candidate not in allowed:
             return candidate
     raise AssertionError("nothing left to mutate to")
@@ -393,10 +392,11 @@ def test_unratified_status_execution_pairs_are_rejected():
         assert pair not in ALLOWED_STATUS_EXECUTION, pair
 
 
-def test_budget_exceeded_legitimately_spans_all_four_execution_values():
+def test_budget_exceeded_legitimately_spans_EVERY_execution_value():
     """Not an oversight in the allowlist: the budget can bind before any call, at
-    the fat pre-flight, and post-call at either stage including the F1 path. It is
-    the one status that reaches every point in the run."""
+    the fat pre-flight, and post-call at either stage. It is the one status that
+    reaches every point in the run. (It spanned a fourth value until 2026-08-02,
+    when the F1 path was removed with `small_space`.)"""
     reachable = {
         execution
         for contract in TERMINAL_CONTRACTS.values()
@@ -407,7 +407,6 @@ def test_budget_exceeded_legitimately_spans_all_four_execution_values():
         "not_executed",
         "thin_attempted",
         "two_stage_attempted",
-        "fat_after_thin_failure",
     }
 
 
@@ -589,43 +588,18 @@ def test_the_totals_the_blueprint_states_itself_also_reproduce(name):
     )
 
 
-def test_the_f1_completed_path_is_a_row_the_matrix_covers_without_a_terminal():
-    """§8's `thin exhausted, N≤M → fat (F1)` row — "2 thin + 1–2 fat = 3–4" — is a
-    PATH, not a terminal: it ends in `completed` (or `fat_exhausted`) with the F1
-    execution value. `completed`'s thin bound (1, 2) contains the row's exact 2,
-    so the path is covered without a thirteenth row that would duplicate it."""
-    completed = TERMINAL_CONTRACTS["completed"]
-    assert completed.thin_attempts[0] <= 2 <= completed.thin_attempts[1]
-    assert "fat_after_thin_failure" in completed.execution
-    assert (completed.min_logical_calls, completed.max_logical_calls) == (2, 4)
-
 
 def test_every_terminal_in_the_branch_table_exists_in_the_matrix():
     assert set(BLUEPRINT_SECTION_8) <= set(TERMINAL_CONTRACTS)
 
 
-def test_the_f1_rows_are_the_matrix_additions_beyond_the_branch_table():
-    """§8's table lists the F1 *path*; the matrix names its terminals separately
-    because their field contracts differ from the non-F1 rows.
+def test_the_matrix_ADDS_NOTHING_beyond_the_branch_table():
+    """It used to add three: `fat_*_on_f1`, whose field contracts differed from
+    their non-F1 siblings. Removing `small_space` removed the F1 path and with it
+    the only reason the matrix was ever wider than §8's table. Asserted as an
+    equality so a silent re-addition fails here."""
+    assert set(TERMINAL_CONTRACTS) == set(BLUEPRINT_SECTION_8)
 
-    **Two of the three are ratified; the third is a P2.4 extension.** The
-    ratified matrix gave the F1 treatment to the fat PRE-flight terminal and to
-    the fat OUTPUT terminal but not to the fat INPUT one, which reads as an
-    ordering artifact — the D7 input rows predate D9.3's F1 treatment — rather
-    than a decision, since the state is reachable on a sub-330k window and
-    without a row a legitimate search dies on a `ContractViolation`. Asserted
-    here as a set so a fourth addition cannot arrive unnoticed, and the extension
-    is named in its own assertion so the distinction survives in the test rather
-    than only in the note.
-    """
-    additions = set(TERMINAL_CONTRACTS) - set(BLUEPRINT_SECTION_8)
-    assert additions == {
-        "fat_preflight_budget_on_f1",
-        "fat_output_truncation_on_f1",
-        "fat_input_estimation_miss_on_f1",
-    }
-    extension = TERMINAL_CONTRACTS["fat_input_estimation_miss_on_f1"]
-    assert "EXTENSION, NOT RATIFIED TEXT" in extension.note
 
 
 def test_no_terminal_exceeds_two_logical_attempts_per_stage():
@@ -714,10 +688,6 @@ def test_the_unenumerated_terminals_are_exactly_the_marked_ones():
     assert marked == {
         "fat_exhausted",
         "fat_input_estimation_miss",
-        # The P2.4 extension row inherits its parent's gap rather than closing it
-        # on the way past — a row added to keep a reachable state from dying
-        # fail-closed is the worst place to also settle an open question.
-        "fat_input_estimation_miss_on_f1",
     }
     for name in marked:
         contract = TERMINAL_CONTRACTS[name]

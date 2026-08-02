@@ -148,24 +148,6 @@ FAT_PREFLIGHT_BUDGET = TerminalContract(
     "from the post-call fat terminal, where the pool WAS presented.",
 )
 
-FAT_PREFLIGHT_BUDGET_ON_F1 = TerminalContract(
-    name="fat_preflight_budget_on_f1",
-    status="budget_exceeded",
-    execution=("thin_attempted",),
-    thin_attempts=_EXHAUSTED,
-    fat_attempts=_ZERO,
-    evidence_status=("not_applicable",),
-    body_coverage_present=False,
-    hits_empty=True,
-    all_expressions_unresolved=True,
-    concordance_null=True,
-    detected="pre_call",
-    budget_side="input",
-    required_watched=("thin_failed_nonbinding",),
-    note="The named F1 interaction. `execution` stays `thin_attempted`, NOT "
-    "`fat_after_thin_failure`: that value means the fat call ran, and here the "
-    "pre-flight stopped it before it did.",
-)
 
 # ---------------------------------------------------------------------------
 # D3 — thin retained zero over N > M
@@ -228,23 +210,6 @@ FAT_OUTPUT_TRUNCATION = TerminalContract(
     "body_coverage are measured, not `not_applicable`/None.",
 )
 
-FAT_OUTPUT_TRUNCATION_ON_F1 = TerminalContract(
-    name="fat_output_truncation_on_f1",
-    status="budget_exceeded",
-    execution=("fat_after_thin_failure",),
-    thin_attempts=_EXHAUSTED,
-    fat_attempts=_ONE,
-    evidence_status=("complete", "partial"),
-    body_coverage_present=True,
-    hits_empty=True,
-    all_expressions_unresolved=True,
-    concordance_null=True,
-    detected="post_call",
-    budget_side="output",
-    required_watched=("thin_failed_nonbinding",),
-    note="The same fat contract with the F1 execution value and the watched class "
-    "preserved.",
-)
 
 # ---------------------------------------------------------------------------
 # post-call INPUT terminals (D7 budget_estimation_miss, re-typed by opus5 M1)
@@ -284,39 +249,16 @@ FAT_INPUT_ESTIMATION_MISS = TerminalContract(
     budget_side="input",
     required_watched=("budget_estimation_miss",),
     note="UNENUMERATED: the evidence side is not fixed by the ratified text. "
-    "Reachable only on sub-330k windows — at pool windows the M=100 static "
-    "guarantee removes estimation from fat's safety path entirely.",
+    "**Reachability WIDENED at v0.16 (D-123-D).** It read 'reachable only on "
+    "sub-330k windows — at pool windows the M=100 static guarantee removes "
+    "estimation from fat\'s safety path entirely'. That guarantee is withdrawn: "
+    "the stage-2 fill spends `fat_input_byte_allowance`, which is derived from "
+    "the SAME bytes/4 estimate, so an under-call can now draw the provider\'s "
+    "over-window rejection at ANY window rather than only at small ones. The "
+    "row got more reachable, not less — and it is the one place the estimator "
+    "can still fail loudly, which is why the live bytes-per-token series exists.",
 )
 
-FAT_INPUT_ESTIMATION_MISS_ON_F1 = TerminalContract(
-    name="fat_input_estimation_miss_on_f1",
-    status="budget_exceeded",
-    execution=("fat_after_thin_failure",),
-    thin_attempts=_EXHAUSTED,
-    fat_attempts=_ONE,
-    evidence_status=None,
-    body_coverage_present=None,
-    hits_empty=True,
-    all_expressions_unresolved=True,
-    concordance_null=True,
-    detected="post_call",
-    budget_side="input",
-    required_watched=("budget_estimation_miss", "thin_failed_nonbinding"),
-    note="**EXTENSION, NOT RATIFIED TEXT — added in P2.4, flagged for owner "
-    "ratification.** The ratified matrix gives the F1 treatment to the fat "
-    "OUTPUT terminal (FAT_OUTPUT_TRUNCATION_ON_F1) and to the fat PRE-flight "
-    "terminal (FAT_PREFLIGHT_BUDGET_ON_F1), but not to the fat INPUT terminal — "
-    "FAT_INPUT_ESTIMATION_MISS admits `two_stage_attempted` only. That looks like "
-    "an ordering artifact (the D7 input rows predate D9.3's F1 treatment) rather "
-    "than a decision, because the state is reachable: F1 runs fat after an "
-    "exhausted thin, and a sub-330k window can still draw the provider's "
-    "over-window rejection. With no row, a legitimate search would die on a "
-    "ContractViolation. Every cell here is COPIED, not inferred — the budget "
-    "cells from FAT_INPUT_ESTIMATION_MISS, the execution and the watched class "
-    "from FAT_OUTPUT_TRUNCATION_ON_F1 — and the evidence side stays "
-    "UNENUMERATED exactly as its parent leaves it, rather than being filled in "
-    "while the row was open anyway.",
-)
 
 # ---------------------------------------------------------------------------
 # retry-exhausted selector failures
@@ -334,14 +276,19 @@ THIN_EXHAUSTED = TerminalContract(
     all_expressions_unresolved=True,
     concordance_null=True,
     failure_class_required=True,
-    note="N > M. Below M the F1 path runs fat instead, so this terminal and "
-    "FAT_*_ON_F1 partition the thin-exhausted case by space size.",
+    note="The ONLY thin-exhausted terminal (2026-08-02, Joseph). It used to "
+    "cover N > M only, with an F1 path running fat below M — three FAT_*_ON_F1 "
+    "rows, a `thin_failed_nonbinding` watched class and a "
+    "`fat_after_thin_failure` execution value, all to keep a small space alive "
+    "when thin died. Removed: the graph outgrows N <= M, so that was a branch "
+    "built for a shrinking minority, and a thin that fails twice is a signal "
+    "worth surfacing rather than routing around. Thin fails => no fat.",
 )
 
 FAT_EXHAUSTED = TerminalContract(
     name="fat_exhausted",
     status="selector_failure",
-    execution=("two_stage_attempted", "fat_after_thin_failure"),
+    execution=("two_stage_attempted",),
     thin_attempts=_UP_TO_TWO,
     fat_attempts=_EXHAUSTED,
     evidence_status=None,
@@ -362,7 +309,7 @@ FAT_EXHAUSTED = TerminalContract(
 COMPLETED = TerminalContract(
     name="completed",
     status="completed",
-    execution=("two_stage_attempted", "fat_after_thin_failure"),
+    execution=("two_stage_attempted",),
     thin_attempts=_UP_TO_TWO,
     fat_attempts=_UP_TO_TWO,
     evidence_status=("complete", "partial"),
@@ -382,14 +329,11 @@ TERMINAL_CONTRACTS: dict[str, TerminalContract] = {
         EMPTY_SPACE,
         THIN_PREFLIGHT_BUDGET,
         FAT_PREFLIGHT_BUDGET,
-        FAT_PREFLIGHT_BUDGET_ON_F1,
         THIN_RETAINED_ZERO,
         THIN_OUTPUT_TRUNCATION,
         FAT_OUTPUT_TRUNCATION,
-        FAT_OUTPUT_TRUNCATION_ON_F1,
         THIN_INPUT_ESTIMATION_MISS,
         FAT_INPUT_ESTIMATION_MISS,
-        FAT_INPUT_ESTIMATION_MISS_ON_F1,
         THIN_EXHAUSTED,
         FAT_EXHAUSTED,
         COMPLETED,
@@ -564,11 +508,8 @@ __all__ = [
     "EMPTY_SPACE",
     "FAT_EXHAUSTED",
     "FAT_INPUT_ESTIMATION_MISS",
-    "FAT_INPUT_ESTIMATION_MISS_ON_F1",
     "FAT_OUTPUT_TRUNCATION",
-    "FAT_OUTPUT_TRUNCATION_ON_F1",
     "FAT_PREFLIGHT_BUDGET",
-    "FAT_PREFLIGHT_BUDGET_ON_F1",
     "PRODUCIBLE_IN_P1",
     "TERMINAL_CONTRACTS",
     "THIN_EXHAUSTED",

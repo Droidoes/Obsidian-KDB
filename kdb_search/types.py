@@ -113,7 +113,7 @@ class GraphSearchRequest:
 
 Status = Literal["completed", "abstain_empty_space", "budget_exceeded", "selector_failure"]
 Execution = Literal[
-    "not_executed", "thin_attempted", "two_stage_attempted", "fat_after_thin_failure"
+    "not_executed", "thin_attempted", "two_stage_attempted",
 ]
 EvidenceStatus = Literal["not_applicable", "complete", "partial"]
 BudgetDetected = Literal["pre_call", "post_call"]

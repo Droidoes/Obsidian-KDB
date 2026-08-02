@@ -317,6 +317,55 @@ def _artifact_json(
     }
 
 
+class CalibrationArtifactMismatch(RuntimeError):
+    """The artifact on disk measured something this run did not."""
+
+
+#: The header fields that make two runs comparable. Merging by `model_id` alone
+#: would file incomparable measurements under one header — a header that then
+#: describes neither of them (codex F5). Every one of these changes WHAT was
+#: measured, not merely when.
+_FINGERPRINT = (
+    "counting_source",
+    "query_source",
+    "entity_count",
+    "rendered_bytes",
+    "estimator_bytes_per_token_under_test",
+)
+
+
+def _merge(existing: dict, incoming: dict) -> dict:
+    """Fold `incoming`'s rows into `existing`, or refuse.
+
+    Refuses LOUDLY on any fingerprint difference rather than writing to a new
+    name: which artifact a divergent run belongs in is an owner decision (bump
+    the artifact version? re-freeze the fixture?), and guessing it silently is
+    how a series stops meaning anything.
+    """
+    drift = [
+        f"{field}: artifact has {existing.get(field)!r}, this run has {incoming.get(field)!r}"
+        for field in _FINGERPRINT
+        if existing.get(field) != incoming.get(field)
+    ]
+    if drift:
+        raise CalibrationArtifactMismatch(
+            "refusing to merge into an artifact that measured something else — "
+            + "; ".join(drift)
+        )
+
+    measured = {row["model_id"]: row for row in existing.get("measurements", ())}
+    measured.update({row["model_id"]: row for row in incoming["measurements"]})
+
+    # A candidate that now succeeds must not sit beside its own earlier failure,
+    # reading as though it both failed and succeeded.
+    failed = {row["model_id"]: row for row in existing.get("failures", ())}
+    failed.update({row["model_id"]: row for row in incoming["failures"]})
+    for model_id in incoming["measurements"]:
+        failed.pop(model_id["model_id"], None)
+
+    return {**incoming, "measurements": list(measured.values()), "failures": list(failed.values())}
+
+
 def write_artifact(
     calibration: CalibrationInput,
     measurements: list[Measurement],
@@ -324,20 +373,31 @@ def write_artifact(
     *,
     path: pathlib.Path | None = None,
 ) -> None:
-    """Rewritten after every candidate, successful or not.
+    """Rewritten after every candidate, successful or not — and MERGED with
+    whatever is already there.
 
     Written incrementally rather than once at the end because the money is spent
     at the call, not at the write: a third candidate that raises must not take the
     first two paid measurements with it.
+
+    **Merging, not overwriting (codex F5).** `gpt-5.4-mini` failed its 2026-08-02
+    call with no credits, so the row that closes the D5 gate has to arrive in a
+    later single-candidate run — and under overwrite semantics that run would
+    have destroyed the two rows already paid for. Rows fold in by `model_id`;
+    a re-measured candidate replaces its own row rather than doubling it.
+
+    Guarded by the full `_FINGERPRINT`, and the guard runs BEFORE any write, so
+    a refusal leaves the existing artifact untouched.
 
     `path` resolves at call time rather than as a default argument value, so a
     test can redirect the write by setting the module attribute — a default bound
     at import would send every test's write to the real artifact.
     """
     target = path or ARTIFACT_PATH
-    target.write_text(
-        json.dumps(_artifact_json(calibration, measurements, failures), indent=2) + "\n"
-    )
+    document = _artifact_json(calibration, measurements, failures)
+    if target.exists():
+        document = _merge(json.loads(target.read_text()), document)
+    target.write_text(json.dumps(document, indent=2) + "\n")
 
 
 def _display(path: pathlib.Path) -> str:
