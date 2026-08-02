@@ -63,9 +63,6 @@ class Violations:
 class ValidatedResponse:
     classification: ResponseClass
     hits: tuple[Hit, ...]
-    #: The selector's advisory `unresolved`, decoded from wire labels to positions,
-    #: bounded and de-duplicated — INPUT to accounting, never its authority.
-    advisory_unresolved: tuple[int, ...]
     attempted_violations: Violations
     #: Entries the selector returned, before validation — `valid_entry_yield`'s
     #: denominator, and 0 whenever there is no usable document at all.
@@ -99,9 +96,6 @@ class ValidatedResponse:
 class ExpressionAccounting:
     matched_expressions: tuple[str, ...]
     unresolved_expressions: tuple[str, ...]
-    #: Disagreement between the selector's advisory list and the controller's
-    #: computation. Counted, never a failure class.
-    selector_accounting_delta: int
     #: Keeps cap-induced unresolveds out of the abstention metric (§8.3 metric 6).
     cap_exhausted_possible: bool
     unattributed_hit_count: int
@@ -166,11 +160,11 @@ def validate_response(
     """Validate and salvage one selector response against the closed world."""
     document, failure = _parse(raw)
     if failure is not None:
-        return ValidatedResponse(failure, (), (), Violations(), 0)
+        return ValidatedResponse(failure, (), Violations(), 0)
 
     if not isinstance(document, dict) or not isinstance(document.get("selections"), list):
         return ValidatedResponse(
-            "structurally_unusable_response", (), (), Violations(), 0, document=document
+            "structurally_unusable_response", (), Violations(), 0, document=document
         )
 
     by_slug = {entity.slug: entity for entity in space}
@@ -216,16 +210,12 @@ def validate_response(
     # (R1: keep the most content a valid response can give us).
     hits = hits[:max_results]
 
-    advisory, advisory_unknown = _bounded_labels(document.get("unresolved"), len(expressions))
-    violations += Violations(unknown_expression=advisory_unknown)
-
     classification: ResponseClass = (
         "all_entries_dropped" if selections and not hits else "usable"
     )
     return ValidatedResponse(
         classification=classification,
         hits=tuple(hits),
-        advisory_unresolved=advisory,
         attempted_violations=violations,
         returned_entries=len(selections),
         document=document,
@@ -238,11 +228,23 @@ def resolve_accounting(
     expressions: tuple[str, ...],
     max_results: int,
 ) -> ExpressionAccounting:
-    """Controller-side expression accounting (spec §2.3).
+    """Controller-side expression accounting (spec §2.3, amended by D-123-F).
 
     Every request expression is *matched* (>= 1 validated hit attributes it) or
-    *unresolved*. The selector's advisory list is an input; where it disagrees the
-    controller wins and the disagreement is counted.
+    *unresolved*. The controller computes this alone.
+
+    **The selector no longer supplies an advisory list.** It used to answer a
+    different question — which keys nothing in EVIDENCE answers — which the
+    controller then compared against its own, counting the difference as
+    `selector_accounting_delta`. Two things were wrong with that. The delta was
+    read by nothing outside its own unit tests, and the two quantities diverge
+    whenever EVIDENCE supports a key but the result cap excludes the supporting
+    entity, so a perfectly-behaved selector scored as disagreeing. D-123-F drops
+    the wire field; what remains is one question with one answer.
+
+    `unresolved_expressions` means exactly what it computes: keys that no RETURNED
+    hit attributes. It is not a claim about the graph — thin's retention and the
+    stage-2 fill both cut the space the selector ever saw.
     """
     attributed = {
         expression for hit in response.hits for expression in hit.matched_expressions
@@ -250,14 +252,10 @@ def resolve_accounting(
     matched = tuple(e for e in expressions if e in attributed)
     unresolved = tuple(e for e in expressions if e not in attributed)
 
-    claimed = {expressions[i] for i in response.advisory_unresolved}
-    delta = len(claimed.symmetric_difference(set(unresolved))) if response.advisory_unresolved else 0
-
     unattributed = sum(1 for hit in response.hits if not hit.matched_expressions)
     return ExpressionAccounting(
         matched_expressions=matched,
         unresolved_expressions=unresolved,
-        selector_accounting_delta=delta,
         cap_exhausted_possible=len(response.hits) == max_results,
         unattributed_hit_count=unattributed,
         # An unattributed hit means some expression may be reported unresolved

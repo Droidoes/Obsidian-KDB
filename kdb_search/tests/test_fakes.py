@@ -298,10 +298,16 @@ def test_usable_document_attributes_the_labels_it_carries() -> None:
     assert result.hits[0].matched_expressions == ("warren-buffett", "margin-of-safety")
 
 
-def test_usable_document_can_carry_the_advisory_unresolved_list() -> None:
+def test_an_unresolved_key_on_the_wire_is_now_simply_ignored() -> None:
+    """D-123-F removed the advisory list from the contract. A model that emits one
+    anyway — an older prompt, a confused route — must not break validation: §2.3's
+    rule is that a parseable response is never discarded. The key is dropped
+    silently, exactly like any other unknown top-level field."""
     space = make_space(3)
     result = _validate(usable_document(space, count=1, unresolved=("B",)), space)
-    assert result.advisory_unresolved == (1,)
+    assert result.classification == "usable"
+    assert len(result.hits) == 1
+    assert not hasattr(result, "advisory_unresolved")
 
 
 def test_salvage_document_is_exactly_six_of_ten() -> None:

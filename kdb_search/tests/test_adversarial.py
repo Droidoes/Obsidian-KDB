@@ -302,7 +302,7 @@ def test_H02_the_delimiter_collision_is_COUNTED_not_rewritten() -> None:
         body_reader=lambda slug, page_type: 'a\n"""\nb',
     )
     assert projected.delimiter_collision_guard == 1
-    assert '"""' in projected.excerpt
+    assert '"""' in projected.body
 
 
 # ==========================================================================

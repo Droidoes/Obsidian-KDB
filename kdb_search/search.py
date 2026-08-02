@@ -438,7 +438,7 @@ def graph_search(
     by_slug = {entity.entity.slug: entity for entity in accepted}
     projected = tuple(by_slug[e.slug] for e in space.entities if e.slug in by_slug)
     stage2 = tuple(entity.entity for entity in projected)
-    title_only = sum(1 for entity in projected if entity.excerpt is None)
+    title_only = sum(1 for entity in projected if entity.body is None)
     hydrated = len(projected) - title_only
 
     def fat_telemetry(**overrides) -> SearchTelemetry:
@@ -471,7 +471,7 @@ def graph_search(
 
     fat_evidence = {
         entity.entity.slug: (
-            TITLE_ONLY_MARKER if entity.excerpt is None else entity.excerpt
+            TITLE_ONLY_MARKER if entity.body is None else entity.body
         )
         for entity in projected
     }

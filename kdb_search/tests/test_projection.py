@@ -30,7 +30,7 @@ def _identities() -> list[dict]:
     return json.loads((FIXTURE / "identities.json").read_text())
 
 
-def _frozen_excerpt(slug: str, page_type: str) -> str:
+def _frozen_body(slug: str, page_type: str) -> str:
     return (FIXTURE / "excerpts" / page_type / f"{slug}.txt").read_text()
 
 
@@ -42,17 +42,17 @@ def _entity(row: dict) -> SpaceEntity:
 # §5 grammar — exact bytes
 # --------------------------------------------------------------------------
 
-def test_thin_line_has_no_excerpt_and_two_space_field_separators():
+def test_thin_line_has_no_body_and_two_space_field_separators():
     e = SpaceEntity(slug="owner-earnings", title="Owner Earnings", page_type="concept")
     assert render_thin_line(e) == "- slug: owner-earnings  title: Owner Earnings  type: concept"
 
 
 def test_fat_block_grammar_identity_line_delimiters_and_four_space_content():
     e = SpaceEntity(slug="a-slug", title="A Title", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="line one\nline two"))
+    block = render_fat_block(ProjectedEntity(entity=e, body="line one\nline two"))
     assert block == (
         '- slug: a-slug  title: A Title  type: concept\n'
-        '  excerpt: """\n'
+        '  body: """\n'
         '    line one\n'
         '    line two\n'
         '  """'
@@ -61,10 +61,10 @@ def test_fat_block_grammar_identity_line_delimiters_and_four_space_content():
 
 def test_g7_clause_1_trailing_newline_emits_a_final_whitespace_line():
     """Split on "\\n", never splitlines(): a trailing newline is a real final
-    empty field line, rendered as four spaces. 161/163 fixture excerpts end
+    empty field line, rendered as four spaces. 161/163 fixture bodies end
     with a newline, so this clause is load-bearing on almost the whole corpus."""
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body\n"))
+    block = render_fat_block(ProjectedEntity(entity=e, body="body\n"))
     lines = block.split("\n")
     assert lines[2] == "    body"
     assert lines[3] == "    ", "trailing newline must emit a whitespace-only 4-space line"
@@ -73,7 +73,7 @@ def test_g7_clause_1_trailing_newline_emits_a_final_whitespace_line():
 
 def test_g7_clause_2_blank_lines_are_indented_too():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="a\n\nb"))
+    block = render_fat_block(ProjectedEntity(entity=e, body="a\n\nb"))
     assert block.split("\n")[3] == "    ", "interior blank lines carry the 4-space indent"
 
 
@@ -81,7 +81,7 @@ def test_only_the_exact_two_space_delimiter_line_terminates_the_block():
     # An excerpt carrying its own triple-quote line cannot close the block early:
     # content sits at 4 spaces, the terminator at 2.
     e = SpaceEntity(slug="s", title="T", page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt='before\n"""\nafter'))
+    block = render_fat_block(ProjectedEntity(entity=e, body='before\n"""\nafter'))
     assert block.count('  """') == 2, "opening + closing delimiter only"
     assert '    """' in block, "the collided delimiter is indented as content"
     assert block.endswith('  """')
@@ -156,13 +156,13 @@ def test_h04_the_fat_block_keeps_its_grammar_under_a_forged_title():
     must not do is occupy a line of its own, because position is what gives a line
     its structural meaning here.
     """
-    e = SpaceEntity(slug="s", title='T\n  excerpt: """', page_type="concept")
-    block = render_fat_block(ProjectedEntity(entity=e, excerpt="body"))
+    e = SpaceEntity(slug="s", title='T\n  body: """', page_type="concept")
+    block = render_fat_block(ProjectedEntity(entity=e, body="body"))
     lines = block.split("\n")
     assert len(lines) == 4
     assert lines[0].startswith("- slug: s  title: T ")
-    assert '  excerpt: """' in lines[0], "still visible as content, just not as a line"
-    assert [line for line in lines if line == '  excerpt: """'] == ['  excerpt: """']
+    assert '  body: """' in lines[0], "still visible as content, just not as a line"
+    assert [line for line in lines if line == '  body: """'] == ['  body: """']
     assert [line for line in lines[1:] if not line.startswith(" ")] == []
 
 
@@ -224,7 +224,7 @@ def test_delimiter_collision_is_counted_not_silently_allowed():
 def test_a_short_body_is_verbatim():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
     body = "One two three. Four five."
-    assert project_entity(e, body_reader=lambda *_: body).excerpt == body
+    assert project_entity(e, body_reader=lambda *_: body).body == body
 
 
 def test_a_body_far_over_the_retired_word_cap_is_ALSO_verbatim():
@@ -232,8 +232,8 @@ def test_a_body_far_over_the_retired_word_cap_is_ALSO_verbatim():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
     body = " ".join(["word"] * 800) + " final clause here."
     p = project_entity(e, body_reader=lambda *_: body)
-    assert p.excerpt == body
-    assert len(p.excerpt.split()) == 803
+    assert p.body == body
+    assert len(p.body.split()) == 803
 
 
 def test_a_body_far_over_the_retired_byte_ceiling_is_ALSO_verbatim():
@@ -241,7 +241,7 @@ def test_a_body_far_over_the_retired_byte_ceiling_is_ALSO_verbatim():
     e = SpaceEntity(slug="s" * 40, title="T" * 60, page_type="concept")
     body = "\n".join(["x" * 200] * 60)
     p = project_entity(e, body_reader=lambda *_: body)
-    assert p.excerpt == body
+    assert p.body == body
     assert stream_contribution_bytes(p) > 12_000
 
 
@@ -252,9 +252,9 @@ def test_multibyte_content_survives_whole():
     e = SpaceEntity(slug="s", title="T", page_type="concept")
     body = "\u00e9" * 4000
     p = project_entity(e, body_reader=lambda *_: body)
-    assert p.excerpt == body
+    assert p.body == body
     render_fat_block(p).encode().decode()
-    assert "\ufffd" not in p.excerpt
+    assert "\ufffd" not in p.body
 
 
 def test_projection_is_deterministic():
@@ -262,7 +262,7 @@ def test_projection_is_deterministic():
     body = "\n".join(["some text here"] * 300)
     a = project_entity(e, body_reader=lambda *_: body)
     b = project_entity(e, body_reader=lambda *_: body)
-    assert a.excerpt == b.excerpt and render_fat_block(a) == render_fat_block(b)
+    assert a.body == b.body and render_fat_block(a) == render_fat_block(b)
 
 
 def test_the_projection_carries_no_truncation_flag_at_all():
@@ -285,7 +285,7 @@ def test_missing_body_degrades_to_title_only_and_is_flagged():
 
     p = project_entity(e, body_reader=reader)
     assert p.body_missing is True
-    assert p.excerpt is None
+    assert p.body is None
     assert render_fat_block(p) == "- slug: gone  title: Gone  type: concept"
 
 
@@ -293,7 +293,7 @@ def test_missing_body_degrades_to_title_only_and_is_flagged():
 # the frozen fixture is the byte authority
 # --------------------------------------------------------------------------
 
-def test_every_fixture_entity_projects_verbatim_and_the_max_is_2209_bytes():
+def test_every_fixture_entity_projects_verbatim_and_the_max_is_2206_bytes():
     """The fixture's byte figures are unchanged by D-123-C, which is the point:
     the retired ceiling bound on nothing here, so removing it moves no byte.
 
@@ -306,9 +306,9 @@ def test_every_fixture_entity_projects_verbatim_and_the_max_is_2209_bytes():
     blocks, contributions = {}, {}
     for row in _identities():
         e = _entity(row)
-        frozen = _frozen_excerpt(row["slug"], row["page_type"])
+        frozen = _frozen_body(row["slug"], row["page_type"])
         p = project_entity(e, body_reader=lambda *_, _f=frozen: _f)
-        assert p.excerpt == frozen, f"{row['slug']}: the body must pass through whole"
+        assert p.body == frozen, f"{row['slug']}: the body must pass through whole"
         blocks[row["slug"]] = len(render_fat_block(p).encode())
         contributions[row["slug"]] = stream_contribution_bytes(p)
 
@@ -317,19 +317,22 @@ def test_every_fixture_entity_projects_verbatim_and_the_max_is_2209_bytes():
     # spec §4's enumeration, and the stream contribution the ratified figure was
     # measured as. The fill accumulates the latter.
     #
-    assert max(blocks.values()) == 2208, f"largest bare block moved: {max(blocks.values())}"
-    assert max(contributions.values()) == 2209, f"largest contribution moved: {max(contributions.values())}"
+    # 2,208 / 2,209 before the `excerpt:` -> `body:` field rename (D-123-C's §6
+    # naming call). The label is 3 bytes shorter, so every hydrated block shrinks
+    # by exactly 3 — the rename is not byte-neutral, and this is where that shows.
+    assert max(blocks.values()) == 2205, f"largest bare block moved: {max(blocks.values())}"
+    assert max(contributions.values()) == 2206, f"largest contribution moved: {max(contributions.values())}"
 
 
 def test_fixture_excerpts_exercise_both_g7_clauses():
     """The clauses are not hypothetical: 161/163 excerpts end with a newline and
     the corpus carries 377 blank lines."""
     rows = _identities()
-    trailing = sum(1 for r in rows if _frozen_excerpt(r["slug"], r["page_type"]).endswith("\n"))
+    trailing = sum(1 for r in rows if _frozen_body(r["slug"], r["page_type"]).endswith("\n"))
     blanks = sum(
         1
         for r in rows
-        for line in _frozen_excerpt(r["slug"], r["page_type"]).split("\n")
+        for line in _frozen_body(r["slug"], r["page_type"]).split("\n")
         if line.strip() == ""
     )
     assert trailing == 161, f"trailing-newline count moved: {trailing}"
@@ -340,7 +343,7 @@ def test_fixture_excerpts_exercise_both_g7_clauses():
 def test_fixture_excerpt_bytes_round_trip_into_the_grammar(slug, page_type):
     """Every content line of the frozen excerpt appears at exactly 4 spaces."""
     row = next(r for r in _identities() if r["slug"] == slug)
-    frozen = _frozen_excerpt(slug, page_type)
+    frozen = _frozen_body(slug, page_type)
     p = project_entity(_entity(row), body_reader=lambda *_: frozen)
     body_lines = render_fat_block(p).split("\n")[2:-1]
     assert body_lines == ["    " + line for line in frozen.split("\n")]

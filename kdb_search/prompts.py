@@ -61,7 +61,7 @@ _VERSION_RE = re.compile(r"_v(\d+)\.txt\Z")
 
 _FILENAMES: dict[Stage, str] = {
     "thin": "selector_thin_v2.txt",
-    "fat": "selector_fat_v2.txt",
+    "fat": "selector_fat_v3.txt",
 }
 
 

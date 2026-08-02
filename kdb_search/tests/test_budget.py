@@ -93,13 +93,16 @@ def test_thin_exact_max_is_18464_bytes_and_fits_its_allowance():
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_THIN, "tokens <= bytes <= allowance"
 
 
-def test_fat_exact_max_is_9271_bytes_and_fits_its_allowance():
-    """D11: letter labels quote where indices did not — `"A"` costs 3 B against
-    `0`'s 1 B, over 51 label lists (50 selections + `unresolved`) = +1,020 B, so
-    8,251 -> 9,271. The allowance stays 10,000: 9,271 <= 10,000 is a proof under
-    `tokens_lte_bytes`."""
+def test_fat_exact_max_is_9216_bytes_and_fits_its_allowance():
+    """9,271 -> 9,216 at v0.16: D-123-F took the advisory `unresolved` list off
+    the wire, and at MAX_EXPRESSIONS=10 that list serialized to 55 B. The
+    allowance stays 10,000 — it is an upper bound and the maximum only shrank.
+
+    (D11 history, for the figure's lineage: letter labels quote where indices did
+    not, `"A"` costing 3 B against `0`'s 1 B over 51 label lists, so 8,251 ->
+    9,271. One of those 51 lists was `unresolved`; 50 remain.)"""
     exact = exact_max_visible_bytes("fat")
-    assert exact == 9_271, f"fat exact max moved: {exact}"
+    assert exact == 9_216, f"fat exact max moved: {exact}"
     assert exact <= VISIBLE_OUTPUT_ALLOWANCE_FAT
 
 
@@ -119,13 +122,13 @@ def test_the_thin_maximum_is_unmoved_by_labels():
 def test_the_fat_document_is_built_from_the_declared_maxima_and_letter_labels():
     document = json.loads(schema_maximum_fat_document())
     assert len(document["selections"]) == MAX_RESULTS
-    assert document["unresolved"] == list(expression_labels(MAX_EXPRESSIONS))
     assert document["selections"][0]["matched"] == ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]
+    assert "unresolved" not in document, "D-123-F took the advisory list off the wire"
 
 
 @pytest.mark.parametrize(
     "expressions,expected,fits",
-    [(10, 9_271, True), (13, 9_883, True), (14, 10_087, False), (22, 11_719, False), (26, 12_535, False)],
+    [(10, 9_216, True), (13, 9_816, True), (14, 10_016, False), (22, 11_616, False), (26, 12_416, False)],
 )
 def test_the_fat_maximum_is_a_function_of_max_expressions(expressions, expected, fits):
     """The break-even table (§7.0a, re-derived at v0.16 for D11's labels). The

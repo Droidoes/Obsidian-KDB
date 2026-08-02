@@ -629,7 +629,7 @@ def test_the_stages_are_identifiable_from_the_REQUESTS_not_the_script() -> None:
     assert thin_request.max_tokens == provider_max_tokens("thin")
     assert fat_request.max_tokens == provider_max_tokens("fat")
     assert "RETAIN" in thin_request.system.upper()
-    assert "excerpt:" in fat_request.prompt
+    assert "body:" in fat_request.prompt
 
 
 def test_thin_ALWAYS_runs_even_where_its_answer_cannot_bind() -> None:

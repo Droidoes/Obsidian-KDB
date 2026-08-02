@@ -3,8 +3,8 @@
 The grammar is frozen and golden-pinned. Two behaviours look like bugs and are
 not (opus5 G7, derived by reproducing the fixture serializer byte-exactly):
 
-  1. the excerpt is split on "\\n", NOT with splitlines() — so a trailing
-     newline emits a final whitespace-only line (161/163 fixture excerpts);
+  1. the body is split on "\\n", NOT with splitlines() — so a trailing
+     newline emits a final whitespace-only line (161/163 fixture bodies);
   2. blank lines are indented too (377 in the fixture).
 
 Any "tidy" of either breaks the golden tests deliberately.
@@ -32,7 +32,7 @@ from .types import SpaceEntity
 
 BodyReader = Callable[[str, PageType], str]
 
-_INDENT = "    "  # excerpt content — always 4 spaces
+_INDENT = "    "  # body content — always 4 spaces
 _FIELD_INDENT = "  "  # field/delimiter lines — 2 spaces
 _DELIMITER = '"""'
 _QUERY_HEADER = "- query:"
@@ -40,7 +40,7 @@ _QUERY_HEADER = "- query:"
 
 @dataclass(frozen=True)
 class ProjectedEntity:
-    """One entity's projected evidence. `excerpt is None` means the body was
+    """One entity's projected evidence. `body is None` means the body was
     missing (graph/disk drift) and the entity degrades to title-only.
 
     **The body is delivered whole (D-123-C).** There was a `truncated` flag here,
@@ -52,7 +52,7 @@ class ProjectedEntity:
     """
 
     entity: SpaceEntity
-    excerpt: str | None
+    body: str | None
     body_missing: bool = False
     delimiter_collision_guard: int = 0
 
@@ -136,14 +136,14 @@ def render_thin_line(entity: SpaceEntity) -> str:
 
 def render_fat_block(projected: ProjectedEntity) -> str:
     """Stage-2 evidence for one entity. A title-only degrade renders as the bare
-    identity line — no empty excerpt field."""
+    identity line — no empty body field."""
     identity = render_thin_line(projected.entity)
-    if projected.excerpt is None:
+    if projected.body is None:
         return identity
-    lines = [identity, f"{_FIELD_INDENT}excerpt: {_DELIMITER}"]
+    lines = [identity, f"{_FIELD_INDENT}body: {_DELIMITER}"]
     # Clause 1: split on "\n" — splitlines() would swallow the trailing newline's
     # final empty field. Clause 2: every line is indented, blank ones included.
-    lines += [_INDENT + line for line in projected.excerpt.split("\n")]
+    lines += [_INDENT + line for line in projected.body.split("\n")]
     lines.append(f"{_FIELD_INDENT}{_DELIMITER}")
     return "\n".join(lines)
 
@@ -156,7 +156,7 @@ def stream_contribution_bytes(projected: ProjectedEntity) -> int:
     policy-v2 ceiling governed; it is now what `search` accumulates when deciding
     whether the next entity still fits the 0.8 budget. The distinction from the
     bare block is one byte and was latent in the ratified figures: spec §4
-    enumerates the block as "identity line + excerpt field + delimiters", which
+    enumerates the block as "identity line + body field + delimiters", which
     renders to 2,208 B for fixture v1's largest entity, while the ratified
     "largest rendered block 2,209 B" was measured with the separator included.
 
@@ -179,14 +179,14 @@ def project_entity(entity: SpaceEntity, *, body_reader: BodyReader) -> Projected
     try:
         body = body_reader(entity.slug, entity.page_type)
     except ContentNotFoundError:
-        return ProjectedEntity(entity=entity, excerpt=None, body_missing=True)
+        return ProjectedEntity(entity=entity, body=None, body_missing=True)
 
     # The guard counts collisions; it never rewrites content. A collided
     # delimiter is indented as content, so it cannot terminate the block.
     collisions = sum(1 for line in body.split("\n") if line.strip() == _DELIMITER)
     return ProjectedEntity(
         entity=entity,
-        excerpt=body,
+        body=body,
         delimiter_collision_guard=collisions,
     )
 
@@ -236,7 +236,7 @@ def _line_bytes(lines: list[str]) -> int:
 
 def _scalar_lines(label: str, value: str) -> list[str]:
     """`  label: first line`, with any further lines at the content indent — the
-    same split-on-"\\n" guard as the excerpt (§5 G7 clauses). An injected
+    same split-on-"\\n" guard as the body (§5 G7 clauses). An injected
     `  \"\"\"` therefore renders at 4 spaces and cannot terminate anything."""
     head, *rest = value.split("\n")
     return [f"{_FIELD_INDENT}{label}: {head}"] + [_INDENT + line for line in rest]

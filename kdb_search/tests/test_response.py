@@ -312,10 +312,15 @@ def test_json_booleans_are_not_accepted_as_labels(value, would_have_addressed):
     assert r.attempted_violations.unknown_expression == 1
 
 
-def test_json_booleans_are_not_accepted_in_the_advisory_list_either():
+def test_a_stray_unresolved_field_on_the_wire_is_ignored_not_rejected():
+    """D-123-F removed the field from the contract. An older prompt or a confused
+    route may still emit one; §2.3's rule is that a parseable response is never
+    discarded, so it is dropped in silence — and, being no longer decoded, it can
+    no longer contribute an unknown-expression violation either."""
     r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=[True]))
-    assert r.advisory_unresolved == ()
-    assert r.attempted_violations.unknown_expression == 1
+    assert r.classification == "usable"
+    assert [hit.slug for hit in r.hits] == ["warren-buffett"]
+    assert r.attempted_violations.unknown_expression == 0
 
 
 # --------------------------------------------------------------------------
@@ -386,36 +391,39 @@ def test_a_truncated_attempt_contributes_no_denominator():
 # --------------------------------------------------------------------------
 
 def test_accounting_splits_expressions_into_matched_and_unresolved():
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["B", "C"]))
-    a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
-    assert a.matched_expressions == ("warren-buffett",)
-    assert a.unresolved_expressions == ("owner-earnings", "moats")
-    assert a.selector_accounting_delta == 0
-
-
-def test_the_advisory_list_is_input_to_accounting_never_the_authority():
-    """The selector claims everything is unresolved while attributing a hit. The
-    controller's computation wins; the discrepancy is counted, never a failure."""
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["A", "B", "C"]))
-    a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
-    assert a.matched_expressions == ("warren-buffett",)
-    assert a.selector_accounting_delta == 1
-
-
-def test_a_missing_advisory_list_is_not_a_discrepancy_by_itself():
     r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
+    assert a.matched_expressions == ("warren-buffett",)
     assert a.unresolved_expressions == ("owner-earnings", "moats")
-    assert a.selector_accounting_delta == 0
 
 
-def test_advisory_labels_outside_the_vocabulary_are_bounded_and_counted():
-    # Both out of vocabulary and both upper-case: the case-fold test owns folding,
-    # so this fixture exercises one mechanism only.
-    r = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["Z", "Y"]))
+def test_the_accounting_is_computed_ONLY_from_what_the_selector_RETURNED():
+    """D-123-F. The selector used to send an advisory list answering a different
+    question — which keys nothing in EVIDENCE answers — and the controller counted
+    the difference as `selector_accounting_delta`, a series nothing ever read.
+
+    What remains is one question with one answer, and this asserts its shape: the
+    split is a function of the hits and the request, and nothing the model says
+    about unresolvedness can move it."""
+    with_claim = _validate(
+        _wire([{"slug": "warren-buffett", "matched": ["A"]}], unresolved=["A", "B", "C"])
+    )
+    without = _validate(_wire([{"slug": "warren-buffett", "matched": ["A"]}]))
+    assert resolve_accounting(
+        with_claim, expressions=EXPRESSIONS, max_results=MAX_RESULTS
+    ) == resolve_accounting(without, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
+
+
+def test_unresolved_is_a_claim_about_the_ANSWER_not_about_the_graph():
+    """The reading the spec now states explicitly. `unresolved_expressions` names
+    keys no RETURNED hit attributes — thin's retention and the stage-2 fill both
+    cut the space the selector ever saw, so it can never mean "the graph holds
+    nothing on this key"."""
+    r = _validate(_wire([{"slug": "warren-buffett", "matched": []}]))
     a = resolve_accounting(r, expressions=EXPRESSIONS, max_results=MAX_RESULTS)
-    assert a.unresolved_expressions == ("owner-earnings", "moats")
-    assert r.attempted_violations.unknown_expression == 2
+    assert a.unresolved_expressions == EXPRESSIONS
+    assert a.unattributed_hit_count == 1
+    assert a.unattributed_possible is True
 
 
 def test_cap_exhausted_possible_is_annotated_only_at_the_cap():

@@ -103,10 +103,13 @@ def test_the_prompts_MODULE_wins_over_the_prompts_DATA_directory():
     assert not (_PROMPT_DIR / "__init__.py").exists()
 
 
-@pytest.mark.parametrize("stage", STAGES)
-def test_version_comes_from_the_filename(stage):
+@pytest.mark.parametrize("stage,version", [("thin", "2"), ("fat", "3")])
+def test_version_comes_from_the_filename(stage, version):
+    """The stages version independently — thin stayed at v2 through D-123, whose
+    prose changes are fat-only. `test_prompts_golden.py` is where each pin lives;
+    this asserts the derivation, not the values."""
     template = load_template(stage)
-    assert template.ref.version == "2"
+    assert template.ref.version == version
     assert template.ref.repo_path.endswith(f"_v{template.ref.version}.txt")
 
 
@@ -381,13 +384,14 @@ def test_the_fat_schema_example_is_accepted_by_the_REAL_validator():
     # Every label in the example decodes — no unknown-expression coercion.
     assert validated.attempted_violations.unknown_expression == 0
     assert validated.hits[0].matched_expressions != ()
-    assert validated.advisory_unresolved != ()
 
 
 def test_the_fat_example_carries_exactly_the_two_wire_fields_per_selection():
-    """D8's compact wire: `slug` + `matched`, and no reinstated `evidence` field."""
+    """D8's compact wire: `slug` + `matched`, no reinstated `evidence` field — and
+    since D-123-F, no advisory `unresolved` either. `selections` is the whole
+    document."""
     document = json.loads(_schema_example(load_template("fat").system))
-    assert set(document) == {"selections", "unresolved"}
+    assert set(document) == {"selections"}
     assert set(document["selections"][0]) == {"slug", "matched"}
 
 
@@ -397,7 +401,7 @@ def test_the_fat_example_addresses_expressions_by_LETTER_label():
     0-vs-1 base ambiguity the decision removed."""
     document = json.loads(_schema_example(load_template("fat").system))
     labels = set(expression_labels(10))
-    shown = set(document["selections"][0]["matched"]) | set(document["unresolved"])
+    shown = set(document["selections"][0]["matched"])
     assert shown and shown <= labels
 
 

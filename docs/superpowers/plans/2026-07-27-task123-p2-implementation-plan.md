@@ -797,9 +797,49 @@ call per candidate, 3-call ceiling; measurements to the sibling calibration arti
 manifest untouched). P2.1f's pins are frozen, which was its precondition.
 
 ### Gate — calibration (end of P2, **Joseph fires** — D5, ledger #11)
-- [ ] §7 usage-reported measurement, one non-comparative call per candidate (3-call ceiling)
-- [ ] Measurements persisted to the **sibling calibration artifact** — fixture manifest untouched
-- [ ] Requires P2.1f frozen first (calibration is against the pinned prompts)
+- [x] **Harness built and dry-run verified** — `tools/task123_calibrate_estimator.py`
+      (+27 tests, mutation 16/16). Dry run is the default and `--fire` is required to spend;
+      the 3-call ceiling is an object that raises rather than a loop that happens to run three
+      times; the artifact is rewritten after every candidate so a late failure cannot lose an
+      earlier paid measurement; the checksummed fixture is fingerprinted before and after and
+      asserted unchanged.
+- [x] **Prose review published for the owner** — `docs/superpowers/specs/2026-07-28-task123-selector-prompt-prose-review.md`,
+      both fully-rendered templates plus the one input decision calibration needs (the query slot).
+- [x] **Prose review LANDED 2026-08-02 (Joseph).** Three findings absorbed; both templates
+      re-versioned `_v1` → `_v2`; `GOLDEN_DIGESTS` moved; blueprint **v0.15** raised
+      `SYSTEM_TEMPLATE_BUDGET_BYTES` 3,072 → 4,096 (the fix did not fit in 74 B).
+      **Correction, from the round-1 panel (codex F1 ≡ kimi F1, both independently):** the
+      "invalidates three paid measurements" clause above was **wrong for FAT**. The calibrator
+      renders **thin only** (`tools/task123_calibrate_estimator.py:199-201` — `render_thin_line`
+      + `render_thin_messages`; there is no fat call site in the file), so a **fat-only** prose
+      change costs a `_v3` bump and a re-pin but does **not** invalidate any paid measurement.
+      Only a **thin** change does. This materially lowers the cost of the open fat-precision item.
+- [x] §7 usage-reported measurement, one non-comparative call per candidate (3-call ceiling) —
+      **FIRED 2026-08-02**, 3/3 calls spent: gemini-3.6-flash 4,542 tok / 3.713 B-per-token;
+      deepseek-v4-flash 4,481 tok / 3.763; **gpt-5.4-mini FAILED — OpenAI account has no credits**
+      (429 `insufficient_quota`). Gate **two-thirds discharged, ruling PROVISIONAL**.
+- [x] Measurements persisted to the **sibling calibration artifact** — fixture manifest untouched
+      (fingerprinted before and after, asserted unchanged): `benchmark/truth/task123_search_calibration_v1.json`
+- [ ] **#126 sequencing, recorded rather than assumed (codex F3):** #126 is on record as "a
+      prerequisite of the **D5 calibration gate** and **P5a**, which consume real keys". D5 was
+      fired with the **empty query slot**, so it consumed **no** keys — the dependency is
+      *sidestepped*, not violated, and the measured density is the slug-heavy (conservative) end
+      since a real query block adds ≤ 4,096 B of prose, which tokenizes nearer 4. **Needs an
+      explicit owner ruling** that empty-slot calibration satisfies D5, or a re-fire after #126.
+- [x] Requires P2.1f frozen first (calibration is against the pinned prompts) — frozen
+
+**Figures at the v2 pins** (empty query slot, 163 identities): rendered **16,863 B** = system
+2,460 + user 14,403; ÷4 estimate **4,216 tokens**; all three D4 candidates pre-flight `fits`.
+(The pre-v2 figures were 16,849 B / 4,213 tokens.)
+
+**The prediction, and how it resolved.** Recorded before the run so it could not be rationalized
+afterwards: slug-heavy identity text would tokenize nearer **3** B/token than 4, showing the
+estimator to **underestimate** — an underestimated guardrail authorizes a request it was meant to
+block. **Direction held; magnitude did not.** Measured ~**3.74** B/token, so the shortfall is
+~**6-8%** (~1.07x), not the predicted 33% (1.333x) — and the 0.8 headroom absorbs 1.25x, so the
+guard holds. Re-worked at each candidate's own pre-flight boundary both **fit** (901,529 vs
+1,048,576; 848,515 vs 1,000,000). The "authorizes a request that does not fit" claim is
+**withdrawn on evidence**; `ESTIMATOR_BYTES_PER_TOKEN = 4` stands, provisionally.
 
 ## Decisions taken here
 

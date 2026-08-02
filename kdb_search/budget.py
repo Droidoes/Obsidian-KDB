@@ -116,13 +116,15 @@ def schema_maximum_fat_document(
 ) -> str:
     """Every value at its declared maximum. `expressions` is a parameter because
     the FAT maximum is a FUNCTION of `MAX_EXPRESSIONS`, not a free constant — which
-    is precisely why D9 moved that bound into the core contract."""
+    is precisely why D9 moved that bound into the core contract.
+
+    **The advisory `unresolved` list is no longer on the wire (D-123-F)**, so it is
+    no longer part of the maximum. The allowance does not move — it is an upper
+    bound and this can only shrink.
+    """
     labels = _max_labels(expressions)
     return _dump(
-        {
-            "selections": [{"slug": "x" * MAX_SLUG_LEN, "matched": labels}] * selections,
-            "unresolved": labels,
-        }
+        {"selections": [{"slug": "x" * MAX_SLUG_LEN, "matched": labels}] * selections}
     )
 
 

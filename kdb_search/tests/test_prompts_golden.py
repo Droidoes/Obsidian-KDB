@@ -70,14 +70,14 @@ from kdb_search.constants import M, MAX_RESULTS, SYSTEM_TEMPLATE_BUDGET_BYTES
 #: Text mode, so a CRLF checkout cannot move it — `prompts.py` rule 3.
 GOLDEN_DIGESTS: dict[Stage, str] = {
     "thin": "sha256:32f78aca99f91a44965db27149f1cbcf372ff15fd31e5dc0afdd950b6fee2fd4",
-    "fat": "sha256:3083b4745d9cf77419a32eb80f0a0f8585b901e93cd7e3bb78a9ae104858a7d9",
+    "fat": "sha256:18ecd6a469b443f2b9d8c36835cefbdd368f579353b4e606ba7e94c55e0b7a82",
 }
 
-GOLDEN_VERSIONS: dict[Stage, str] = {"thin": "2", "fat": "2"}
+GOLDEN_VERSIONS: dict[Stage, str] = {"thin": "2", "fat": "3"}
 
 GOLDEN_REPO_PATHS: dict[Stage, str] = {
     "thin": "kdb_search/prompts/selector_thin_v2.txt",
-    "fat": "kdb_search/prompts/selector_fat_v2.txt",
+    "fat": "kdb_search/prompts/selector_fat_v3.txt",
 }
 
 #: Bytes of each half as loaded (system) and as declared (user template, slots
@@ -85,7 +85,7 @@ GOLDEN_REPO_PATHS: dict[Stage, str] = {
 #: functions of the file, where the overhead is not.
 GOLDEN_HALF_BYTES: dict[Stage, tuple[int, int]] = {
     "thin": (2_460, 96),
-    "fat": (3_014, 94),
+    "fat": (2_939, 94),
 }
 
 #: `template_overhead_bytes` — system + rendered wrapper, content slots empty,
@@ -95,7 +95,7 @@ GOLDEN_HALF_BYTES: dict[Stage, tuple[int, int]] = {
 #: accumulating from before the first entity is offered a place in the stage-2 pool
 #: (`rendered_request_bytes("")`). It was `budget.fat_worst_case_request_bytes()`
 #: until v0.16, which is deleted with the static guarantee it served.
-GOLDEN_OVERHEAD_BYTES: dict[Stage, int] = {"thin": 2_521, "fat": 3_074}
+GOLDEN_OVERHEAD_BYTES: dict[Stage, int] = {"thin": 2_521, "fat": 2_999}
 
 #: The constants `template_overhead_bytes` substitutes. Pinned so that changing
 #: one fails HERE — naming the coupling — instead of silently moving the overhead.
