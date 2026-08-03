@@ -521,3 +521,20 @@ def test_every_ranged_row_in_the_list_is_a_row_that_exists() -> None:
     """Keeps the hand-transcribed set above honest against the case table: a typo
     would otherwise make the coverage check silently vacuous for that row."""
     assert RANGED_TABLE_ROWS <= {row[1] for row in ROWS}
+
+
+def test_every_terminal_carries_its_audit_back_to_the_caller(row):
+    """D-123-H. The receipt used to be built on every path and then dropped —
+    `_with_snapshot` lifted one hash off it and let the rest go out of scope, so
+    each search assembled a full record and kept 64 characters.
+
+    Asserted across the whole branch table rather than on the happy path,
+    because the zero-call terminals are the ones most likely to be missed: they
+    make no API call, so there is nothing to "return", and their emptiness IS
+    the finding the audit exists to record.
+    """
+    run, _, _, terminal = row
+    assert run.result.audit is not None, f"{terminal}: no audit reached the caller"
+    assert run.result.audit.search_snapshot_hash == run.result.telemetry.search_snapshot_hash, (
+        "the hash on the result must be the one from the audit it was lifted from"
+    )

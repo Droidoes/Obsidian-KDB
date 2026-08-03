@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from .artifact import SearchAuditPayload
 from .budget import Stage
 from .response import Violations
 from .types import (
@@ -93,8 +94,6 @@ class SearchTelemetry:
     all_entries_dropped_occurrences: int = 0
     unattributed_hit_count: int = 0
     query_truncated_occurrences: int = 0
-    #: Warn-only envelope sink: a failed artifact write never fails the search.
-    search_artifact_write_failures: int = 0
     retry_attempts: int = 0
     selector_failure_class: str | None = None
     budget_records: tuple[BudgetRecord, ...] = ()
@@ -138,6 +137,22 @@ class GraphSearchResult:
     status: Status
     execution: Execution
     telemetry: SearchTelemetry
+    #: The full audit record for this search (spec §5.1) — what was asked, the
+    #: exact bytes of every call attempt, what came back, and the two hashes.
+    #:
+    #: **An 8th field on a type spec §1.1 fixed at seven (D-123-H, Joseph,
+    #: 2026-08-02).** It was built on every terminal and then DROPPED: `search.py`
+    #: lifted `search_snapshot_hash` off it and let the rest go out of scope, so
+    #: every search assembled a complete receipt and kept 64 characters of it.
+    #:
+    #: Delivered as a field rather than through a writer callback, deliberately.
+    #: The alternative needed an `audit_sink` parameter, file I/O inside search,
+    #: and failure-counting machinery — for which `search_artifact_write_failures`
+    #: was declared and never implemented, and is now deleted with the rest of
+    #: that design. The caller takes this and writes what it likes; search does no
+    #: I/O. `None` only on a synthetic result — every production terminal carries
+    #: it, asserted by `assert_result_contract`.
+    audit: SearchAuditPayload | None = None
     evidence_status: EvidenceStatus = "not_applicable"
     #: `None` when no fat stage executed.
     body_coverage: float | None = None

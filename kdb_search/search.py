@@ -669,15 +669,21 @@ def _budget_record(verdict: budget.BudgetVerdict, spec: ModelSpec) -> BudgetReco
 def _with_snapshot(
     result: GraphSearchResult, audit: SearchAuditPayload
 ) -> GraphSearchResult:
-    """Carry the built audit's snapshot hash onto the result.
+    """Carry the built audit onto the result — whole (D-123-H).
 
-    The one part of the audit with a ratified home on the result
-    (`SearchTelemetry.search_snapshot_hash`). This is also what makes the
-    zero-call audit build *observable*, and therefore tested rather than dead
-    code, without inventing a delivery surface P2.4 has yet to decide.
+    It used to carry only `search_snapshot_hash`, the one part with a ratified
+    home on the result, "without inventing a delivery surface P2.4 has yet to
+    decide". P3a is that decision (Joseph, 2026-08-02): the receipt rides back on
+    the result, and the caller writes whatever log it wants. Search still does no
+    I/O of its own.
+
+    The hash stays where it is as well. It is ratified onto `SearchTelemetry` and
+    is the field the KPI series reads; making callers reach through `audit` for it
+    would move a ratified field for no gain.
     """
     return replace(
         result,
+        audit=audit,
         telemetry=replace(
             result.telemetry, search_snapshot_hash=audit.search_snapshot_hash
         ),
