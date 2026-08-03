@@ -439,3 +439,53 @@ def test_classifier_normalizes_empty_stamp_directly():
         "via-ci": ("canon", None),
         "via-alias": ("canon", None),
     }
+
+
+# ---------------------------------------------------------------------------
+# Task #123 P3a: entity_first_run_ids — batched provenance stamp read
+# ---------------------------------------------------------------------------
+
+
+def test_entity_first_run_ids_known_active(prov_graph):
+    assert queries.entity_first_run_ids(prov_graph, ["value-investing"]) == {
+        "value-investing": "r-direct",
+    }
+
+
+def test_entity_first_run_ids_empty_stamp_is_none(prov_graph):
+    assert queries.entity_first_run_ids(prov_graph, ["nostamp"]) == {"nostamp": None}
+
+
+def test_entity_first_run_ids_null_stamp_is_none(prov_graph):
+    prov_graph.execute(
+        "MATCH (e:Entity {slug: 'buffett'}) SET e.first_run_id = NULL")
+    assert queries.entity_first_run_ids(prov_graph, ["buffett"]) == {"buffett": None}
+
+
+def test_entity_first_run_ids_unknown_slug_is_none(prov_graph):
+    assert queries.entity_first_run_ids(prov_graph, ["no-such-slug"]) == {
+        "no-such-slug": None,
+    }
+
+
+def test_entity_first_run_ids_inactive_slug_is_none(prov_graph):
+    assert queries.entity_first_run_ids(prov_graph, ["dead"]) == {"dead": None}
+
+
+def test_entity_first_run_ids_mixed_batch(prov_graph):
+    slugs = ["value-investing", "nostamp", "dead", "no-such-slug", "warren-buffett"]
+    assert queries.entity_first_run_ids(prov_graph, slugs) == {
+        "value-investing": "r-direct",
+        "nostamp": None,
+        "dead": None,
+        "no-such-slug": None,
+        "warren-buffett": "r-target",
+    }
+
+
+def test_entity_first_run_ids_empty_list_issues_no_query(prov_graph, monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("query issued for empty input")
+
+    monkeypatch.setattr(prov_graph, "execute", _boom)
+    assert queries.entity_first_run_ids(prov_graph, []) == {}

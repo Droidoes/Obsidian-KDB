@@ -196,9 +196,10 @@ def graph_search(
     Typed, deliberate outcomes are `status` values. An **unexpected** exception is
     a defect and propagates — there is no catch-all (§2.1 fail-hard posture,
     Joseph's #121 ruling). `body_reader` is required rather than defaulted:
-    `get_body` lives in `kdb_graph`, which this package must not import (B1), so
-    the "default: get_body bound to the caller's vault_root" in §2.1 is the
-    *adapter's* default, not the core's.
+    binding the caller's `vault_root` to `get_body` (common/wiki_io.py) is the
+    *adapter's* job — the core stays consumer-neutral, so the "default: get_body
+    bound to the caller's vault_root" in §2.1 is the adapter's default, not the
+    core's.
     """
     # 1. Request validity. Before any rendering, body read, call or StageRecord.
     request.query.validate()

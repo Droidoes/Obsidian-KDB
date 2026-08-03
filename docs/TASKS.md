@@ -104,7 +104,12 @@ from `docs/session-handoff-2026-08-02.md` §3–§4 ahead of the P3a blueprint):
   deepseek-v4-flash / qwen3.7-flash the named candidates. Split-model stays
   parked in #118. Owner-stated envelope: 1M ctx in / 64K out-token (pool
   entries currently register 384K / 128K max_output — adjust to 64K during
-  P3a implementation).
+  P3a implementation). **SEAT SETTLED 2026-08-03: qwen3.7-flash.** Decision
+  input: the P3a.0 pre-run cost projection
+  (`docs/superpowers/specs/2026-08-03-task123-p3a-cost-projection.md`) —
+  cost does not constrain the seat ($2–$40 vault-scale), qwen3.7-flash is
+  ~2.8× cheaper at EXPECTED with identical token density; quality-neutral
+  default per the projection read. The 64K envelope edit landed in P3a.0.
 
 ---
 

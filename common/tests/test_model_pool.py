@@ -244,6 +244,17 @@ def test_active_entries_carry_byte_identical_routes():
         assert spec.route == route, f"{model_id}: {spec.route} != {route}"
 
 
+# ---------- Task #123 P3a.0: pass-1.5 seat candidates (R-P3a-6, §4.8) ----------
+
+def test_pass15_seat_candidates_carry_64k_output_envelope():
+    """Both pass-1.5 seat candidates resolve with the 64K output envelope and
+    the 1M ctx_window (selector route preconditions, budget.resolve_selector_route)."""
+    for model_id in ("deepseek-v4-flash", "qwen3.7-flash"):
+        spec = resolve_models_json(model_id)
+        assert spec.max_output_tokens == 65536, model_id
+        assert spec.ctx_window == 1_000_000, model_id
+
+
 import common.model_pool as mp
 
 
