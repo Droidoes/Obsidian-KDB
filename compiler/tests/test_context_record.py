@@ -14,6 +14,7 @@ from compiler.context_record import (
     ContextFailureInput,
     ContextRecordError,
     ContextRecordV1,
+    KeyOutcomeV1,
     build_context_record_v1,
     parse_context_record_v1,
 )
@@ -73,7 +74,10 @@ def test_factory_complete_maps_telemetry_fields():
     assert rec.run_id == "run-1"
     assert rec.status == "complete"
     assert rec.source_id == "KDB/raw/s.md"
-    assert rec.key_outcomes == _telemetry().key_outcomes
+    assert rec.key_outcomes == [
+        KeyOutcomeV1("k1", "resolved_t2_seed", "k1-canon", "r0"),
+        KeyOutcomeV1("k2", "unresolved", None, None),
+    ]
     assert rec.candidate_universe_size == 7
     assert rec.cold_start is False
     assert rec.max_hops == 1
