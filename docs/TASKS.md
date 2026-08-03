@@ -81,6 +81,31 @@ Verified: all 39 probes, every label and slug, all five thresholds and every
 aggregation rule byte-identical to the ratified version; totals still 89
 relevant / 216 acceptable.
 
+Task #123 P3a session rulings (2026-08-03, Joseph — settles the open questions
+from `docs/session-handoff-2026-08-02.md` §3–§4 ahead of the P3a blueprint):
+
+- **Strategic fork (handoff #8) — SETTLED: continue #123 through P3a.** The
+  1,586-note vault ingestion waits, and then runs instrumented (full chain).
+- **Replace, not supplement (handoff item 2) — SETTLED: REPLACE.** Semantic
+  selection is the sole T2 seeding path; deterministic PK/regex seeding keeps
+  no seat at the table (founding evidence: PK/regex could not identify search
+  entries for warren-buffett / charlie-munger). Full deletion scope ratified:
+  STRUCTURED / LEGACY / LAYERED T2 modes, the regex machinery, and the
+  cold-start 2-hop widening. T1 (SUPPORTS edges) stays. **T2 and T3 are either
+  Pass-1.5-generated or empty** — empty T1/T2/T3 is valid; Pass-2 compiles cold
+  (already proven by benchmark cold-compilation on an empty ContextSnapshot).
+  This supersedes spec D1's P3b timing ("deletion lands only after truth-set
+  experiments pass") — owner ruling, 2026-08-03.
+- **First sandbox run (handoff item 5) — full chain only:** the first
+  Vault-in-place-test-run E2E from now on is Pass-1 + Pass-1.5 + Pass-2; no
+  interim current-pipeline run. That run doubles as the prompt-1.3.0 first
+  live fire and the pre-vault smoke.
+- **Model seat — single model across all three passes initially**;
+  deepseek-v4-flash / qwen3.7-flash the named candidates. Split-model stays
+  parked in #118. Owner-stated envelope: 1M ctx in / 64K out-token (pool
+  entries currently register 384K / 128K max_output — adjust to 64K during
+  P3a implementation).
+
 ---
 
 ## Closed
