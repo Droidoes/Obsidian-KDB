@@ -18,6 +18,7 @@ import pytest
 
 from kdb_search.artifact import (
     ARTIFACT_SCHEMA_VERSION,
+    SEARCH_ENVELOPE_SCHEMA_VERSION,
     SPACE_MANIFEST_REF,
     TITLE_ONLY_MARKER,
     ModelStamp,
@@ -392,10 +393,17 @@ def test_the_core_payload_carries_nothing_consumer_specific():
 
 
 def test_the_envelope_adds_the_pass_1_5_specifics_around_the_same_core():
+    """§5.1 (B9): the wrapper is the discriminated receipt union — its OWN
+    schema_version, the pass-1.5 specifics, and a receipt of either kind."""
     envelope = SearchRunEnvelope(
-        audit=_payload(), run_id="run-1", source_id="src-1", intra_run_order=3,
+        schema_version=SEARCH_ENVELOPE_SCHEMA_VERSION,
+        run_id="run-1",
+        source_id="src-1",
+        intra_run_order=3,
+        receipt_kind="full",
+        receipt=_payload(),
     )
-    assert envelope.audit.schema_version == ARTIFACT_SCHEMA_VERSION
+    assert envelope.receipt.schema_version == ARTIFACT_SCHEMA_VERSION
     assert envelope.artifact_path is None, "null until the write succeeds — warn-only sink"
     assert envelope.intra_run_order == 3
 

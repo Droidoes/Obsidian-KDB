@@ -386,6 +386,88 @@ class ContextBuildResult:
     telemetry: ContextTelemetry   # persistence-facing — never serialized into the prompt
 
 
+# ---------- #123 P3a pass-1.5 search summary (blueprint §5.2) ----------
+
+QueryKind = Literal["state_b", "state_c"]
+MatchRecency = Literal["cohort", "pre_run", "age_unknown"]
+
+
+@dataclass(frozen=True)
+class SearchHitSummary:
+    """One validated selector hit + its provenance stamp (§5.2). first_run_id
+    is None when the graph carries no stamp — match_recency is then
+    age_unknown (never guessed)."""
+    slug: str
+    first_run_id: str | None
+    match_recency: MatchRecency
+    matched_expressions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SearchBudgetRecord:
+    """Persistence-facing mirror of one stage's budget decision (§4.5) —
+    kdb_search.result.BudgetRecord's fields, redeclared here because common
+    is a LEAF package and cannot import kdb_search."""
+    stage: str
+    budget_estimate_tokens: int
+    selector_window: int
+    headroom_factor: float
+    visible_output_allowance: int
+    hidden_output_reserve: int
+    fits: bool
+    detected: str
+    budget_side: str
+    finish_reason_raw: str | None
+    finish_reason_normalized: str | None
+
+
+@dataclass(frozen=True)
+class SearchStageSplit:
+    """Per-stage {thin, fat} spend split (§4.5). provider_input_tokens is None
+    when any attempt's count is unknown — never zero-coerced (B10)."""
+    stage: str                       # "thin" | "fat"
+    attempts: int
+    provider_input_tokens: int | None
+    cost_usd: float
+
+
+@dataclass(frozen=True)
+class SearchSummary:
+    """§5.2 — the adapter's V2 search telemetry product. Persistence-facing;
+    never prompt-serialized. Built immediately after graph_search returns,
+    before failure-sensitive post-processing, so context_failed.search always
+    carries the completed search summary when a search ran (§4.1 step 6)."""
+    search_ran: bool
+    query_kind: QueryKind
+    status: str
+    failure_class: str | None
+    execution: str
+    evidence_status: str
+    body_coverage: float | None
+    query_truncated_indices: tuple[int, ...]
+    eligible_space_size: int
+    stage1_retained: int
+    stage2_pool_size: int
+    returned_entries: int
+    valid_entry_yield: float | None
+    unattributed_hit_count: int
+    retry_attempts: int
+    watched: tuple[str, ...]
+    concordance: float | None
+    selector_provider: str
+    selector_model: str
+    selector_route: str
+    latency_ms: int
+    cost_usd: float
+    budget_records: tuple[SearchBudgetRecord, ...]
+    stage2_budget_bound: bool
+    stage_splits: tuple[SearchStageSplit, ...]
+    artifact_path: str | None
+    search_snapshot_hash: str | None
+    space_entity_count: int
+    hits: tuple[SearchHitSummary, ...]
+
+
 @dataclass
 class CompileJob:
     """One unit of compile work: a source_id + resolved path + its
