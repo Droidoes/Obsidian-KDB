@@ -825,6 +825,12 @@ manifest untouched). P2.1f's pins are frozen, which was its precondition.
       candidate turned out to be the *least* dense of the three, so codex F4's
       cross-provider-extrapolation objection pointed at the safest route — the objection was
       right to raise and the answer was benign.
+      **FOURTH FAMILY ADDED 2026-08-02 — `qwen3.7-flash` 4,448 tok / 3.7911.** Four
+      *independent tokenizer families* (Google, DeepSeek, Qwen, OpenAI) now span just
+      **3.7127–3.8308 — a 3.2% spread**, 16% clear of the 3.20 threshold. codex F4's
+      objection was precisely that one family cannot predict another; four clustering this
+      tightly is the strongest available answer to it. The call also confirmed
+      `enable_thinking: false` empirically and closed the DashScope non-streaming watch-item.
       **`gpt-5.6-luna` rejected on the same run** (registered, fired, removed): a 400 —
       exhausted the entire 36,000-token thin envelope without finishing, D9's selector-admission
       signal. Recorded in `docs/reference/model-provider-api-calls.md`; not left in the pool.

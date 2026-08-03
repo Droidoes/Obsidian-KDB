@@ -57,5 +57,20 @@
     "price_out": 0.87,
     "thinking": "disabled",
     "tokens_lte_bytes": true
+  },
+  {
+    "id": "qwen3.7-flash",
+    "provider": "alibaba-sgp",
+    "model": "qwen3.7-flash",
+    "api_call_type": "openai_compat",
+    "endpoint": "https://ws-0636j2jefsa9tgw3.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    "api_key_env": "QWEN_SGP_API_KEY",
+    "ctx_window": 1000000,
+    "max_output_tokens": 128000,
+    "thinking": "disabled",
+    "temperature": null,
+    "price_in": 0.03,
+    "price_out": 0.13,
+    "tokens_lte_bytes": true
   }
 ]

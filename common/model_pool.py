@@ -29,8 +29,21 @@ WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
 # go here — never guess a param (it would fire on a paid call). Unmapped providers
 # are a no-op: anthropic/ollama (thinking off by default / no thinking mode), and
 # gemini/openai/xai (TODO: verify their disable param before adding).
+#: Qwen's disable param, defined ONCE and bound under every alibaba region key
+#: below. Regions are separate providers (different credentials — Joseph,
+#: 2026-08-02), but they speak one API, so the param must not be copied per
+#: region: two literals drift, and a drifted entry here fails SILENTLY — an
+#: unmapped or wrong provider is a no-op, thinking stays on, and the first
+#: symptom is a blown output envelope on a paid call (see gpt-5.6-luna,
+#: `docs/reference/model-provider-api-calls.md`).
+_QWEN_THINKING_OFF = {"enable_thinking": False}
+
 _THINKING_DISABLE_EXTRA_BODY = {
-    "alibaba": {"enable_thinking": False},
+    "alibaba-us": _QWEN_THINKING_OFF,
+    "alibaba-sgp": _QWEN_THINKING_OFF,
+    #: Pre-region identity, kept so a revived `models_dropped.json` entry does not
+    #: silently lose its thinking-off. Archived benchmark runs also carry it.
+    "alibaba": _QWEN_THINKING_OFF,
     "deepseek": {"thinking": {"type": "disabled"}},
     # z.ai GLM: `thinking.type` enabled|disabled (default enabled) — verified
     # against docs.z.ai GLM-5-Turbo guide (same shape as deepseek's param).
