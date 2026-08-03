@@ -240,6 +240,52 @@ param ever fires on a paid call**.
 
 ---
 
+## Rejected routes — measured, not assumed
+
+### `gpt-5.6-luna` (OpenAI) — REGISTERED AND REMOVED 2026-08-02
+
+Attractive on paper and **not admissible as a #123 selector on the ratified envelope.**
+Recorded here rather than left in `models.json`, so the next reader does not re-add it and
+re-discover the same 400.
+
+| | gpt-5.4-mini | gpt-5.6-luna |
+|---|---:|---:|
+| context | 400,000 | 1,050,000 |
+| max output | 128,000 | 128,000 |
+| $/M in | 0.75 | **0.20** |
+| $/M out | 4.50 | **1.20** |
+
+3.75x cheaper both ways, so it looked like a straight replacement. **What actually happened
+on its first and only call** (D5 calibration, thin prompt, frozen 163-entity fixture):
+
+```
+BadRequestError 400 — Could not finish the message because max_tokens or
+model output limit was reached. Please try again with higher max_tokens.
+```
+
+**Not an input rejection — the request was accepted.** It exhausted the whole
+`PROVIDER_MAX_TOKENS_THIN` envelope of **36,000** tokens (20,000 visible + D9's 16,000 hidden
+reserve) without emitting a complete answer, for a slug-shortlisting task the other three
+candidates finish in a few hundred visible tokens. That is precisely the D9 **selector-admission
+signal**: *"a route that trips it is not a viable selector — a D7 finding, not a production gate."*
+
+**Two readings, and the distinction is not yet settled:**
+1. `extra_body: {"reasoning_effort": "low"}` was silently ignored, i.e. the parameter was
+   mirrored from `gpt-5.4-mini` and is wrong for this model; or
+2. luna reasons far more heavily than `gpt-5.4-mini` even at low effort.
+
+**The published page states no tokenizer, no reasoning-effort control and no completion-tokens
+parameter**, so `use_completion_tokens` and `reasoning_effort` were mirrored rather than verified
+— the "no guessed param on a paid call" rule was knowingly stretched on the grounds that an
+unsupported parameter fails **loudly** (400) rather than yielding a plausible wrong number.
+It did fail loudly. **Before re-adding it, confirm what reasoning control it actually accepts:**
+if `reasoning_effort` is not its parameter, this failure says nothing about the model itself.
+
+(`tokens_lte_bytes: true` was declared on the family theorem — every OpenAI encoding is
+byte-level BPE — which is the same basis `gpt-5.4-mini`'s declaration rests on, and is unaffected.)
+
+---
+
 ## Open follow-ups
 - ⚠️ Verify + add thinking/reasoning disable params for **gemini, openai, xai** (the three reasoning-capable entries currently running thinking-on). Until verified, they stay no-op per the "no guessed param on a paid call" rule.
 - Decide whether `reasoning_effort` is ever a lever we want (only relevant for thinking-enabled configs).

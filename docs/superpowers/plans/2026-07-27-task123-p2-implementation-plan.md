@@ -815,9 +815,19 @@ manifest untouched). P2.1f's pins are frozen, which was its precondition.
       change costs a `_v3` bump and a re-pin but does **not** invalidate any paid measurement.
       Only a **thin** change does. This materially lowers the cost of the open fat-precision item.
 - [x] §7 usage-reported measurement, one non-comparative call per candidate (3-call ceiling) —
-      **FIRED 2026-08-02**, 3/3 calls spent: gemini-3.6-flash 4,542 tok / 3.713 B-per-token;
-      deepseek-v4-flash 4,481 tok / 3.763; **gpt-5.4-mini FAILED — OpenAI account has no credits**
-      (429 `insufficient_quota`). Gate **two-thirds discharged, ruling PROVISIONAL**.
+      **FIRED 2026-08-02. GATE FULLY DISCHARGED — the ruling is no longer provisional.**
+      gemini-3.6-flash 4,542 tok / **3.7127** B-per-token; deepseek-v4-flash 4,481 tok /
+      **3.7632**; gpt-5.4-mini 4,402 tok / **3.8308** (first attempt 429 `insufficient_quota`;
+      re-fired after credits, merged in by the D5 artifact merge guard, which preserved both
+      already-paid rows through a run in which every call failed — its first real exercise).
+      Worst measured under-estimate **1.077x** against the **1.25x** headroom; failure threshold
+      is **3.20** B/token. **`ESTIMATOR_BYTES_PER_TOKEN = 4` STANDS.** Note the unmeasured
+      candidate turned out to be the *least* dense of the three, so codex F4's
+      cross-provider-extrapolation objection pointed at the safest route — the objection was
+      right to raise and the answer was benign.
+      **`gpt-5.6-luna` rejected on the same run** (registered, fired, removed): a 400 —
+      exhausted the entire 36,000-token thin envelope without finishing, D9's selector-admission
+      signal. Recorded in `docs/reference/model-provider-api-calls.md`; not left in the pool.
 - [x] Measurements persisted to the **sibling calibration artifact** — fixture manifest untouched
       (fingerprinted before and after, asserted unchanged): `benchmark/truth/task123_search_calibration_v1.json`
 - [x] **#126 sequencing — RULED 2026-08-02 (Joseph): empty-slot calibration SATISFIES D5.**
