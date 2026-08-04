@@ -271,12 +271,18 @@ class CompileSourceResult:
     owns stage-8 apply-pages, provenance, manifest commit, and graph-sync.
     error non-None ==> pre-commit failure (D-91-13 case a); cr is None and
     `failure_stage` in {context, compile, validate, canonicalize} routes the
-    orchestrator's case-aware summary without string-parsing."""
+    orchestrator's case-aware summary without string-parsing.
+    #123 P3a.4 (§4.7): `search_attempted` / `search_envelope_written` are the
+    pass-1.5 counting channel — the orchestrator accumulates them into the
+    run header's searches_attempted / searches_written for the emit_kpis
+    reconciliation (attempted − written == envelope write failures)."""
     cr: Optional[dict]
     failure_stage: Optional[str] = None
     exception_type: Optional[str] = None
     error: Optional[str] = None
     artifacts: dict[str, str] = field(default_factory=dict)
+    search_attempted: bool = False
+    search_envelope_written: bool = False
 
     @property
     def ok(self) -> bool:
@@ -332,24 +338,9 @@ class ContextSnapshot:
 
 
 # ---------- Task #122 event-time context capture (shared vocabulary) ----------
-
-KeyDisposition = Literal["unresolved", "resolved_t2_seed", "resolved_already_t1",
-                         "resolved_out_of_scope", "resolved_duplicate_seed"]
-ConfiguredT2Mode = Literal["structured", "layered", "legacy"]
-EffectiveT2Strategy = Literal["structured_keys", "explicit_empty", "legacy_regex", "layered_union"]
-
-
-@dataclass(frozen=True)
-class KeyOutcome:
-    """One emitted search key's load-time outcome. `resolved` is the canonical
-    slug (None iff disposition == "unresolved"); `target_first_run_id` is the
-    resolution target's first_run_id provenance stamp (None when the graph
-    carries none — never an empty string; normalization happens at the
-    resolver, never at parse)."""
-    key: str
-    disposition: KeyDisposition
-    resolved: str | None
-    target_first_run_id: str | None
+# #123 P3a.2b: KeyDisposition / ConfiguredT2Mode / EffectiveT2Strategy /
+# KeyOutcome retired with the legacy T2 family (blueprint §7) — the per-key
+# outcome vocabulary now lives in compiler.context_record.KeyOutcomeV2.
 
 
 @dataclass(frozen=True)
@@ -364,26 +355,113 @@ class TierRecord:
 @dataclass(frozen=True)
 class ContextTelemetry:           # builder-owned — NO run_id, NO schema metadata
     """The persistence-facing product of build_context_snapshot: what the
-    builder observed at event time, before any record/run metadata is added."""
+    builder observed at event time, before any record/run metadata is added.
+
+    #123 P3a.2b: configured_t2_mode / effective_t2_strategy / max_hops are
+    retired with the legacy T2 family (blueprint §7); `search` carries the
+    pass-1.5 SearchSummary (defined below — annotations resolve lazily).
+    `key_outcomes` elements are compiler.context_record.KeyOutcomeV2 — common
+    is a LEAF package and cannot import the compiler, so the field is a bare
+    list by annotation, by contract."""
     source_id: str
-    configured_t2_mode: ConfiguredT2Mode
-    effective_t2_strategy: EffectiveT2Strategy
     keys_emitted: list[str]
-    key_outcomes: list[KeyOutcome]
+    key_outcomes: list
     t1: TierRecord
     t2: TierRecord
     t3: TierRecord
     candidate_universe_size: int
     domain_scope: str | None
     cold_start: bool
-    max_hops: int
     page_cap: int
+    search: SearchSummary | None
 
 
 @dataclass(frozen=True)
 class ContextBuildResult:
     snapshot: ContextSnapshot     # prompt-facing — unchanged
     telemetry: ContextTelemetry   # persistence-facing — never serialized into the prompt
+
+
+# ---------- #123 P3a pass-1.5 search summary (blueprint §5.2) ----------
+
+QueryKind = Literal["state_b", "state_c"]
+MatchRecency = Literal["cohort", "pre_run", "age_unknown"]
+
+
+@dataclass(frozen=True)
+class SearchHitSummary:
+    """One validated selector hit + its provenance stamp (§5.2). first_run_id
+    is None when the graph carries no stamp — match_recency is then
+    age_unknown (never guessed)."""
+    slug: str
+    first_run_id: str | None
+    match_recency: MatchRecency
+    matched_expressions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SearchBudgetRecord:
+    """Persistence-facing mirror of one stage's budget decision (§4.5) —
+    kdb_search.result.BudgetRecord's fields, redeclared here because common
+    is a LEAF package and cannot import kdb_search."""
+    stage: str
+    budget_estimate_tokens: int
+    selector_window: int
+    headroom_factor: float
+    visible_output_allowance: int
+    hidden_output_reserve: int
+    fits: bool
+    detected: str
+    budget_side: str
+    finish_reason_raw: str | None
+    finish_reason_normalized: str | None
+
+
+@dataclass(frozen=True)
+class SearchStageSplit:
+    """Per-stage {thin, fat} spend split (§4.5). provider_input_tokens is None
+    when any attempt's count is unknown — never zero-coerced (B10)."""
+    stage: str                       # "thin" | "fat"
+    attempts: int
+    provider_input_tokens: int | None
+    cost_usd: float
+
+
+@dataclass(frozen=True)
+class SearchSummary:
+    """§5.2 — the adapter's V2 search telemetry product. Persistence-facing;
+    never prompt-serialized. Built immediately after graph_search returns,
+    before failure-sensitive post-processing, so context_failed.search always
+    carries the completed search summary when a search ran (§4.1 step 6)."""
+    search_ran: bool
+    query_kind: QueryKind
+    status: str
+    failure_class: str | None
+    execution: str
+    evidence_status: str
+    body_coverage: float | None
+    query_truncated_indices: tuple[int, ...]
+    eligible_space_size: int
+    stage1_retained: int
+    stage2_pool_size: int
+    returned_entries: int
+    valid_entry_yield: float | None
+    unattributed_hit_count: int
+    retry_attempts: int
+    watched: tuple[str, ...]
+    concordance: float | None
+    selector_provider: str
+    selector_model: str
+    selector_route: str
+    latency_ms: int
+    cost_usd: float
+    budget_records: tuple[SearchBudgetRecord, ...]
+    stage2_budget_bound: bool
+    stage_splits: tuple[SearchStageSplit, ...]
+    artifact_path: str | None
+    search_snapshot_hash: str | None
+    space_entity_count: int
+    hits: tuple[SearchHitSummary, ...]
 
 
 @dataclass

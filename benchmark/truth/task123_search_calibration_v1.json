@@ -1,0 +1,55 @@
+{
+  "artifact": "task123_search_calibration_v1",
+  "generated_at": "2026-08-02T21:00:47-04:00",
+  "decision": "D5 \u2014 estimator calibration contract (spec \u00a70, blueprint \u00a77)",
+  "counting_source": "provider_reported_usage",
+  "query_source": "empty_query_slot",
+  "entity_count": 163,
+  "rendered_bytes": 16863,
+  "estimator_bytes_per_token_under_test": 4,
+  "measurements": [
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:ebf5acc6b45d0bc0fc1bb728467248571e97c9b67d1ca0d9b5dc6ba5c206d712",
+      "prompt_version": "2",
+      "model_id": "gemini-3.6-flash",
+      "input_tokens": 4542,
+      "bytes_per_token": 3.7127
+    },
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:ebf5acc6b45d0bc0fc1bb728467248571e97c9b67d1ca0d9b5dc6ba5c206d712",
+      "prompt_version": "2",
+      "model_id": "deepseek-v4-flash",
+      "input_tokens": 4481,
+      "bytes_per_token": 3.7632
+    },
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:0ccfe401c4c3dfbbb3e0aec351b030af53766d50f1732bf42df96d8e27aa3df4",
+      "prompt_version": "2",
+      "model_id": "gpt-5.4-mini",
+      "input_tokens": 4402,
+      "bytes_per_token": 3.8308
+    },
+    {
+      "counting_source": "provider_reported_usage",
+      "fixture_version": "1",
+      "input_sha256": "sha256:0ccfe401c4c3dfbbb3e0aec351b030af53766d50f1732bf42df96d8e27aa3df4",
+      "prompt_version": "2",
+      "model_id": "qwen3.7-flash",
+      "input_tokens": 4448,
+      "bytes_per_token": 3.7911
+    }
+  ],
+  "failures": [
+    {
+      "model_id": "gpt-5.6-luna",
+      "stage": "call",
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': 'Could not finish the message because max_tokens or model output limit was reached. Please try again with higher max_tokens.', 'type': 'invalid_request_error', 'param': None, 'code': None}}"
+    }
+  ]
+}

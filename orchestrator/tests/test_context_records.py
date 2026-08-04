@@ -8,10 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from common.types import ContextTelemetry, KeyOutcome, TierRecord
+from common.types import TierRecord
 from compiler.context_record import (
-    ContextFailureInput,
-    build_context_record_v1,
+    ContextRecordV1,
+    ContextRecordV2,
+    KeyOutcomeV1,
+    KeyOutcomeV2,
 )
 from orchestrator.emit_kpis import (
     load_context_records,
@@ -20,14 +22,19 @@ from orchestrator.emit_kpis import (
 
 
 # ---------- payload builders ----------
+# #123 P3a.2b: the V1 factory is retired (parse-only history) — V1 payloads
+# are built directly here.
 
-def _telemetry(source_id: str) -> ContextTelemetry:
-    return ContextTelemetry(
+def _complete_payload(source_id: str, run_id: str = "run-1") -> dict:
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
         source_id=source_id,
+        status="complete",
         configured_t2_mode="structured",
         effective_t2_strategy="structured_keys",
         keys_emitted=["k1"],
-        key_outcomes=[KeyOutcome("k1", "resolved_t2_seed", "k1", "r0")],
+        key_outcomes=[KeyOutcomeV1("k1", "resolved_t2_seed", "k1", "r0")],
         t1=TierRecord(0, 0, []),
         t2=TierRecord(1, 1, ["k1"]),
         t3=TierRecord(0, 0, []),
@@ -36,7 +43,7 @@ def _telemetry(source_id: str) -> ContextTelemetry:
         cold_start=True,
         max_hops=2,
         page_cap=50,
-    )
+    ).to_dict()
 
 
 def _write_record(context_dir: Path, name: str, payload: dict) -> Path:
@@ -46,19 +53,48 @@ def _write_record(context_dir: Path, name: str, payload: dict) -> Path:
     return p
 
 
-def _complete_payload(source_id: str, run_id: str = "run-1") -> dict:
-    return build_context_record_v1(
-        run_id=run_id, status="complete",
-        telemetry=_telemetry(source_id)).to_dict()
-
-
 def _failed_payload(source_id: str, run_id: str = "run-1") -> dict:
-    return build_context_record_v1(
-        run_id=run_id, status="context_failed",
-        failure_input=ContextFailureInput(
-            source_id=source_id, configured_t2_mode="structured",
-            effective_t2_strategy="structured_keys", keys_emitted=["k1"],
-            domain_scope=None, page_cap=50)).to_dict()
+    zero = TierRecord(0, 0, [])
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
+        source_id=source_id,
+        status="context_failed",
+        configured_t2_mode="structured",
+        effective_t2_strategy="structured_keys",
+        keys_emitted=["k1"],
+        key_outcomes=[],
+        t1=zero,
+        t2=zero,
+        t3=zero,
+        candidate_universe_size=None,
+        domain_scope=None,
+        cold_start=None,
+        max_hops=None,
+        page_cap=50,
+    ).to_dict()
+
+
+def _v2_payload(source_id: str, run_id: str = "run-1") -> dict:
+    """One minimal complete V2 payload (search=None — no search ran)."""
+    return ContextRecordV2(
+        schema_version=2,
+        run_id=run_id,
+        source_id=source_id,
+        status="complete",
+        keys_emitted=["k1"],
+        key_outcomes=[KeyOutcomeV2(
+            expression="k1", status="matched", annotation=None,
+            matched_first_run_id="r0", match_recency="pre_run")],
+        t1=TierRecord(0, 0, []),
+        t2=TierRecord(1, 1, ["k1"]),
+        t3=TierRecord(0, 0, []),
+        candidate_universe_size=3,
+        domain_scope="value-investing",
+        cold_start=False,
+        page_cap=50,
+        search=None,
+    ).to_dict()
 
 
 # ---------- load_context_records ----------
@@ -82,12 +118,49 @@ def test_load_malformed_becomes_issue_no_record(tmp_path):
     _write_record(ctx_dir, "good.json", _complete_payload("src-a"))
     bad = ctx_dir / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
-    strict = _write_record(ctx_dir, "strict.json", {"schema_version": 2})
+    strict = _write_record(ctx_dir, "strict.json", {"schema_version": 99})
     result = load_context_records(ctx_dir, "run-1")
     assert [r.source_id for r in result.records] == ["src-a"]
     reasons = {(i.path, i.reason) for i in result.issues}
     assert reasons == {(str(bad), "malformed"), (str(strict), "malformed")}
     assert all(i.detail for i in result.issues)
+
+
+def test_load_v2_record_dispatches_to_v2_parser(tmp_path):
+    """§4.5 dispatching loader: a schema_version=2 file parses via the V2
+    reader and lands as a ContextRecordV2 — zero issues."""
+    ctx_dir = tmp_path / "context"
+    _write_record(ctx_dir, "v2.json", _v2_payload("src-v2"))
+    result = load_context_records(ctx_dir, "run-1")
+    assert result.issues == []
+    assert len(result.records) == 1
+    rec = result.records[0]
+    assert isinstance(rec, ContextRecordV2)
+    assert rec.source_id == "src-v2"
+    assert rec.search is None
+
+
+def test_load_mixed_v1_v2_dir_loads_both(tmp_path):
+    """A mixed run dir (V1 history + V2 current) loads both versions through
+    one loader, sorted by source_id."""
+    ctx_dir = tmp_path / "context"
+    _write_record(ctx_dir, "b.json", _v2_payload("src-b"))
+    _write_record(ctx_dir, "a.json", _complete_payload("src-a"))
+    result = load_context_records(ctx_dir, "run-1")
+    assert result.issues == []
+    assert [r.source_id for r in result.records] == ["src-a", "src-b"]
+    assert isinstance(result.records[0], ContextRecordV1)
+    assert isinstance(result.records[1], ContextRecordV2)
+
+
+def test_load_unknown_schema_version_is_malformed(tmp_path):
+    """The dispatcher rejects unknown versions (never coerces, never guesses)."""
+    ctx_dir = tmp_path / "context"
+    bad = _write_record(ctx_dir, "v3.json", {"schema_version": 3})
+    result = load_context_records(ctx_dir, "run-1")
+    assert result.records == []
+    assert [(i.path, i.reason) for i in result.issues] == [
+        (str(bad), "malformed")]
 
 
 def test_load_wrong_run_becomes_issue_no_record(tmp_path):

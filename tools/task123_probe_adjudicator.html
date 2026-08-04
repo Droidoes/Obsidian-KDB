@@ -1,0 +1,1765 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task #123 · D7 Probe Adjudication</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1e2a32;
+      --muted: #64727c;
+      --paper: #f7f4ed;
+      --panel: #fffdf8;
+      --line: #d9d5ca;
+      --accent: #19665d;
+      --accent-soft: #dcece8;
+      --required: #235c9b;
+      --required-soft: #e3edf8;
+      --acceptable: #8a5a16;
+      --acceptable-soft: #f7ecd8;
+      --neither: #6c7175;
+      --neither-soft: #eceeef;
+      --danger: #a33f32;
+      --danger-soft: #f8e4df;
+      --shadow: 0 14px 38px rgb(33 42 47 / 10%);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 8% 0%, #e7f1ec 0, transparent 28rem),
+        linear-gradient(160deg, var(--paper), #efebe1);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(260px, 560px) auto;
+      gap: 24px;
+      align-items: center;
+      padding: 15px 24px;
+      border-bottom: 1px solid rgb(217 213 202 / 80%);
+      background: rgb(255 253 248 / 92%);
+      backdrop-filter: blur(16px);
+    }
+
+    .brand {
+      display: flex;
+      gap: 11px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      background: var(--accent);
+      color: white;
+      font-weight: 800;
+    }
+
+    .brand strong,
+    .brand span {
+      display: block;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .progress-wrap {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 7px 12px;
+      align-items: center;
+    }
+
+    .progress-track {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8e5dd;
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), #54a397);
+      transition: width 180ms ease;
+    }
+
+    .progress-label {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .button {
+      min-height: 38px;
+      padding: 8px 13px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .button:hover {
+      border-color: #a9b0ad;
+      transform: translateY(-1px);
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+    }
+
+    .button.danger {
+      border-color: #dfb8af;
+      color: var(--danger);
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: calc(100vh - 69px);
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 69px;
+      align-self: start;
+      height: calc(100vh - 69px);
+      overflow: auto;
+      padding: 18px 14px 28px;
+      border-right: 1px solid var(--line);
+      background: rgb(247 244 237 / 72%);
+    }
+
+    .workflow-nav {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+
+    .workflow-nav button {
+      padding: 9px 11px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--muted);
+      text-align: left;
+      font-weight: 700;
+    }
+
+    .workflow-nav button.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .sidebar-heading {
+      display: flex;
+      justify-content: space-between;
+      margin: 12px 8px 8px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .probe-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    .probe-nav-button {
+      display: grid;
+      grid-template-columns: 38px 1fr 18px;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      padding: 8px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+    }
+
+    .probe-nav-button:hover,
+    .probe-nav-button.current {
+      border-color: var(--line);
+      background: var(--panel);
+    }
+
+    .probe-nav-button.current {
+      box-shadow: 0 4px 14px rgb(33 42 47 / 7%);
+    }
+
+    .probe-nav-button small {
+      overflow: hidden;
+      color: var(--muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .probe-status {
+      color: #a7aca9;
+      font-weight: 900;
+    }
+
+    .probe-status.done {
+      color: var(--accent);
+    }
+
+    .content {
+      width: min(1240px, 100%);
+      margin: 0 auto;
+      padding: 28px clamp(18px, 4vw, 52px) 70px;
+    }
+
+    .panel {
+      animation: appear 160ms ease;
+    }
+
+    @keyframes appear {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+    }
+
+    .hero {
+      max-width: 820px;
+      padding: clamp(26px, 5vw, 54px);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin-top: 0;
+      line-height: 1.16;
+    }
+
+    h1 {
+      margin-bottom: 16px;
+      font-size: clamp(2rem, 5vw, 3.8rem);
+      letter-spacing: -0.045em;
+    }
+
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      letter-spacing: -0.025em;
+    }
+
+    p {
+      line-height: 1.62;
+    }
+
+    .lede {
+      color: #46555e;
+      font-size: 1.08rem;
+    }
+
+    .rule-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 26px 0;
+    }
+
+    .rule-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: white;
+    }
+
+    .rule-card.required {
+      border-top: 4px solid var(--required);
+    }
+
+    .rule-card.acceptable {
+      border-top: 4px solid var(--acceptable);
+    }
+
+    .rule-card.neither {
+      border-top: 4px solid var(--neither);
+    }
+
+    .rule-card p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .callout {
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      border-radius: 4px 12px 12px 4px;
+      background: var(--accent-soft);
+    }
+
+    .probe-heading {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .probe-heading h2 {
+      margin-bottom: 6px;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .pill {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 750;
+    }
+
+    .pill.class {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+    }
+
+    .decision-state {
+      padding: 8px 11px;
+      border-radius: 10px;
+      background: var(--acceptable-soft);
+      color: var(--acceptable);
+      font-size: 0.82rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .decision-state.done {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .query-card,
+    .notes-card,
+    .special-card,
+    .gate-card,
+    .export-card {
+      margin-bottom: 16px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+
+    .query-card summary {
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .query-text,
+    .excerpt {
+      margin: 14px 0 0;
+      overflow-wrap: anywhere;
+      color: #36474f;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.58;
+      white-space: pre-wrap;
+    }
+
+    .candidate-toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin: 24px 0 10px;
+    }
+
+    .candidate-toolbar h3 {
+      margin: 0;
+    }
+
+    .candidate-counts {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .candidate-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .candidate {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--neither);
+      border-radius: 15px;
+      background: var(--panel);
+      box-shadow: 0 5px 18px rgb(33 42 47 / 5%);
+    }
+
+    .candidate.assignment-relevant {
+      border-left-color: var(--required);
+      background: linear-gradient(90deg, var(--required-soft), var(--panel) 25%);
+    }
+
+    .candidate.assignment-acceptable {
+      border-left-color: var(--acceptable);
+      background: linear-gradient(90deg, var(--acceptable-soft), var(--panel) 25%);
+    }
+
+    .candidate-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .candidate-title {
+      margin-bottom: 5px;
+      font-size: 1rem;
+    }
+
+    .candidate-slug {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      overflow-wrap: anywhere;
+    }
+
+    .draft-badge {
+      display: inline-flex;
+      margin-top: 8px;
+      padding: 3px 7px;
+      border-radius: 6px;
+      background: #f0eee7;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .assignment-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: flex-end;
+    }
+
+    .assignment-buttons button {
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: white;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 750;
+    }
+
+    .assignment-buttons button.active[data-assignment="relevant"] {
+      border-color: var(--required);
+      background: var(--required);
+      color: white;
+    }
+
+    .assignment-buttons button.active[data-assignment="acceptable"] {
+      border-color: var(--acceptable);
+      background: var(--acceptable);
+      color: white;
+    }
+
+    .assignment-buttons button.active[data-assignment="neither"] {
+      border-color: var(--neither);
+      background: var(--neither);
+      color: white;
+    }
+
+    .excerpt {
+      max-height: 190px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 10px;
+      background: rgb(255 255 255 / 68%);
+      color: #43535b;
+    }
+
+    .identity-search {
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px dashed #bfc2ba;
+      border-radius: 14px;
+      background: rgb(255 253 248 / 55%);
+    }
+
+    .identity-search input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: white;
+    }
+
+    .search-results {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .search-result {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: white;
+      font-size: 0.82rem;
+    }
+
+    .special-card {
+      border-color: #dfb9af;
+      background: var(--danger-soft);
+    }
+
+    .special-check {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .special-check input {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--accent);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      resize: vertical;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: white;
+      color: var(--ink);
+    }
+
+    .probe-actions {
+      position: sticky;
+      bottom: 14px;
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 20px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgb(255 253 248 / 94%);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .action-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .gate-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .gate-card h3 {
+      margin-bottom: 8px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+      margin: 13px 0;
+    }
+
+    .field label {
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .field select,
+    .field input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: white;
+    }
+
+    .field-help {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .fixed-gate {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      font-weight: 800;
+    }
+
+    .validation-list {
+      margin: 12px 0 0;
+      padding-left: 20px;
+      color: var(--danger);
+      line-height: 1.6;
+    }
+
+    .validation-ok {
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    .export-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .loading,
+    .fatal-error {
+      margin: 40px auto;
+      max-width: 680px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .fatal-error {
+      border-color: #dba89e;
+    }
+
+    @media (max-width: 900px) {
+      .app-header {
+        grid-template-columns: 1fr auto;
+      }
+
+      .progress-wrap {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .probe-list {
+        grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      }
+
+      .rule-grid,
+      .gate-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .candidate-head {
+        grid-template-columns: 1fr;
+      }
+
+      .assignment-buttons {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">D7</div>
+      <div>
+        <strong>Probe adjudication</strong>
+        <span>Task #123 · SearchSnapshot v1</span>
+      </div>
+    </div>
+    <div class="progress-wrap" aria-live="polite">
+      <div class="progress-track">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+      <div id="progress-label" class="progress-label">Loading probes…</div>
+    </div>
+    <div class="header-actions">
+      <button id="checkpoint-button" class="button" type="button">Checkpoint</button>
+      <button id="import-button" class="button" type="button">Import</button>
+      <button id="reset-button" class="button danger" type="button">Reset</button>
+      <input id="import-input" type="file" accept="application/json" hidden>
+    </div>
+  </header>
+
+  <div id="loading" class="loading">
+    <h2>Loading the frozen evidence…</h2>
+    <p>The reviewer is reading the tracked Task #123 truth artifacts.</p>
+  </div>
+
+  <div id="fatal-error" class="fatal-error" hidden>
+    <h2>The tracked artifacts could not be loaded</h2>
+    <p id="fatal-message"></p>
+    <p>Serve the repository root with a local HTTP server, then open this page through localhost rather than directly from the filesystem.</p>
+  </div>
+
+  <div id="app" class="app-shell" hidden>
+    <aside class="sidebar">
+      <nav class="workflow-nav" aria-label="Adjudication workflow">
+        <button type="button" data-panel="instructions-panel" class="active">1 · Instructions</button>
+        <button type="button" data-panel="probe-panel">2 · Probe labels</button>
+        <button type="button" data-panel="gates-panel">3 · Numerical gates</button>
+        <button type="button" data-panel="export-panel">4 · Review &amp; export</button>
+      </nav>
+      <div class="sidebar-heading">
+        <span>39 probes</span>
+        <span id="probe-completion-mini">0/39</span>
+      </div>
+      <div id="probe-list" class="probe-list"></div>
+    </aside>
+
+    <main class="content">
+      <section id="instructions-panel" class="panel">
+        <div class="hero">
+          <p class="eyebrow">Joseph’s decision surface</p>
+          <h1>Define the right answer before tuning.</h1>
+          <p class="lede">You are deciding which graph entities are correct for each exact query. The frozen title, slug, and excerpt are the evidence the selector can see.</p>
+
+          <div class="rule-grid">
+            <article class="rule-card required">
+              <h3>Relevant</h3>
+              <p>A result you expect for this query. Its omission counts against recall.</p>
+            </article>
+            <article class="rule-card acceptable">
+              <h3>Acceptable</h3>
+              <p>Useful and defensible, but its omission does not fail recall and its return is not a precision error.</p>
+            </article>
+            <article class="rule-card neither">
+              <h3>Neither</h3>
+              <p>Irrelevant, too generic, unsupported, or connected only by hidden folder provenance.</p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Adopted policy:</strong> judge the exact query using selector-visible evidence. Broader defensible relationships belong under Acceptable; provenance-only relationships belong under Neither.
+          </div>
+
+          <p>Draft assignments are suggestions, not decisions. Confirming a probe means you accept every displayed assignment for that probe. Changing a confirmed probe reopens it.</p>
+          <button id="begin-button" class="button primary" type="button">Begin with A01</button>
+        </div>
+      </section>
+
+      <section id="probe-panel" class="panel" hidden>
+        <div class="probe-heading">
+          <div>
+            <p id="probe-eyebrow" class="eyebrow"></p>
+            <h2 id="probe-title"></h2>
+            <div id="probe-pills" class="pill-row"></div>
+          </div>
+          <div id="decision-state" class="decision-state">Needs confirmation</div>
+        </div>
+
+        <details class="query-card" open>
+          <summary>Exact query presented to the selector</summary>
+          <pre id="query-text" class="query-text"></pre>
+          <p id="query-origin" class="field-help"></p>
+        </details>
+
+        <div id="special-card" class="special-card" hidden>
+          <h3>Special contract confirmation</h3>
+          <p id="special-copy"></p>
+          <div id="injected-evidence"></div>
+          <label class="special-check">
+            <input id="special-confirmation" type="checkbox">
+            <span id="special-label">I confirm this expected outcome.</span>
+          </label>
+        </div>
+
+        <div class="candidate-toolbar">
+          <h3>Candidate decisions</h3>
+          <div id="candidate-counts" class="candidate-counts"></div>
+        </div>
+        <div id="candidate-list" class="candidate-list"></div>
+
+        <div id="identity-search" class="identity-search">
+          <strong>Add an entity omitted by the draft</strong>
+          <p class="field-help">Search is limited to identities in this probe’s eligible space.</p>
+          <input id="identity-search-input" type="search" placeholder="Search title or slug…" autocomplete="off">
+          <div id="search-results" class="search-results"></div>
+        </div>
+
+        <div class="notes-card">
+          <label for="probe-notes"><strong>Joseph’s relevance notes</strong></label>
+          <p class="field-help">The draft note is shown initially. Edit it when your decision needs different rationale.</p>
+          <textarea id="probe-notes"></textarea>
+        </div>
+
+        <div class="probe-actions">
+          <div class="action-group">
+            <button id="previous-probe" class="button" type="button">Previous</button>
+            <button id="next-probe" class="button" type="button">Next</button>
+          </div>
+          <button id="confirm-probe" class="button primary" type="button">Confirm this probe</button>
+        </div>
+      </section>
+
+      <section id="gates-panel" class="panel" hidden>
+        <p class="eyebrow">D7 · Metric contract</p>
+        <h2>Resolve denominators, then set thresholds.</h2>
+        <p class="lede">Percentages are exported as decimal rates. Every hard reduced-M point must meet the single stage-1 threshold.</p>
+
+        <div class="gate-grid">
+          <article class="gate-card">
+            <h3>Recall calculation</h3>
+            <div class="field">
+              <label for="class-a-aggregation">Class-A recall@5 aggregation</label>
+              <select id="class-a-aggregation">
+                <option value="">Choose…</option>
+                <option value="macro_per_probe">Macro: equal weight per probe</option>
+                <option value="micro_relevant_slug">Micro: equal weight per required slug</option>
+                <option value="minimum_per_probe">Minimum: every probe must pass</option>
+              </select>
+              <span class="field-help">Macro preserves exact-query weighting; micro weights probes with larger relevant sets more heavily.</span>
+            </div>
+            <div class="field">
+              <label for="stage-one-aggregation">Stage-1 recall aggregation</label>
+              <select id="stage-one-aggregation">
+                <option value="">Choose…</option>
+                <option value="macro_per_probe_at_each_point">Macro per probe at each M point</option>
+                <option value="micro_relevant_slug_at_each_point">Micro per required slug at each M point</option>
+                <option value="minimum_per_probe_at_each_point">Minimum per probe at each M point</option>
+              </select>
+            </div>
+          </article>
+
+          <article class="gate-card">
+            <h3>Abstention and reduced-M scope</h3>
+            <div class="field">
+              <label for="abstention-denominator">Semantic-abstention denominator</label>
+              <select id="abstention-denominator">
+                <option value="">Choose…</option>
+                <option value="class_e_only">Class E only: 5 probes</option>
+                <option value="class_e_plus_a10">Class E + domain-gated A10: 6 probes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="m5-treatment">Whole-graph M=5 point</label>
+              <select id="m5-treatment">
+                <option value="">Choose…</option>
+                <option value="hard">Hard: must meet the stage-1 threshold</option>
+                <option value="watched">Watched: report without blocking</option>
+              </select>
+              <span class="field-help">The fixed hard curve already includes value-investing M=10/20 and whole-graph M=20/40.</span>
+            </div>
+          </article>
+
+          <article class="gate-card">
+            <h3>Hard relevance gates</h3>
+            <div class="field">
+              <label for="abstention-threshold">Semantic abstention accuracy minimum (%)</label>
+              <input id="abstention-threshold" type="number" min="0" max="100" step="0.1" placeholder="Example: 100">
+            </div>
+            <div class="field">
+              <label for="class-a-threshold">Class-A recall@5 minimum (%)</label>
+              <input id="class-a-threshold" type="number" min="0" max="100" step="0.1">
+            </div>
+            <div class="field">
+              <label for="stage-one-threshold">Stage-1 reduced-M recall minimum (%)</label>
+              <input id="stage-one-threshold" type="number" min="0" max="100" step="0.1">
+            </div>
+          </article>
+
+          <article class="gate-card">
+            <h3>Identity and delivery gates</h3>
+            <div class="fixed-gate">
+              <span>Escaped foreign identities</span>
+              <span>0%</span>
+            </div>
+            <div class="field">
+              <label for="failure-ceiling">Selector-failure rate maximum (%)</label>
+              <input id="failure-ceiling" type="number" min="0" max="100" step="0.1">
+              <span class="field-help">Denominator: all 37 non-empty eligible requests. Every form of budget_exceeded is excluded.</span>
+            </div>
+            <p class="field-help">Watched only: precision@5, MRR, valid-entry yield, attempted violations, concordance, coverage, and cost.</p>
+          </article>
+        </div>
+
+        <button id="review-export-button" class="button primary" type="button">Review completion</button>
+      </section>
+
+      <section id="export-panel" class="panel" hidden>
+        <p class="eyebrow">D7 · Final checkpoint</p>
+        <h2>Validate and export a new truth artifact.</h2>
+        <div class="export-card">
+          <h3>Completion check</h3>
+          <div id="validation-output"></div>
+        </div>
+        <div class="export-card">
+          <h3>Safe export</h3>
+          <p>The download is named <code>task123_search_probes_v1.json</code>. It does not modify the tracked draft or any frozen fixture file.</p>
+          <div class="export-actions">
+            <button id="download-final" class="button primary" type="button">Download adjudicated JSON</button>
+            <button id="copy-final" class="button" type="button">Copy JSON</button>
+            <button id="return-unfinished" class="button" type="button">Go to first unfinished probe</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="candidate-template">
+    <article class="candidate">
+      <div class="candidate-head">
+        <div>
+          <h3 class="candidate-title"></h3>
+          <div class="candidate-slug"></div>
+          <div class="pill-row candidate-pills"></div>
+          <span class="draft-badge"></span>
+        </div>
+        <div class="assignment-buttons" aria-label="Candidate assignment">
+          <button type="button" data-assignment="relevant">Relevant</button>
+          <button type="button" data-assignment="acceptable">Acceptable</button>
+          <button type="button" data-assignment="neither">Neither</button>
+        </div>
+      </div>
+      <pre class="excerpt">Loading frozen excerpt…</pre>
+    </article>
+  </template>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const STORAGE_KEY = "task123-d7-adjudication-reviewer-v1";
+      const EXPORT_NAME = "task123_search_probes_v1.json";
+      const PATHS = {
+        probes: "../benchmark/truth/task123_search_probes_draft_v1.json",
+        adversarial: "../benchmark/truth/task123_search_adversarial_v1.json",
+        identities: "../benchmark/truth/task123_search_snapshot_v1/identities.json",
+        manifest: "../benchmark/truth/task123_search_snapshot_v1/manifest.json",
+        excerpts: "../benchmark/truth/task123_search_snapshot_v1/excerpts/"
+      };
+
+      const SPECIAL_CLASSES = new Set(["E", "F", "G", "H"]);
+      const data = {
+        draft: null,
+        adversarial: null,
+        identities: [],
+        manifest: null,
+        identityBySlug: new Map(),
+        injectionByProbe: new Map(),
+        excerptCache: new Map()
+      };
+
+      let state = loadState();
+      let currentProbe = null;
+      let activePanel = "instructions-panel";
+      let renderToken = 0;
+
+      function defaultState() {
+        return {
+          schemaVersion: 1,
+          currentProbeId: "A01",
+          assignments: {},
+          addedSlugs: {},
+          confirmedProbes: {},
+          specialConfirmations: {},
+          notes: {},
+          gates: {
+            classARecallAggregation: "",
+            stageOneRecallAggregation: "",
+            abstentionDenominator: "",
+            m5Treatment: "",
+            semanticAbstentionAccuracyMinPercent: "",
+            classARecallAt5MinPercent: "",
+            stageOneReducedMRecallMinPercent: "",
+            selectorFailureRateMaxPercent: ""
+          }
+        };
+      }
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return defaultState();
+          const parsed = JSON.parse(raw);
+          if (parsed.schemaVersion !== 1) return defaultState();
+          return {...defaultState(), ...parsed, gates: {...defaultState().gates, ...(parsed.gates || {})}};
+        } catch (error) {
+          console.warn("Ignoring invalid reviewer autosave", error);
+          return defaultState();
+        }
+      }
+
+      function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        updateProgress();
+      }
+
+      async function readJson(path) {
+        const response = await fetch(new URL(path, window.location.href));
+        if (!response.ok) throw new Error(`${path}: ${response.status}`);
+        return response.json();
+      }
+
+      async function loadData() {
+        const [draft, adversarial, identities, manifest] = await Promise.all([
+          readJson(PATHS.probes),
+          readJson(PATHS.adversarial),
+          readJson(PATHS.identities),
+          readJson(PATHS.manifest)
+        ]);
+        if (draft.probe_count !== 39 || draft.probes.length !== 39) {
+          throw new Error("Expected the validated 39-probe draft");
+        }
+        if (manifest.counts.total !== 163 || identities.length !== 163) {
+          throw new Error("Expected the frozen 163-identity SearchSnapshot v1");
+        }
+        data.draft = draft;
+        data.adversarial = adversarial;
+        data.identities = identities;
+        data.manifest = manifest;
+        data.identityBySlug = new Map(identities.map(identity => [identity.slug, identity]));
+        for (const injection of adversarial.injections) {
+          for (const probeId of injection.used_by) {
+            data.injectionByProbe.set(probeId, injection);
+          }
+        }
+      }
+
+      function probeById(probeId) {
+        return data.draft.probes.find(probe => probe.probe_id === probeId);
+      }
+
+      function draftAssignment(probe, slug) {
+        if ((probe.kimi_draft.relevant_slugs || []).includes(slug)) return "relevant";
+        if ((probe.kimi_draft.acceptable_alternatives || []).includes(slug)) return "acceptable";
+        return "neither";
+      }
+
+      function assignmentFor(probe, slug) {
+        return state.assignments[probe.probe_id]?.[slug] || draftAssignment(probe, slug);
+      }
+
+      function candidateSlugs(probe) {
+        return [...new Set([
+          ...(probe.kimi_draft.relevant_slugs || []),
+          ...(probe.kimi_draft.acceptable_alternatives || []),
+          ...(state.addedSlugs[probe.probe_id] || [])
+        ])];
+      }
+
+      function isSpecialProbe(probe) {
+        return probe.probe_id === "A10" || SPECIAL_CLASSES.has(probe.class);
+      }
+
+      function eligibleIdentities(probe) {
+        if (probe.space.kind === "whole_graph") return data.identities;
+        if (probe.space.kind === "domain_subtree") {
+          return data.identities.filter(identity => identity.domain === probe.space.domain);
+        }
+        return [];
+      }
+
+      async function frozenExcerpt(slug) {
+        if (data.excerptCache.has(slug)) return data.excerptCache.get(slug);
+        const identity = data.identityBySlug.get(slug);
+        if (!identity) {
+          const injection = [...data.adversarial.injections].find(
+            item => item.entity.slug === slug
+          );
+          return injection?.excerpt || "No frozen selector-visible excerpt is available.";
+        }
+        try {
+          const path = `${PATHS.excerpts}${identity.page_type}/${encodeURIComponent(slug)}.txt`;
+          const response = await fetch(new URL(path, window.location.href));
+          if (!response.ok) throw new Error(String(response.status));
+          const excerpt = await response.text();
+          data.excerptCache.set(slug, excerpt);
+          return excerpt;
+        } catch (error) {
+          return `Frozen excerpt could not be loaded (${error.message}).`;
+        }
+      }
+
+      function showPanel(panelId) {
+        activePanel = panelId;
+        document.querySelectorAll(".panel").forEach(panel => {
+          panel.hidden = panel.id !== panelId;
+        });
+        document.querySelectorAll("[data-panel]").forEach(button => {
+          button.classList.toggle("active", button.dataset.panel === panelId);
+        });
+        if (panelId === "probe-panel") renderProbe(state.currentProbeId);
+        if (panelId === "gates-panel") renderGates();
+        if (panelId === "export-panel") renderExport();
+        window.scrollTo({top: 0, behavior: "smooth"});
+      }
+
+      function updateProgress() {
+        if (!data.draft) return;
+        const total = data.draft.probes.length;
+        const complete = data.draft.probes.filter(
+          probe => state.confirmedProbes[probe.probe_id]
+        ).length;
+        const special = data.draft.probes.filter(isSpecialProbe);
+        const specialComplete = special.filter(
+          probe => state.specialConfirmations[probe.probe_id]
+        ).length;
+        const percent = total ? (complete / total) * 100 : 0;
+        document.querySelector("#progress-bar").style.width = `${percent}%`;
+        document.querySelector("#progress-label").textContent =
+          `${complete}/${total} probes · ${specialComplete}/${special.length} special outcomes · autosaved locally`;
+        document.querySelector("#probe-completion-mini").textContent = `${complete}/${total}`;
+        renderProbeNavigation();
+      }
+
+      function renderProbeNavigation() {
+        if (!data.draft) return;
+        const list = document.querySelector("#probe-list");
+        list.replaceChildren();
+        for (const probe of data.draft.probes) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "probe-nav-button";
+          if (probe.probe_id === state.currentProbeId && activePanel === "probe-panel") {
+            button.classList.add("current");
+          }
+          const target = probe.target_expression || probe.abstention_reason || probe.space.domain || probe.class;
+          const status = state.confirmedProbes[probe.probe_id] ? "✓" : "○";
+          button.innerHTML = `<strong>${escapeHtml(probe.probe_id)}</strong><small>${escapeHtml(target)}</small><span class="probe-status">${status}</span>`;
+          if (state.confirmedProbes[probe.probe_id]) {
+            button.querySelector(".probe-status").classList.add("done");
+          }
+          button.addEventListener("click", () => {
+            state.currentProbeId = probe.probe_id;
+            saveState();
+            showPanel("probe-panel");
+          });
+          list.append(button);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function appendPill(container, copy, className = "") {
+        const pill = document.createElement("span");
+        pill.className = `pill ${className}`.trim();
+        pill.textContent = copy;
+        container.append(pill);
+      }
+
+      async function renderProbe(probeId) {
+        const token = ++renderToken;
+        const probe = probeById(probeId) || data.draft.probes[0];
+        currentProbe = probe;
+        state.currentProbeId = probe.probe_id;
+        saveState();
+
+        document.querySelector("#probe-eyebrow").textContent = `Probe ${probe.probe_id}`;
+        document.querySelector("#probe-title").textContent =
+          probe.target_expression || probe.abstention_reason || "Empty-space availability";
+        const pills = document.querySelector("#probe-pills");
+        pills.replaceChildren();
+        appendPill(pills, `Class ${probe.class}`, "class");
+        appendPill(pills, probe.space.kind.replaceAll("_", " "));
+        if (probe.space.domain) appendPill(pills, probe.space.domain);
+        if (probe.pass1_fields?.compile_order !== undefined) {
+          appendPill(pills, `compile order ${probe.pass1_fields.compile_order}`);
+        }
+
+        const done = Boolean(state.confirmedProbes[probe.probe_id]);
+        const decisionState = document.querySelector("#decision-state");
+        decisionState.textContent = done ? "Confirmed by Joseph" : "Needs confirmation";
+        decisionState.classList.toggle("done", done);
+
+        document.querySelector("#query-text").textContent =
+          probe.query_payload?.text || "(No selector call: empty eligible space.)";
+        document.querySelector("#query-origin").textContent =
+          probe.payload_origin ? `Origin: ${probe.payload_origin}` : "";
+
+        renderSpecialCard(probe);
+        renderCandidateCounts(probe);
+        document.querySelector("#probe-notes").value =
+          state.notes[probe.probe_id] ?? probe.kimi_draft.notes ?? "";
+        document.querySelector("#identity-search-input").value = "";
+        document.querySelector("#search-results").replaceChildren();
+        document.querySelector("#identity-search").hidden =
+          eligibleIdentities(probe).length === 0;
+
+        const list = document.querySelector("#candidate-list");
+        list.replaceChildren();
+        const slugs = candidateSlugs(probe);
+        if (!slugs.length) {
+          const empty = document.createElement("div");
+          empty.className = "query-card";
+          empty.textContent = "No relevant candidates are drafted. Confirm the expected abstention or empty-space outcome above.";
+          list.append(empty);
+        } else {
+          for (const slug of slugs) {
+            list.append(renderCandidateCard(probe, slug, token));
+          }
+        }
+        renderProbeNavigation();
+      }
+
+      function renderSpecialCard(probe) {
+        const card = document.querySelector("#special-card");
+        card.hidden = !isSpecialProbe(probe);
+        if (card.hidden) return;
+
+        const injection = data.injectionByProbe.get(probe.probe_id);
+        let copy = probe.kimi_draft.notes || probe.abstention_reason || "";
+        if (injection) copy = `${copy}\n\nInjected evidence expected outcome: ${injection.expected}`;
+        document.querySelector("#special-copy").textContent = copy;
+        document.querySelector("#special-confirmation").checked =
+          Boolean(state.specialConfirmations[probe.probe_id]);
+
+        const labelByClass = {
+          E: "I confirm that no entity is semantically relevant and any hit is a precision failure.",
+          F: "I confirm abstain_empty_space with zero selector spend; this is availability, not selector failure.",
+          G: "I confirm the positive labels and that unrelated global hubs must not be returned.",
+          H: "I confirm that injected instructions have no authority and must not change the labels."
+        };
+        document.querySelector("#special-label").textContent =
+          probe.probe_id === "A10"
+            ? "I confirm honest empty under the domain gate and scoring as semantic abstention, not Class-A recall."
+            : labelByClass[probe.class] || "I confirm this expected outcome.";
+
+        const injected = document.querySelector("#injected-evidence");
+        injected.replaceChildren();
+        if (injection) {
+          const block = document.createElement("div");
+          block.className = "excerpt";
+          block.textContent = `${injection.entity.slug}\n\n${injection.excerpt}`;
+          injected.append(block);
+        } else if (probe.probe_id === "H03") {
+          const block = document.createElement("div");
+          block.className = "excerpt";
+          block.textContent = probe.pass1_fields?.summary || probe.query_payload.text;
+          injected.append(block);
+        }
+      }
+
+      function renderCandidateCard(probe, slug, token) {
+        const fragment = document.querySelector("#candidate-template").content.cloneNode(true);
+        const card = fragment.querySelector(".candidate");
+        const identity = data.identityBySlug.get(slug) || {
+          slug,
+          title: slug,
+          page_type: "unknown",
+          domain: "unknown"
+        };
+        const assignment = assignmentFor(probe, slug);
+        card.dataset.slug = slug;
+        card.classList.add(`assignment-${assignment}`);
+        fragment.querySelector(".candidate-title").textContent = identity.title;
+        fragment.querySelector(".candidate-slug").textContent = slug;
+        const pills = fragment.querySelector(".candidate-pills");
+        appendPill(pills, identity.page_type);
+        appendPill(pills, identity.domain);
+        if (identity.hub_rank) appendPill(pills, `hub #${identity.hub_rank}`);
+
+        const initial = draftAssignment(probe, slug);
+        const badge = fragment.querySelector(".draft-badge");
+        badge.textContent = state.assignments[probe.probe_id]?.[slug]
+          ? "Joseph changed draft"
+          : `Draft: ${initial}`;
+
+        fragment.querySelectorAll("[data-assignment]").forEach(button => {
+          button.classList.toggle("active", button.dataset.assignment === assignment);
+          button.addEventListener("click", () => assignCandidate(probe, slug, button.dataset.assignment));
+        });
+
+        const excerptElement = fragment.querySelector(".excerpt");
+        frozenExcerpt(slug).then(excerpt => {
+          if (token === renderToken) excerptElement.textContent = excerpt;
+        });
+        return fragment;
+      }
+
+      function assignCandidate(probe, slug, assignment) {
+        state.assignments[probe.probe_id] ||= {};
+        state.assignments[probe.probe_id][slug] = assignment;
+        state.confirmedProbes[probe.probe_id] = false;
+        saveState();
+        renderProbe(probe.probe_id);
+      }
+
+      function renderCandidateCounts(probe) {
+        const counts = {relevant: 0, acceptable: 0, neither: 0};
+        for (const slug of candidateSlugs(probe)) counts[assignmentFor(probe, slug)] += 1;
+        document.querySelector("#candidate-counts").textContent =
+          `${counts.relevant} relevant · ${counts.acceptable} acceptable · ${counts.neither} neither`;
+      }
+
+      function renderIdentitySearch(query) {
+        const results = document.querySelector("#search-results");
+        results.replaceChildren();
+        if (!currentProbe || query.trim().length < 2) return;
+        const existing = new Set(candidateSlugs(currentProbe));
+        const normalized = query.trim().toLowerCase();
+        const matches = eligibleIdentities(currentProbe)
+          .filter(identity => !existing.has(identity.slug))
+          .filter(identity =>
+            identity.slug.toLowerCase().includes(normalized) ||
+            identity.title.toLowerCase().includes(normalized)
+          )
+          .slice(0, 12);
+        for (const identity of matches) {
+          const row = document.createElement("div");
+          row.className = "search-result";
+          const copy = document.createElement("span");
+          copy.textContent = `${identity.title} · ${identity.slug}`;
+          const add = document.createElement("button");
+          add.type = "button";
+          add.className = "button";
+          add.textContent = "Add";
+          add.addEventListener("click", () => {
+            state.addedSlugs[currentProbe.probe_id] ||= [];
+            state.addedSlugs[currentProbe.probe_id].push(identity.slug);
+            state.assignments[currentProbe.probe_id] ||= {};
+            state.assignments[currentProbe.probe_id][identity.slug] = "neither";
+            state.confirmedProbes[currentProbe.probe_id] = false;
+            saveState();
+            renderProbe(currentProbe.probe_id);
+          });
+          row.append(copy, add);
+          results.append(row);
+        }
+        if (!matches.length) {
+          const empty = document.createElement("div");
+          empty.className = "field-help";
+          empty.textContent = "No omitted identity in this eligible space matches.";
+          results.append(empty);
+        }
+      }
+
+      function moveProbe(offset) {
+        const probes = data.draft.probes;
+        const index = probes.findIndex(probe => probe.probe_id === state.currentProbeId);
+        const next = probes[Math.max(0, Math.min(probes.length - 1, index + offset))];
+        renderProbe(next.probe_id);
+      }
+
+      function firstUnfinishedProbe() {
+        return data.draft.probes.find(
+          probe => !state.confirmedProbes[probe.probe_id]
+        ) || null;
+      }
+
+      function confirmCurrentProbe() {
+        if (!currentProbe) return;
+        if (isSpecialProbe(currentProbe) && !state.specialConfirmations[currentProbe.probe_id]) {
+          window.alert("Confirm the special contract outcome before completing this probe.");
+          return;
+        }
+        state.confirmedProbes[currentProbe.probe_id] = true;
+        saveState();
+        const next = firstUnfinishedProbe();
+        if (next) renderProbe(next.probe_id);
+        else showPanel("gates-panel");
+      }
+
+      function gateElementMap() {
+        return {
+          classARecallAggregation: document.querySelector("#class-a-aggregation"),
+          stageOneRecallAggregation: document.querySelector("#stage-one-aggregation"),
+          abstentionDenominator: document.querySelector("#abstention-denominator"),
+          m5Treatment: document.querySelector("#m5-treatment"),
+          semanticAbstentionAccuracyMinPercent: document.querySelector("#abstention-threshold"),
+          classARecallAt5MinPercent: document.querySelector("#class-a-threshold"),
+          stageOneReducedMRecallMinPercent: document.querySelector("#stage-one-threshold"),
+          selectorFailureRateMaxPercent: document.querySelector("#failure-ceiling")
+        };
+      }
+
+      function renderGates() {
+        for (const [key, element] of Object.entries(gateElementMap())) {
+          element.value = state.gates[key];
+        }
+      }
+
+      function saveGate(key, value) {
+        state.gates[key] = value;
+        saveState();
+      }
+
+      function percentToRate(value) {
+        return Number(value) / 100;
+      }
+
+      function validateExport() {
+        const errors = [];
+        const unfinished = data.draft.probes.filter(
+          probe => !state.confirmedProbes[probe.probe_id]
+        );
+        if (unfinished.length) {
+          errors.push(`${unfinished.length} probes still need confirmation: ${unfinished.map(probe => probe.probe_id).join(", ")}`);
+        }
+        const unfinishedSpecial = data.draft.probes.filter(
+          probe => isSpecialProbe(probe) && !state.specialConfirmations[probe.probe_id]
+        );
+        if (unfinishedSpecial.length) {
+          errors.push(`Special outcomes need confirmation: ${unfinishedSpecial.map(probe => probe.probe_id).join(", ")}`);
+        }
+
+        const choiceLabels = {
+          classARecallAggregation: "Class-A recall aggregation",
+          stageOneRecallAggregation: "stage-1 recall aggregation",
+          abstentionDenominator: "semantic-abstention denominator",
+          m5Treatment: "M=5 treatment"
+        };
+        for (const [key, label] of Object.entries(choiceLabels)) {
+          if (!state.gates[key]) errors.push(`Choose the ${label}.`);
+        }
+        const thresholdLabels = {
+          semanticAbstentionAccuracyMinPercent: "semantic abstention threshold",
+          classARecallAt5MinPercent: "Class-A recall@5 threshold",
+          stageOneReducedMRecallMinPercent: "stage-1 reduced-M threshold",
+          selectorFailureRateMaxPercent: "selector-failure ceiling"
+        };
+        for (const [key, label] of Object.entries(thresholdLabels)) {
+          const value = state.gates[key];
+          if (value === "" || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100) {
+            errors.push(`Enter the ${label} as a percentage from 0 through 100.`);
+          }
+        }
+
+        const abstentionIds = new Set(["A10", "E01", "E02", "E03", "E04", "E05", "F01", "F02"]);
+        for (const probe of data.draft.probes) {
+          const labels = labelsForProbe(probe);
+          if (abstentionIds.has(probe.probe_id) && labels.relevant.length) {
+            errors.push(`${probe.probe_id} is an abstention/empty-space probe but has relevant labels.`);
+          }
+          const overlap = labels.relevant.filter(slug => labels.acceptable.includes(slug));
+          if (overlap.length) errors.push(`${probe.probe_id} has overlapping labels: ${overlap.join(", ")}`);
+          const injection = data.injectionByProbe.get(probe.probe_id);
+          if (injection && [...labels.relevant, ...labels.acceptable].includes(injection.entity.slug)) {
+            errors.push(`${probe.probe_id} labels the injected instruction entity as relevant or acceptable.`);
+          }
+        }
+        return errors;
+      }
+
+      function labelsForProbe(probe) {
+        const labels = {relevant: [], acceptable: []};
+        for (const slug of candidateSlugs(probe)) {
+          const assignment = assignmentFor(probe, slug);
+          if (assignment === "relevant") labels.relevant.push(slug);
+          if (assignment === "acceptable") labels.acceptable.push(slug);
+        }
+        return labels;
+      }
+
+      function semanticAbstentionProbeIds() {
+        const ids = ["E01", "E02", "E03", "E04", "E05"];
+        if (state.gates.abstentionDenominator === "class_e_plus_a10") ids.push("A10");
+        return ids;
+      }
+
+      function buildExportArtifact() {
+        const artifact = JSON.parse(JSON.stringify(data.draft));
+        artifact.version = 1;
+        artifact.generated = new Date().toISOString();
+        artifact.generator = "Joseph adjudication via Task #123 D7 local reviewer";
+        artifact.adjudicator = "joseph";
+        artifact.adjudication_version = 1;
+        artifact.status = "adjudicated";
+        artifact.label_policy = {
+          name: "two_tier_selector_visible_query_context",
+          relevant: "required for recall and supported by selector-visible evidence for the exact query",
+          acceptable_alternative: "defensible and precision-neutral but not required for recall",
+          neither: "irrelevant, generic, unsupported, or provenance-only"
+        };
+        artifact.gates = {
+          escaped_foreign_identity_rate_max: 0,
+          semantic_abstention_accuracy_min: percentToRate(
+            state.gates.semanticAbstentionAccuracyMinPercent
+          ),
+          class_a_recall_at_5_min: percentToRate(
+            state.gates.classARecallAt5MinPercent
+          ),
+          stage_1_reduced_m_recall_min: percentToRate(
+            state.gates.stageOneReducedMRecallMinPercent
+          ),
+          selector_failure_rate_max: percentToRate(
+            state.gates.selectorFailureRateMaxPercent
+          ),
+          metric_rules: {
+            class_a_recall_aggregation: state.gates.classARecallAggregation,
+            class_a_abstention_probe_excluded: "A10",
+            semantic_abstention_denominator: semanticAbstentionProbeIds(),
+            stage_1_recall_aggregation: state.gates.stageOneRecallAggregation,
+            stage_1_hard_points: {
+              value_investing_51: [10, 20],
+              whole_graph_163: state.gates.m5Treatment === "hard" ? [5, 20, 40] : [20, 40]
+            },
+            stage_1_watched_points: {
+              whole_graph_163: state.gates.m5Treatment === "watched" ? [5] : []
+            },
+            selector_failure_denominator: "all 37 non-empty eligible requests",
+            selector_failure_exclusions: ["budget_exceeded_pre_call", "budget_exceeded_post_call_input", "budget_exceeded_post_call_output"],
+            acceptable_alternatives: "recall-neutral and precision-acceptable"
+          }
+        };
+        artifact.probes = artifact.probes.map(probe => {
+          const labels = labelsForProbe(probe);
+          const note = state.notes[probe.probe_id] ?? probe.kimi_draft.notes ?? "";
+          delete probe.kimi_draft;
+          probe.relevant_slugs = labels.relevant;
+          probe.acceptable_alternatives = labels.acceptable;
+          probe.relevance_notes = note;
+          probe.adjudicator = "joseph";
+          probe.adjudication_version = 1;
+          probe.status = "adjudicated";
+          if (isSpecialProbe(probe)) probe.owner_outcome_confirmed = true;
+          return probe;
+        });
+        return artifact;
+      }
+
+      function renderExport() {
+        const errors = validateExport();
+        const output = document.querySelector("#validation-output");
+        output.replaceChildren();
+        if (!errors.length) {
+          const success = document.createElement("p");
+          success.className = "validation-ok";
+          success.textContent = "Complete: all labels, special outcomes, denominator rules, and numerical gates are ready to export.";
+          output.append(success);
+        } else {
+          const intro = document.createElement("p");
+          intro.textContent = "The final artifact is not ready yet:";
+          const list = document.createElement("ul");
+          list.className = "validation-list";
+          for (const error of errors) {
+            const item = document.createElement("li");
+            item.textContent = error;
+            list.append(item);
+          }
+          output.append(intro, list);
+        }
+        document.querySelector("#download-final").disabled = errors.length > 0;
+        document.querySelector("#copy-final").disabled = errors.length > 0;
+      }
+
+      function downloadJson(value, filename) {
+        const blob = new Blob([`${JSON.stringify(value, null, 2)}\n`], {type: "application/json"});
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+      }
+
+      function downloadCheckpoint() {
+        downloadJson({
+          artifact: "task123_d7_reviewer_checkpoint",
+          version: 1,
+          saved_at: new Date().toISOString(),
+          reviewer_state: state
+        }, "task123_d7_reviewer_checkpoint.json");
+      }
+
+      async function importCheckpoint(file) {
+        const parsed = JSON.parse(await file.text());
+        if (parsed.artifact !== "task123_d7_reviewer_checkpoint" ||
+            parsed.version !== 1 ||
+            parsed.reviewer_state?.schemaVersion !== 1) {
+          throw new Error("Not a Task #123 D7 reviewer checkpoint");
+        }
+        state = {...defaultState(), ...parsed.reviewer_state, gates: {
+          ...defaultState().gates,
+          ...(parsed.reviewer_state.gates || {})
+        }};
+        saveState();
+        showPanel(activePanel);
+      }
+
+      function resetReviewer() {
+        if (!window.confirm("Reset all locally saved D7 decisions? Download a checkpoint first if you may need them.")) return;
+        localStorage.removeItem(STORAGE_KEY);
+        state = defaultState();
+        saveState();
+        showPanel("instructions-panel");
+      }
+
+      function bindEvents() {
+        document.querySelectorAll("[data-panel]").forEach(button => {
+          button.addEventListener("click", () => showPanel(button.dataset.panel));
+        });
+        document.querySelector("#begin-button").addEventListener("click", () => {
+          state.currentProbeId = firstUnfinishedProbe()?.probe_id || data.draft.probes[0].probe_id;
+          saveState();
+          showPanel("probe-panel");
+        });
+        document.querySelector("#previous-probe").addEventListener("click", () => moveProbe(-1));
+        document.querySelector("#next-probe").addEventListener("click", () => moveProbe(1));
+        document.querySelector("#confirm-probe").addEventListener("click", confirmCurrentProbe);
+        document.querySelector("#identity-search-input").addEventListener(
+          "input", event => renderIdentitySearch(event.target.value)
+        );
+        document.querySelector("#special-confirmation").addEventListener("change", event => {
+          if (!currentProbe) return;
+          state.specialConfirmations[currentProbe.probe_id] = event.target.checked;
+          state.confirmedProbes[currentProbe.probe_id] = false;
+          saveState();
+        });
+        document.querySelector("#probe-notes").addEventListener("change", event => {
+          if (!currentProbe) return;
+          state.notes[currentProbe.probe_id] = event.target.value;
+          state.confirmedProbes[currentProbe.probe_id] = false;
+          saveState();
+        });
+        for (const [key, element] of Object.entries(gateElementMap())) {
+          element.addEventListener("change", event => saveGate(key, event.target.value));
+        }
+        document.querySelector("#review-export-button").addEventListener(
+          "click", () => showPanel("export-panel")
+        );
+        document.querySelector("#return-unfinished").addEventListener("click", () => {
+          state.currentProbeId = firstUnfinishedProbe()?.probe_id || data.draft.probes[0].probe_id;
+          saveState();
+          showPanel("probe-panel");
+        });
+        document.querySelector("#download-final").addEventListener("click", () => {
+          const errors = validateExport();
+          if (!errors.length) downloadJson(buildExportArtifact(), EXPORT_NAME);
+        });
+        document.querySelector("#copy-final").addEventListener("click", async () => {
+          const errors = validateExport();
+          if (!errors.length) {
+            await navigator.clipboard.writeText(`${JSON.stringify(buildExportArtifact(), null, 2)}\n`);
+            window.alert("Adjudicated JSON copied.");
+          }
+        });
+        document.querySelector("#checkpoint-button").addEventListener("click", downloadCheckpoint);
+        document.querySelector("#import-button").addEventListener(
+          "click", () => document.querySelector("#import-input").click()
+        );
+        document.querySelector("#import-input").addEventListener("change", async event => {
+          const file = event.target.files[0];
+          if (!file) return;
+          try {
+            await importCheckpoint(file);
+          } catch (error) {
+            window.alert(error.message);
+          } finally {
+            event.target.value = "";
+          }
+        });
+        document.querySelector("#reset-button").addEventListener("click", resetReviewer);
+      }
+
+      async function start() {
+        try {
+          await loadData();
+          bindEvents();
+          document.querySelector("#loading").hidden = true;
+          document.querySelector("#app").hidden = false;
+          updateProgress();
+          showPanel("instructions-panel");
+        } catch (error) {
+          document.querySelector("#loading").hidden = true;
+          document.querySelector("#fatal-error").hidden = false;
+          document.querySelector("#fatal-message").textContent = error.message;
+        }
+      }
+
+      start();
+    })();
+  </script>
+</body>
+</html>

@@ -478,3 +478,98 @@ class TestCostDiagnostics:
         d = compute_processing(HEADER, self._calls_with_cost())["diagnostic"]
         assert d["cost_unknown_calls_pass1"] == 2      # 0.0-with-tokens + None
         assert d["cost_unknown_calls_pass2"] == 0
+
+
+# ---------------------------------------------------------------------------
+# #123 P3a.4 (§4.7) — compute_search_diagnostics: the dedicated pass-1.5
+# diagnostic aggregation. NEVER scored; compute_processing keeps its
+# pass1+pass2 population (H4).
+# ---------------------------------------------------------------------------
+
+from common.measurement import SearchPassMeasurement, SearchStageMeasurement
+from compiler.kpi.processing import compute_search_diagnostics
+
+
+def _search_m(source_id: str, *, calls=1, attempts=2, tokens=1500,
+              unknown=0, latency=300, cost=0.03) -> SearchPassMeasurement:
+    return SearchPassMeasurement(
+        run_id="run-test", source_id=source_id, pass_="pass1_5",
+        provider="deepseek", model="deepseek-v4-flash",
+        prompt_versions={"thin": "1.0", "fat": "1.0"},
+        status="completed", execution="two_stage_attempted",
+        calls=calls, attempts=attempts,
+        total_input_tokens=tokens, input_token_unknown_attempts=unknown,
+        stage_splits=(
+            SearchStageMeasurement(stage="thin", attempts=1,
+                                   provider_input_tokens=tokens,
+                                   cost_usd=cost, sent_bytes=4000),
+        ),
+        total_latency_ms=latency, cost_usd=cost,
+        search_snapshot_hash="sha256:abc",
+    )
+
+
+def test_search_diagnostics_empty_population_all_none():
+    diag = compute_search_diagnostics([])
+    assert diag == {
+        "calls_pass1_5": None,
+        "attempts_pass1_5": None,
+        "retries_pass1_5": None,
+        "cost_usd_pass1_5": None,
+        "cost_unknown_calls_pass1_5": None,
+        "input_tokens_pass1_5": None,
+        "input_token_unknown_attempts_pass1_5": None,
+        "latency_pass1_5": None,
+    }
+
+
+def test_search_diagnostics_sums_and_means():
+    ms = [
+        _search_m("a", attempts=2, tokens=1000, latency=100, cost=0.01),
+        _search_m("b", attempts=3, tokens=2000, latency=300, cost=0.02),
+    ]
+    diag = compute_search_diagnostics(ms)
+    assert diag["calls_pass1_5"] == 2               # logical: one per search
+    assert diag["attempts_pass1_5"] == 5            # StageRecord count
+    assert diag["retries_pass1_5"] == 3             # attempts − calls
+    assert diag["cost_usd_pass1_5"] == pytest.approx(0.03)
+    assert diag["cost_unknown_calls_pass1_5"] == 0
+    assert diag["input_tokens_pass1_5"] == 3000
+    assert diag["input_token_unknown_attempts_pass1_5"] == 0
+    assert diag["latency_pass1_5"] == pytest.approx(200.0)   # mean per search
+
+
+def test_search_diagnostics_unknown_tokens_lower_bound_never_zero_coerced():
+    """B10: one measurement has unknown input tokens (None) — the aggregate
+    sums the KNOWN values (a lower bound) and the unknown counter carries the
+    missing attempts; the null is never silently coerced to zero. The same
+    no-response attempts are the unknown-COST calls (their 0.0 cost is a
+    lower bound, surfaced via cost_unknown_calls)."""
+    ms = [
+        _search_m("a", attempts=2, tokens=1000, unknown=0, cost=0.01),
+        _search_m("b", attempts=3, tokens=None, unknown=2, cost=0.0),
+    ]
+    diag = compute_search_diagnostics(ms)
+    assert diag["input_tokens_pass1_5"] == 1000     # known only — lower bound
+    assert diag["input_token_unknown_attempts_pass1_5"] == 2
+    assert diag["cost_unknown_calls_pass1_5"] == 2
+    assert diag["cost_usd_pass1_5"] == pytest.approx(0.01)
+
+
+def test_search_diagnostics_all_tokens_unknown_gives_none():
+    ms = [_search_m("a", tokens=None, unknown=1, cost=0.0)]
+    diag = compute_search_diagnostics(ms)
+    assert diag["input_tokens_pass1_5"] is None
+    assert diag["input_token_unknown_attempts_pass1_5"] == 1
+
+
+def test_compute_processing_untouched_by_search_channel():
+    """G1/H4: compute_processing still receives only pass1/pass2 — the
+    pass-1.5 aggregation is a SEPARATE function, and its keys never appear in
+    the processing diagnostic."""
+    header = RunMeasurementHeader(
+        run_id="r", corpus_fingerprint="cf", pass1_prompt_version="1",
+        pass2_prompt_version="", scanned=0, to_compile=0, signal=0, noise=0,
+        p1_attempted=0, p2_attempted=0)
+    proc = compute_processing(header, [])
+    assert not any(k.endswith("_pass1_5") for k in proc["diagnostic"])

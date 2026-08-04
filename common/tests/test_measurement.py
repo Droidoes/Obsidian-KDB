@@ -816,3 +816,219 @@ def test_context_records_coexist_with_strict_load(tmp_path):
     assert stats["pass2_records"] == 1
     assert stats["pass2_malformed"] == 0
     assert stats["pass1_identified"] == 1
+
+
+# ---------------------------------------------------------------------------
+# #123 P3a.4 (§4.7) — SearchPassMeasurement + the additive search channel
+# ---------------------------------------------------------------------------
+
+from common.measurement import (
+    SearchMeasurementError,
+    SearchPassMeasurement,
+    SearchStageMeasurement,
+    load_search_measurements,
+    load_search_measurements_with_stats,
+    parse_search_measurement,
+)
+
+
+def _measurement_dict(**overrides) -> dict:
+    base = {
+        "run_id": "run-test",
+        "source_id": "KDB/raw/alpha.md",
+        "pass_": "pass1_5",
+        "provider": "deepseek",
+        "model": "deepseek-v4-flash",
+        "prompt_versions": {"thin": "1.0", "fat": "1.0"},
+        "status": "completed",
+        "execution": "two_stage_attempted",
+        "calls": 1,
+        "attempts": 2,
+        "total_input_tokens": 1500,
+        "input_token_unknown_attempts": 0,
+        "stage_splits": [
+            {"stage": "thin", "attempts": 1, "provider_input_tokens": 1000,
+             "cost_usd": 0.01, "sent_bytes": 4000},
+            {"stage": "fat", "attempts": 1, "provider_input_tokens": 500,
+             "cost_usd": 0.02, "sent_bytes": 2000},
+        ],
+        "total_latency_ms": 300,
+        "cost_usd": 0.03,
+        "search_snapshot_hash": "sha256:abc",
+    }
+    return {**base, **overrides}
+
+
+def test_search_pass_measurement_roundtrip():
+    """asdict → JSON → strict parse is identity (tuples restored)."""
+    m = SearchPassMeasurement(
+        run_id="run-test", source_id="KDB/raw/alpha.md", pass_="pass1_5",
+        provider="deepseek", model="deepseek-v4-flash",
+        prompt_versions={"thin": "1.0", "fat": "1.0"},
+        status="completed", execution="two_stage_attempted",
+        calls=1, attempts=2,
+        total_input_tokens=1500, input_token_unknown_attempts=0,
+        stage_splits=(
+            SearchStageMeasurement(stage="thin", attempts=1,
+                                   provider_input_tokens=1000,
+                                   cost_usd=0.01, sent_bytes=4000),
+            SearchStageMeasurement(stage="fat", attempts=1,
+                                   provider_input_tokens=500,
+                                   cost_usd=0.02, sent_bytes=2000),
+        ),
+        total_latency_ms=300, cost_usd=0.03,
+        search_snapshot_hash="sha256:abc",
+    )
+    raw = json.loads(json.dumps(m.to_dict()))
+    assert parse_search_measurement(raw) == m
+
+
+def test_parse_search_measurement_nullable_tokens_preserved():
+    """B10: total_input_tokens null + the unknown-attempts counter survive the
+    round trip — never zero-coerced."""
+    raw = _measurement_dict(total_input_tokens=None,
+                            input_token_unknown_attempts=2)
+    raw["stage_splits"][1]["provider_input_tokens"] = None
+    m = parse_search_measurement(raw)
+    assert m.total_input_tokens is None
+    assert m.input_token_unknown_attempts == 2
+    assert m.stage_splits[1].provider_input_tokens is None
+
+
+def test_parse_search_measurement_prompt_version_none_for_absent_stage():
+    """A thin-only terminal records fat's prompt version as null."""
+    m = parse_search_measurement(
+        _measurement_dict(prompt_versions={"thin": "1.0", "fat": None}))
+    assert m.prompt_versions == {"thin": "1.0", "fat": None}
+
+
+def test_parse_search_measurement_strict_rejects():
+    good = _measurement_dict()
+    with pytest.raises(SearchMeasurementError):       # wrong pass_
+        parse_search_measurement({**good, "pass_": "pass1"})
+    with pytest.raises(SearchMeasurementError):       # missing key
+        parse_search_measurement(
+            {k: v for k, v in good.items() if k != "attempts"})
+    with pytest.raises(SearchMeasurementError):       # extra key
+        parse_search_measurement({**good, "bogus": 1})
+    with pytest.raises(SearchMeasurementError):       # bool-as-int
+        parse_search_measurement({**good, "attempts": True})
+    with pytest.raises(SearchMeasurementError):       # wrong-typed split
+        parse_search_measurement(
+            {**good, "stage_splits": [{"stage": "mid", "attempts": 1,
+                                       "provider_input_tokens": 1,
+                                       "cost_usd": 0.0, "sent_bytes": 1}]})
+    with pytest.raises(SearchMeasurementError):       # not a dict
+        parse_search_measurement(["not", "a", "dict"])
+
+
+def _write_search_file(run_dir: Path, name: str, payload: dict) -> None:
+    _write_json(run_dir / "search" / name, payload)
+
+
+def test_load_search_measurements_reads_search_dir(tmp_path):
+    """The loader globs search/*.json and strict-parses each `measurement`
+    key — files without one (pre-P3a.4 envelopes) are skipped, never
+    identified, never malformed."""
+    run_dir = tmp_path / "run-test"
+    _write_search_file(run_dir, "b.json",
+                       {"envelope": True,
+                        "measurement": _measurement_dict(source_id="KDB/raw/b.md")})
+    _write_search_file(run_dir, "a.json",
+                       {"envelope": True,
+                        "measurement": _measurement_dict(source_id="KDB/raw/a.md")})
+    _write_search_file(run_dir, "old.json",
+                       {"schema_version": 1, "receipt_kind": "compact"})
+    out = load_search_measurements(run_dir)
+    assert [m.source_id for m in out] == ["KDB/raw/a.md", "KDB/raw/b.md"]
+    assert all(m.pass_ == "pass1_5" for m in out)
+
+
+def test_load_search_measurements_missing_dir_is_empty(tmp_path):
+    assert load_search_measurements(tmp_path / "nope") == []
+
+
+def test_load_search_measurements_strict_raises_on_malformed(tmp_path):
+    run_dir = tmp_path / "run-test"
+    bad = run_dir / "search"
+    bad.mkdir(parents=True)
+    (bad / "bad.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(SearchMeasurementError):
+        load_search_measurements(run_dir)
+    (bad / "bad.json").write_text(json.dumps({"measurement": {"pass_": "pass1"}}),
+                                  encoding="utf-8")
+    with pytest.raises(SearchMeasurementError):
+        load_search_measurements(run_dir)
+
+
+def test_load_search_measurements_with_stats_counts_and_skips(tmp_path):
+    """Stats keys pass1_5_dir_exists / pass1_5_identified / pass1_5_malformed;
+    malformed files are counted and skipped, good ones still load."""
+    run_dir = tmp_path / "run-test"
+    _write_search_file(run_dir, "good.json",
+                       {"measurement": _measurement_dict()})
+    _write_search_file(run_dir, "old.json", {"schema_version": 1})
+    bad = run_dir / "search" / "bad.json"
+    bad.write_text("{oops", encoding="utf-8")
+    out, stats = load_search_measurements_with_stats(run_dir)
+    assert [m.source_id for m in out] == ["KDB/raw/alpha.md"]
+    assert stats == {"pass1_5_dir_exists": True,
+                     "pass1_5_identified": 1,
+                     "pass1_5_malformed": 1}
+
+
+def test_load_search_measurements_with_stats_missing_dir(tmp_path):
+    out, stats = load_search_measurements_with_stats(tmp_path / "nope")
+    assert out == []
+    assert stats == {"pass1_5_dir_exists": False,
+                     "pass1_5_identified": 0,
+                     "pass1_5_malformed": 0}
+
+
+def test_header_search_counters_default_zero_for_historical(tmp_path):
+    """Pre-P3a.4 headers carry no search counters — they load as 0."""
+    run_dir = tmp_path / "run-historical"
+    data = _make_header_dict("run-historical")
+    assert "searches_attempted" not in data
+    assert "searches_written" not in data
+    _write_json(run_dir / "measurement_header.json", data)
+    header, _ = load_run_measurements(run_dir)
+    assert header.searches_attempted == 0
+    assert header.searches_written == 0
+
+
+def test_header_search_counters_load(tmp_path):
+    run_dir = tmp_path / "run-test"
+    data = {**_make_header_dict("run-test"),
+            "searches_attempted": 6, "searches_written": 5}
+    _write_json(run_dir / "measurement_header.json", data)
+    header, _ = load_run_measurements(run_dir)
+    assert header.searches_attempted == 6
+    assert header.searches_written == 5
+
+
+@pytest.mark.parametrize("field", ["searches_attempted", "searches_written"])
+def test_header_search_counters_wrong_type_rejected(tmp_path, field):
+    """The counters ride the header int guard (bool excluded) on BOTH paths."""
+    run_dir = tmp_path / "run-bad"
+    data = {**_make_header_dict("run-bad"), field: True}
+    _write_json(run_dir / "measurement_header.json", data)
+    with pytest.raises(TypeError, match=field):
+        load_run_measurements(run_dir)
+    with pytest.raises(TypeError, match=field):
+        load_run_measurements_with_stats(run_dir)
+
+
+def test_search_files_do_not_enter_run_measurements(tmp_path):
+    """G1: the search channel is additive — a search/ dir never leaks into
+    the pass1+pass2 measurement tuple (scored axes unmoved by construction)."""
+    run_id = "run-test"
+    run_dir = tmp_path / run_id
+    _write_json(run_dir / "measurement_header.json", _make_header_dict(run_id))
+    sidecar = _make_sidecar_dict()
+    sidecar["source_id"] = "KDB/raw/alpha.md"
+    _write_json(run_dir / "pass1" / "KDB__raw__alpha.json", sidecar)
+    _write_search_file(run_dir, "KDB__raw__alpha.json",
+                       {"measurement": _measurement_dict()})
+    header, measurements = load_run_measurements(run_dir)
+    assert [m.pass_ for m in measurements] == ["pass1"]

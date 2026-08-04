@@ -119,7 +119,7 @@ param ever fires on a paid call**.
 | provider | thinking default | disable param (in `extra_body`) | status |
 |---|---|---|---|
 | deepseek | ON | `{"thinking": {"type": "disabled"}}` | ✅ verified (api-docs.deepseek.com) |
-| alibaba (qwen3.x) | ON | `{"enable_thinking": false}` | ✅ verified (DashScope deep-thinking docs) |
+| alibaba-us / alibaba-sgp (qwen3.x) | ON | `{"enable_thinking": false}` | ✅ verified (DashScope deep-thinking docs) **+ empirically confirmed 2026-08-02**: `qwen3.7-flash` completed a D5 calibration call inside the 36,000-token envelope, where `gpt-5.6-luna` on a *mirrored* (unverified) param exhausted it. Both region keys bind ONE shared dict in `model_pool.py` — copies drift, and a drifted entry fails silently |
 | anthropic | OFF (opt-in) | — (no param needed) | ✅ no-op |
 | ollama-local/cloud | model-dependent (gemma4: none) | — | ✅ no-op |
 | gemini (3.x flash-lite) | ON (floor `minimal`) | **native SDK** `thinking_config.thinking_level="minimal"` (NOT `extra_body`; full-off unsupported — `minimal` ≈ off) | ✅ verified (native `_call_gemini`, #111 Phase 1) |
@@ -236,7 +236,55 @@ param ever fires on a paid call**.
 - `ollama-local` api_key is the literal `"ollama"`; `ollama-cloud` uses `OLLAMA_API_KEY`.
 - Model: `gemma4-12b-qat-128k` (local, ollama-local, 128k ctx). No thinking mode → no-op.
 - **Structured output (#111):** Phase 1 uses the openai-compat `/v1` with `response_format={"type":"json_object"}` (plain JSON mode) — works for `ollama-local`. The **strong** lever is ollama's *native* `chat(model, messages, format=<JSON schema>)` (`model_json_schema()`) — schema-constrained, parallel to Gemini's `response_json_schema`. So for **Phase 2**, `ollama-local` is a **native-handler candidate** alongside Gemini (or verify whether `/v1` accepts `json_schema`). Docs also recommend embedding the schema in the prompt to ground the model.
+- **Regions are separate providers (Joseph, 2026-08-02):** `alibaba-us` (`QWEN_US_API_KEY`, fixed domain `dashscope-us.aliyuncs.com`) and `alibaba-sgp` (`QWEN_SGP_API_KEY`, **workspace-scoped** `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`). Different credentials ⇒ different provider identity. `alibaba-sgp` is deliberately **absent from `_PROVIDER_DEFAULTS`** — a workspace-scoped URL has no defensible default and must come from the pool entry. The bare `alibaba` key is kept as a legacy alias so a revived `models_dropped.json` entry does not silently lose its thinking-off.
+- **`qwen3.7-flash` (active, alibaba-sgp):** 1M ctx / 991K max-in / 128K max-out, **$0.03 in / $0.13 out per M** — the cheapest viable selector route in the pool (deepseek-v4-flash is $0.14/$0.28). D5 row 2026-08-02: 4,448 tokens, **3.7911 B/token**. **Streaming watch-item RESOLVED for this config** — the call ran non-streaming with `enable_thinking: false` and completed. ⚠️ Route admissibility ≠ selector quality: four qwen generations were dropped on link/graph quality (see `models_dropped.json`), and a bytes-per-token row says nothing about that. The compile-seat failure mode (fabricated slugs) is structurally impossible in the closed-world selector, which is why a fresh trial is defensible — but it is P5a's question, not settled here.
 - **⚠️ Ollama Cloud:** the docs state it does **NOT support structured outputs**. We have **no active `ollama-cloud` model** (the only one, `deepseek-v4-flash:cloud`, is archived) and **won't use it** (Joseph 2026-06-07) — the dead `ollama-cloud` dispatch path is left in place but unused; do not adopt a cloud model without revisiting this.
+
+---
+
+## Rejected routes — measured, not assumed
+
+### `gpt-5.6-luna` (OpenAI) — REGISTERED AND REMOVED 2026-08-02
+
+Attractive on paper and **not admissible as a #123 selector on the ratified envelope.**
+Recorded here rather than left in `models.json`, so the next reader does not re-add it and
+re-discover the same 400.
+
+| | gpt-5.4-mini | gpt-5.6-luna |
+|---|---:|---:|
+| context | 400,000 | 1,050,000 |
+| max output | 128,000 | 128,000 |
+| $/M in | 0.75 | **0.20** |
+| $/M out | 4.50 | **1.20** |
+
+3.75x cheaper both ways, so it looked like a straight replacement. **What actually happened
+on its first and only call** (D5 calibration, thin prompt, frozen 163-entity fixture):
+
+```
+BadRequestError 400 — Could not finish the message because max_tokens or
+model output limit was reached. Please try again with higher max_tokens.
+```
+
+**Not an input rejection — the request was accepted.** It exhausted the whole
+`PROVIDER_MAX_TOKENS_THIN` envelope of **36,000** tokens (20,000 visible + D9's 16,000 hidden
+reserve) without emitting a complete answer, for a slug-shortlisting task the other three
+candidates finish in a few hundred visible tokens. That is precisely the D9 **selector-admission
+signal**: *"a route that trips it is not a viable selector — a D7 finding, not a production gate."*
+
+**Two readings, and the distinction is not yet settled:**
+1. `extra_body: {"reasoning_effort": "low"}` was silently ignored, i.e. the parameter was
+   mirrored from `gpt-5.4-mini` and is wrong for this model; or
+2. luna reasons far more heavily than `gpt-5.4-mini` even at low effort.
+
+**The published page states no tokenizer, no reasoning-effort control and no completion-tokens
+parameter**, so `use_completion_tokens` and `reasoning_effort` were mirrored rather than verified
+— the "no guessed param on a paid call" rule was knowingly stretched on the grounds that an
+unsupported parameter fails **loudly** (400) rather than yielding a plausible wrong number.
+It did fail loudly. **Before re-adding it, confirm what reasoning control it actually accepts:**
+if `reasoning_effort` is not its parameter, this failure says nothing about the model itself.
+
+(`tokens_lte_bytes: true` was declared on the family theorem — every OpenAI encoding is
+byte-level BPE — which is the same basis `gpt-5.4-mini`'s declaration rests on, and is unaffected.)
 
 ---
 

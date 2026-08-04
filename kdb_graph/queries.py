@@ -328,6 +328,26 @@ def active_entity_slugs(conn: kuzu.Connection) -> list[str]:
     return out
 
 
+def entity_first_run_ids(conn: kuzu.Connection, slugs: list[str]) -> dict[str, str | None]:
+    """{slug: first_run_id} for ACTIVE entities — one batched read (#123 P3a).
+
+    Every requested slug appears in the dict; unknown, inactive, or
+    null/empty-stamped slugs map to None. Empty input returns {} without
+    issuing a query."""
+    if not slugs:
+        return {}
+    result = conn.execute(
+        "MATCH (e:Entity) WHERE e.slug IN $slugs AND e.status = 'active' "
+        "RETURN e.slug, e.first_run_id",
+        {"slugs": slugs},
+    )
+    out: dict[str, str | None] = {slug: None for slug in slugs}
+    while result.has_next():
+        row = result.get_next()
+        out[row[0]] = row[1] or None
+    return out
+
+
 # ---------- GRAPH-family KPI read primitives (#109) ----------
 #
 # Single-door reads feeding compiler.kpi.graph.compute_graph. Each is one

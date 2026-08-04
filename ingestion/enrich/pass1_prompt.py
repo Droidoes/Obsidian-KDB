@@ -9,7 +9,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ingestion.enrich.config_loader import load_domains, load_source_types
 from ingestion.enrich.pass1_schema import PASS1_SCHEMA_VERSION
 
-PASS1_PROMPT_VERSION = "1.2.0"  # Task #95: drop 4 code-owned fields; full JSON template; arrow→prose boundaries (2026-05-30)
+PASS1_PROMPT_VERSION = "1.3.0"  # Task #126: entity_search_keys re-specified for semantic selection (no key_themes copy); author null sentinel (2026-08-02)
 
 _TEMPLATE_DIR = Path(__file__).parent
 _env = Environment(

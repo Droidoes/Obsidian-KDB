@@ -56,6 +56,11 @@ from compiler.prompt_builder import PASS2_PROMPT_VERSION, load_system_prompt
 
 MANIFEST_NAME = "manifest.json"
 
+#: #123 P3a.2b — the pass-1.5 selector seat (R-P3a-5; settled 2026-08-03 in
+#: docs/TASKS.md #123). Resolved ONCE per run() and threaded into every
+#: compile_source call; the adapter itself is seat-agnostic.
+PASS15_SELECTOR_MODEL_ID = "qwen3.7-flash"
+
 
 @dataclass
 class CommitResult:
@@ -545,6 +550,10 @@ def run(
     crashed_reason: str | None = None
     limit_reached: bool = False
     p1_attempted: int = 0    # sources that entered the Pass-1 enrich step
+    # #123 P3a.4 (§4.7): pass-1.5 counting channel — accumulated from each
+    # compile_source result; attempted − written == envelope write failures.
+    searches_attempted: int = 0
+    searches_written: int = 0
 
     # Scan needs no graph — do it first so --dry-run can preview without opening
     # (or mutating) the graph and without firing any API call.
@@ -603,12 +612,28 @@ def run(
             event_log_failed=recorder.event_log_failed,
             quarantined_sources=_quarantined_sources(recorder), planned=planned)
 
+    # --- #123 P3a.2b: resolve + validate the pass-1.5 selector seat ONCE,
+    # after the dry-run early return, before the graph opens (§4.4). An
+    # unknown seat, a seat without a ctx_window (cannot budget), or a
+    # max_tokens exceeding the seat's output envelope are run-level config
+    # defects — fail-hard before any source is processed.
+    selector = resolve_models_json(PASS15_SELECTOR_MODEL_ID)
+    if selector.ctx_window is None:
+        raise PoolError(
+            f"pass-1.5 selector seat {PASS15_SELECTOR_MODEL_ID!r} has no "
+            "ctx_window — the selector cannot be budgeted")
+    if max_tokens > selector.max_output_tokens:
+        raise ValueError(
+            f"max_tokens={max_tokens} exceeds the pass-1.5 selector seat "
+            f"{PASS15_SELECTOR_MODEL_ID!r} output envelope "
+            f"({selector.max_output_tokens})")
+
     try:
         with GraphDB(graph_path) as g:
             files_by_id = {e.path: e for e in scan.files}
 
             # --- compile queue: NEW/CHANGED (+ MOVED+CHANGED) ---
-            for source_id in scan.to_compile:
+            for intra_run_order, source_id in enumerate(scan.to_compile):
                 p1_attempted += 1
                 scan_entry = files_by_id[source_id]
                 recorder.record(
@@ -715,7 +740,10 @@ def run(
                     ledger=ledger, provider=provider, model=model, max_tokens=max_tokens,
                     price_in=price_in, price_out=price_out, ctx_window=ctx_window,
                     use_completion_tokens=use_completion_tokens, extra_body=extra_body,
-                    temperature=temperature, route=route)
+                    temperature=temperature, route=route,
+                    selector=selector, intra_run_order=intra_run_order)
+                searches_attempted += 1 if result.search_attempted else 0
+                searches_written += 1 if result.search_envelope_written else 0
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
@@ -985,6 +1013,8 @@ def run(
             noise=counts["sources_noise"],
             p1_attempted=p1_attempted,
             p2_attempted=signal,
+            searches_attempted=searches_attempted,
+            searches_written=searches_written,
             # Task #122 §7.4: False = the run did not complete the finalize
             # boundary (audit-only measurements; score-skipped at the §7c gate).
             finalize_ran=finalize_stats is not None,

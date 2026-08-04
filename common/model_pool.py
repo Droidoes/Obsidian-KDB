@@ -29,8 +29,21 @@ WORDS_TO_TOKENS = 1.3  # deliberate over-estimate; no tokenizer dependency
 # go here — never guess a param (it would fire on a paid call). Unmapped providers
 # are a no-op: anthropic/ollama (thinking off by default / no thinking mode), and
 # gemini/openai/xai (TODO: verify their disable param before adding).
+#: Qwen's disable param, defined ONCE and bound under every alibaba region key
+#: below. Regions are separate providers (different credentials — Joseph,
+#: 2026-08-02), but they speak one API, so the param must not be copied per
+#: region: two literals drift, and a drifted entry here fails SILENTLY — an
+#: unmapped or wrong provider is a no-op, thinking stays on, and the first
+#: symptom is a blown output envelope on a paid call (see gpt-5.6-luna,
+#: `docs/reference/model-provider-api-calls.md`).
+_QWEN_THINKING_OFF = {"enable_thinking": False}
+
 _THINKING_DISABLE_EXTRA_BODY = {
-    "alibaba": {"enable_thinking": False},
+    "alibaba-us": _QWEN_THINKING_OFF,
+    "alibaba-sgp": _QWEN_THINKING_OFF,
+    #: Pre-region identity, kept so a revived `models_dropped.json` entry does not
+    #: silently lose its thinking-off. Archived benchmark runs also carry it.
+    "alibaba": _QWEN_THINKING_OFF,
     "deepseek": {"thinking": {"type": "disabled"}},
     # z.ai GLM: `thinking.type` enabled|disabled (default enabled) — verified
     # against docs.z.ai GLM-5-Turbo guide (same shape as deepseek's param).
@@ -66,6 +79,16 @@ class ModelSpec:
     temperature: float | None = 0.0
     price_in: float = 0.0
     price_out: float = 0.0
+    # Declared per-route premise (#123 D8/codex N4): content token count <= UTF-8
+    # byte count. A THEOREM for byte-level BPE — every token maps to >= 1 byte —
+    # but a declaration here, not an inference, because it is load-bearing for
+    # #123's output-allowance proof and must be verified per route rather than
+    # assumed for a future provider. Deliberately NOT validated at Gate 1:
+    # load_pool cannot know which entries will be used as a semantic selector, and
+    # failing the whole pool over a premise only one consumer needs would break
+    # every unrelated call. `None` == not declared; consumers that need it check
+    # at their own route resolution and fail typed before doing any work.
+    tokens_lte_bytes: bool | None = None
 
 
 def _gate1_validate_entry(entry: dict) -> None:
@@ -142,6 +165,7 @@ def resolve_models_json(model_id: str) -> ModelSpec:
         temperature=entry.get("temperature", 0.0),
         price_in=entry.get("price_in", 0.0),
         price_out=entry.get("price_out", 0.0),
+        tokens_lte_bytes=entry.get("tokens_lte_bytes"),
     )
 
 

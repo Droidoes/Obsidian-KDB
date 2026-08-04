@@ -86,6 +86,16 @@ def _event_rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _selector_spec():
+    """#123 P3a.2b: compile_source requires a run-level selector seat (empty
+    graph ⇒ the core abstains; the seam never fires)."""
+    from common.model_pool import ModelSpec
+    return ModelSpec(
+        id="test-selector", provider="deepseek", model="test",
+        route=ModelRoute("openai_compat", "https://example.invalid", "DEEPSEEK_API_KEY"),
+        ctx_window=400_000, max_output_tokens=65_536, tokens_lte_bytes=True)
+
+
 def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -102,7 +112,8 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
             frontmatter=_fm(), conn=g.conn,
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
-            provider="p", model="m", max_tokens=4096)
+            provider="p", model="m", max_tokens=4096,
+            selector=_selector_spec())
         assert produced.ok, (produced.failure_stage, produced.error)
 
         result = kdb_orchestrate._commit_source(
@@ -1182,6 +1193,11 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert hdr["pass2_system_prompt_sha256"] == hashlib.sha256(
         prompt_builder.load_system_prompt().encode("utf-8")
     ).hexdigest()
+    # #123 P3a.4 (§4.7): the one signal source ran pass-1.5 (empty-graph
+    # abstain) and its envelope write succeeded; the noise source never
+    # reached compile_source.
+    assert hdr["searches_attempted"] == 1
+    assert hdr["searches_written"] == 1
 
 
 # ---------- Task #111 Phase 0 Task 2: release_version recorded in header ----------
@@ -1390,8 +1406,8 @@ def test_emit_kpis_no_finalize_emits_audit_artifact(tmp_path, monkeypatch):
     assert m["graph"]["scored"]["entity_reuse"] is None
     assert m["graph"]["watched"]["orphan_rate"] is None
     assert m["graph"]["watched"]["entity_search_key_resolution"] is None
-    # Task-122 event-time fields retained: the context build succeeded per
-    # source (empty graph → complete records) — build success rate 1.0.
+    # Task-122 event-time fields: the context build succeeded per source
+    # (empty graph → complete records).
     assert m["graph"]["watched"]["context_build_success_rate"] == 1.0
     assert m["graph"]["watched"]["context_record_coverage"] == 1.0
 
@@ -1410,3 +1426,27 @@ def test_cli_emit_kpis_default_false(tmp_path):
         "--vault-root", str(tmp_path),
     ])
     assert args.emit_kpis is False
+
+
+# ---------- #123 P3a.4: header search counters (§4.7) ----------
+
+def test_run_header_search_counters_envelope_write_failure(tmp_path, monkeypatch):
+    """§4.7 reconciliation: an envelope write failure (warn-only, B9) splits
+    the counters — searches_attempted=1, searches_written=0 — and the run
+    still completes ok."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    def disk_full(*_args, **_kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("compiler.search_adapter.atomic_write_json", disk_full)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+    hdr = json.loads(
+        (state_root / "runs" / res.run_id / "measurement_header.json")
+        .read_text(encoding="utf-8"))
+    assert hdr["searches_attempted"] == 1
+    assert hdr["searches_written"] == 0

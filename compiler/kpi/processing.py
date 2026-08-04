@@ -7,7 +7,11 @@ on empty/zero-token input).  Pure function — no I/O.
 """
 from __future__ import annotations
 
-from common.measurement import PassCallMeasurement, RunMeasurementHeader
+from common.measurement import (
+    PassCallMeasurement,
+    RunMeasurementHeader,
+    SearchPassMeasurement,
+)
 
 
 def compute_processing(
@@ -185,3 +189,49 @@ def compute_processing(
     }
 
     return {"scored": scored, "diagnostic": diagnostic}
+
+
+def compute_search_diagnostics(
+    measurements: list[SearchPassMeasurement],
+) -> dict:
+    """#123 P3a.4 (§4.7) — the DEDICATED pass-1.5 diagnostic aggregation.
+
+    Separate from compute_processing by contract (A15/H4): the processing
+    KPIs keep their pass1+pass2 population; search measurements feed ONLY
+    this aggregation — never a scored axis. All values are None when the
+    population is empty (no searches ran / pre-P3a.4 run).
+
+    Cost + tokens are LOWER BOUNDS over known data, never zero-coerced
+    (B10): a no-response attempt contributes cost 0.0 and tokens None, and
+    its count surfaces in cost_unknown_calls / input_token_unknown_attempts
+    (the same attempts — a missing response makes both unknown).
+    `latency_pass1_5` is the mean ms per search (not token-normalized —
+    tokens may be unknown).
+    """
+    if not measurements:
+        return {
+            "calls_pass1_5": None,
+            "attempts_pass1_5": None,
+            "retries_pass1_5": None,
+            "cost_usd_pass1_5": None,
+            "cost_unknown_calls_pass1_5": None,
+            "input_tokens_pass1_5": None,
+            "input_token_unknown_attempts_pass1_5": None,
+            "latency_pass1_5": None,
+        }
+    calls = sum(m.calls for m in measurements)
+    attempts = sum(m.attempts for m in measurements)
+    unknown = sum(m.input_token_unknown_attempts for m in measurements)
+    known_tokens = [m.total_input_tokens for m in measurements
+                    if m.total_input_tokens is not None]
+    return {
+        "calls_pass1_5": calls,                 # logical — one per search (B10)
+        "attempts_pass1_5": attempts,           # StageRecord count, incl. no-response
+        "retries_pass1_5": attempts - calls,
+        "cost_usd_pass1_5": sum(m.cost_usd for m in measurements),
+        "cost_unknown_calls_pass1_5": unknown,
+        "input_tokens_pass1_5": sum(known_tokens) if known_tokens else None,
+        "input_token_unknown_attempts_pass1_5": unknown,
+        "latency_pass1_5": (
+            sum(m.total_latency_ms for m in measurements) / len(measurements)),
+    }

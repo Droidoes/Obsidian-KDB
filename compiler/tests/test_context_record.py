@@ -1,133 +1,118 @@
-"""Tests for context_record — factory state invariants + strict v1 parser
-(Task #122 §1). Rejects never coerce; both status-invariant sides enforced.
-Empty-stamp normalization lives at the resolver's classifier (test_queries_context)
-— the parser only ever sees the normalized form and REJECTS an empty stamp."""
+"""Tests for context_record's RETAINED strict v1 parser (Task #122 §1;
+#123 P3a.2b: the V1 factory is retired — V1 is READ-ONLY for historical
+records, §7 row 5). Rejects never coerce; both status-invariant sides
+enforced. Empty-stamp normalization lives at the resolver's classifier
+(test_queries_context) — the parser only ever sees the normalized form and
+REJECTS an empty stamp. Payloads are hand-built: the factory that used to
+produce them is deleted."""
 from __future__ import annotations
 
 import json
 
 import pytest
 
-from common.types import ContextTelemetry, KeyOutcome, TierRecord
+import compiler.context_record as context_record
 from compiler.context_record import (
     CONTEXT_RECORD_SCHEMA_VERSION,
-    ContextFailureInput,
     ContextRecordError,
     ContextRecordV1,
-    build_context_record_v1,
+    KeyOutcomeV1,
     parse_context_record_v1,
 )
 
 
-# ---------- fixtures: valid payloads ----------
-
-def _telemetry() -> ContextTelemetry:
-    return ContextTelemetry(
-        source_id="KDB/raw/s.md",
-        configured_t2_mode="structured",
-        effective_t2_strategy="structured_keys",
-        keys_emitted=["k1", "k2"],
-        key_outcomes=[
-            KeyOutcome("k1", "resolved_t2_seed", "k1-canon", "r0"),
-            KeyOutcome("k2", "unresolved", None, None),
-        ],
-        t1=TierRecord(candidates=1, delivered=1, slugs=["t1-page"]),
-        t2=TierRecord(candidates=2, delivered=1, slugs=["t2-page"]),
-        t3=TierRecord(candidates=4, delivered=0, slugs=[]),
-        candidate_universe_size=7,
-        domain_scope="value-investing",
-        cold_start=False,
-        max_hops=1,
-        page_cap=50,
-    )
-
-
-def _failure_input() -> ContextFailureInput:
-    return ContextFailureInput(
-        source_id="KDB/raw/s.md",
-        configured_t2_mode="structured",
-        effective_t2_strategy="structured_keys",
-        keys_emitted=["k1", "k2"],
-        domain_scope="value-investing",
-        page_cap=50,
-    )
-
+# ---------- fixtures: valid hand-built payloads (the retired factory's exact
+# ---------- output shape, frozen here so the parser stays pinned) ----------
 
 def _complete_dict() -> dict:
-    return build_context_record_v1(
-        run_id="run-1", status="complete", telemetry=_telemetry()).to_dict()
+    return {
+        "schema_version": 1,
+        "run_id": "run-1",
+        "source_id": "KDB/raw/s.md",
+        "status": "complete",
+        "configured_t2_mode": "structured",
+        "effective_t2_strategy": "structured_keys",
+        "keys_emitted": ["k1", "k2"],
+        "key_outcomes": [
+            {"key": "k1", "disposition": "resolved_t2_seed",
+             "resolved": "k1-canon", "target_first_run_id": "r0"},
+            {"key": "k2", "disposition": "unresolved",
+             "resolved": None, "target_first_run_id": None},
+        ],
+        "t1": {"candidates": 1, "delivered": 1, "slugs": ["t1-page"]},
+        "t2": {"candidates": 2, "delivered": 1, "slugs": ["t2-page"]},
+        "t3": {"candidates": 4, "delivered": 0, "slugs": []},
+        "candidate_universe_size": 7,
+        "domain_scope": "value-investing",
+        "cold_start": False,
+        "max_hops": 1,
+        "page_cap": 50,
+    }
 
 
 def _failed_dict() -> dict:
-    return build_context_record_v1(
-        run_id="run-1", status="context_failed",
-        failure_input=_failure_input()).to_dict()
+    return {
+        "schema_version": 1,
+        "run_id": "run-1",
+        "source_id": "KDB/raw/s.md",
+        "status": "context_failed",
+        "configured_t2_mode": "structured",
+        "effective_t2_strategy": "structured_keys",
+        "keys_emitted": ["k1", "k2"],
+        "key_outcomes": [],
+        "t1": {"candidates": 0, "delivered": 0, "slugs": []},
+        "t2": {"candidates": 0, "delivered": 0, "slugs": []},
+        "t3": {"candidates": 0, "delivered": 0, "slugs": []},
+        "candidate_universe_size": None,
+        "domain_scope": "value-investing",
+        "cold_start": None,
+        "max_hops": None,
+        "page_cap": 50,
+    }
 
 
-# ---------- factory: valid combos ----------
+# ---------- V1 is read-only now (§7 row 5) ----------
 
-def test_factory_complete_maps_telemetry_fields():
-    rec = build_context_record_v1(run_id="run-1", status="complete", telemetry=_telemetry())
+def test_v1_factory_is_retired():
+    """build_context_record_v1 + ContextFailureInput are deleted; the V1
+    parser and record type STAY (historical records remain readable)."""
+    assert not hasattr(context_record, "build_context_record_v1")
+    assert not hasattr(context_record, "ContextFailureInput")
+    assert hasattr(context_record, "parse_context_record_v1")
+    assert hasattr(context_record, "ContextRecordV1")
+
+
+# ---------- parse: valid payloads ----------
+
+def test_parse_complete_maps_fields():
+    rec = parse_context_record_v1(_complete_dict())
     assert isinstance(rec, ContextRecordV1)
     assert rec.schema_version == CONTEXT_RECORD_SCHEMA_VERSION == 1
     assert rec.run_id == "run-1"
     assert rec.status == "complete"
     assert rec.source_id == "KDB/raw/s.md"
-    assert rec.key_outcomes == _telemetry().key_outcomes
+    # The persistence-local V1 outcome type (A19) — historical vocabulary.
+    assert rec.key_outcomes == [
+        KeyOutcomeV1("k1", "resolved_t2_seed", "k1-canon", "r0"),
+        KeyOutcomeV1("k2", "unresolved", None, None),
+    ]
     assert rec.candidate_universe_size == 7
     assert rec.cold_start is False
     assert rec.max_hops == 1
     assert rec.page_cap == 50
 
 
-def test_factory_context_failed_frozen_shape():
-    rec = build_context_record_v1(
-        run_id="run-1", status="context_failed", failure_input=_failure_input())
+def test_parse_context_failed_frozen_shape():
+    rec = parse_context_record_v1(_failed_dict())
     assert rec.status == "context_failed"
     assert rec.keys_emitted == ["k1", "k2"]          # retained from frontmatter
     assert rec.key_outcomes == []
-    zero = TierRecord(0, 0, [])
-    assert rec.t1 == rec.t2 == rec.t3 == zero
+    assert rec.t1.candidates == rec.t2.candidates == rec.t3.candidates == 0
     assert rec.candidate_universe_size is None
     assert rec.cold_start is None
     assert rec.max_hops is None
     assert rec.domain_scope == "value-investing"
     assert rec.page_cap == 50
-
-
-# ---------- factory: invalid combos raise ----------
-
-def test_factory_complete_requires_telemetry():
-    with pytest.raises(ContextRecordError):
-        build_context_record_v1(run_id="r", status="complete")
-
-
-def test_factory_complete_forbids_failure_input():
-    with pytest.raises(ContextRecordError):
-        build_context_record_v1(run_id="r", status="complete",
-                                telemetry=_telemetry(), failure_input=_failure_input())
-
-
-def test_factory_complete_requires_non_null_observables():
-    bad = ContextTelemetry(**{**_telemetry().__dict__, "cold_start": None})  # type: ignore[arg-type]
-    with pytest.raises(ContextRecordError, match="observables"):
-        build_context_record_v1(run_id="r", status="complete", telemetry=bad)
-
-
-def test_factory_context_failed_requires_failure_input():
-    with pytest.raises(ContextRecordError):
-        build_context_record_v1(run_id="r", status="context_failed")
-
-
-def test_factory_context_failed_forbids_telemetry():
-    with pytest.raises(ContextRecordError):
-        build_context_record_v1(run_id="r", status="context_failed",
-                                telemetry=_telemetry(), failure_input=_failure_input())
-
-
-def test_factory_unknown_status_raises():
-    with pytest.raises(ContextRecordError):
-        build_context_record_v1(run_id="r", status="weird")  # type: ignore[arg-type]
 
 
 # ---------- serialization round-trip ----------

@@ -411,15 +411,18 @@ def _finalize_ran_gate(header: dict) -> bool | None:
 
 def _extract_pass1_watched(meas: dict) -> dict:
     """Task #122 §7d: extract the event-time watched fields from a
-    measurements payload's graph section (all tiers) — every `search_key_*`
-    and `context_*` key (means/rates, coverage, and the §5 integrity
-    diagnostics). Merged EXPLICITLY into Pass-1 board raw_values downstream."""
+    measurements payload's graph section (all tiers) — every `search_*` and
+    `context_*` key (means/rates, coverage, and the §5 integrity
+    diagnostics). #123 P3a.3 §4.6: the prefix widened from `search_key_` to
+    `search_` so the V2 series (search_expression_* / search_hit_recency_* /
+    search_stage2_budget_bound_rate) surface too. Merged EXPLICITLY into
+    Pass-1 board raw_values downstream."""
     graph = meas.get("graph", {}) or {}
     all_vals: dict = {}
     for tier in ("scored", "watched", "diagnostic"):
         all_vals.update(graph.get(tier, {}) or {})
     return {k: v for k, v in all_vals.items()
-            if k.startswith("search_key_") or k.startswith("context_")}
+            if k.startswith("search_") or k.startswith("context_")}
 
 
 def _scored_and_diag(meas: dict) -> tuple[dict, dict]:
@@ -606,6 +609,7 @@ def _score_command(args: argparse.Namespace) -> int:
     models: list[dict] = []
     diagnostics_by_model: dict[str, dict] = {}
     pass1_watched_by_model: dict[str, dict] = {}
+    search_diag_by_model: dict[str, dict] = {}
     eligible_to_rundir: dict[str, str] = {}
     for key, run_dir in models_to_rundir.items():
         data = _read_measurements(runs_root / run_dir / "measurements.json")
@@ -640,6 +644,10 @@ def _score_command(args: argparse.Namespace) -> int:
         models.append({"model": key, "scored": scored})
         diagnostics_by_model[key] = diag
         pass1_watched_by_model[key] = _extract_pass1_watched(data)
+        # #123 P3a.4 (§4.7): the emitted search section — fallback pass-1.5
+        # evidence for board rows without a usable run_state/ ({} when the
+        # artifact predates P3a.4).
+        search_diag_by_model[key] = data.get("search") or {}
         eligible_to_rundir[key] = run_dir
 
     if not models:
@@ -694,7 +702,8 @@ def _score_command(args: argparse.Namespace) -> int:
                 fallback_diag_by_model=diagnostics_by_model,
                 header_by_model=header_by_model,
                 pass1_watched_by_model=(
-                    pass1_watched_by_model if p == "pass1" else None))
+                    pass1_watched_by_model if p == "pass1" else None),
+                search_diag_by_model=search_diag_by_model)
             for p in ("pass1", "pass2")
         }
     except Exception as exc:   # pre-write failure: every artifact untouched

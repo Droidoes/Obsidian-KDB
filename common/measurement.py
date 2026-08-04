@@ -217,6 +217,11 @@ class RunMeasurementHeader:
     # (audit-only artifact — score-skipped at the §7c gate). Historical
     # headers missing the field load as True (dataclass default).
     finalize_ran: bool = True
+    # #123 P3a.4 (§4.7): pass-1.5 search counters — attempted = envelope
+    # writes attempted (one per search run); written = writes that succeeded.
+    # Write failures = attempted − written. Historical headers load as 0.
+    searches_attempted: int = 0
+    searches_written: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +229,8 @@ class RunMeasurementHeader:
 # ---------------------------------------------------------------------------
 
 _HEADER_INT_FIELDS = ("scanned", "to_compile", "signal", "noise",
-                      "p1_attempted", "p2_attempted")
+                      "p1_attempted", "p2_attempted",
+                      "searches_attempted", "searches_written")
 
 
 def _validate_header_types(header: "RunMeasurementHeader") -> None:
@@ -401,3 +407,231 @@ def load_run_measurements_with_stats(
     pass1_malformed, pass2_records, pass2_malformed."""
     return _load_run_measurements(
         run_dir, tolerate_malformed=True, collect_stats=True)
+
+
+# ---------------------------------------------------------------------------
+# #123 P3a.4 (§4.7) — SearchPassMeasurement: the pass-1.5 channel
+#
+# One measurement PER SEARCH (not per stage — avoids the pass-1
+# duplicate_source_id completeness collision), computed by the search adapter
+# from the in-memory GraphSearchResult/audit at run time — NEVER re-parsed
+# from envelope bytes — and persisted as the additive "measurement" key of
+# the search/*.json envelope file. The loader below is a NEW additive API:
+# the existing tuple loaders, their shapes, and their callers are untouched
+# (test_load_run_measurements_wrapper_unchanged_shape pins that).
+# ---------------------------------------------------------------------------
+
+
+class SearchMeasurementError(ValueError):
+    """Strict parser/loader rejection — malformed persisted search
+    measurements. Never coerces."""
+
+
+@dataclass(frozen=True)
+class SearchStageMeasurement:
+    """Per-stage {thin, fat} token/cost/sent_bytes split (§4.7, B2/B10).
+    provider_input_tokens is None when ANY attempt's count is unknown —
+    never zero-coerced."""
+    stage: str                      # "thin" | "fat"
+    attempts: int
+    provider_input_tokens: int | None
+    cost_usd: float
+    sent_bytes: int
+
+
+@dataclass(frozen=True)
+class SearchPassMeasurement:
+    """One source search's run-time measurement (§4.7).
+
+    `calls` is LOGICAL — one per source search (B10); `attempts` is the
+    StageRecord count, INCLUDING attempts that received no provider
+    response. `total_input_tokens` is None when ANY attempt's
+    provider_input_tokens is None, accompanied by
+    `input_token_unknown_attempts` — never silently zero-coerced. A21:
+    there is deliberately NO total_output_tokens (output-side truncation is
+    already observable via BudgetRecord.budget_side/finish_reason)."""
+    run_id: str
+    source_id: str
+    pass_: str                      # always "pass1_5"
+    provider: str
+    model: str
+    prompt_versions: dict[str, str | None]      # {"thin": ..., "fat": ...} (G1.3)
+    status: str
+    execution: str
+    calls: int
+    attempts: int
+    total_input_tokens: int | None
+    input_token_unknown_attempts: int
+    stage_splits: tuple[SearchStageMeasurement, ...]
+    total_latency_ms: int
+    cost_usd: float
+    search_snapshot_hash: str | None
+
+    def to_dict(self) -> dict:
+        return dataclasses.asdict(self)
+
+
+# ---------- strict parser ----------
+
+
+def _serr(path: str, detail: str) -> SearchMeasurementError:
+    return SearchMeasurementError(f"{path}: {detail}")
+
+
+def _sreq_str(value: object, path: str) -> str:
+    if not isinstance(value, str):
+        raise _serr(path, f"expected a str, got {value!r}")
+    return value
+
+
+def _sreq_int(value: object, path: str) -> int:
+    # bool-as-int rejects: True/False are ints in Python but never counts.
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise _serr(path, f"expected a non-negative int, got {value!r}")
+    return value
+
+
+def _sreq_number(value: object, path: str) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise _serr(path, f"expected a number, got {value!r}")
+    return value
+
+
+_MEASUREMENT_KEYS = frozenset({
+    "run_id", "source_id", "pass_", "provider", "model", "prompt_versions",
+    "status", "execution", "calls", "attempts", "total_input_tokens",
+    "input_token_unknown_attempts", "stage_splits", "total_latency_ms",
+    "cost_usd", "search_snapshot_hash",
+})
+_STAGE_SPLIT_KEYS = frozenset({
+    "stage", "attempts", "provider_input_tokens", "cost_usd", "sent_bytes",
+})
+_STAGE_NAMES = frozenset({"thin", "fat"})
+
+
+def _parse_stage_split(raw: object, path: str) -> SearchStageMeasurement:
+    if not isinstance(raw, dict):
+        raise _serr(path, f"expected a stage split dict, got {raw!r}")
+    if set(raw) != _STAGE_SPLIT_KEYS:
+        raise _serr(path, f"keys {sorted(raw)} != expected {sorted(_STAGE_SPLIT_KEYS)}")
+    stage = raw["stage"]
+    if stage not in _STAGE_NAMES:
+        raise _serr(f"{path}.stage", f"expected one of {sorted(_STAGE_NAMES)}, got {stage!r}")
+    tokens = raw["provider_input_tokens"]
+    if tokens is not None:
+        tokens = _sreq_int(tokens, f"{path}.provider_input_tokens")
+    return SearchStageMeasurement(
+        stage=stage,
+        attempts=_sreq_int(raw["attempts"], f"{path}.attempts"),
+        provider_input_tokens=tokens,
+        cost_usd=_sreq_number(raw["cost_usd"], f"{path}.cost_usd"),
+        sent_bytes=_sreq_int(raw["sent_bytes"], f"{path}.sent_bytes"),
+    )
+
+
+def parse_search_measurement(raw: object) -> SearchPassMeasurement:
+    """Strict reader for the persisted run-time-computed measurement —
+    rejects, never coerces. Raises SearchMeasurementError."""
+    if not isinstance(raw, dict):
+        raise _serr("$", f"expected a measurement dict, got {raw!r}")
+    if set(raw) != _MEASUREMENT_KEYS:
+        raise _serr("$", f"keys {sorted(raw)} != expected {sorted(_MEASUREMENT_KEYS)}")
+    pass_ = raw["pass_"]
+    if pass_ != "pass1_5":
+        raise _serr("pass_", f"expected 'pass1_5', got {pass_!r}")
+    versions = raw["prompt_versions"]
+    if not isinstance(versions, dict) or set(versions) != {"thin", "fat"}:
+        raise _serr("prompt_versions",
+                    f"expected a {{thin, fat}} dict, got {versions!r}")
+    for stage, version in versions.items():
+        if version is not None and not isinstance(version, str):
+            raise _serr(f"prompt_versions.{stage}",
+                        f"expected null or str, got {version!r}")
+    tokens = raw["total_input_tokens"]
+    if tokens is not None:
+        tokens = _sreq_int(tokens, "total_input_tokens")
+    splits_raw = raw["stage_splits"]
+    if not isinstance(splits_raw, list):
+        raise _serr("stage_splits", f"expected a list, got {splits_raw!r}")
+    snapshot = raw["search_snapshot_hash"]
+    if snapshot is not None and not isinstance(snapshot, str):
+        raise _serr("search_snapshot_hash",
+                    f"expected null or str, got {snapshot!r}")
+    return SearchPassMeasurement(
+        run_id=_sreq_str(raw["run_id"], "run_id"),
+        source_id=_sreq_str(raw["source_id"], "source_id"),
+        pass_="pass1_5",
+        provider=_sreq_str(raw["provider"], "provider"),
+        model=_sreq_str(raw["model"], "model"),
+        prompt_versions=dict(versions),
+        status=_sreq_str(raw["status"], "status"),
+        execution=_sreq_str(raw["execution"], "execution"),
+        calls=_sreq_int(raw["calls"], "calls"),
+        attempts=_sreq_int(raw["attempts"], "attempts"),
+        total_input_tokens=tokens,
+        input_token_unknown_attempts=_sreq_int(
+            raw["input_token_unknown_attempts"], "input_token_unknown_attempts"),
+        stage_splits=tuple(
+            _parse_stage_split(s, f"stage_splits[{i}]")
+            for i, s in enumerate(splits_raw)),
+        total_latency_ms=_sreq_int(raw["total_latency_ms"], "total_latency_ms"),
+        cost_usd=_sreq_number(raw["cost_usd"], "cost_usd"),
+        search_snapshot_hash=snapshot,
+    )
+
+
+# ---------- run-directory loader (NEW additive API — B3) ----------
+
+
+def _load_search_measurements(
+    run_dir: Path,
+    *,
+    tolerate_malformed: bool,
+) -> tuple[list[SearchPassMeasurement], dict]:
+    """Shared loader core. Globs <run_dir>/search/*.json; a file is a search
+    measurement iff it carries a "measurement" key (pre-P3a.4 envelopes
+    without one are skipped — never identified, never malformed). Stats keys:
+    pass1_5_dir_exists, pass1_5_identified, pass1_5_malformed."""
+    search_dir = run_dir / "search"
+    stats = {"pass1_5_dir_exists": search_dir.is_dir(),
+             "pass1_5_identified": 0,
+             "pass1_5_malformed": 0}
+    out: list[SearchPassMeasurement] = []
+    if search_dir.is_dir():
+        for p in sorted(search_dir.glob("*.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                if not tolerate_malformed:
+                    raise SearchMeasurementError(f"{p}: {e}") from e
+                stats["pass1_5_malformed"] += 1
+                continue
+            if not isinstance(data, dict) or "measurement" not in data:
+                continue
+            stats["pass1_5_identified"] += 1
+            try:
+                out.append(parse_search_measurement(data["measurement"]))
+            except SearchMeasurementError:
+                if not tolerate_malformed:
+                    raise
+                stats["pass1_5_malformed"] += 1
+                continue
+    return out, stats
+
+
+def load_search_measurements(run_dir: Path) -> list[SearchPassMeasurement]:
+    """STRICT (production path): any malformed search file raises
+    SearchMeasurementError — emit fails safely rather than emitting KPIs
+    from partial evidence."""
+    out, _ = _load_search_measurements(run_dir, tolerate_malformed=False)
+    return out
+
+
+def load_search_measurements_with_stats(
+    run_dir: Path,
+) -> tuple[list[SearchPassMeasurement], dict]:
+    """Score-time variant: tolerant of malformed files (counted in stats) so
+    the D-117-5 completeness contract can mark the row unranked instead of
+    aborting the boards. Stats keys: pass1_5_dir_exists, pass1_5_identified,
+    pass1_5_malformed."""
+    return _load_search_measurements(run_dir, tolerate_malformed=True)

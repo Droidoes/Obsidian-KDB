@@ -115,7 +115,12 @@ _PROVIDER_DEFAULTS: dict[str, Callable[[], ModelRoute]] = {
     "openai":       lambda: ModelRoute("openai_compat", None, "OPENAI_API_KEY"),
     "gemini":       lambda: ModelRoute("gemini", None, "GEMINI_API_KEY"),
     "xai":          lambda: ModelRoute("openai_compat", "https://api.x.ai/v1", "XAI_GROK_API_KEY"),
-    "alibaba":      lambda: ModelRoute("openai_compat", "https://dashscope-us.aliyuncs.com/compatible-mode/v1", "QWEN_US_API_KEY"),
+    # Regions are distinct providers: distinct credentials, distinct endpoints.
+    # `alibaba-sgp` is deliberately ABSENT — Singapore's compatible-mode URL is
+    # workspace-scoped (https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/...),
+    # so it has no defensible default and must come from the pool entry.
+    "alibaba-us":   lambda: ModelRoute("openai_compat", "https://dashscope-us.aliyuncs.com/compatible-mode/v1", "QWEN_US_API_KEY"),
+    "alibaba":      lambda: ModelRoute("openai_compat", "https://dashscope-us.aliyuncs.com/compatible-mode/v1", "QWEN_US_API_KEY"),  # legacy alias
     "deepseek":     lambda: ModelRoute("openai_compat", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
     "ollama-local": lambda: ModelRoute("openai_compat",
                                        os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
