@@ -1193,6 +1193,11 @@ def test_run_writes_measurement_header_at_finalize(tmp_path, monkeypatch):
     assert hdr["pass2_system_prompt_sha256"] == hashlib.sha256(
         prompt_builder.load_system_prompt().encode("utf-8")
     ).hexdigest()
+    # #123 P3a.4 (§4.7): the one signal source ran pass-1.5 (empty-graph
+    # abstain) and its envelope write succeeded; the noise source never
+    # reached compile_source.
+    assert hdr["searches_attempted"] == 1
+    assert hdr["searches_written"] == 1
 
 
 # ---------- Task #111 Phase 0 Task 2: release_version recorded in header ----------
@@ -1421,3 +1426,27 @@ def test_cli_emit_kpis_default_false(tmp_path):
         "--vault-root", str(tmp_path),
     ])
     assert args.emit_kpis is False
+
+
+# ---------- #123 P3a.4: header search counters (§4.7) ----------
+
+def test_run_header_search_counters_envelope_write_failure(tmp_path, monkeypatch):
+    """§4.7 reconciliation: an envelope write failure (warn-only, B9) splits
+    the counters — searches_attempted=1, searches_written=0 — and the run
+    still completes ok."""
+    vault, state_root = _setup_single_signal_vault(tmp_path, monkeypatch)
+
+    def disk_full(*_args, **_kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("compiler.search_adapter.atomic_write_json", disk_full)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+
+    assert res.ok, res.exit_reason
+    hdr = json.loads(
+        (state_root / "runs" / res.run_id / "measurement_header.json")
+        .read_text(encoding="utf-8"))
+    assert hdr["searches_attempted"] == 1
+    assert hdr["searches_written"] == 0

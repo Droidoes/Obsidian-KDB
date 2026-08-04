@@ -271,12 +271,18 @@ class CompileSourceResult:
     owns stage-8 apply-pages, provenance, manifest commit, and graph-sync.
     error non-None ==> pre-commit failure (D-91-13 case a); cr is None and
     `failure_stage` in {context, compile, validate, canonicalize} routes the
-    orchestrator's case-aware summary without string-parsing."""
+    orchestrator's case-aware summary without string-parsing.
+    #123 P3a.4 (§4.7): `search_attempted` / `search_envelope_written` are the
+    pass-1.5 counting channel — the orchestrator accumulates them into the
+    run header's searches_attempted / searches_written for the emit_kpis
+    reconciliation (attempted − written == envelope write failures)."""
     cr: Optional[dict]
     failure_stage: Optional[str] = None
     exception_type: Optional[str] = None
     error: Optional[str] = None
     artifacts: dict[str, str] = field(default_factory=dict)
+    search_attempted: bool = False
+    search_envelope_written: bool = False
 
     @property
     def ok(self) -> bool:

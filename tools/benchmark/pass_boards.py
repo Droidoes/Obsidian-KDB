@@ -12,8 +12,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from common.measurement import load_run_measurements_with_stats
-from compiler.kpi.processing import compute_processing
+from common.measurement import (
+    load_run_measurements_with_stats,
+    load_search_measurements_with_stats,
+)
+from compiler.kpi.processing import compute_processing, compute_search_diagnostics
 from compiler.kpi.score import GRAPH_WEIGHTS, TOP_WEIGHTS, score_models
 
 GRAPH_KPIS = tuple(GRAPH_WEIGHTS)
@@ -35,10 +38,15 @@ def effective_top_weights(pass_: str) -> dict:
     """Full-precision effective composite weights for a pass board (D-117-7).
 
     Pass-1 has no graph term: TOP_WEIGHTS pro-rates over the processing axes
-    (2/3, 1/6, 1/6). Pass-2 uses the canonical 40/40/10/10.
+    (2/3, 1/6, 1/6). Pass-2 uses the canonical 40/40/10/10. #123 P3a.4 (G1.4):
+    `pass1_5` is an EXPLICIT case — the same processing-only pro-rated vector
+    as pass1 (there is no third ranked board; the pass-1.5 columns are
+    diagnostics only). Any other scope raises — no accidental fall-through.
     """
     if pass_ == "pass2":
         return dict(TOP_WEIGHTS)
+    if pass_ not in ("pass1", "pass1_5"):
+        raise ValueError(f"unknown board scope: {pass_!r}")
     denom = 1.0 - TOP_WEIGHTS["graph"]
     return {
         "quarantine_rate": TOP_WEIGHTS["quarantine_rate"] / denom,
@@ -50,10 +58,16 @@ def effective_top_weights(pass_: str) -> dict:
 
 def _completeness(
     run_state: Path, pass_: str, header, stats: dict,
+    search_stats: dict | None = None,
 ) -> list[str]:
     """D-117-5 per-board completeness contract → list of violated checks
     (empty = complete). `header` is None when measurement_header.json failed
-    to parse."""
+    to parse.
+
+    #123 P3a.4 (§4.7): `search_stats` (from load_search_measurements_with_stats
+    — the TOLERANT score-time loader) adds the pass-1.5 checks on both pass
+    boards: malformed measurement files, and identified measurements vs
+    header.searches_written (pre-P3a.4 runs: 0 == 0, complete)."""
     problems: list[str] = []
     if header is None:
         return ["header_unparseable"]
@@ -71,6 +85,14 @@ def _completeness(
         if stats["pass2_records"] != header.p2_attempted:
             problems.append(
                 f"pass2_records:{stats['pass2_records']}!=p2_attempted:{header.p2_attempted}")
+    if search_stats is not None:
+        if search_stats["pass1_5_malformed"]:
+            problems.append(
+                f"pass1_5_malformed_files:{search_stats['pass1_5_malformed']}")
+        if search_stats["pass1_5_identified"] != header.searches_written:
+            problems.append(
+                f"pass1_5_measurements:{search_stats['pass1_5_identified']}"
+                f"!=searches_written:{header.searches_written}")
     return problems
 
 
@@ -131,6 +153,7 @@ def _build_row(
     runs_root: Path, run_dir: str, model_key: str, pass_: str,
     graph_scored: dict, fallback_diag: dict, meas_header: dict,
     pass1_watched: dict | None = None,
+    search_diag: dict | None = None,
 ) -> dict:
     """Build one board row. Returns {"ranked": bool, ...}. Ranked and
     unranked rows carry the SAME raw_values evidence contract (R5-F3).
@@ -138,7 +161,14 @@ def _build_row(
     pass1_watched (Task #122 §7d): the event-time watched fields extracted
     from the row's measurements.json — merged EXPLICITLY (verbatim keys, not
     the `_pass1` suffix filter) into raw_values on the Pass-1 board for
-    ranked, partial, AND fallback rows alike."""
+    ranked, partial, AND fallback rows alike.
+
+    search_diag (#123 P3a.4, §4.7): the emitted measurements.json "search"
+    section. Rows WITHOUT a usable run_state (fallback / header-unparseable
+    partial) merge it verbatim — it is the only pass-1.5 evidence available.
+    On the recompute path the run_state measurements WIN (consistent with the
+    rest of the board): the diagnostics are recomputed via
+    load_search_measurements_with_stats + compute_search_diagnostics."""
     split = _SPLIT[pass_]
 
     def _with_watched(raw: dict) -> dict:
@@ -150,6 +180,7 @@ def _build_row(
     if not run_state.is_dir():
         # No run_state at all → measurements fallback (D-117-5).
         raw = _fallback_raw(fallback_diag, graph_scored, pass_, meas_header)
+        raw.update(search_diag or {})
         return {
             "ranked": False,
             "measurement_source": SRC_FALLBACK,
@@ -165,6 +196,7 @@ def _build_row(
         # never abort. missing_kpis reflects the actual fallback evidence —
         # an empty list is valid when a completeness violation is the reason.
         raw = _fallback_raw(fallback_diag, graph_scored, pass_, meas_header)
+        raw.update(search_diag or {})
         return {
             "ranked": False,
             "measurement_source": SRC_PARTIAL,
@@ -172,7 +204,11 @@ def _build_row(
             "completeness_errors": ["header_unparseable"],
             "raw_values": _with_watched(raw),
         }
-    problems = _completeness(run_state, pass_, header, stats)
+    # #123 P3a.4: tolerant score-time load of the pass-1.5 measurements —
+    # malformed files feed the completeness contract, never abort the boards.
+    search_measurements, search_stats = load_search_measurements_with_stats(run_state)
+    problems = _completeness(run_state, pass_, header, stats,
+                             search_stats=search_stats)
     diag = compute_processing(header, calls)["diagnostic"]
     # Assemble the full raw evidence ONCE (R5-F3) — retry/cost/unknown, and
     # on pass2 the graph raws + coverage + dispositions.
@@ -180,6 +216,9 @@ def _build_row(
     raw[f"retry_load_{pass_}"] = diag.get(f"retry_load_{pass_}")
     raw[f"cost_usd_{pass_}"] = diag.get(f"cost_usd_{pass_}")
     raw[f"cost_unknown_calls_{pass_}"] = diag.get(f"cost_unknown_calls_{pass_}")
+    # Pass-1.5 diagnostic columns (§4.7) — merged on BOTH pass boards; the
+    # empty population yields None values, never fabricated zeros (B10).
+    raw.update(compute_search_diagnostics(search_measurements))
     if pass_ == "pass2":
         for k in GRAPH_KPIS:
             raw[k] = graph_scored.get(k)
@@ -229,6 +268,7 @@ def build_pass_board(
     fallback_diag_by_model: dict[str, dict],
     header_by_model: dict[str, dict] | None = None,
     pass1_watched_by_model: dict[str, dict] | None = None,
+    search_diag_by_model: dict[str, dict] | None = None,
 ) -> dict:
     """Build one pass board (payload shape: see plan Interfaces).
 
@@ -239,9 +279,14 @@ def build_pass_board(
 
     pass1_watched_by_model (Task #122 §7d): per-row event-time watched fields
     extracted from measurements.json — merged explicitly into Pass-1
-    raw_values on every row class. None (→ {}) merges nothing."""
+    raw_values on every row class. None (→ {}) merges nothing.
+
+    search_diag_by_model (#123 P3a.4, §4.7): per-row emitted "search" section
+    — fallback pass-1.5 evidence for rows without a usable run_state. None
+    (→ {}) merges nothing."""
     header_by_model = header_by_model or {}
     pass1_watched_by_model = pass1_watched_by_model or {}
+    search_diag_by_model = search_diag_by_model or {}
     models: list[dict] = []
     unranked: list[dict] = []
     raw_by_model: dict[str, dict] = {}
@@ -251,7 +296,8 @@ def build_pass_board(
                          graph_scored_by_model.get(model_key, {}),
                          fallback_diag_by_model.get(model_key, {}),
                          header_by_model.get(model_key, {}),
-                         pass1_watched_by_model.get(model_key, {}))
+                         pass1_watched_by_model.get(model_key, {}),
+                         search_diag_by_model.get(model_key, {}))
         if row["ranked"]:
             models.append({"model": model_key, "scored": row["scored"]})
             raw_by_model[model_key] = row["raw_values"]

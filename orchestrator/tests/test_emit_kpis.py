@@ -17,7 +17,11 @@ import pytest
 
 import orchestrator.emit_kpis as emit_mod
 import orchestrator.kdb_orchestrate as kdb_orchestrate
-from common.measurement import RunMeasurementHeader
+from common.measurement import (
+    RunMeasurementHeader,
+    SearchPassMeasurement,
+    SearchStageMeasurement,
+)
 from common.types import SearchHitSummary, SearchSummary, TierRecord
 from compiler.context_record import (
     ContextRecordV1,
@@ -40,7 +44,8 @@ from orchestrator.tests.test_kdb_orchestrate import (
 # Light harness
 # =====================================================================
 
-def _header(run_id: str, p2_attempted: int, *, finalize_ran: bool = True) -> RunMeasurementHeader:
+def _header(run_id: str, p2_attempted: int, *, finalize_ran: bool = True,
+            searches_attempted: int = 0, searches_written: int = 0) -> RunMeasurementHeader:
     return RunMeasurementHeader(
         run_id=run_id,
         corpus_fingerprint="fp",
@@ -53,6 +58,8 @@ def _header(run_id: str, p2_attempted: int, *, finalize_ran: bool = True) -> Run
         p1_attempted=p2_attempted,
         p2_attempted=p2_attempted,
         finalize_ran=finalize_ran,
+        searches_attempted=searches_attempted,
+        searches_written=searches_written,
     )
 
 
@@ -689,3 +696,138 @@ def test_lifecycle_packaging_sentinel_no_stale_finalized_output(tmp_path, monkey
     # must never be packaged into a no-finalize record.
     assert not (out_dir / "compile_result.json").exists()
     assert not (out_dir / "wiki").exists()
+
+
+# =====================================================================
+# #123 P3a.4 (§4.7) — search section + envelope reconciliation
+# =====================================================================
+
+def _search_measurement(run_id: str = "run-1", source_id: str = "src-a",
+                        **overrides) -> SearchPassMeasurement:
+    """Canned §4.7 measurement: 1 logical call, 2 attempts (thin known
+    tokens + cost, fat retry no-response ⇒ unknown), 42ms."""
+    base = dict(
+        run_id=run_id, source_id=source_id, pass_="pass1_5",
+        provider="p", model="m",
+        prompt_versions={"thin": "1.0", "fat": None},
+        status="completed", execution="two_stage_attempted",
+        calls=1, attempts=2,
+        total_input_tokens=100, input_token_unknown_attempts=1,
+        stage_splits=(
+            SearchStageMeasurement(stage="thin", attempts=1,
+                                   provider_input_tokens=100,
+                                   cost_usd=0.001, sent_bytes=500),
+            SearchStageMeasurement(stage="fat", attempts=1,
+                                   provider_input_tokens=None,
+                                   cost_usd=0.0, sent_bytes=700),
+        ),
+        total_latency_ms=42, cost_usd=0.001,
+        search_snapshot_hash="sha256:abc",
+    )
+    return SearchPassMeasurement(**{**base, **overrides})
+
+
+def _write_search_envelope(run_dir: Path, source_id: str,
+                           measurement: SearchPassMeasurement) -> None:
+    d = run_dir / "search"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{source_id.replace('/', '__')}.json").write_text(
+        json.dumps({"schema_version": 1, "measurement": measurement.to_dict()}),
+        encoding="utf-8")
+
+
+def test_emit_search_section_computed_and_reconciled(tmp_path, monkeypatch):
+    """§4.7: the search diagnostics aggregate lands on measurements.json as
+    payload["search"], with the envelope-vs-header reconciliation passing
+    (1 envelope written == header.searches_written)."""
+    run_dir = tmp_path / "run"
+    hdr = _header("run-1", 1, searches_attempted=1, searches_written=1)
+    _write_header(run_dir, hdr)
+    _write_sidecar(run_dir, "src-a", keys=["alpha"])
+    _write_record_v2(run_dir, "run-1", "src-a",
+                     [_outcome_v2("alpha", "unresolved", annotation="no_match")])
+    _write_search_envelope(run_dir, "src-a", _search_measurement())
+    with GraphDB(tmp_path / "graph"):
+        pass
+    payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
+
+    s = payload["search"]
+    assert s["calls_pass1_5"] == 1
+    assert s["attempts_pass1_5"] == 2
+    assert s["retries_pass1_5"] == 1
+    assert s["cost_usd_pass1_5"] == pytest.approx(0.001)
+    assert s["cost_unknown_calls_pass1_5"] == 1
+    assert s["input_tokens_pass1_5"] == 100
+    assert s["input_token_unknown_attempts_pass1_5"] == 1
+    assert s["latency_pass1_5"] == pytest.approx(42.0)
+    assert s["envelope_count"] == 1
+    assert s["reconciled"] is True
+
+
+def test_emit_search_reconciliation_mismatch_warns(tmp_path, monkeypatch):
+    """§4.7/B10: header.searches_written=1 but NO envelope on disk — the
+    measurement state is incomplete: reconciled=False AND a warning (never
+    silent)."""
+    run_dir = tmp_path / "run"
+    hdr = _header("run-1", 1, searches_attempted=1, searches_written=1)
+    _write_header(run_dir, hdr)
+    _write_sidecar(run_dir, "src-a", keys=["alpha"])
+    _write_record_v2(run_dir, "run-1", "src-a",
+                     [_outcome_v2("alpha", "unresolved", annotation="no_match")])
+    with GraphDB(tmp_path / "graph"):
+        pass
+    with pytest.warns(UserWarning, match="search envelope reconciliation"):
+        payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
+
+    s = payload["search"]
+    assert s["envelope_count"] == 0
+    assert s["reconciled"] is False
+    # No measurement-bearing files ⇒ the diagnostics are the empty population.
+    assert s["calls_pass1_5"] is None
+
+
+def test_emit_search_old_run_no_search_dir_reconciled(tmp_path, monkeypatch):
+    """Pre-P3a.4 run shape: no search dir, header counters 0/0 ⇒ reconciled
+    vacuously True, envelope_count 0, diagnostics None."""
+    run_dir = tmp_path / "run"
+    hdr = _header("run-1", 1)
+    _write_header(run_dir, hdr)
+    _write_sidecar(run_dir, "src-a", keys=["alpha"])
+    _write_record_v2(run_dir, "run-1", "src-a",
+                     [_outcome_v2("alpha", "unresolved", annotation="no_match")])
+    with GraphDB(tmp_path / "graph"):
+        pass
+    payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
+
+    s = payload["search"]
+    assert s["envelope_count"] == 0
+    assert s["reconciled"] is True
+    assert s["calls_pass1_5"] is None
+    assert s["latency_pass1_5"] is None
+
+
+def test_emit_search_malformed_measurement_fails_safely(tmp_path, monkeypatch):
+    """The STRICT loader backs emit (B10): a malformed search measurement
+    aborts the emission — maybe_emit_kpis converts it to a warning and the
+    run is unaffected."""
+    run_dir = tmp_path / "run"
+    hdr = _header("run-1", 1, searches_attempted=1, searches_written=1)
+    _write_header(run_dir, hdr)
+    _write_sidecar(run_dir, "src-a", keys=["alpha"])
+    _write_record_v2(run_dir, "run-1", "src-a",
+                     [_outcome_v2("alpha", "unresolved", annotation="no_match")])
+    bad = _search_measurement().to_dict()
+    del bad["attempts"]
+    (run_dir / "search").mkdir(parents=True, exist_ok=True)
+    (run_dir / "search" / "src-a.json").write_text(
+        json.dumps({"schema_version": 1, "measurement": bad}), encoding="utf-8")
+
+    bench = tmp_path / "bench"
+    monkeypatch.setattr(emit_mod, "get_benchmark_runs_dir", lambda: bench)
+    with pytest.warns(UserWarning, match="KPI emission failed"):
+        maybe_emit_kpis(
+            emit_kpis=True, run_id="run-1", run_dir=run_dir,
+            graph_path=tmp_path / "graph", state_root=tmp_path / "state",
+            vault_root=tmp_path / "vault", provider="p", model="m",
+            header=hdr, finalize_ran=True)
+    assert not (bench / "m-run-1" / "measurements.json").exists()

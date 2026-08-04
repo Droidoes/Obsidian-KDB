@@ -550,6 +550,10 @@ def run(
     crashed_reason: str | None = None
     limit_reached: bool = False
     p1_attempted: int = 0    # sources that entered the Pass-1 enrich step
+    # #123 P3a.4 (§4.7): pass-1.5 counting channel — accumulated from each
+    # compile_source result; attempted − written == envelope write failures.
+    searches_attempted: int = 0
+    searches_written: int = 0
 
     # Scan needs no graph — do it first so --dry-run can preview without opening
     # (or mutating) the graph and without firing any API call.
@@ -738,6 +742,8 @@ def run(
                     use_completion_tokens=use_completion_tokens, extra_body=extra_body,
                     temperature=temperature, route=route,
                     selector=selector, intra_run_order=intra_run_order)
+                searches_attempted += 1 if result.search_attempted else 0
+                searches_written += 1 if result.search_envelope_written else 0
                 if not result.ok:
                     _check_invariant(
                         bool(result.failure_stage) and bool(result.error),
@@ -1007,6 +1013,8 @@ def run(
             noise=counts["sources_noise"],
             p1_attempted=p1_attempted,
             p2_attempted=signal,
+            searches_attempted=searches_attempted,
+            searches_written=searches_written,
             # Task #122 §7.4: False = the run did not complete the finalize
             # boundary (audit-only measurements; score-skipped at the §7c gate).
             finalize_ran=finalize_stats is not None,

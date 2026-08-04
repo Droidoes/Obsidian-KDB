@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from common.measurement import SearchPassMeasurement, SearchStageMeasurement
 from tools.benchmark.pass_boards import (
     SRC_FALLBACK,
     SRC_PARTIAL,
@@ -15,6 +16,29 @@ from tools.benchmark.pass_boards import (
 )
 
 
+def _search_measurement_dict(run_id: str, source_id: str) -> dict:
+    """#123 P3a.4 (§4.7): one valid search measurement (1 call, 2 attempts —
+    thin 100 + fat 50 tokens, both known; costs 0.002 + 0.003; 55ms)."""
+    return SearchPassMeasurement(
+        run_id=run_id, source_id=source_id, pass_="pass1_5",
+        provider="prov", model="m",
+        prompt_versions={"thin": "1.0", "fat": "1.0"},
+        status="completed", execution="two_stage_attempted",
+        calls=1, attempts=2,
+        total_input_tokens=150, input_token_unknown_attempts=0,
+        stage_splits=(
+            SearchStageMeasurement(stage="thin", attempts=1,
+                                   provider_input_tokens=100,
+                                   cost_usd=0.002, sent_bytes=600),
+            SearchStageMeasurement(stage="fat", attempts=1,
+                                   provider_input_tokens=50,
+                                   cost_usd=0.003, sent_bytes=800),
+        ),
+        total_latency_ms=55, cost_usd=0.005,
+        search_snapshot_hash="sha256:abc",
+    ).to_dict()
+
+
 def _write_run(runs_root: Path, run_dir: str, *, model: str, provider: str = "prov",
                release: str = "", p1: int = 4, signal: int = 3, noise: int = 1,
                failed_p1: int = 0, pass2_records: int | None = None,
@@ -22,7 +46,9 @@ def _write_run(runs_root: Path, run_dir: str, *, model: str, provider: str = "pr
                tokens_p1: int = 100,
                quarantine_p2: bool = False, graph: dict | None = None,
                skip_sidecar: int | None = None, malformed_p1: bool = False,
-               dup_source: bool = False, no_run_state: bool = False):
+               dup_source: bool = False, no_run_state: bool = False,
+               searches: int = 0, search_header: int | None = None,
+               malformed_search: bool = False):
     """Write measurements.json + run_state/ for one synthetic run.
 
     p1 sources: sidecars s0..s{p1-1} (dispositions come from the header
@@ -50,11 +76,13 @@ def _write_run(runs_root: Path, run_dir: str, *, model: str, provider: str = "pr
     rs = d / "run_state"
     (rs / "pass1").mkdir(parents=True)
     (rs / "pass2").mkdir(parents=True)
+    n_written = searches if search_header is None else search_header
     (rs / "measurement_header.json").write_text(json.dumps({
         "run_id": run_dir, "corpus_fingerprint": "fp", "pass1_prompt_version": "1",
         "pass2_prompt_version": "", "scanned": p1, "to_compile": p1,
         "signal": signal, "noise": noise, "p1_attempted": p1,
-        "p2_attempted": signal}))
+        "p2_attempted": signal,
+        "searches_attempted": n_written, "searches_written": n_written}))
     n_sidecars = p1 if skip_sidecar is None else skip_sidecar
     for i in range(n_sidecars):
         sid = "src0.md" if (dup_source and i > 0) else f"src{i}.md"
@@ -71,6 +99,17 @@ def _write_run(runs_root: Path, run_dir: str, *, model: str, provider: str = "pr
         }))
     if malformed_p1:
         (rs / "pass1" / "broken.json").write_text("{not json")
+    if searches or malformed_search:
+        (rs / "search").mkdir(parents=True, exist_ok=True)
+        for i in range(searches):
+            (rs / "search" / f"q{i}.json").write_text(json.dumps({
+                "schema_version": 1,
+                "measurement": _search_measurement_dict(run_dir, f"q{i}.md"),
+            }))
+    if malformed_search:
+        # Identified (carries a "measurement" key) but strictly unparseable.
+        (rs / "search" / "broken.json").write_text(json.dumps({
+            "schema_version": 1, "measurement": {"run_id": run_dir}}))
     for i in range(p2):
         (rs / "pass2" / f"c{i}.json").write_text(json.dumps({
             "run_id": run_dir, "source_id": f"c{i}.md", "provider": provider,
@@ -421,3 +460,124 @@ class TestPass1WatchedSurfacing:
                    "effective_top_weights": board["effective_top_weights"]})
         assert "search_expression_matched_rate" in md
         assert "context_build_success_rate" in md
+
+
+# ---------------------------------------------------------------------------
+# #123 P3a.4 (§4.7) — pass-1.5 diagnostics on the pass boards (no third
+# ranked board): the search columns merge into BOTH boards' raw_values.
+# ---------------------------------------------------------------------------
+
+class TestPass15Weights:
+    def test_pass1_5_explicit_processing_only(self):
+        """G1.4: pass1_5 gets an EXPLICIT case — the same pro-rated
+        processing-only weights as pass1 (no graph term), never a
+        fall-through."""
+        assert effective_top_weights("pass1_5") == effective_top_weights("pass1")
+
+    def test_unknown_scope_raises(self):
+        with pytest.raises(ValueError):
+            effective_top_weights("pass3")
+
+
+class TestSearchDiagnosticsOnBoards:
+    def test_pass1_board_carries_pass1_5_columns(self, tmp_path):
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", searches=1)
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass1",
+                                 graph_scored_by_model={}, fallback_diag_by_model={})
+        assert len(board["ranking"]) == 1
+        raw = board["ranking"][0]["raw_values"]
+        assert raw["calls_pass1_5"] == 1
+        assert raw["attempts_pass1_5"] == 2
+        assert raw["retries_pass1_5"] == 1
+        assert raw["cost_usd_pass1_5"] == pytest.approx(0.005)
+        assert raw["cost_unknown_calls_pass1_5"] == 0
+        assert raw["input_tokens_pass1_5"] == 150
+        assert raw["input_token_unknown_attempts_pass1_5"] == 0
+        assert raw["latency_pass1_5"] == pytest.approx(55.0)
+
+    def test_pass2_board_carries_pass1_5_columns(self, tmp_path):
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", searches=1)
+        gsbm = {"prov/a@unversioned": {"entity_reuse": 0.1, "graph_connectivity": 0.2,
+                                       "link_density": 2.0, "supports_density": 5.0}}
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass2",
+                                 graph_scored_by_model=gsbm, fallback_diag_by_model={})
+        assert len(board["ranking"]) == 1
+        raw = board["ranking"][0]["raw_values"]
+        assert raw["calls_pass1_5"] == 1
+        assert raw["cost_usd_pass1_5"] == pytest.approx(0.005)
+        assert raw["latency_pass1_5"] == pytest.approx(55.0)
+
+    def test_no_search_run_yields_none_columns_and_stays_ranked(self, tmp_path):
+        """Pre-P3a.4 run shape: no search dir, header counters 0/0 ⇒ the
+        diagnostics are the empty population (None) and the row still ranks
+        (0 identified == 0 written is complete)."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a")
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass1",
+                                 graph_scored_by_model={}, fallback_diag_by_model={})
+        assert len(board["ranking"]) == 1
+        raw = board["ranking"][0]["raw_values"]
+        assert raw["calls_pass1_5"] is None
+        assert raw["latency_pass1_5"] is None
+        assert raw["cost_usd_pass1_5"] is None
+
+    def test_malformed_search_measurement_unranked(self, tmp_path):
+        """D-117-5 extended: a malformed pass-1.5 measurement marks the row
+        unranked (tolerant score-time loader — the board still builds)."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", searches=1, malformed_search=True)
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass1",
+                                 graph_scored_by_model={}, fallback_diag_by_model={})
+        assert board["ranking"] == []
+        assert any("pass1_5_malformed" in e
+                   for e in board["unranked"][0]["completeness_errors"])
+
+    def test_search_count_mismatch_unranked(self, tmp_path):
+        """Header says 1 envelope written, no measurement file identified ⇒
+        completeness violation on BOTH boards."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", searches=0, search_header=1)
+        m2r = {"prov/a@unversioned": "a-T1"}
+        b1 = build_pass_board(m2r, rr, "pass1",
+                              graph_scored_by_model={}, fallback_diag_by_model={})
+        assert b1["ranking"] == []
+        assert any("pass1_5" in e
+                   for e in b1["unranked"][0]["completeness_errors"])
+        gsbm = {"prov/a@unversioned": {"entity_reuse": 0.1, "graph_connectivity": 0.2,
+                                       "link_density": 2.0, "supports_density": 5.0}}
+        b2 = build_pass_board(m2r, rr, "pass2",
+                              graph_scored_by_model=gsbm, fallback_diag_by_model={})
+        assert b2["ranking"] == []
+        assert any("pass1_5" in e
+                   for e in b2["unranked"][0]["completeness_errors"])
+
+    def test_fallback_row_merges_search_diag(self, tmp_path):
+        """No run_state ⇒ the emitted measurements.json search section is the
+        fallback evidence, merged verbatim into raw_values."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a", no_run_state=True)
+        sd = {"calls_pass1_5": 3, "cost_usd_pass1_5": 0.01,
+              "envelope_count": 3, "reconciled": True}
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass1",
+                                 graph_scored_by_model={}, fallback_diag_by_model={},
+                                 search_diag_by_model={"prov/a@unversioned": sd})
+        u = board["unranked"][0]
+        assert u["measurement_source"] == SRC_FALLBACK
+        assert u["raw_values"]["calls_pass1_5"] == 3
+        assert u["raw_values"]["reconciled"] is True
+
+    def test_partial_unparseable_header_merges_search_diag(self, tmp_path):
+        """run_state present but unloadable ⇒ partial row; the emitted search
+        section merges the same way (no recompute possible)."""
+        rr = tmp_path / "runs"
+        _write_run(rr, "a-T1", model="a")
+        (rr / "a-T1" / "run_state" / "measurement_header.json").write_text("{not json")
+        sd = {"calls_pass1_5": 3, "cost_usd_pass1_5": 0.01}
+        board = build_pass_board({"prov/a@unversioned": "a-T1"}, rr, "pass1",
+                                 graph_scored_by_model={}, fallback_diag_by_model={},
+                                 search_diag_by_model={"prov/a@unversioned": sd})
+        u = board["unranked"][0]
+        assert u["measurement_source"] == SRC_PARTIAL
+        assert u["raw_values"]["calls_pass1_5"] == 3

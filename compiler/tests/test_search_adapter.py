@@ -665,3 +665,103 @@ def test_summary_build_raise_sinks_full_receipt_without_summary_attr(
     raw = _read_raw_envelope(state_root)
     assert raw["receipt_kind"] == "full"
     assert getattr(exc_info.value, "_kdb_search_summary", None) is None
+
+
+# ---------------------------------------------------------------------------
+# #123 P3a.4 (§4.7) — SearchPassMeasurement computed at run time, persisted
+# as the additive "measurement" key of the search/*.json envelope file
+# ---------------------------------------------------------------------------
+
+from common.measurement import parse_search_measurement
+
+
+def test_measurement_embedded_in_envelope_and_envelope_still_parses(
+        graph, vault, state_root, monkeypatch):
+    """The measurement is computed from the in-memory result/audit (never
+    re-parsed from envelope bytes) and rides the same search/*.json file;
+    the strict envelope parser tolerates the additive key."""
+    outcome = _invoke(graph, vault, state_root, monkeypatch)
+    assert outcome.envelope_written is True
+    raw = _read_raw_envelope(state_root)
+    m = parse_search_measurement(raw["measurement"])
+    assert m.pass_ == "pass1_5"
+    assert (m.run_id, m.source_id) == ("run-1", SOURCE_ID)
+    spec = _spec()
+    assert (m.provider, m.model) == (spec.provider, spec.model)
+    assert m.status == "completed"
+    assert m.execution == "two_stage_attempted"
+    assert m.calls == 1                    # logical — one per source search
+    assert m.attempts == 2                 # thin + fat StageRecords
+    assert m.total_input_tokens == 2000    # scripted 1000 + 1000
+    assert m.input_token_unknown_attempts == 0
+    assert m.prompt_versions["thin"] and m.prompt_versions["fat"]
+    assert [s.stage for s in m.stage_splits] == ["thin", "fat"]
+    thin, fat = m.stage_splits
+    assert (thin.attempts, thin.provider_input_tokens) == (1, 1000)
+    assert (fat.attempts, fat.provider_input_tokens) == (1, 1000)
+    assert thin.sent_bytes > 0 and fat.sent_bytes > 0
+    assert m.cost_usd == pytest.approx(thin.cost_usd + fat.cost_usd)
+    assert m.total_latency_ms == 24
+    assert m.search_snapshot_hash
+    # The strict envelope parser tolerates the additive sibling key.
+    env = _parse_envelope(state_root)
+    assert env.source_id == SOURCE_ID
+
+
+def test_measurement_attempts_include_no_response_and_tokens_null(
+        graph, vault, state_root, monkeypatch):
+    """B10: a transport failure mid-stage produces a StageRecord with NO
+    provider response — attempts counts it, total_input_tokens goes null
+    (never zero-coerced), input_token_unknown_attempts carries the count."""
+    script = fakes.FakeSelector(
+        fakes.ScriptedReply(fakes.retained_document(SPACE)),
+        fakes.transport_failure(),
+        fakes.ScriptedReply(fakes.usable_document(SPACE, count=1, matched=("A",))),
+    )
+    _invoke(graph, vault, state_root, monkeypatch, script)
+    m = parse_search_measurement(_read_raw_envelope(state_root)["measurement"])
+    assert m.calls == 1
+    assert m.attempts == 3                 # thin + fat-transport-fail + fat-retry
+    assert m.total_input_tokens is None    # ANY unknown ⇒ null (B10)
+    assert m.input_token_unknown_attempts == 1
+    thin, fat = m.stage_splits
+    assert thin.provider_input_tokens == 1000
+    assert fat.attempts == 2
+    assert fat.provider_input_tokens is None
+
+
+def test_measurement_abstain_zero_attempts(graph, vault, state_root, monkeypatch):
+    """abstain_empty_space (missing domain): the search ran (audit exists,
+    envelope written) with ZERO selector attempts — calls is still the
+    logical 1; prompt versions are null for stages that never ran."""
+    _invoke(graph, vault, state_root, monkeypatch, fakes.NeverCalled(),
+            frontmatter=_frontmatter(domain=None))
+    m = parse_search_measurement(_read_raw_envelope(state_root)["measurement"])
+    assert m.status == "abstain_empty_space"
+    assert m.execution == "not_executed"
+    assert m.calls == 1
+    assert m.attempts == 0
+    assert m.total_input_tokens == 0       # empty sum — nothing unknown
+    assert m.input_token_unknown_attempts == 0
+    assert m.cost_usd == 0.0 and m.total_latency_ms == 0
+    assert m.prompt_versions == {"thin": None, "fat": None}
+    assert all(s.attempts == 0 and s.sent_bytes == 0 for s in m.stage_splits)
+
+
+def test_b9_envelope_carries_measurement_and_written_flag(
+        graph, vault, state_root, monkeypatch):
+    """The raised-with-audit sink persists the measurement too, and the
+    exception carries the counting channel for compile_source: attempted +
+    envelope_written."""
+    def _boom(audit):
+        raise RuntimeError("compactor exploded")
+
+    monkeypatch.setattr(search_adapter, "compact_receipt", _boom)
+    with pytest.raises(RuntimeError, match="compactor exploded") as exc_info:
+        _invoke(graph, vault, state_root, monkeypatch)
+    raw = _read_raw_envelope(state_root)
+    assert raw["receipt_kind"] == "full"
+    m = parse_search_measurement(raw["measurement"])
+    assert m.status == "completed" and m.attempts == 2
+    assert getattr(exc_info.value, "_kdb_search_attempted", None) is True
+    assert getattr(exc_info.value, "_kdb_search_envelope_written", None) is True

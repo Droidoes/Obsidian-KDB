@@ -609,6 +609,7 @@ def _score_command(args: argparse.Namespace) -> int:
     models: list[dict] = []
     diagnostics_by_model: dict[str, dict] = {}
     pass1_watched_by_model: dict[str, dict] = {}
+    search_diag_by_model: dict[str, dict] = {}
     eligible_to_rundir: dict[str, str] = {}
     for key, run_dir in models_to_rundir.items():
         data = _read_measurements(runs_root / run_dir / "measurements.json")
@@ -643,6 +644,10 @@ def _score_command(args: argparse.Namespace) -> int:
         models.append({"model": key, "scored": scored})
         diagnostics_by_model[key] = diag
         pass1_watched_by_model[key] = _extract_pass1_watched(data)
+        # #123 P3a.4 (§4.7): the emitted search section — fallback pass-1.5
+        # evidence for board rows without a usable run_state/ ({} when the
+        # artifact predates P3a.4).
+        search_diag_by_model[key] = data.get("search") or {}
         eligible_to_rundir[key] = run_dir
 
     if not models:
@@ -697,7 +702,8 @@ def _score_command(args: argparse.Namespace) -> int:
                 fallback_diag_by_model=diagnostics_by_model,
                 header_by_model=header_by_model,
                 pass1_watched_by_model=(
-                    pass1_watched_by_model if p == "pass1" else None))
+                    pass1_watched_by_model if p == "pass1" else None),
+                search_diag_by_model=search_diag_by_model)
             for p in ("pass1", "pass2")
         }
     except Exception as exc:   # pre-write failure: every artifact untouched

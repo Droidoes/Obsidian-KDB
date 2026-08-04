@@ -683,6 +683,11 @@ def compile_source(
     """
     vault_root = Path(vault_root)
 
+    # §4.7 counting channel (P3a.4) — defaults for the caller-supplied
+    # context_snapshot= path (replay/tooling: NEVER searches, §4.4).
+    search_attempted = False
+    search_envelope_written = False
+
     # 1. pass-1.5 search + context snapshot — caller-supplied, or the only
     # graph read. §4.4: ONE run_pass15 per source, inside the step-1 try; its
     # products (t2_selection / t1_slugs / search_summary / key_outcomes) flow
@@ -717,6 +722,12 @@ def compile_source(
             # exception channel when the ADAPTER raised after step 6.
             search = (outcome.search_summary if outcome is not None
                       else getattr(e, "_kdb_search_summary", None))
+            # §4.7: the counting channel follows the same dual source.
+            search_attempted = (outcome.search_ran if outcome is not None
+                                else bool(getattr(e, "_kdb_search_attempted", False)))
+            search_envelope_written = (
+                outcome.envelope_written if outcome is not None
+                else bool(getattr(e, "_kdb_search_envelope_written", False)))
             write_context_record_v2(
                 build_context_record_v2(
                     run_id=ctx.run_id, status="context_failed",
@@ -735,7 +746,12 @@ def compile_source(
             )
             return CompileSourceResult(
                 cr=None, failure_stage="context",
-                exception_type=type(e).__name__, error=str(e))
+                exception_type=type(e).__name__, error=str(e),
+                search_attempted=search_attempted,
+                search_envelope_written=search_envelope_written)
+        # §4.7: counters from the completed outcome, for every later return.
+        search_attempted = outcome.search_ran
+        search_envelope_written = outcome.envelope_written
         context_snapshot = build.snapshot
         write_context_record_v2(
             build_context_record_v2(
@@ -777,7 +793,9 @@ def compile_source(
             cr=None,
             failure_stage="validate" if inner_stage == "validate" else "compile",
             exception_type=getattr(captured["record"], "failure_exception_type", None),
-            error=err, artifacts=artifacts)
+            error=err, artifacts=artifacts,
+            search_attempted=search_attempted,
+            search_envelope_written=search_envelope_written)
 
     cr: dict = {
         "run_id": ctx.run_id, "success": True,
@@ -792,7 +810,9 @@ def compile_source(
             cr=None, failure_stage="validate",
             error="; ".join(f.detail for f in vres.gate_errors),
             artifacts=({"resp_stats": str(captured["path"])}
-                       if captured["path"] is not None else {}))
+                       if captured["path"] is not None else {}),
+            search_attempted=search_attempted,
+            search_envelope_written=search_envelope_written)
 
     # 4. canonicalize (stage 6) — mutates cr in place, emits canonical_meta.
     # (The #65 Repair stage is deleted whole — Task 2.3.)
@@ -801,11 +821,15 @@ def compile_source(
     except canonicalize.CircularAliasError as e:
         return CompileSourceResult(
             cr=None, failure_stage="canonicalize",
-            exception_type=type(e).__name__, error=str(e))
+            exception_type=type(e).__name__, error=str(e),
+            search_attempted=search_attempted,
+            search_envelope_written=search_envelope_written)
     except canonicalize.CanonicalizationError as e:
         return CompileSourceResult(
             cr=None, failure_stage="canonicalize",
-            exception_type=type(e).__name__, error=str(e))
+            exception_type=type(e).__name__, error=str(e),
+            search_attempted=search_attempted,
+            search_envelope_written=search_envelope_written)
 
     # 5. post-canon EXACT summary invariant (#115 Task 2.1): for EVERY
     # compiled source, exactly one summary page AND its slug equals
@@ -826,8 +850,13 @@ def compile_source(
                     f"{src['source_id']}: expected exactly one summary page "
                     f"with slug {expected!r}, found "
                     f"{[p.get('slug') for p in summaries]}"
-                ))
+                ),
+                search_attempted=search_attempted,
+                search_envelope_written=search_envelope_written)
 
-    return CompileSourceResult(cr=cr)
+    return CompileSourceResult(
+        cr=cr,
+        search_attempted=search_attempted,
+        search_envelope_written=search_envelope_written)
 
 

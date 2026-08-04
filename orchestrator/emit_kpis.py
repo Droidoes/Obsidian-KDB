@@ -29,7 +29,11 @@ import warnings
 from pathlib import Path
 
 from common.atomic_io import atomic_write_json
-from common.measurement import RunMeasurementHeader, load_run_measurements
+from common.measurement import (
+    RunMeasurementHeader,
+    load_run_measurements,
+    load_search_measurements,
+)
 from compiler.context_record import (
     ContextEvidence,
     ContextIntegrity,
@@ -39,7 +43,7 @@ from compiler.context_record import (
     ContextRecordV2,
     parse_context_record,
 )
-from compiler.kpi.processing import compute_processing
+from compiler.kpi.processing import compute_processing, compute_search_diagnostics
 from compiler.kpi.graph import compute_graph
 from compiler.kpi.report import render_report
 from compiler.prompt_builder import system_prompt_path
@@ -243,6 +247,29 @@ def emit_run_kpis(
     # Compute PROCESSING KPIs
     proc = compute_processing(header, calls)
 
+    # #123 P3a.4 (§4.7): pass-1.5 search diagnostics + envelope reconciliation.
+    # The STRICT loader backs emit (B10): a malformed search measurement
+    # aborts the emission (→ maybe_emit_kpis' warning) rather than emitting
+    # KPIs from partial evidence. Reconciliation is envelope-file count vs
+    # header.searches_written — a mismatch is warned, never silent.
+    search_measurements = load_search_measurements(run_dir)
+    search_dir = run_dir / "search"
+    envelope_count = (len(list(search_dir.glob("*.json")))
+                      if search_dir.is_dir() else 0)
+    reconciled = envelope_count == header.searches_written
+    if not reconciled:
+        warnings.warn(
+            f"search envelope reconciliation mismatch: {envelope_count} "
+            f"envelope file(s) under {search_dir} vs header.searches_written="
+            f"{header.searches_written} — incomplete measurement state",
+            stacklevel=2,
+        )
+    search_section = {
+        **compute_search_diagnostics(search_measurements),
+        "envelope_count": envelope_count,
+        "reconciled": reconciled,
+    }
+
     # Load finalize artifacts (from persisted retraction.json, not re-running reap)
     finalize_artifacts = _load_finalize_artifacts(state_root, run_id)
 
@@ -272,6 +299,7 @@ def emit_run_kpis(
         "header": {**dataclasses.asdict(header), "provider": provider, "model": model},
         "processing": proc,
         "graph": graph,
+        "search": search_section,
     }
 
     # Write to benchmark/runs/<model>-<run_id>/ — model-prefixed dir restores the

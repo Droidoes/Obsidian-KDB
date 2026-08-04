@@ -1002,3 +1002,191 @@ def test_compile_source_caller_supplied_snapshot_never_searches_writes_no_record
     search_dir = state_root / "runs" / ctx.run_id / "search"
     assert not search_dir.exists() or not list(search_dir.iterdir()), \
         "replay path must not write a search envelope"
+
+
+# ---------- #123 P3a.4: search counters channel (§4.7, §9 P3a.4 row) ----------
+
+def test_compile_source_result_search_counters_default_false() -> None:
+    """CompileSourceResult carries the §4.7 counting channel with False
+    defaults — a constructed result never implies a search ran."""
+    r = CompileSourceResult(cr={"run_id": "x"})
+    assert r.search_attempted is False
+    assert r.search_envelope_written is False
+
+
+def test_compile_source_search_counters_success_path(tmp_path, monkeypatch):
+    """Happy path: the pass-1.5 search ran (empty-graph abstain) and its
+    envelope write succeeded ⇒ both counters True."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.search_attempted is True
+    assert result.search_envelope_written is True
+
+
+def test_compile_source_search_counters_caller_supplied_snapshot_false(
+    tmp_path, monkeypatch,
+):
+    """The replay/tooling path (context_snapshot=) NEVER searches ⇒ both
+    counters False on every outcome."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    result = compiler.compile_source(
+        source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=None,
+        vault_root=vault, state_root=state_root, ctx=ctx,
+        ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+        provider="p", model="m", max_tokens=4096,
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+    )
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.search_attempted is False
+    assert result.search_envelope_written is False
+
+
+def test_compile_source_search_counters_threaded_through_compile_failure(
+    tmp_path, monkeypatch,
+):
+    """A post-search failure (here: compile stage) keeps the counters from
+    the completed outcome — the search DID run and its envelope WAS written."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        lambda req: ModelResponse(
+            text="not json at all", input_tokens=100, output_tokens=50,
+            latency_ms=10, model="m", provider="p", attempts=1),
+    )
+    monkeypatch.setattr(
+        "compiler.compiler.run_pass15",
+        lambda *a, **k: _pass15_outcome(
+            t2_selection=[], search_summary=_search_summary()))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert not result.ok and result.failure_stage == "compile"
+    assert result.search_attempted is True
+    assert result.search_envelope_written is True
+
+
+def test_compile_source_search_counters_envelope_write_failure(tmp_path, monkeypatch):
+    """Envelope write failure is warn-only (B9): the source outcome is
+    unaffected, but the counters split — attempted True, written False."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    def disk_full(*_args, **_kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("compiler.search_adapter.atomic_write_json", disk_full)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert result.ok, (result.failure_stage, result.error)
+    assert result.search_attempted is True
+    assert result.search_envelope_written is False
+
+
+def test_compile_source_search_counters_context_failure_from_outcome(
+    tmp_path, monkeypatch,
+):
+    """Context failure AFTER the search completed (builder defect): counters
+    come from the outcome — attempted True, written True."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("graph wedged")
+    monkeypatch.setattr("compiler.compiler.build_context_snapshot", boom)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert result.search_attempted is True
+    assert result.search_envelope_written is True
+
+
+def test_compile_source_search_counters_context_failure_from_exception_channel(
+    tmp_path, monkeypatch,
+):
+    """Context failure INSIDE run_pass15 (no outcome): counters come from the
+    exception channel (`_kdb_search_attempted` / `_kdb_search_envelope_written`,
+    attached by the adapter's B9 except-block)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def raise_with_counters(*_args, **_kwargs):
+        exc = RuntimeError("post-search defect")
+        exc._kdb_search_attempted = True  # noqa: SLF001 — the adapter's channel
+        exc._kdb_search_envelope_written = False  # noqa: SLF001
+        raise exc
+    monkeypatch.setattr("compiler.compiler.run_pass15", raise_with_counters)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert result.search_attempted is True
+    assert result.search_envelope_written is False
+
+
+def test_compile_source_search_counters_config_defect_false(tmp_path, monkeypatch):
+    """A pre-search defect (missing selector ⇒ SearchConfigError before the
+    adapter runs) reports no search: both counters False."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert result.search_attempted is False
+    assert result.search_envelope_written is False

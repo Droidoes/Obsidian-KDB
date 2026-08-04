@@ -35,6 +35,7 @@ import kuzu
 from common.atomic_io import atomic_write_json
 from common.call_model import call_model
 from common.llm_telemetry import safe_source_id
+from common.measurement import SearchPassMeasurement, SearchStageMeasurement
 from common.model_pool import ModelSpec
 from common.paths import PAGE_TYPES
 from common.types import (
@@ -203,6 +204,77 @@ def _build_summary(
     )
 
 
+def _build_measurement(
+    *,
+    result: GraphSearchResult,
+    selector: ModelSpec,
+    run_id: str,
+    source_id: str,
+) -> SearchPassMeasurement:
+    """The §4.7 SearchPassMeasurement — computed from the in-memory
+    result/audit at run time, NEVER re-parsed from envelope bytes (A14);
+    persisted as the additive "measurement" key of the search/*.json file.
+
+    `calls` is the logical one-per-source-search count; `attempts` is the
+    StageRecord count, INCLUDING attempts with no provider response (B10).
+    `total_input_tokens` is None when ANY attempt's count is unknown —
+    never zero-coerced — with `input_token_unknown_attempts` alongside. A21:
+    no output-token total by deliberate amendment."""
+    audit = result.audit
+    stages = audit.stages if audit is not None else ()
+    total_tokens: int | None = 0
+    unknown = 0
+    for s in stages:
+        if s.provider_input_tokens is None:
+            unknown += 1
+            total_tokens = None
+        elif total_tokens is not None:
+            total_tokens += s.provider_input_tokens
+    prompt_versions: dict[str, str | None] = {"thin": None, "fat": None}
+    for s in stages:
+        key = "thin" if s.stage == "thin_selection" else "fat"
+        if prompt_versions[key] is None:
+            prompt_versions[key] = s.prompt.version
+    splits: list[SearchStageMeasurement] = []
+    for stage_name, label in (("thin_selection", "thin"), ("fat_selection", "fat")):
+        rows = [s for s in stages if s.stage == stage_name]
+        stage_tokens: int | None = 0
+        for row in rows:
+            if row.provider_input_tokens is None:
+                stage_tokens = None
+            elif stage_tokens is not None:
+                stage_tokens += row.provider_input_tokens
+        splits.append(SearchStageMeasurement(
+            stage=label,
+            attempts=len(rows),
+            provider_input_tokens=stage_tokens if rows else None,
+            cost_usd=sum(row.cost for row in rows),
+            sent_bytes=sum(
+                len(row.rendered_messages.system.encode())
+                + len(row.rendered_messages.user.encode())
+                for row in rows),
+        ))
+    return SearchPassMeasurement(
+        run_id=run_id,
+        source_id=source_id,
+        pass_="pass1_5",
+        provider=selector.provider,
+        model=selector.model,
+        prompt_versions=prompt_versions,
+        status=result.status,
+        execution=result.execution,
+        calls=1,
+        attempts=len(stages),
+        total_input_tokens=total_tokens,
+        input_token_unknown_attempts=unknown,
+        stage_splits=tuple(splits),
+        total_latency_ms=sum(s.latency_ms for s in stages),
+        cost_usd=sum(s.cost for s in stages),
+        search_snapshot_hash=(
+            audit.search_snapshot_hash if audit is not None else None),
+    )
+
+
 def run_pass15(
     conn: kuzu.Connection,
     *,
@@ -303,10 +375,15 @@ def run_pass15(
     # audit exists still sinks the FULL receipt, and the built summary rides
     # the exception for compile_source's context_failed.search (B8).
     summary: SearchSummary | None = None
+    measurement: SearchPassMeasurement | None = None
     envelope_written = False
     try:
-        # 6. Search summary FIRST — before any failure-sensitive
-        #    post-processing.
+        # 6. Search measurement + summary FIRST — before any failure-sensitive
+        #    post-processing. The measurement (§4.7) is computed from the
+        #    in-memory result/audit, never re-parsed from envelope bytes.
+        measurement = _build_measurement(
+            result=result, selector=selector,
+            run_id=run_id, source_id=source_id)
         summary = _build_summary(
             result=result,
             query_kind=query_kind,
@@ -317,7 +394,8 @@ def run_pass15(
 
         # 7. Envelope sink — warn-only (B4): an OSError from the atomic write
         #    is a counted warning, artifact_path stays null, the source
-        #    continues.
+        #    continues. The run-time measurement rides the same file as an
+        #    additive sibling key (§4.7 — the envelope union is untouched).
         artifact_path: str | None = None
         if result.audit is not None:
             kind = receipt_kind_for(result.status)
@@ -336,8 +414,10 @@ def run_pass15(
                 receipt_kind=kind,
                 receipt=receipt,
             )
+            payload = search_envelope_to_dict(envelope)
+            payload["measurement"] = measurement.to_dict()
             try:
-                atomic_write_json(path, search_envelope_to_dict(envelope))
+                atomic_write_json(path, payload)
             except OSError as exc:
                 log.warning(
                     "pass-1.5 envelope write failed for %s: %s", source_id, exc)
@@ -381,6 +461,10 @@ def run_pass15(
             search=summary,
         )
     except Exception as exc:
+        if result.audit is not None:
+            # §4.7 counting channel for compile_source: a search RAN (an audit
+            # exists) — the envelope write was attempted at least once.
+            exc._kdb_search_attempted = True  # noqa: B9
         if result.audit is not None and not envelope_written:
             path = (
                 state_root / "runs" / run_id / "search"
@@ -394,12 +478,21 @@ def run_pass15(
                 receipt_kind=receipt_kind_for(result.status, raised_with_audit=True),
                 receipt=result.audit,
             )
+            payload = search_envelope_to_dict(envelope)
+            # The measurement may not exist yet if the raise precedes step 6's
+            # first line — the audit alone backs the FULL receipt.
+            if measurement is not None:
+                payload["measurement"] = measurement.to_dict()
             try:
-                atomic_write_json(path, search_envelope_to_dict(envelope))
+                atomic_write_json(path, payload)
             except OSError as write_exc:  # warn-only — the original raise stands
                 log.warning(
                     "pass-1.5 raised-with-audit envelope write failed for %s: %s",
                     source_id, write_exc)
+            else:
+                exc._kdb_search_envelope_written = True  # noqa: B9
+        elif envelope_written:
+            exc._kdb_search_envelope_written = True  # noqa: B9
         if summary is not None:
             exc._kdb_search_summary = summary  # noqa: B9 — compile_source's B8
         raise

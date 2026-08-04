@@ -861,10 +861,17 @@ def _parse_stages(raw: object, path: str, stage_parser) -> tuple:
 
 def parse_search_envelope(raw: object) -> SearchRunEnvelope:
     """Strict parser over the discriminated receipt_kind union (§5.1 B9).
-    Rejects, never coerces. Raises SearchEnvelopeError."""
+    Rejects, never coerces. Raises SearchEnvelopeError.
+
+    #123 P3a.4: the adapter persists the run-time SearchPassMeasurement as an
+    additive `measurement` sibling key in the same file — tolerated (and
+    ignored) here; `common.measurement`'s strict loader owns that channel."""
     if not isinstance(raw, dict):
         raise _err("$", f"expected an envelope dict, got {raw!r}")
-    d = _req_dict(raw, "$", _ENVELOPE_KEYS)
+    keys = set(_ENVELOPE_KEYS)
+    if "measurement" in raw:
+        keys.add("measurement")
+    d = _req_dict(raw, "$", frozenset(keys))
     version = d["schema_version"]
     if isinstance(version, bool) or version != SEARCH_ENVELOPE_SCHEMA_VERSION:
         raise _err("$.schema_version", f"missing/unsupported: {version!r}")
