@@ -8,11 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from common.types import ContextTelemetry, KeyOutcome, TierRecord
-from compiler.context_record import (
-    ContextFailureInput,
-    build_context_record_v1,
-)
+from common.types import TierRecord
+from compiler.context_record import ContextRecordV1, KeyOutcomeV1
 from orchestrator.emit_kpis import (
     load_context_records,
     reconcile_context_records,
@@ -20,14 +17,19 @@ from orchestrator.emit_kpis import (
 
 
 # ---------- payload builders ----------
+# #123 P3a.2b: the V1 factory is retired (parse-only history) — V1 payloads
+# are built directly here.
 
-def _telemetry(source_id: str) -> ContextTelemetry:
-    return ContextTelemetry(
+def _complete_payload(source_id: str, run_id: str = "run-1") -> dict:
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
         source_id=source_id,
+        status="complete",
         configured_t2_mode="structured",
         effective_t2_strategy="structured_keys",
         keys_emitted=["k1"],
-        key_outcomes=[KeyOutcome("k1", "resolved_t2_seed", "k1", "r0")],
+        key_outcomes=[KeyOutcomeV1("k1", "resolved_t2_seed", "k1", "r0")],
         t1=TierRecord(0, 0, []),
         t2=TierRecord(1, 1, ["k1"]),
         t3=TierRecord(0, 0, []),
@@ -36,7 +38,7 @@ def _telemetry(source_id: str) -> ContextTelemetry:
         cold_start=True,
         max_hops=2,
         page_cap=50,
-    )
+    ).to_dict()
 
 
 def _write_record(context_dir: Path, name: str, payload: dict) -> Path:
@@ -46,19 +48,26 @@ def _write_record(context_dir: Path, name: str, payload: dict) -> Path:
     return p
 
 
-def _complete_payload(source_id: str, run_id: str = "run-1") -> dict:
-    return build_context_record_v1(
-        run_id=run_id, status="complete",
-        telemetry=_telemetry(source_id)).to_dict()
-
-
 def _failed_payload(source_id: str, run_id: str = "run-1") -> dict:
-    return build_context_record_v1(
-        run_id=run_id, status="context_failed",
-        failure_input=ContextFailureInput(
-            source_id=source_id, configured_t2_mode="structured",
-            effective_t2_strategy="structured_keys", keys_emitted=["k1"],
-            domain_scope=None, page_cap=50)).to_dict()
+    zero = TierRecord(0, 0, [])
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
+        source_id=source_id,
+        status="context_failed",
+        configured_t2_mode="structured",
+        effective_t2_strategy="structured_keys",
+        keys_emitted=["k1"],
+        key_outcomes=[],
+        t1=zero,
+        t2=zero,
+        t3=zero,
+        candidate_universe_size=None,
+        domain_scope=None,
+        cold_start=None,
+        max_hops=None,
+        page_cap=50,
+    ).to_dict()
 
 
 # ---------- load_context_records ----------

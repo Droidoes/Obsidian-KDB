@@ -332,24 +332,9 @@ class ContextSnapshot:
 
 
 # ---------- Task #122 event-time context capture (shared vocabulary) ----------
-
-KeyDisposition = Literal["unresolved", "resolved_t2_seed", "resolved_already_t1",
-                         "resolved_out_of_scope", "resolved_duplicate_seed"]
-ConfiguredT2Mode = Literal["structured", "layered", "legacy"]
-EffectiveT2Strategy = Literal["structured_keys", "explicit_empty", "legacy_regex", "layered_union"]
-
-
-@dataclass(frozen=True)
-class KeyOutcome:
-    """One emitted search key's load-time outcome. `resolved` is the canonical
-    slug (None iff disposition == "unresolved"); `target_first_run_id` is the
-    resolution target's first_run_id provenance stamp (None when the graph
-    carries none — never an empty string; normalization happens at the
-    resolver, never at parse)."""
-    key: str
-    disposition: KeyDisposition
-    resolved: str | None
-    target_first_run_id: str | None
+# #123 P3a.2b: KeyDisposition / ConfiguredT2Mode / EffectiveT2Strategy /
+# KeyOutcome retired with the legacy T2 family (blueprint §7) — the per-key
+# outcome vocabulary now lives in compiler.context_record.KeyOutcomeV2.
 
 
 @dataclass(frozen=True)
@@ -364,20 +349,25 @@ class TierRecord:
 @dataclass(frozen=True)
 class ContextTelemetry:           # builder-owned — NO run_id, NO schema metadata
     """The persistence-facing product of build_context_snapshot: what the
-    builder observed at event time, before any record/run metadata is added."""
+    builder observed at event time, before any record/run metadata is added.
+
+    #123 P3a.2b: configured_t2_mode / effective_t2_strategy / max_hops are
+    retired with the legacy T2 family (blueprint §7); `search` carries the
+    pass-1.5 SearchSummary (defined below — annotations resolve lazily).
+    `key_outcomes` elements are compiler.context_record.KeyOutcomeV2 — common
+    is a LEAF package and cannot import the compiler, so the field is a bare
+    list by annotation, by contract."""
     source_id: str
-    configured_t2_mode: ConfiguredT2Mode
-    effective_t2_strategy: EffectiveT2Strategy
     keys_emitted: list[str]
-    key_outcomes: list[KeyOutcome]
+    key_outcomes: list
     t1: TierRecord
     t2: TierRecord
     t3: TierRecord
     candidate_universe_size: int
     domain_scope: str | None
     cold_start: bool
-    max_hops: int
     page_cap: int
+    search: SearchSummary | None
 
 
 @dataclass(frozen=True)

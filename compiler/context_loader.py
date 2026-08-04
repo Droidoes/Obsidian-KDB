@@ -1,38 +1,34 @@
 """context_loader — GraphDB-backed context snapshot for one compile job.
 
 Called directly by the orchestrator (`kdb_orchestrate.py`). Does NOT read env
-vars itself (Codex F-5 purity invariant) — the caller threads T2Mode/resolver
-as explicit params. Fails explicitly if graph state is insufficient.
+vars itself (Codex F-5 purity invariant) — the caller threads the pass-1.5
+products (t2_selection / t1_slugs / search_summary / key_outcomes) as explicit
+params. Fails explicitly if graph state is insufficient.
 
-Note: `KDB_CONTEXT_SOURCE`, `KDB_T2_MODE`, and `KDB_T2_RESOLVER` env vars no
-longer have any effect; selection and mode are wired directly by the
-orchestrator.
+#123 P3a.2b (blueprint §4.3/§7): semantic selection is the sole T2 seeding
+path (R-P3a-2). The legacy T2 family — T2Mode, the regex matchers, the
+resolver wrappers, the cold-start 2-hop widening, and the `source_text` /
+`mode` / `resolver` params — is DELETED, no compatibility shim.
 
 Task #122: build_context_snapshot returns a ContextBuildResult — TWO products:
 the prompt-facing ContextSnapshot (byte-identical) + the persistence-facing
-ContextTelemetry (event-time capture: per-key dispositions with resolution
-provenance, pre/post-cap tier records, effective strategy). The telemetry is
-NEVER serialized into the prompt.
+ContextTelemetry (event-time capture: per-expression key outcomes, pre/post-cap
+tier records, the pass-1.5 search summary). The telemetry is NEVER serialized
+into the prompt.
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
-    T2 (score=2): entities seeded into context per T2Mode (Task #90 v0.2):
-                  - STRUCTURED (default, D-90-1): Pass-1 enriched sources use
-                    `entity_search_keys` (D-89-20); pre-Pass-1 sources fall
-                    back to legacy regex; explicit `[]` honored as empty T2
-                    (State C, D-90-8).
-                  - LAYERED (benchmark-only): union of structured + legacy.
-                  - LEGACY (benchmark-only / pre-Pass-1 fallback): whole-word
-                    regex + cold-start title-phrase widening (D48 / Task #71).
-    T3 (score=1): 1-hop neighbors (in+out) of T1∪T2 seeds, excluding seeds
-                  Cold-start widening: expands to 2-hop when T1 empty and
-                  |T2| < _MIN_SEED_THRESHOLD.
-    Tie-break:    PageRank (desc), then slug (asc) — within same tier only
+    T2 (score=2): the adapter's validated selector hits (`t2_selection`), in
+                  SELECTOR ORDER — rank_index is the fat-stage rank position
+                  (§4.3); under a binding cap, selector rank — not PageRank —
+                  decides which T2 pages survive (§3.2).
+    T3 (score=1): 1-hop neighbors (in+out) of T1∪T2 seeds, excluding seeds —
+                  ALWAYS 1-hop (the cold-start widening is gone).
+    Sort key:     (-tier, rank_index, -pagerank, slug) — rank_index constant
+                  for T1/T3, so PageRank (desc) then slug (asc) break ties there.
 """
 from __future__ import annotations
 
-import re
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from kdb_graph import queries
@@ -41,103 +37,29 @@ from common.types import (
     ContextPage,
     ContextSnapshot,
     ContextTelemetry,
-    EffectiveT2Strategy,
-    KeyOutcome,
     TierRecord,
 )
 
 if TYPE_CHECKING:
     from common.source_io import SourceFrontmatter
+    from common.types import SearchSummary
 
 _VALID_PAGE_TYPES = frozenset({"summary", "concept", "article"})
 
 
-_MIN_SEED_THRESHOLD = 5
 _DEFAULT_PAGE_CAP = 50
-
-
-class T2Mode(str, Enum):
-    """T2 production strategy (Task #90 D-90-2).
-
-    STRUCTURED is the v1 production default per D-90-1. LAYERED and LEGACY
-    exist for the NW-9 benchmark (D-90-4) — they are not expected to be
-    selected in normal compile runs.
-    """
-    STRUCTURED = "structured"
-    LAYERED = "layered"
-    LEGACY = "legacy"
-
-
-def _effective_strategy(
-    mode: "T2Mode",
-    frontmatter: "SourceFrontmatter | None",
-) -> tuple[list[str], EffectiveT2Strategy]:
-    """(keys_emitted, effective_t2_strategy) from the configured mode +
-    frontmatter presence — pre-graph-read, so the same derivation is valid on
-    the context_failed path (Task #122 §3). keys_emitted is the key list the
-    strategy actually consumes: State B / LAYERED-with-keys → the frontmatter
-    keys; State A / LEGACY (frontmatter ignored) → []; State C → [] (the
-    explicit empty emission itself)."""
-    if mode == T2Mode.LAYERED:
-        keys = (list(frontmatter.entity_search_keys)
-                if frontmatter is not None and frontmatter.entity_search_keys
-                else [])
-        return keys, "layered_union"
-    if mode == T2Mode.LEGACY:
-        return [], "legacy_regex"
-    # STRUCTURED three-state (D-90-8)
-    if frontmatter is None:
-        return [], "legacy_regex"                       # State A
-    if frontmatter.entity_search_keys:
-        return list(frontmatter.entity_search_keys), "structured_keys"  # State B
-    return [], "explicit_empty"                         # State C
-
-
-def _resolve_key_outcomes(
-    resolved_prov: dict[str, tuple[str, str | None]],
-    keys: list[str],
-    *,
-    t1_slugs: set[str],
-    pool: set[str],
-) -> tuple[list[KeyOutcome], set[str]]:
-    """Disposition per emitted key, in emission order (Task #122 §3 precedence):
-    absent from the resolution map → unresolved; canonical ∈ t1 → already_t1;
-    canonical ∉ (pool − t1) → out_of_scope; already seeded by an earlier key →
-    duplicate_seed; else → t2_seed (and seed it). Returns (outcomes, t2_seeds)
-    — the seeds set equals the slug-only structured T2 set by construction."""
-    outcomes: list[KeyOutcome] = []
-    seeded: set[str] = set()
-    scope = pool - t1_slugs
-    for key in keys:
-        hit = resolved_prov.get(key)
-        if hit is None:
-            outcomes.append(KeyOutcome(key=key, disposition="unresolved",
-                                       resolved=None, target_first_run_id=None))
-            continue
-        canonical, stamp = hit
-        if canonical in t1_slugs:
-            disposition = "resolved_already_t1"
-        elif canonical not in scope:
-            disposition = "resolved_out_of_scope"
-        elif canonical in seeded:
-            disposition = "resolved_duplicate_seed"
-        else:
-            disposition = "resolved_t2_seed"
-            seeded.add(canonical)
-        outcomes.append(KeyOutcome(key=key, disposition=disposition,
-                                   resolved=canonical, target_first_run_id=stamp))
-    return outcomes, seeded
 
 
 def build_context_snapshot(
     conn: Any,
     *,
     source_id: str,
-    source_text: str,
     page_cap: int = _DEFAULT_PAGE_CAP,
     frontmatter: "SourceFrontmatter | None" = None,
-    mode: T2Mode = T2Mode.STRUCTURED,
-    resolver: str = "simple",
+    t2_selection: list[str] | None = None,
+    t1_slugs: frozenset[str] | None = None,
+    search_summary: "SearchSummary | None" = None,
+    key_outcomes: list | None = None,
 ) -> ContextBuildResult:
     """Build a tier-ranked, source-specific context snapshot from GraphDB —
     returning BOTH products (Task #122): the prompt-facing ContextSnapshot
@@ -147,40 +69,43 @@ def build_context_snapshot(
     Pure graph reads — no manifest access, no env var reads.
     Empty/missing source or empty graph → empty snapshot (never raises).
 
-    Task #90 v0.2 params:
-        frontmatter: Pass-1 SourceFrontmatter or None for pre-Pass-1 sources.
-            Drives T2 branch under STRUCTURED/LAYERED modes.
-        mode: T2 production strategy (default STRUCTURED per D-90-1).
-        resolver: "simple" (2-query default per D-90-9) or "batch" (Codex-tested
-            escape hatch; pass resolver="batch" explicitly).
+    #123 P3a.2b params:
+        t2_selection: validated selector hits in selector order, or None when
+            no search ran (pre-Pass-1 / replay path). T2 = `t2_selection or []`
+            ∩ (active same-domain pool − T1), order preserved (§4.3).
+        t1_slugs: the adapter's single scoped T1 read, passed through so the
+            exclusion is computed once; None (replay/tooling path) ⇒ the
+            builder reads and scopes it itself, as today.
+        search_summary: the adapter's SearchSummary for the telemetry product
+            (populated whenever a search ran — abstention included).
+        key_outcomes: the adapter's per-expression KeyOutcomeV2 projection,
+            passed through to the telemetry product.
     """
-    keys_emitted, strategy = _effective_strategy(mode, frontmatter)
+    keys_emitted = (
+        list(frontmatter.entity_search_keys) if frontmatter is not None else [])
     domain = frontmatter.domain if frontmatter is not None else None
+    outcomes = list(key_outcomes) if key_outcomes is not None else []
 
     active_entities = _load_active_entities(conn)
     if not active_entities:
-        # Empty-graph early return: FULL telemetry — every emitted key
-        # unresolved (outcomes present), zero tiers, cold_start=True, max_hops
-        # per the cold-start widening policy (T1 empty + |T2| < threshold → 2).
+        # Empty-graph early return: FULL telemetry — zero tiers, cold_start=True,
+        # search/key_outcomes passed through (§4.3: the adapter searched the
+        # empty space upstream — populated, not null).
         zero = TierRecord(candidates=0, delivered=0, slugs=[])
         return ContextBuildResult(
             snapshot=ContextSnapshot(source_id=source_id, pages=[]),
             telemetry=ContextTelemetry(
                 source_id=source_id,
-                configured_t2_mode=mode.value,  # type: ignore[arg-type]
-                effective_t2_strategy=strategy,
                 keys_emitted=keys_emitted,
-                key_outcomes=[KeyOutcome(key=k, disposition="unresolved",
-                                         resolved=None, target_first_run_id=None)
-                              for k in keys_emitted],
+                key_outcomes=outcomes,
                 t1=zero,
                 t2=zero,
                 t3=zero,
                 candidate_universe_size=0,
                 domain_scope=domain,
                 cold_start=True,
-                max_hops=2,
                 page_cap=page_cap,
+                search=search_summary,
             ),
         )
 
@@ -193,51 +118,38 @@ def build_context_snapshot(
     pool = (_domain_pool(conn, domain) & slug_set) if domain else slug_set
 
     # --- Tier assignment ---
-    t1_slugs = _t1_source_supported(conn, source_id, slug_set)
-    cold_start = len(t1_slugs) == 0
+    # The adapter's pass-through is authoritative (already scoped to active
+    # entities, §4.1 step 2); None ⇒ the builder reads + scopes it itself.
+    t1 = (set(t1_slugs) if t1_slugs is not None
+          else _t1_source_supported(conn, source_id, slug_set))
+    cold_start = len(t1) == 0
 
-    t2_slugs = _build_t2(
-        conn,
-        source_text=source_text,
-        candidate_slugs=pool - t1_slugs,
-        active_entities=active_entities,
-        cold_start=cold_start,
-        frontmatter=frontmatter,
-        mode=mode,
-        resolver=resolver,
-    )
+    # T2: selector hits ∩ (pool − T1), order preserved, first rank wins on
+    # duplicates. The minus-T1 is a no-op safeguard under §4.1's pre-selector
+    # T1 exclusion.
+    scope = pool - t1
+    t2_ordered: list[str] = []
+    for slug in t2_selection or []:
+        if slug in scope and slug not in t2_ordered:
+            t2_ordered.append(slug)
 
-    seeds = t1_slugs | t2_slugs
-    max_hops = 1
-    if cold_start and len(t2_slugs) < _MIN_SEED_THRESHOLD:
-        max_hops = 2
-    t3_slugs = _t3_neighbors(conn, seeds, pool - seeds, max_hops=max_hops)
-
-    # --- Key dispositions (event-time; prompt-facing T2 unchanged above) ---
-    key_outcomes: list[KeyOutcome] = []
-    if keys_emitted:
-        resolved_prov = (
-            _resolve_to_canonical_slugs_with_provenance_batch(conn, keys_emitted)
-            if resolver == "batch"
-            else _resolve_to_canonical_slugs_with_provenance(conn, keys_emitted)
-        )
-        key_outcomes, _t2_seeds = _resolve_key_outcomes(
-            resolved_prov, keys_emitted, t1_slugs=t1_slugs, pool=pool,
-        )
+    seeds = t1 | set(t2_ordered)
+    t3_slugs = _t3_neighbors(conn, seeds, pool - seeds, max_hops=1)
 
     # --- Scoring + ranking ---
     pagerank_scores = _pagerank_scores(conn)
+    rank_index = {slug: i for i, slug in enumerate(t2_ordered)}
 
-    scored: list[tuple[str, int, float]] = []
-    for slug in t1_slugs:
-        scored.append((slug, 3, pagerank_scores.get(slug, 0.0)))
-    for slug in t2_slugs:
-        scored.append((slug, 2, pagerank_scores.get(slug, 0.0)))
+    scored: list[tuple[str, int, int, float]] = []
+    for slug in t1:
+        scored.append((slug, 3, 0, pagerank_scores.get(slug, 0.0)))
+    for slug in t2_ordered:
+        scored.append((slug, 2, rank_index[slug], pagerank_scores.get(slug, 0.0)))
     for slug in t3_slugs:
-        scored.append((slug, 1, pagerank_scores.get(slug, 0.0)))
+        scored.append((slug, 1, 0, pagerank_scores.get(slug, 0.0)))
 
-    # Strict tier ordering: tier desc, pagerank desc, slug asc
-    scored.sort(key=lambda x: (-x[1], -x[2], x[0]))
+    # Strict tier ordering: tier desc, selector rank asc (T2), pagerank desc, slug asc
+    scored.sort(key=lambda x: (-x[1], x[2], -x[3], x[0]))
     selected_slugs = [s[0] for s in scored[:page_cap]]
 
     # --- Projection ---
@@ -260,9 +172,9 @@ def build_context_snapshot(
     # tiers are disjoint by construction (t2 ⊆ pool−t1, t3 ⊆ pool−seeds), so
     # sum(delivered) == len(pages) ≤ page_cap.
     tier_of: dict[str, int] = {}
-    for slug in t1_slugs:
+    for slug in t1:
         tier_of[slug] = 1
-    for slug in t2_slugs:
+    for slug in t2_ordered:
         tier_of[slug] = 2
     for slug in t3_slugs:
         tier_of[slug] = 3
@@ -274,18 +186,16 @@ def build_context_snapshot(
         snapshot=ContextSnapshot(source_id=source_id, pages=pages),
         telemetry=ContextTelemetry(
             source_id=source_id,
-            configured_t2_mode=mode.value,  # type: ignore[arg-type]
-            effective_t2_strategy=strategy,
             keys_emitted=keys_emitted,
-            key_outcomes=key_outcomes,
-            t1=TierRecord(len(t1_slugs), len(tier_slugs[1]), tier_slugs[1]),
-            t2=TierRecord(len(t2_slugs), len(tier_slugs[2]), tier_slugs[2]),
+            key_outcomes=outcomes,
+            t1=TierRecord(len(t1), len(tier_slugs[1]), tier_slugs[1]),
+            t2=TierRecord(len(t2_ordered), len(tier_slugs[2]), tier_slugs[2]),
             t3=TierRecord(len(t3_slugs), len(tier_slugs[3]), tier_slugs[3]),
             candidate_universe_size=len(pool),
             domain_scope=domain,
             cold_start=cold_start,
-            max_hops=max_hops,
             page_cap=page_cap,
+            search=search_summary,
         ),
     )
 
@@ -313,72 +223,6 @@ def _t1_source_supported(
 ) -> set[str]:
     """Entities the source currently SUPPORTS (restricted to active slugs)."""
     return queries.source_supported_slugs(conn, source_id) & active_slugs
-
-
-def _t2_slug_in_text(source_text: str, candidate_slugs: set[str]) -> set[str]:
-    """Slugs that appear as whole-word tokens in source_text."""
-    if not candidate_slugs or not source_text:
-        return set()
-    pattern = _whole_word_alternation(sorted(candidate_slugs))
-    return {m.group(0).lower() for m in pattern.finditer(source_text)}
-
-
-def _title_eligible(title: str) -> bool:
-    """Check if a title passes the cold-start matching guardrail.
-
-    Eligible iff:
-      - normalized length > 3, AND
-      - either has 2+ alphanumeric tokens, OR is a single token with length >= 6
-    """
-    normalized = title.strip().lower()
-    if len(normalized) <= 3:
-        return False
-    tokens = re.findall(r"[a-z0-9]+", normalized)
-    if len(tokens) >= 2:
-        return True
-    if len(tokens) == 1 and len(tokens[0]) >= 6:
-        return True
-    return False
-
-
-def _t2_title_in_text(
-    source_text: str,
-    candidate_slugs: set[str],
-    active_entities: dict[str, dict],
-) -> set[str]:
-    """Title-phrase matching for cold-start widening (D48, Task #71).
-
-    Matches eligible entity titles as exact phrases in source_text.
-    Returns the set of slugs whose titles matched.
-    """
-    if not candidate_slugs or not source_text:
-        return set()
-
-    title_to_slug: dict[str, str] = {}
-    for slug in candidate_slugs:
-        ent = active_entities.get(slug)
-        if ent is None:
-            continue
-        title = ent.get("title", "")
-        if not title or not _title_eligible(title):
-            continue
-        title_to_slug[title.strip().lower()] = slug
-
-    if not title_to_slug:
-        return set()
-
-    escaped_titles = [re.escape(t) for t in sorted(title_to_slug.keys(), key=len, reverse=True)]
-    pattern = re.compile(
-        r"(?<!\w)(" + "|".join(escaped_titles) + r")(?!\w)",
-        re.IGNORECASE,
-    )
-    matched_slugs: set[str] = set()
-    for m in pattern.finditer(source_text):
-        matched_title = m.group(0).lower()
-        slug = title_to_slug.get(matched_title)
-        if slug:
-            matched_slugs.add(slug)
-    return matched_slugs
 
 
 def _t3_neighbors(
@@ -445,184 +289,3 @@ def _batch_outgoing_links(
     for slug in slugs:
         out[slug] = queries.outgoing_links_ordered(conn, slug)
     return out
-
-
-# ---------- Regex helper ----------
-
-
-def _whole_word_alternation(slugs: list[str]) -> re.Pattern[str]:
-    """Case-insensitive whole-word pattern. Hyphens are intra-token."""
-    escaped = [re.escape(s) for s in slugs]
-    return re.compile(
-        r"(?<![\w-])(" + "|".join(escaped) + r")(?![\w-])",
-        re.IGNORECASE,
-    )
-
-
-# ---------- T2 dispatcher (Task #90 v0.2 — D-90-2) ----------
-
-
-def _build_t2(
-    conn: Any,
-    *,
-    source_text: str,
-    candidate_slugs: set[str],
-    active_entities: dict[str, dict],
-    cold_start: bool,
-    frontmatter: "SourceFrontmatter | None",
-    mode: T2Mode,
-    resolver: str,
-) -> set[str]:
-    """Dispatch T2 construction by mode. STRUCTURED is the v1 default."""
-    if mode == T2Mode.STRUCTURED:
-        return _t2_structured(
-            conn, frontmatter, source_text, candidate_slugs, cold_start,
-            active_entities, resolver,
-        )
-    if mode == T2Mode.LAYERED:
-        return _t2_layered(
-            conn, frontmatter, source_text, candidate_slugs, cold_start,
-            active_entities, resolver,
-        )
-    if mode == T2Mode.LEGACY:
-        return _t2_legacy(source_text, candidate_slugs, cold_start, active_entities)
-    raise ValueError(f"unknown T2Mode: {mode!r}")
-
-
-def _t2_structured(
-    conn: Any,
-    frontmatter: "SourceFrontmatter | None",
-    source_text: str,
-    candidate_slugs: set[str],
-    cold_start: bool,
-    active_entities: dict[str, dict],
-    resolver: str,
-) -> set[str]:
-    """STRUCTURED mode (Option A, D-90-1). Three-state branch per D-90-8.
-
-    State A — frontmatter is None: pre-Pass-1 source → legacy regex + cold-start
-        title-phrase widening.
-    State B — frontmatter.entity_search_keys non-empty: use structured lookup.
-    State C — frontmatter present but entity_search_keys explicitly []: honor
-        the LLM's "no graph anchors" judgment; emit empty T2.
-    """
-    if frontmatter is None:
-        return _t2_legacy(source_text, candidate_slugs, cold_start, active_entities)
-    if frontmatter.entity_search_keys:
-        return _t2_from_search_keys(
-            conn, frontmatter.entity_search_keys, candidate_slugs, resolver,
-        )
-    # State C — explicit empty signal honored.
-    return set()
-
-
-def _t2_layered(
-    conn: Any,
-    frontmatter: "SourceFrontmatter | None",
-    source_text: str,
-    candidate_slugs: set[str],
-    cold_start: bool,
-    active_entities: dict[str, dict],
-    resolver: str,
-) -> set[str]:
-    """LAYERED mode (Option B, benchmark-only). structured ∪ legacy.
-
-    Deliberately diverges from STRUCTURED on State C — when entity_search_keys
-    is explicitly [], LAYERED still runs the legacy regex over the full candidate
-    pool. Lets NW-9 measure the cost of honoring State C vs. always-regex.
-    """
-    structured: set[str] = set()
-    if frontmatter is not None and frontmatter.entity_search_keys:
-        structured = _t2_from_search_keys(
-            conn, frontmatter.entity_search_keys, candidate_slugs, resolver,
-        )
-    regex_pool = candidate_slugs - structured
-    legacy = _t2_legacy(source_text, regex_pool, cold_start, active_entities)
-    return structured | legacy
-
-
-def _t2_legacy(
-    source_text: str,
-    candidate_slugs: set[str],
-    cold_start: bool,
-    active_entities: dict[str, dict],
-) -> set[str]:
-    """LEGACY mode (pre-Pass-1 fallback or benchmark baseline). Whole-word
-    slug regex + cold-start title-phrase widening (D48 / Task #71).
-
-    Transitional behavior — sunsets under D-90-12 once vault is 100% enriched
-    and NW-9 confirms STRUCTURED ≥ LEGACY on cold-start density + precision.
-    """
-    t2 = _t2_slug_in_text(source_text, candidate_slugs)
-    if cold_start:
-        t2 = t2 | _t2_title_in_text(
-            source_text, candidate_slugs - t2, active_entities,
-        )
-    return t2
-
-
-# ---------- Structured-key lookup (Task #90 v0.2 — D-90-9) ----------
-
-
-def _t2_from_search_keys(
-    conn: Any,
-    raw_keys: list[str],
-    candidate_slugs: set[str],
-    resolver: str,
-) -> set[str]:
-    """Batched resolution of Pass-1 entity_search_keys → canonical T2 slugs.
-
-    Set semantics naturally deduplicate when multiple raw keys resolve to the
-    same canonical entity.
-    """
-    if not raw_keys:
-        return set()
-    if resolver == "batch":
-        resolved_map = _resolve_to_canonical_slugs_batch(conn, raw_keys)
-    else:
-        resolved_map = _resolve_to_canonical_slugs(conn, raw_keys)
-    return {canonical for canonical in resolved_map.values()
-            if canonical in candidate_slugs}
-
-
-def _resolve_to_canonical_slugs(
-    conn: Any,
-    raw_slugs: list[str],
-) -> dict[str, str]:
-    """Simple 2-query alias-aware batch resolver (D-90-9 v1 default).
-
-    Thin wrapper over kdb_graph.queries.resolve_to_canonical_slugs — the
-    Cypher + path-precedence logic now lives behind the single Kuzu door.
-    Retained as a module-level symbol so existing importers (e.g.
-    test_t2_resolver_parity.py) only repoint their import path.
-    """
-    return queries.resolve_to_canonical_slugs(conn, raw_slugs)
-
-
-def _resolve_to_canonical_slugs_batch(
-    conn: Any,
-    raw_slugs: list[str],
-) -> dict[str, str]:
-    """Codex-tested batch resolver (D-90-9 escape hatch; pass resolver="batch").
-
-    Thin wrapper over kdb_graph.queries.resolve_to_canonical_slugs_batch.
-    """
-    return queries.resolve_to_canonical_slugs_batch(conn, raw_slugs)
-
-
-def _resolve_to_canonical_slugs_with_provenance(
-    conn: Any,
-    raw_slugs: list[str],
-) -> dict[str, tuple[str, str | None]]:
-    """Provenance twin (#122): {raw: (canonical, target_first_run_id)} — the
-    disposition pass reads stamps from here; the slug-only wrapper above is a
-    projection of the same classification."""
-    return queries.resolve_to_canonical_slugs_with_provenance(conn, raw_slugs)
-
-
-def _resolve_to_canonical_slugs_with_provenance_batch(
-    conn: Any,
-    raw_slugs: list[str],
-) -> dict[str, tuple[str, str | None]]:
-    """Batch provenance twin (#122)."""
-    return queries.resolve_to_canonical_slugs_with_provenance_batch(conn, raw_slugs)

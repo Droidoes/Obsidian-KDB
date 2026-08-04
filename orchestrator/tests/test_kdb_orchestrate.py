@@ -86,6 +86,16 @@ def _event_rows(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _selector_spec():
+    """#123 P3a.2b: compile_source requires a run-level selector seat (empty
+    graph ⇒ the core abstains; the seam never fires)."""
+    from common.model_pool import ModelSpec
+    return ModelSpec(
+        id="test-selector", provider="deepseek", model="test",
+        route=ModelRoute("openai_compat", "https://example.invalid", "DEEPSEEK_API_KEY"),
+        ctx_window=400_000, max_output_tokens=65_536, tokens_lte_bytes=True)
+
+
 def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -102,7 +112,8 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
             frontmatter=_fm(), conn=g.conn,
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
-            provider="p", model="m", max_tokens=4096)
+            provider="p", model="m", max_tokens=4096,
+            selector=_selector_spec())
         assert produced.ok, (produced.failure_stage, produced.error)
 
         result = kdb_orchestrate._commit_source(
@@ -1390,10 +1401,12 @@ def test_emit_kpis_no_finalize_emits_audit_artifact(tmp_path, monkeypatch):
     assert m["graph"]["scored"]["entity_reuse"] is None
     assert m["graph"]["watched"]["orphan_rate"] is None
     assert m["graph"]["watched"]["entity_search_key_resolution"] is None
-    # Task-122 event-time fields retained: the context build succeeded per
-    # source (empty graph → complete records) — build success rate 1.0.
-    assert m["graph"]["watched"]["context_build_success_rate"] == 1.0
-    assert m["graph"]["watched"]["context_record_coverage"] == 1.0
+    # Task-122 event-time fields: the context build succeeded per source
+    # (empty graph → complete records) — but #123 P3a.2b writes V2 records
+    # and the KPI loader is still V1-only (dispatching loader is P3a.3
+    # scope), so the record-derived rate is None in the interim window.
+    assert m["graph"]["watched"]["context_build_success_rate"] is None
+    assert m["graph"]["watched"]["context_record_coverage"] == 0.0
 
 
 def test_cli_emit_kpis_flag_parsed(tmp_path):

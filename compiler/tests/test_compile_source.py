@@ -1,6 +1,12 @@
-"""Task #91 Plan 1 — compile_source (produce-don't-write Pass-2 core) tests.
+"""Task #91 Plan 1 — compile_source (produce-don't-write Pass-2 core) tests,
+#123 P3a.2b wiring contract (blueprint §4.4/§4.5, §9 P3a.2b row).
 
-All non-live: the model is faked via monkeypatch (the test_compiler.py pattern).
+All non-live: the Pass-2 model is faked via monkeypatch (the test_compiler.py
+pattern); Pass-1.5 runs for real against the temp graph — on an EMPTY graph
+the core abstains with zero selector calls (§4.1 step 3), and the selector
+seat is a route-valid fake spec. The canned-outcome tests patch the
+`compiler.compiler.run_pass15` seam.
+
 Run: python -m pytest compiler/tests/test_compile_source.py -v -m "not live"
 """
 import json
@@ -12,13 +18,15 @@ import pytest
 from compiler import compiler, prompt_builder
 from compiler.summary_slug import expected_summary_slug
 from common.call_model import ModelResponse
+from common.model_pool import ModelSpec
 from common.model_route import ModelRoute
 from compiler.canonicalize import load_or_empty
-from compiler.context_record import parse_context_record_v1
+from compiler.context_record import KeyOutcomeV2, parse_context_record_v2
+from compiler.search_adapter import Pass15Outcome
 from common.llm_telemetry import safe_source_id
 from common.run_context import RunContext
 from common.source_io import SourceFrontmatter
-from common.types import CompileJob, CompileSourceResult, ContextSnapshot
+from common.types import CompileJob, CompileSourceResult, ContextSnapshot, SearchSummary
 from kdb_graph.graphdb import GraphDB
 
 
@@ -34,6 +42,70 @@ def _fm() -> SourceFrontmatter:
         author="Test", summary="A summary.", key_themes=["a"],
         entity_search_keys=["value-investing"],
     )
+
+
+def _spec(**overrides) -> ModelSpec:
+    """A selector seat satisfying every selector-route precondition (the same
+    shape test_search_adapter.py uses); the empty-graph tests never reach the
+    call seam — the core abstains first."""
+    base = dict(
+        id="test-selector",
+        provider="deepseek",
+        model="test",
+        route=ModelRoute("openai_compat", "https://example.invalid", "DEEPSEEK_API_KEY"),
+        ctx_window=400_000,
+        max_output_tokens=65_536,
+        tokens_lte_bytes=True,
+    )
+    return ModelSpec(**{**base, **overrides})
+
+
+def _search_summary(**overrides) -> SearchSummary:
+    base = dict(
+        search_ran=True,
+        query_kind="state_b",
+        status="completed",
+        failure_class=None,
+        execution="two_stage_attempted",
+        evidence_status="complete",
+        body_coverage=1.0,
+        query_truncated_indices=(),
+        eligible_space_size=0,
+        stage1_retained=0,
+        stage2_pool_size=0,
+        returned_entries=0,
+        valid_entry_yield=1.0,
+        unattributed_hit_count=0,
+        retry_attempts=0,
+        watched=(),
+        concordance=1.0,
+        selector_provider="deepseek",
+        selector_model="test",
+        selector_route="openai_compat",
+        latency_ms=24,
+        cost_usd=0.0,
+        budget_records=(),
+        stage2_budget_bound=False,
+        stage_splits=(),
+        artifact_path="/state/runs/run-1/search/s.json",
+        search_snapshot_hash="sha256:abc",
+        space_entity_count=0,
+        hits=(),
+    )
+    return SearchSummary(**{**base, **overrides})
+
+
+def _pass15_outcome(**overrides) -> Pass15Outcome:
+    base = dict(
+        search_ran=True,
+        t2_selection=[],
+        search_summary=None,
+        envelope_written=True,
+        t1_slugs=frozenset(),
+        keys_emitted=[],
+        key_outcomes=[],
+    )
+    return Pass15Outcome(**{**base, **overrides})
 
 
 def _vault(tmp_path: Path) -> Path:
@@ -125,6 +197,7 @@ def test_compile_source_produces_cr_and_writes_nothing(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
 
     assert result.ok, (result.failure_stage, result.error)
@@ -165,6 +238,7 @@ def test_compile_source_requests_json_mode(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
 
     assert captured["req"].json_mode is True
@@ -200,6 +274,7 @@ def test_compile_source_threads_pool_knobs_to_model_request(tmp_path, monkeypatc
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
             use_completion_tokens=True, extra_body=knob_extra_body,
+            selector=_spec(),
         )
 
     assert captured["req"].use_completion_tokens is True
@@ -233,6 +308,7 @@ def test_compile_source_threads_route_to_model_request(tmp_path, monkeypatch):
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="deepseek", model="deepseek-v4-flash", max_tokens=4096,
             route=route,
+            selector=_spec(),
         )
 
     assert captured["req"].route is route
@@ -287,6 +363,7 @@ def test_compile_source_alias_singleton_rename(tmp_path, monkeypatch):
             source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
             vault_root=vault, state_root=state_root, ctx=ctx, ledger=ledger,
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
 
     assert result.ok, (result.failure_stage, result.error)
@@ -314,6 +391,7 @@ def test_compile_source_compile_error(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "compile" and result.error
@@ -348,6 +426,7 @@ def test_compile_source_parse_error_exposes_raw_resp_stats_artifact(tmp_path, mo
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
 
     assert not result.ok and result.failure_stage == "compile"
@@ -379,6 +458,7 @@ def test_compile_source_gate_error(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "validate" and "forced for test" in result.error
@@ -406,6 +486,7 @@ def test_compile_source_canonicalize_error(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
     assert not result.ok and result.cr is None
     assert result.failure_stage == "canonicalize"
@@ -516,7 +597,8 @@ def test_compile_source_payload_contains_no_removed_keys(tmp_path, monkeypatch):
             source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
-            provider="p", model="m", max_tokens=4096)
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec())
     assert result.ok, (result.failure_stage, result.error)
 
     def walk(obj, path="$"):
@@ -537,16 +619,61 @@ def test_compile_source_payload_contains_no_removed_keys(tmp_path, monkeypatch):
     assert vcr.validate(legacy).is_valid
 
 
-# ---------- Task #122 P1: per-source context record writer ----------
+# ---------- #123 P3a.2b: Pass-1.5 wiring (§4.4) + V2 context records (§4.5) ----------
 
 def _record_path(state_root: Path, run_id: str, source_id: str) -> Path:
     return (state_root / "runs" / run_id / "context"
             / f"{safe_source_id(source_id)}.json")
 
 
-def test_compile_source_writes_complete_context_record(tmp_path, monkeypatch):
-    """Success path: one complete record per source per run, parseable by the
-    strict parser, observables non-null (empty-graph telemetry here)."""
+def test_one_search_per_source_before_the_build(tmp_path, monkeypatch):
+    """§4.4 step 1: exactly one run_pass15 per compile_source, invoked inside
+    the step-1 try, and its products flow into build_context_snapshot."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+
+    calls = {"pass15": 0}
+    real_pass15 = compiler.run_pass15
+
+    def spy_pass15(*args, **kwargs):
+        calls["pass15"] += 1
+        return real_pass15(*args, **kwargs)
+
+    builder_kwargs: dict = {}
+    real_build = compiler.build_context_snapshot
+
+    def spy_build(*args, **kwargs):
+        builder_kwargs.update(kwargs)
+        return real_build(*args, **kwargs)
+
+    monkeypatch.setattr("compiler.compiler.run_pass15", spy_pass15)
+    monkeypatch.setattr("compiler.compiler.build_context_snapshot", spy_build)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(), intra_run_order=3,
+        )
+    assert result.ok, (result.failure_stage, result.error)
+    assert calls["pass15"] == 1
+    # The adapter's products flow into the builder (§4.3's new inputs)…
+    assert {"t2_selection", "t1_slugs", "search_summary"} <= set(builder_kwargs)
+    # …and the builder is NEVER given source_text (deleted with the regex family).
+    assert "source_text" not in builder_kwargs
+    assert "mode" not in builder_kwargs and "resolver" not in builder_kwargs
+
+
+def test_compile_source_writes_complete_v2_context_record(tmp_path, monkeypatch):
+    """Success path: one V2 record per source per run — strict-parser
+    round-trip, the search section POPULATED (the empty graph abstains —
+    a real outcome, not null), no V1 vocabulary on disk."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
@@ -564,34 +691,163 @@ def test_compile_source_writes_complete_context_record(tmp_path, monkeypatch):
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
     assert result.ok, (result.failure_stage, result.error)
 
     path = _record_path(state_root, ctx.run_id, "KDB/raw/s.md")
     assert path.is_file(), f"context record not written at {path}"
-    rec = parse_context_record_v1(json.loads(path.read_text(encoding="utf-8")))
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk["schema_version"] == 2
+    for retired in ("configured_t2_mode", "effective_t2_strategy", "max_hops"):
+        assert retired not in on_disk
+    rec = parse_context_record_v2(on_disk)
     assert rec.status == "complete"
     assert rec.run_id == ctx.run_id
     assert rec.source_id == "KDB/raw/s.md"
-    assert rec.configured_t2_mode == "structured"
-    assert rec.effective_t2_strategy == "structured_keys"
-    assert rec.keys_emitted == ["value-investing"]
-    # strict 1:1 — the empty graph leaves every emitted key unresolved
-    assert [o.key for o in rec.key_outcomes] == rec.keys_emitted
-    assert [o.disposition for o in rec.key_outcomes] == ["unresolved"]
-    # complete-side observables non-null (empty-graph values)
+    assert rec.keys_emitted == ["value-investing"]   # originals, pre-truncation
+    # strict 1:1 — the empty graph abstains: every expression unresolved
+    assert [o.expression for o in rec.key_outcomes] == rec.keys_emitted
+    assert [o.status for o in rec.key_outcomes] == ["unresolved"]
+    assert [o.annotation for o in rec.key_outcomes] == ["no_match"]
+    # complete-side observables non-null (empty-graph values; no max_hops)
     assert rec.candidate_universe_size == 0
     assert rec.cold_start is True
-    assert rec.max_hops == 2
     assert rec.page_cap == 50
+    # §4.3: the search section is populated, not null (abstain is a record)
+    assert rec.search is not None
+    assert rec.search.status == "abstain_empty_space"
 
 
-def test_compile_source_writes_context_failed_record_on_builder_exception(
-    tmp_path, monkeypatch,
-):
-    """Builder raises → synthesized context_failed record (frozen shape: keys
-    retained from frontmatter, empty outcomes, zero tiers, null observables)
-    alongside the unchanged failure_stage='context' result."""
+def test_selector_failure_is_honest_empty_t2_and_compile_continues(tmp_path, monkeypatch):
+    """§4.1 failure channels: a typed selector_failure outcome is NOT an
+    exception — T2 is honestly empty, the compile continues, and the V2
+    record's search section carries the typed status."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
+    monkeypatch.setattr(
+        "compiler.compiler.run_pass15",
+        lambda *a, **k: _pass15_outcome(
+            t2_selection=[],
+            # 1:1-aligned with _fm()'s keys — the strict parser enforces it.
+            keys_emitted=["value-investing"],
+            key_outcomes=[KeyOutcomeV2(
+                expression="value-investing", status="unresolved",
+                annotation="no_match", matched_first_run_id=None,
+                match_recency=None)],
+            search_summary=_search_summary(
+                status="selector_failure", failure_class="thin_exhausted",
+                execution="thin_attempted", evidence_status="partial"),
+        ))
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert result.ok, (result.failure_stage, result.error)   # compile continues
+    rec = parse_context_record_v2(json.loads(
+        _record_path(state_root, ctx.run_id, "KDB/raw/s.md").read_text("utf-8")))
+    assert rec.status == "complete"
+    assert rec.t2.candidates == 0                            # honest empty T2
+    assert rec.search is not None
+    assert rec.search.status == "selector_failure"
+
+
+def test_t2_selection_flows_into_the_compile_prompt(tmp_path, monkeypatch):
+    """End-to-end of the wiring: the adapter's t2_selection is tiered by the
+    builder and rendered into EXISTING CONTEXT in the Pass-2 prompt."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    captured: dict = {}
+
+    def capturing(req):
+        captured["req"] = req
+        return ModelResponse(
+            text=json.dumps(_good_response("s.md")), input_tokens=100,
+            output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
+        )
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", capturing)
+    monkeypatch.setattr(
+        "compiler.compiler.run_pass15",
+        lambda *a, **k: _pass15_outcome(
+            t2_selection=["alpha-concept"],
+            search_summary=_search_summary(),
+        ))
+
+    with GraphDB(tmp_path / "graph") as g:
+        g.conn.execute(
+            "CREATE (e:Entity {slug: 'alpha-concept', title: 'Alpha Concept', "
+            "page_type: 'concept', status: 'active', confidence: 'medium', "
+            "created_at: '2026-01-01', updated_at: '2026-01-01', "
+            "first_run_id: 'r1', last_run_id: 'r1'})")
+        g.conn.execute(
+            "CREATE (d:Domain {name: 'value-investing', created_at: '2026-01-01', "
+            "first_run_id: 'r1'})")
+        g.conn.execute(
+            "MATCH (e:Entity {slug: 'alpha-concept'}), (d:Domain {name: 'value-investing'}) "
+            "CREATE (e)-[:BELONGS_TO {run_id: 'r1'}]->(d)")
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert result.ok, (result.failure_stage, result.error)
+    assert "alpha-concept" in captured["req"].prompt
+
+
+def test_adapter_defect_lands_in_context_failed_with_keys_fallback(tmp_path, monkeypatch):
+    """B4/B7: an adapter defect (unexpected exception, InvalidGraphSearchRequest,
+    ContractViolation — anything propagating out of run_pass15) lands in the
+    existing context_failed channel; keys_emitted falls back to
+    frontmatter.entity_search_keys (§4.5, A9); search is null (no summary
+    ever existed)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("adapter wedged")
+    monkeypatch.setattr("compiler.compiler.run_pass15", boom)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="A note about value investing.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert result.exception_type == "RuntimeError"
+    assert "adapter wedged" in (result.error or "")
+
+    rec = parse_context_record_v2(json.loads(
+        _record_path(state_root, ctx.run_id, "KDB/raw/s.md").read_text("utf-8")))
+    assert rec.status == "context_failed"
+    assert rec.keys_emitted == ["value-investing"]   # frontmatter fallback
+    assert rec.key_outcomes == []
+    assert rec.candidate_universe_size is None
+    assert rec.cold_start is None
+    assert rec.domain_scope == "value-investing"
+    assert rec.search is None                        # no summary ever existed
+
+
+def test_builder_defect_after_search_keeps_the_summary(tmp_path, monkeypatch):
+    """B8: the builder raises AFTER the adapter's search completed — the
+    context_failed record's search section is NON-NULL (the summary exists
+    by §4.1 step 6, before failure-sensitive post-processing)."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
@@ -607,26 +863,75 @@ def test_compile_source_writes_context_failed_record_on_builder_exception(
             vault_root=vault, state_root=state_root, ctx=ctx,
             ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
             provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
         )
     assert not result.ok and result.failure_stage == "context"
     assert "graph wedged" in (result.error or "")
 
-    path = _record_path(state_root, ctx.run_id, "KDB/raw/s.md")
-    assert path.is_file(), f"context_failed record not written at {path}"
-    rec = parse_context_record_v1(json.loads(path.read_text(encoding="utf-8")))
+    rec = parse_context_record_v2(json.loads(
+        _record_path(state_root, ctx.run_id, "KDB/raw/s.md").read_text("utf-8")))
     assert rec.status == "context_failed"
-    assert rec.run_id == ctx.run_id
-    assert rec.source_id == "KDB/raw/s.md"
-    assert rec.configured_t2_mode == "structured"
-    assert rec.effective_t2_strategy == "structured_keys"
-    assert rec.keys_emitted == ["value-investing"]   # retained from frontmatter
+    assert rec.keys_emitted == ["value-investing"]
     assert rec.key_outcomes == []
-    assert rec.t1.candidates == rec.t2.candidates == rec.t3.candidates == 0
-    assert rec.t1.delivered == rec.t2.delivered == rec.t3.delivered == 0
     assert rec.candidate_universe_size is None
     assert rec.cold_start is None
-    assert rec.max_hops is None
-    assert rec.domain_scope == "value-investing"
+    # The empty-graph search abstained BEFORE the builder raised — populated.
+    assert rec.search is not None
+    assert rec.search.status == "abstain_empty_space"
+
+
+def test_post_search_defect_carries_the_summary_on_the_exception(tmp_path, monkeypatch):
+    """B9's compile-side half: an exception escaping run_pass15 AFTER the
+    summary was built carries it (the adapter attaches `_kdb_search_summary`)
+    so context_failed.search stays non-null."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    def raise_with_summary(*_args, **_kwargs):
+        exc = RuntimeError("post-search defect")
+        exc._kdb_search_summary = _search_summary()  # noqa: SLF001 — the adapter's channel
+        raise exc
+    monkeypatch.setattr("compiler.compiler.run_pass15", raise_with_summary)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_spec(),
+        )
+    assert not result.ok and result.failure_stage == "context"
+    rec = parse_context_record_v2(json.loads(
+        _record_path(state_root, ctx.run_id, "KDB/raw/s.md").read_text("utf-8")))
+    assert rec.status == "context_failed"
+    assert rec.search is not None
+    assert rec.search.status == "completed"
+
+
+def test_missing_selector_is_a_config_defect_context_failed(tmp_path, monkeypatch):
+    """§4.4: selector=None + context_snapshot=None is a configuration defect
+    ⇒ SearchConfigError ⇒ context_failed (fail-hard; replay callers always
+    pass a snapshot)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+
+    with GraphDB(tmp_path / "graph") as g:
+        result = compiler.compile_source(
+            source_id="KDB/raw/s.md", body="Body.", frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+        )
+    assert not result.ok and result.failure_stage == "context"
+    assert result.exception_type == "SearchConfigError"
+    rec = parse_context_record_v2(json.loads(
+        _record_path(state_root, ctx.run_id, "KDB/raw/s.md").read_text("utf-8")))
+    assert rec.status == "context_failed"
+    assert rec.keys_emitted == ["value-investing"]
+    assert rec.search is None
 
 
 def test_compile_source_context_record_write_failure_is_warn_only(
@@ -646,9 +951,9 @@ def test_compile_source_context_record_write_failure_is_warn_only(
 
     def disk_full(*_args, **_kwargs):
         raise OSError("disk full")
-    monkeypatch.setattr("compiler.compiler.atomic_write_json", disk_full)
+    monkeypatch.setattr("compiler.context_record.atomic_write_json", disk_full)
 
-    with caplog.at_level(logging.WARNING, logger="compiler.compiler"):
+    with caplog.at_level(logging.WARNING, logger="compiler.context_record"):
         with GraphDB(tmp_path / "graph") as g:
             result = compiler.compile_source(
                 source_id="KDB/raw/s.md", body="A note about value investing.",
@@ -656,16 +961,17 @@ def test_compile_source_context_record_write_failure_is_warn_only(
                 vault_root=vault, state_root=state_root, ctx=ctx,
                 ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
                 provider="p", model="m", max_tokens=4096,
+                selector=_spec(),
             )
     assert result.ok, (result.failure_stage, result.error)
     assert any("context record write failed" in r.message for r in caplog.records)
 
 
-def test_compile_source_caller_supplied_snapshot_writes_no_record(
+def test_compile_source_caller_supplied_snapshot_never_searches_writes_no_record(
     tmp_path, monkeypatch,
 ):
-    """The replay/tooling path (caller-supplied context_snapshot=) supplies no
-    telemetry and writes NO record."""
+    """The replay/tooling path (caller-supplied context_snapshot=) NEVER
+    searches and writes NO record — unchanged by the wiring (§4.4)."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     ctx = RunContext.new(dry_run=False, vault_root=vault)
@@ -676,6 +982,11 @@ def test_compile_source_caller_supplied_snapshot_writes_no_record(
             output_tokens=50, latency_ms=10, model="m", provider="p", attempts=1,
         ),
     )
+
+    def no_search(*_args, **_kwargs):
+        raise AssertionError("run_pass15 must not run on the replay path")
+    monkeypatch.setattr("compiler.compiler.run_pass15", no_search)
+
     result = compiler.compile_source(
         source_id="KDB/raw/s.md", body="A note about value investing.",
         frontmatter=_fm(), conn=None,          # pre-built snapshot: no graph read
@@ -688,3 +999,6 @@ def test_compile_source_caller_supplied_snapshot_writes_no_record(
     context_dir = state_root / "runs" / ctx.run_id / "context"
     assert not context_dir.exists() or not list(context_dir.iterdir()), \
         "caller-supplied snapshot path must not write a context record"
+    search_dir = state_root / "runs" / ctx.run_id / "search"
+    assert not search_dir.exists() or not list(search_dir.iterdir()), \
+        "replay path must not write a search envelope"

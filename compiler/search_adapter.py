@@ -1,22 +1,27 @@
-"""#123 P3a.1 — the pass-1.5 search adapter (blueprint §4.1). UNWIRED.
+"""#123 P3a.1 — the pass-1.5 search adapter (blueprint §4.1).
 
 The graph→search-space materializer and the core's only pipeline consumer:
 materialize the eligible domain space (T1 excluded BEFORE the selector runs,
 #128 page_type vocabulary enforced at this boundary), assemble the SD-1
 QueryPayload, run one `graph_search` per source, sink the discriminated
-SearchRunEnvelope (§5.1 B9: compact success / full failure, warn-only), and
-stamp per-hit provenance via ONE batched `entity_first_run_ids` read.
+SearchRunEnvelope (§5.1 B9: compact success / full failure, warn-only), stamp
+per-hit provenance via ONE batched `entity_first_run_ids` read, and project
+the §4.5 per-expression key outcomes (A6 — the projection inputs exist only
+adapter-side: keys, rendered expressions, the unresolved set, the summary).
 
-Nothing calls `run_pass15` outside its tests yet — P3a.2b wires it into
-`compile_source` step 1. Layering: this module imports {common, kdb_graph,
-kdb_search}; the kdb_search core stays I/O-free and consumer-neutral.
+Wired into `compile_source` step 1 as of P3a.2b. Layering: this module
+imports {common, kdb_graph, kdb_search}; the kdb_search core stays I/O-free
+and consumer-neutral.
 
 Failure channels (§4.1, B4): typed outcomes (abstain_empty_space,
 budget_exceeded, selector_failure) are result.status values — returned here as
 an honest empty T2. Warn-and-continue applies to the two named post-search
 steps only — the envelope write (OSError from the atomic write) and the
 provenance read (what entity_first_run_ids can raise). InvalidGraphSearchRequest,
-SearchConfigError, ContractViolation, and any unexpected exception PROPAGATE.
+SearchConfigError, ContractViolation, and any unexpected exception PROPAGATE —
+under B9's umbrella: an unexpected raise AFTER the audit exists still sinks the
+FULL receipt (raised_with_audit=True), and when the summary was already built
+it rides the exception as `_kdb_search_summary` for compile_source's B8.
 """
 from __future__ import annotations
 
@@ -67,6 +72,8 @@ from kdb_search.types import (
     SpaceEntity,
 )
 
+from compiler.context_record import KeyOutcomeV2, project_key_outcomes_v2
+
 log = logging.getLogger(__name__)
 
 
@@ -74,13 +81,18 @@ log = logging.getLogger(__name__)
 class Pass15Outcome:
     """The adapter-internal contract (§4.1). t2_selection is None when no
     search ran (pre-Pass-1 gate); t1_slugs is the adapter's SINGLE T1 read,
-    scoped to active entities (B1), passed through to the context builder."""
+    scoped to active entities (B1), passed through to the context builder.
+    keys_emitted carries the ORIGINAL (pre-truncation) frontmatter
+    expressions; key_outcomes is the §4.5 positional projection (None when no
+    search ran — distinct from a searched-but-keyless State C's [])."""
 
     search_ran: bool
     t2_selection: list[str] | None
     search_summary: SearchSummary | None
     envelope_written: bool
     t1_slugs: frozenset[str] | None
+    keys_emitted: list[str]
+    key_outcomes: list[KeyOutcomeV2] | None
 
 
 def _match_recency(first_run_id: str | None, run_id: str) -> MatchRecency:
@@ -208,6 +220,8 @@ def run_pass15(
             search_summary=None,
             envelope_written=False,
             t1_slugs=None,
+            keys_emitted=[],
+            key_outcomes=None,
         )
 
     # 2. Materialize the space — the graph→search-space materializer. T1 is
@@ -279,75 +293,117 @@ def run_pass15(
         body_reader=partial(get_body, root=vault_root),
     )
 
-    # 6. Search summary FIRST — before any failure-sensitive post-processing.
-    summary = _build_summary(
-        result=result,
-        query_kind=query_kind,
-        selector=selector,
-        rendered=rendered,
-        space_entity_count=len(manifest),
-    )
-
-    # 7. Envelope sink — warn-only (B4): an OSError from the atomic write is a
-    #    counted warning, artifact_path stays null, the source continues.
+    # 6-9. Post-search steps under B9's raised-with-audit umbrella: the
+    # summary is built FIRST (§4.1 step 6); any unexpected raise after the
+    # audit exists still sinks the FULL receipt, and the built summary rides
+    # the exception for compile_source's context_failed.search (B8).
+    summary: SearchSummary | None = None
     envelope_written = False
-    artifact_path: str | None = None
-    if result.audit is not None:
-        kind = receipt_kind_for(result.status)
-        receipt: CompactSearchReceipt | SearchAuditPayload = (
-            result.audit if kind == "full" else compact_receipt(result.audit)
+    try:
+        # 6. Search summary FIRST — before any failure-sensitive
+        #    post-processing.
+        summary = _build_summary(
+            result=result,
+            query_kind=query_kind,
+            selector=selector,
+            rendered=rendered,
+            space_entity_count=len(manifest),
         )
-        path = (
-            state_root / "runs" / run_id / "search"
-            / f"{safe_source_id(source_id)}.json"
-        )
-        envelope = SearchRunEnvelope(
-            schema_version=SEARCH_ENVELOPE_SCHEMA_VERSION,
-            run_id=run_id,
-            source_id=source_id,
-            intra_run_order=intra_run_order,
-            receipt_kind=kind,
-            receipt=receipt,
-        )
-        try:
-            atomic_write_json(path, search_envelope_to_dict(envelope))
-        except OSError as exc:
-            log.warning(
-                "pass-1.5 envelope write failed for %s: %s", source_id, exc)
-        else:
-            envelope_written = True
-            artifact_path = str(path)
 
-    # 8. Provenance read — ONE batched read over the validated hits; no
-    #    resolver participates (codex c-2). Warn-and-continue (B4): a failure
-    #    lands every hit in age_unknown and the source continues.
-    hit_slugs = [h.slug for h in result.hits]
-    provenance: dict[str, str | None] | None = None
-    if hit_slugs:
-        try:
-            provenance = queries.entity_first_run_ids(conn, hit_slugs)
-        except Exception as exc:  # what entity_first_run_ids can raise — named scope
-            log.warning(
-                "pass-1.5 provenance read failed for %s: %s; hits land in "
-                "age_unknown", source_id, exc)
-            provenance = None
+        # 7. Envelope sink — warn-only (B4): an OSError from the atomic write
+        #    is a counted warning, artifact_path stays null, the source
+        #    continues.
+        artifact_path: str | None = None
+        if result.audit is not None:
+            kind = receipt_kind_for(result.status)
+            receipt: CompactSearchReceipt | SearchAuditPayload = (
+                result.audit if kind == "full" else compact_receipt(result.audit)
+            )
+            path = (
+                state_root / "runs" / run_id / "search"
+                / f"{safe_source_id(source_id)}.json"
+            )
+            envelope = SearchRunEnvelope(
+                schema_version=SEARCH_ENVELOPE_SCHEMA_VERSION,
+                run_id=run_id,
+                source_id=source_id,
+                intra_run_order=intra_run_order,
+                receipt_kind=kind,
+                receipt=receipt,
+            )
+            try:
+                atomic_write_json(path, search_envelope_to_dict(envelope))
+            except OSError as exc:
+                log.warning(
+                    "pass-1.5 envelope write failed for %s: %s", source_id, exc)
+            else:
+                envelope_written = True
+                artifact_path = str(path)
 
-    # 9. Ordered validated hits + the summary with its post-search attachments.
-    hits = tuple(
-        SearchHitSummary(
-            slug=hit.slug,
-            first_run_id=None if provenance is None else provenance.get(hit.slug),
-            match_recency=_match_recency(
-                None if provenance is None else provenance.get(hit.slug), run_id),
-            matched_expressions=hit.matched_expressions,
+        # 8. Provenance read — ONE batched read over the validated hits; no
+        #    resolver participates (codex c-2). Warn-and-continue (B4): a
+        #    failure lands every hit in age_unknown and the source continues.
+        hit_slugs = [h.slug for h in result.hits]
+        provenance: dict[str, str | None] | None = None
+        if hit_slugs:
+            try:
+                provenance = queries.entity_first_run_ids(conn, hit_slugs)
+            except Exception as exc:  # what entity_first_run_ids can raise — named scope
+                log.warning(
+                    "pass-1.5 provenance read failed for %s: %s; hits land in "
+                    "age_unknown", source_id, exc)
+                provenance = None
+
+        # 9. Ordered validated hits, the summary with its post-search
+        #    attachments, and the §4.5 per-expression key outcomes (A6 —
+        #    positional alignment; the projection refuses a partition
+        #    violation rather than guess).
+        hits = tuple(
+            SearchHitSummary(
+                slug=hit.slug,
+                first_run_id=None if provenance is None else provenance.get(hit.slug),
+                match_recency=_match_recency(
+                    None if provenance is None else provenance.get(hit.slug), run_id),
+                matched_expressions=hit.matched_expressions,
+            )
+            for hit in result.hits
         )
-        for hit in result.hits
-    )
-    summary = replace(summary, artifact_path=artifact_path, hits=hits)
+        summary = replace(summary, artifact_path=artifact_path, hits=hits)
+        key_outcomes = project_key_outcomes_v2(
+            keys_emitted=list(frontmatter.entity_search_keys),
+            rendered_expressions=rendered.rendered_expressions,
+            unresolved_expressions=result.unresolved_expressions,
+            search=summary,
+        )
+    except Exception as exc:
+        if result.audit is not None and not envelope_written:
+            path = (
+                state_root / "runs" / run_id / "search"
+                / f"{safe_source_id(source_id)}.json"
+            )
+            envelope = SearchRunEnvelope(
+                schema_version=SEARCH_ENVELOPE_SCHEMA_VERSION,
+                run_id=run_id,
+                source_id=source_id,
+                intra_run_order=intra_run_order,
+                receipt_kind=receipt_kind_for(result.status, raised_with_audit=True),
+                receipt=result.audit,
+            )
+            try:
+                atomic_write_json(path, search_envelope_to_dict(envelope))
+            except OSError as write_exc:  # warn-only — the original raise stands
+                log.warning(
+                    "pass-1.5 raised-with-audit envelope write failed for %s: %s",
+                    source_id, write_exc)
+        if summary is not None:
+            exc._kdb_search_summary = summary  # noqa: B9 — compile_source's B8
+        raise
     return Pass15Outcome(
         search_ran=True,
         t2_selection=[hit.slug for hit in result.hits],
         search_summary=summary,
         envelope_written=envelope_written,
         t1_slugs=t1_slugs,
+        keys_emitted=list(frontmatter.entity_search_keys),
+        key_outcomes=key_outcomes,
     )

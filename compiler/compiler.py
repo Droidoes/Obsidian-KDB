@@ -35,24 +35,23 @@ from compiler import (
 from common.source_io import SourceFrontmatter, parse_source_file
 from common.call_model import ModelRequest
 from common.call_model_retry import call_model_with_retry
-from common.model_pool import estimate_prompt_tokens, fits_context
+from common.model_pool import ModelSpec, estimate_prompt_tokens, fits_context
 from common.model_route import ModelRoute
 from common.paths import PathError
 from compiler.canonicalize import AliasLedger
 from compiler.context_loader import (
-    T2Mode,
     _DEFAULT_PAGE_CAP,
-    _effective_strategy,
     build_context_snapshot,
 )
 from compiler.context_record import (
-    ContextFailureInput,
-    ContextRecordV1,
-    build_context_record_v1,
+    ContextFailureInputV2,
+    build_context_record_v2,
+    write_context_record_v2,
 )
+from compiler.search_adapter import run_pass15
+from kdb_search.types import SearchConfigError
 from compiler.summary_slug import expected_summary_slug
-from common.atomic_io import atomic_write_json
-from common.llm_telemetry import build_resp_stats, safe_source_id, write_resp_stats
+from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
 from compiler.response_recovery import recover_json_response
 from common.run_context import RunContext
@@ -637,20 +636,6 @@ def compile_one(
                 pass
 
 
-def _write_context_record(state_root: Path, record: ContextRecordV1) -> None:
-    """Task #122: persist one context record per source per run under
-    `runs/<run_id>/context/`. WARN-ONLY on write failure — the record is audit
-    evidence; it must never affect the source outcome."""
-    try:
-        atomic_write_json(
-            state_root / "runs" / record.run_id / "context"
-            / f"{safe_source_id(record.source_id)}.json",
-            record.to_dict(),
-        )
-    except Exception as e:
-        log.warning("context record write failed for %s: %s", record.source_id, e)
-
-
 def compile_source(
     source_id: str,
     body: str,
@@ -672,66 +657,91 @@ def compile_source(
     temperature: float | None = 0.0,
     route: ModelRoute | None = None,
     context_snapshot: ContextSnapshot | None = None,
-    mode: T2Mode = T2Mode.STRUCTURED,
-    resolver: str = "simple",
+    selector: ModelSpec | None = None,
+    intra_run_order: int = 0,
 ) -> CompileSourceResult:
     """Per-source Pass-2 PRODUCE core (spec stages 3->6) on in-memory inputs.
 
     Writes no product state (no wiki pages, no compile_result.json, no
     manifest); it MAY persist per-source resp-stats telemetry under
-    `runs/<run_id>/pass2/` in its finally path, and (Task #122) exactly one
-    event-time context record under `runs/<run_id>/context/` when the builder
+    `runs/<run_id>/pass2/` in its finally path, and (#123 P3a) exactly one
+    event-time V2 context record under `runs/<run_id>/context/` when step 1
     ran (complete or context_failed; warn-only on write failure; the
-    caller-supplied context_snapshot= path writes none). Returns the compiled
+    caller-supplied context_snapshot= path writes none and NEVER searches).
+    Returns the compiled
     `cr`; the orchestrator owns stage-8
     apply-pages, provenance, manifest commit, and graph-sync at the commit
     boundary (Task #91 produce-don't-write decision). All pre-commit failures
     return CompileSourceResult(cr=None, failure_stage=..., error=...) so the
     orchestrator routes case-(a) (D-91-13) uniformly without string-parsing.
+
+    #123 P3a.2b (§4.4): `selector` is the run-level pass-1.5 seat ModelSpec
+    (the orchestrator resolves and validates it once per run); selector=None
+    + context_snapshot=None is a configuration defect → SearchConfigError →
+    context_failed. `intra_run_order` is the source's loop position, stamped
+    onto the search envelope.
     """
     vault_root = Path(vault_root)
 
-    # 1. context snapshot — caller-supplied, or the only graph read.
-    # Task #122: the builder returns ContextBuildResult (snapshot + telemetry);
-    # exactly one context record per source per run is persisted on BOTH
-    # builder outcomes (complete / context_failed) — warn-only on write
-    # failure, never affecting the source outcome. The caller-supplied
-    # context_snapshot= path writes NO record (replay/tooling).
+    # 1. pass-1.5 search + context snapshot — caller-supplied, or the only
+    # graph read. §4.4: ONE run_pass15 per source, inside the step-1 try; its
+    # products (t2_selection / t1_slugs / search_summary / key_outcomes) flow
+    # straight into the builder — NO source_text (deleted with the regex
+    # family, §7). Exactly one V2 context record per source per run is
+    # persisted on BOTH step-1 outcomes (complete / context_failed) —
+    # warn-only on write failure, never affecting the source outcome.
     if context_snapshot is None:
+        outcome = None
         try:
+            if selector is None:
+                raise SearchConfigError(
+                    "compile_source requires a run-level selector ModelSpec "
+                    "(or a caller-supplied context_snapshot)")
+            outcome = run_pass15(
+                conn, frontmatter=frontmatter, selector=selector,
+                vault_root=vault_root, state_root=state_root,
+                run_id=ctx.run_id, source_id=source_id,
+                intra_run_order=intra_run_order,
+            )
             build = build_context_snapshot(
-                conn, source_id=source_id, source_text=body,
-                frontmatter=frontmatter, mode=mode, resolver=resolver,
+                conn, source_id=source_id,
+                frontmatter=frontmatter,
+                t2_selection=outcome.t2_selection,
+                t1_slugs=outcome.t1_slugs,
+                search_summary=outcome.search_summary,
+                key_outcomes=outcome.key_outcomes,
             )
         except Exception as e:
-            _write_context_record(
-                state_root,
-                build_context_record_v1(
+            # B8/B9: the search summary survives a post-search failure — from
+            # the completed outcome when the BUILDER raised, from the
+            # exception channel when the ADAPTER raised after step 6.
+            search = (outcome.search_summary if outcome is not None
+                      else getattr(e, "_kdb_search_summary", None))
+            write_context_record_v2(
+                build_context_record_v2(
                     run_id=ctx.run_id, status="context_failed",
-                    failure_input=ContextFailureInput(
+                    failure_input=ContextFailureInputV2(
                         source_id=source_id,
-                        configured_t2_mode=mode.value,  # type: ignore[arg-type]
-                        # derived from mode + frontmatter — pre-graph-read
-                        effective_t2_strategy=_effective_strategy(mode, frontmatter)[1],
-                        # Pass-1 frontmatter keys, known pre-build (retained
-                        # even though the builder never ran)
+                        # Pass-1 frontmatter keys, known pre-build (A9 fallback)
                         keys_emitted=(list(frontmatter.entity_search_keys)
                                       if frontmatter is not None else []),
                         domain_scope=(frontmatter.domain
                                       if frontmatter is not None else None),
                         page_cap=_DEFAULT_PAGE_CAP,  # compile_source never overrides
+                        search=search,
                     ),
                 ),
+                state_root,
             )
             return CompileSourceResult(
                 cr=None, failure_stage="context",
                 exception_type=type(e).__name__, error=str(e))
         context_snapshot = build.snapshot
-        _write_context_record(
-            state_root,
-            build_context_record_v1(
+        write_context_record_v2(
+            build_context_record_v2(
                 run_id=ctx.run_id, status="complete", telemetry=build.telemetry,
             ),
+            state_root,
         )
 
     # 2. compile (stage 3) on an in-memory job — no disk read

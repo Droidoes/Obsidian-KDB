@@ -6,7 +6,7 @@ One ContextRecordV1 per source per run, written by compile_source to
 
 - `complete`        — built from the builder's ContextTelemetry (observables
                       non-null; outcomes align 1:1 with keys_emitted).
-- `context_failed`  — synthesized from a ContextFailureInput when the builder
+- `context_failed`  — synthesized from a ContextFailureInputV2 when the builder
                       raised (observables null; zero tiers; empty outcomes).
 
 `.to_dict()` is the ONLY serialization path. `parse_context_record_v1` /
@@ -20,9 +20,11 @@ V2 (#123 P3a, §4.5) carries the V1 skeleton minus the retiring vocabulary
 `matched | unresolved` outcomes with a CLOSED annotation vocabulary (B11),
 and the `search` section — the adapter's whole SearchSummary, populated on
 every record where a search ran (abstention included), null only when no
-search ran. KeyOutcomeV1 is a persistence-local retype of common's
+search ran. KeyOutcomeV1 is a persistence-local retype of common's retired
 KeyOutcome (identical fields ⇒ identical asdict bytes) so the historical
-and current vocabularies cannot mix (A19). UNWIRED until P3a.2b.
+and current vocabularies cannot mix (A19). V2 is WIRED as of P3a.2b; the V1
+factory (`build_context_record_v1`) is retired with the legacy T2 family (§7)
+— V1 remains parse-only for historical records.
 """
 from __future__ import annotations
 
@@ -106,18 +108,6 @@ class ContextRecordV1:
 
 
 @dataclass(frozen=True)
-class ContextFailureInput:
-    """What is knowable WITHOUT a graph read (the builder raised) — the
-    effective strategy is derived from mode + frontmatter, pre-graph-read."""
-    source_id: str
-    configured_t2_mode: ConfiguredT2ModeV1
-    effective_t2_strategy: EffectiveT2StrategyV1
-    keys_emitted: list[str]                      # Pass-1 frontmatter keys (known pre-build)
-    domain_scope: str | None
-    page_cap: int
-
-
-@dataclass(frozen=True)
 class ContextIntegrityIssue:
     path: str
     reason: Literal["malformed", "wrong_run"]
@@ -148,81 +138,6 @@ class ContextEvidence:
     coverage: float | None           # None when expected empty
     complete: bool                   # requires bool(expected_ids) — never vacuous
     integrity: ContextIntegrity
-
-
-# ---------- factory ----------
-
-
-def build_context_record_v1(
-    *,
-    run_id: str,
-    status: ContextStatus,
-    telemetry: ContextTelemetry | None = None,
-    failure_input: ContextFailureInput | None = None,
-) -> ContextRecordV1:
-    """Build one record. Invalid state combos RAISE (never guess):
-
-    complete:        telemetry required; failure_input forbidden;
-                     candidate_universe_size / cold_start / max_hops non-null.
-    context_failed:  telemetry forbidden; failure_input required; observables
-                     null; zero tiers; empty key_outcomes.
-    """
-    if status == "complete":
-        if telemetry is None:
-            raise ContextRecordError("status='complete' requires telemetry")
-        if failure_input is not None:
-            raise ContextRecordError("status='complete' forbids failure_input")
-        if (telemetry.candidate_universe_size is None
-                or telemetry.cold_start is None
-                or telemetry.max_hops is None):
-            raise ContextRecordError(
-                "status='complete' requires non-null observables "
-                "(candidate_universe_size / cold_start / max_hops)")
-        return ContextRecordV1(
-            schema_version=CONTEXT_RECORD_SCHEMA_VERSION,
-            run_id=run_id,
-            source_id=telemetry.source_id,
-            status="complete",
-            configured_t2_mode=telemetry.configured_t2_mode,
-            effective_t2_strategy=telemetry.effective_t2_strategy,
-            keys_emitted=list(telemetry.keys_emitted),
-            key_outcomes=[KeyOutcomeV1(key=o.key, disposition=o.disposition,
-                                       resolved=o.resolved,
-                                       target_first_run_id=o.target_first_run_id)
-                          for o in telemetry.key_outcomes],
-            t1=telemetry.t1,
-            t2=telemetry.t2,
-            t3=telemetry.t3,
-            candidate_universe_size=telemetry.candidate_universe_size,
-            domain_scope=telemetry.domain_scope,
-            cold_start=telemetry.cold_start,
-            max_hops=telemetry.max_hops,
-            page_cap=telemetry.page_cap,
-        )
-    if status == "context_failed":
-        if failure_input is None:
-            raise ContextRecordError("status='context_failed' requires failure_input")
-        if telemetry is not None:
-            raise ContextRecordError("status='context_failed' forbids telemetry")
-        return ContextRecordV1(
-            schema_version=CONTEXT_RECORD_SCHEMA_VERSION,
-            run_id=run_id,
-            source_id=failure_input.source_id,
-            status="context_failed",
-            configured_t2_mode=failure_input.configured_t2_mode,
-            effective_t2_strategy=failure_input.effective_t2_strategy,
-            keys_emitted=list(failure_input.keys_emitted),
-            key_outcomes=[],
-            t1=_ZERO_TIER,
-            t2=_ZERO_TIER,
-            t3=_ZERO_TIER,
-            candidate_universe_size=None,
-            domain_scope=failure_input.domain_scope,
-            cold_start=None,
-            max_hops=None,
-            page_cap=failure_input.page_cap,
-        )
-    raise ContextRecordError(f"unknown context record status: {status!r}")
 
 
 # ---------- strict parser ----------
@@ -438,8 +353,9 @@ class ContextRecordV2:
 @dataclass(frozen=True)
 class ContextTelemetryV2:
     """What a successful build knows. Persistence-local (mirrors the V1
-    ContextFailureInput pattern): common's ContextTelemetry keeps its V1
-    shape until P3a.2b rewires the builder (§4.3)."""
+    ContextFailureInput pattern). As of P3a.2b the rewired builder produces
+    common's reshaped ContextTelemetry — field-identical to this type; the
+    factory accepts both (§4.3)."""
     source_id: str
     keys_emitted: list[str]
     key_outcomes: list[KeyOutcomeV2]
@@ -483,7 +399,7 @@ def build_context_record_v2(
     *,
     run_id: str,
     status: ContextStatus,
-    telemetry: ContextTelemetryV2 | None = None,
+    telemetry: ContextTelemetryV2 | ContextTelemetry | None = None,
     failure_input: ContextFailureInputV2 | None = None,
 ) -> ContextRecordV2:
     """Build one V2 record. Invalid state combos RAISE (never guess) —
@@ -496,6 +412,11 @@ def build_context_record_v2(
 
     `search` is unconstrained in BOTH statuses — populated whenever a search
     ran (abstention included, A10), null only when no search ran.
+
+    The telemetry annotation is a union: P3a.2b's rewired builder produces
+    common's reshaped ContextTelemetry, field-identical to ContextTelemetryV2
+    (the persistence-local type predates the rewiring, §4.3) — both are
+    accepted; only the fields below are read.
     """
     if status == "complete":
         if telemetry is None:

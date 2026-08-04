@@ -582,3 +582,86 @@ def test_expression_accounting_partition_invariant(graph, vault, state_root, mon
     assert not unresolved & matched
     assert unresolved == {"management"}
     assert matched == {"moats"}
+
+
+# ---------------------------------------------------------------------------
+# key-outcome projection (P3a.2b wiring — §4.5 A6)
+# ---------------------------------------------------------------------------
+
+
+def test_outcome_carries_keys_emitted_and_key_outcomes(graph, vault, state_root, monkeypatch):
+    """The adapter owns the projection inputs (keys, rendered expressions,
+    unresolved set, summary) — so the outcome carries keys_emitted (ORIGINALS)
+    plus the §4.5 positional KeyOutcomeV2 projection for the builder/record."""
+    outcome = _invoke(graph, vault, state_root, monkeypatch)
+    assert outcome.keys_emitted == ["moats", "management"]
+    outcomes = {o.expression: o for o in outcome.key_outcomes}
+    assert list(outcomes) == ["moats", "management"]
+    moats = outcomes["moats"]
+    assert moats.status == "matched"
+    assert moats.annotation is None
+    # First hit in fat-ranked order is charlie-munger (first_run_id "run-1").
+    assert moats.matched_first_run_id == "run-1"
+    assert moats.match_recency == "cohort"
+    management = outcomes["management"]
+    assert management.status == "unresolved"
+    assert management.annotation == "no_match"
+    assert management.matched_first_run_id is None
+    assert management.match_recency is None
+
+
+def test_pre_pass1_outcome_carries_empty_keys_and_null_outcomes(
+        graph, vault, state_root, monkeypatch):
+    """Pre-Pass-1 gate: no search ⇒ keys_emitted empty, key_outcomes None
+    (distinct from a searched-but-keyless State C)."""
+    outcome = _invoke(graph, vault, state_root, monkeypatch, fakes.NeverCalled(),
+                      frontmatter=None)
+    assert outcome.keys_emitted == []
+    assert outcome.key_outcomes is None
+
+
+# ---------------------------------------------------------------------------
+# B9 — raised-with-audit: the FULL receipt survives a post-search raise
+# ---------------------------------------------------------------------------
+
+
+def test_post_search_raise_still_sinks_full_receipt(graph, vault, state_root, monkeypatch):
+    """B9: an unexpected raise AFTER the audit exists (here: compact_receipt
+    blows up) must not lose the failure bytes — the envelope lands as receipt
+    kind "full" with the audit's stage bytes, the ORIGINAL exception
+    propagates, and it carries the built summary for compile_source's B8."""
+    def _boom(audit):
+        raise RuntimeError("compactor exploded")
+
+    monkeypatch.setattr(search_adapter, "compact_receipt", _boom)
+    with pytest.raises(RuntimeError, match="compactor exploded") as exc_info:
+        _invoke(graph, vault, state_root, monkeypatch)
+
+    raw = _read_raw_envelope(state_root)
+    assert raw["receipt_kind"] == "full"
+    assert len(raw["receipt"]["stages"]) == 2
+    for stage in raw["receipt"]["stages"]:
+        assert "rendered_messages" in stage
+        assert "raw_response_text" in stage
+    receipt = _parse_envelope(state_root).receipt
+    assert isinstance(receipt, artifact.SearchAuditPayload)
+
+    summary = getattr(exc_info.value, "_kdb_search_summary", None)
+    assert summary is not None
+    assert summary.status == "completed"
+
+
+def test_summary_build_raise_sinks_full_receipt_without_summary_attr(
+        graph, vault, state_root, monkeypatch):
+    """A raise BEFORE the summary exists: the FULL envelope still sinks (the
+    audit precedes the summary), but the exception carries no summary attr."""
+    def _boom(**kwargs):
+        raise RuntimeError("summary build exploded")
+
+    monkeypatch.setattr(search_adapter, "_build_summary", _boom)
+    with pytest.raises(RuntimeError, match="summary build exploded") as exc_info:
+        _invoke(graph, vault, state_root, monkeypatch)
+
+    raw = _read_raw_envelope(state_root)
+    assert raw["receipt_kind"] == "full"
+    assert getattr(exc_info.value, "_kdb_search_summary", None) is None

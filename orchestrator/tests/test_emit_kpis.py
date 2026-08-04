@@ -18,11 +18,8 @@ import pytest
 import orchestrator.emit_kpis as emit_mod
 import orchestrator.kdb_orchestrate as kdb_orchestrate
 from common.measurement import RunMeasurementHeader
-from common.types import ContextTelemetry, KeyOutcome, TierRecord
-from compiler.context_record import (
-    ContextFailureInput,
-    build_context_record_v1,
-)
+from common.types import TierRecord
+from compiler.context_record import ContextRecordV1, KeyOutcomeV1
 from kdb_graph.graphdb import GraphDB
 from orchestrator.emit_kpis import emit_run_kpis, maybe_emit_kpis
 from orchestrator.tests.test_kdb_orchestrate import (
@@ -87,18 +84,40 @@ def _write_sidecar(run_dir: Path, source_id: str, *, signal: str = "signal",
         json.dumps(payload), encoding="utf-8")
 
 
-def _telemetry(source_id: str, outcomes: list[tuple], *,
-               t1=None, t2=None, t3=None, strategy="structured_keys") -> ContextTelemetry:
+def _record_v1(run_id: str, source_id: str, outcomes: list[tuple], *,
+               t1=None, t2=None, t3=None, strategy="structured_keys") -> ContextRecordV1:
+    # #123 P3a.2b: the V1 factory is retired (parse-only history) — tests build
+    # V1 records directly.
     zero = TierRecord(0, 0, [])
-    return ContextTelemetry(
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
         source_id=source_id,
+        status="complete",
         configured_t2_mode="structured",
         effective_t2_strategy=strategy,
         keys_emitted=[k for k, _d, _r, _s in outcomes],
-        key_outcomes=[KeyOutcome(k, d, r, s) for k, d, r, s in outcomes],
+        key_outcomes=[KeyOutcomeV1(k, d, r, s) for k, d, r, s in outcomes],
         t1=t1 or zero, t2=t2 or zero, t3=t3 or zero,
         candidate_universe_size=10, domain_scope="value-investing",
         cold_start=False, max_hops=1, page_cap=50,
+    )
+
+
+def _failed_record_v1(run_id: str, source_id: str) -> ContextRecordV1:
+    zero = TierRecord(0, 0, [])
+    return ContextRecordV1(
+        schema_version=1,
+        run_id=run_id,
+        source_id=source_id,
+        status="context_failed",
+        configured_t2_mode="structured",
+        effective_t2_strategy="structured_keys",
+        keys_emitted=["k1"],
+        key_outcomes=[],
+        t1=zero, t2=zero, t3=zero,
+        candidate_universe_size=None, domain_scope=None,
+        cold_start=None, max_hops=None, page_cap=50,
     )
 
 
@@ -106,17 +125,8 @@ def _write_record(run_dir: Path, run_id: str, source_id: str,
                   outcomes: list[tuple], *, status="complete", **tier_kw) -> None:
     ctx = run_dir / "context"
     ctx.mkdir(parents=True, exist_ok=True)
-    if status == "complete":
-        rec = build_context_record_v1(
-            run_id=run_id, status="complete",
-            telemetry=_telemetry(source_id, outcomes, **tier_kw))
-    else:
-        rec = build_context_record_v1(
-            run_id=run_id, status="context_failed",
-            failure_input=ContextFailureInput(
-                source_id=source_id, configured_t2_mode="structured",
-                effective_t2_strategy="structured_keys",
-                keys_emitted=["k1"], domain_scope=None, page_cap=50))
+    rec = (_record_v1(run_id, source_id, outcomes, **tier_kw)
+           if status == "complete" else _failed_record_v1(run_id, source_id))
     (ctx / f"{source_id.replace('/', '__')}.json").write_text(
         json.dumps(rec.to_dict()), encoding="utf-8")
 
@@ -245,9 +255,8 @@ def _reconcile_case(tmp_path, monkeypatch, *, sidecars, records, p2=None,
 
 
 def _rec(source_id: str, run_id: str = "run-1") -> dict:
-    return build_context_record_v1(
-        run_id=run_id, status="complete",
-        telemetry=_telemetry(source_id, [("k", "resolved_t2_seed", "k", "r0")])).to_dict()
+    return _record_v1(
+        run_id, source_id, [("k", "resolved_t2_seed", "k", "r0")]).to_dict()
 
 
 def test_emit_reconcile_missing(tmp_path, monkeypatch):
@@ -441,9 +450,14 @@ def test_lifecycle_all_context_failed_unchanged_graph(tmp_path, monkeypatch):
         "entity_reuse": None, "graph_connectivity": None,
         "link_density": None, "supports_density": None}
     w = _watched(payload)
-    assert w["context_build_success_rate"] == 0.0
-    assert w["context_record_coverage"] == 1.0       # context_failed captured
-    assert w["context_integrity_ok"] is True
+    # #123 P3a.2b↔P3a.3 window: compile_source now writes V2 records and the
+    # KPI loader is still V1-only (the dispatching loader is P3a.3 scope) —
+    # the V2 record travels as a malformed integrity issue, coverage 0.0,
+    # record-derived aggregates None. P3a.3 restores the V2 reads.
+    assert w["context_build_success_rate"] is None
+    assert w["context_record_coverage"] == 0.0
+    assert w["context_integrity_ok"] is False
+    assert w["context_malformed_record_count"] == 1
     # the record in run_state is the frozen context_failed shape
     ctx_records = list(matches_dir(bench, "context"))
     assert ctx_records, "context records must be packaged in run_state/"
@@ -488,10 +502,13 @@ def test_lifecycle_manifest_post_graph_first_source_residual(tmp_path, monkeypat
     assert payload["header"]["finalize_ran"] is False
     assert payload["graph"]["scored"]["entity_reuse"] is None
     w = _watched(payload)
-    # context built fine (record complete) — Task-122 fields retained
-    assert w["context_build_success_rate"] == 1.0
-    assert w["context_record_coverage"] == 1.0
-    assert w["context_integrity_ok"] is True
+    # #123 P3a.2b↔P3a.3 window: the V2 complete record is unread by the
+    # V1-only KPI loader (dispatching loader is P3a.3 scope) — malformed
+    # integrity issue, coverage 0.0, aggregates None.
+    assert w["context_build_success_rate"] is None
+    assert w["context_record_coverage"] == 0.0
+    assert w["context_integrity_ok"] is False
+    assert w["context_malformed_record_count"] == 1
 
 
 def test_lifecycle_one_committed_then_manifest_post_graph_partial(tmp_path, monkeypatch):
@@ -533,8 +550,12 @@ def test_lifecycle_one_committed_then_manifest_post_graph_partial(tmp_path, monk
     assert payload["header"]["finalize_ran"] is False
     assert payload["graph"]["scored"]["graph_connectivity"] is None
     w = _watched(payload)
-    assert w["context_record_coverage"] == 1.0       # both sources captured
-    assert w["context_build_success_rate"] == 1.0
+    # #123 P3a.2b↔P3a.3 window: both V2 records are unread by the V1-only
+    # KPI loader (dispatching loader is P3a.3 scope) — coverage 0.0,
+    # aggregates None; the records ARE packaged either way.
+    assert w["context_record_coverage"] == 0.0
+    assert w["context_build_success_rate"] is None
+    assert w["context_malformed_record_count"] == 2
     assert len(matches_dir(bench, "context")) == 2
 
 

@@ -262,11 +262,11 @@ def test_connectivity_skips_noncanonical_endpoints():
 
 from compiler.context_record import (
     ContextEvidence,
-    ContextFailureInput,
     ContextIntegrity,
-    build_context_record_v1,
+    ContextRecordV1,
+    KeyOutcomeV1,
 )
-from common.types import ContextTelemetry, KeyOutcome, TierRecord
+from common.types import TierRecord
 from kdb_graph import queries
 
 _ZERO_TIER = TierRecord(0, 0, [])
@@ -275,21 +275,27 @@ _ZERO_TIER = TierRecord(0, 0, [])
 def _mk_record(source_id: str, outcomes: list[tuple], *,
                tiers=None, status="complete") -> object:
     """One complete/context_failed record. outcomes = [(key, disposition,
-    resolved, stamp)] — status='context_failed' synthesizes the frozen shape."""
+    resolved, stamp)] — status='context_failed' synthesizes the frozen shape.
+    #123 P3a.2b: the V1 factory is retired (parse-only history) — V1 records
+    are built directly."""
     if status == "context_failed":
-        return build_context_record_v1(
-            run_id="m", status="context_failed",
-            failure_input=ContextFailureInput(
-                source_id=source_id, configured_t2_mode="structured",
-                effective_t2_strategy="structured_keys", keys_emitted=["k"],
-                domain_scope=None, page_cap=50))
+        return ContextRecordV1(
+            schema_version=1, run_id="m", source_id=source_id,
+            status="context_failed",
+            configured_t2_mode="structured",
+            effective_t2_strategy="structured_keys",
+            keys_emitted=["k"], key_outcomes=[],
+            t1=_ZERO_TIER, t2=_ZERO_TIER, t3=_ZERO_TIER,
+            candidate_universe_size=None, domain_scope=None,
+            cold_start=None, max_hops=None, page_cap=50)
     t1, t2, t3 = tiers or (_ZERO_TIER, _ZERO_TIER, _ZERO_TIER)
-    telemetry = ContextTelemetry(
-        source_id=source_id,
+    return ContextRecordV1(
+        schema_version=1, run_id="m", source_id=source_id,
+        status="complete",
         configured_t2_mode="structured",
         effective_t2_strategy="structured_keys",
         keys_emitted=[k for k, _d, _r, _s in outcomes],
-        key_outcomes=[KeyOutcome(k, d, r, s) for k, d, r, s in outcomes],
+        key_outcomes=[KeyOutcomeV1(k, d, r, s) for k, d, r, s in outcomes],
         t1=t1, t2=t2, t3=t3,
         candidate_universe_size=10,
         domain_scope="value-investing",
@@ -297,7 +303,6 @@ def _mk_record(source_id: str, outcomes: list[tuple], *,
         max_hops=1,
         page_cap=50,
     )
-    return build_context_record_v1(run_id="m", status="complete", telemetry=telemetry)
 
 
 def _evidence(records, expected_ids, *, complete=True) -> ContextEvidence:
@@ -416,14 +421,16 @@ def test_no_evidence_all_aggregates_none(graph_dir):
 
 def test_explicit_empty_count(graph_dir):
     rec = _mk_record("src-a", [])
-    # flip strategy to explicit_empty via a custom telemetry
-    telemetry = ContextTelemetry(
-        source_id="src-b", configured_t2_mode="structured",
-        effective_t2_strategy="explicit_empty", keys_emitted=[], key_outcomes=[],
+    # flip strategy to explicit_empty via a custom record
+    rec2 = ContextRecordV1(
+        schema_version=1, run_id="m", source_id="src-b",
+        status="complete",
+        configured_t2_mode="structured",
+        effective_t2_strategy="explicit_empty",
+        keys_emitted=[], key_outcomes=[],
         t1=TierRecord(0, 0, []), t2=TierRecord(0, 0, []), t3=TierRecord(0, 0, []),
         candidate_universe_size=0, domain_scope=None, cold_start=False,
         max_hops=1, page_cap=50)
-    rec2 = build_context_record_v1(run_id="m", status="complete", telemetry=telemetry)
     ev = _evidence([rec, rec2], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
         out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)

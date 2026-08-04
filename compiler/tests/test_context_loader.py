@@ -1,12 +1,25 @@
-"""Tests for context_loader — real Kuzu, no mocks."""
+"""Tests for context_loader — real Kuzu, no mocks (#123 P3a.2b contract).
+
+T2 is the adapter's validated selector hits (`t2_selection`), in SELECTOR
+ORDER — semantic selection is the sole T2 seeding path (R-P3a-2; the
+regex/resolver family is deleted, §7). Within-tier sort key:
+`(-tier, rank_index, -pagerank, slug)` with `rank_index` the fat-stage rank
+for T2 members and a constant for T1/T3 (§4.3) — under a binding cap,
+selector rank decides which T2 pages survive. T3 is always a 1-hop expansion
+of T1∪T2 seeds; the cold-start 2-hop widening is gone (§7).
+"""
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pytest
 
 from kdb_graph.graphdb import GraphDB
+from common.source_io import SourceFrontmatter
 from common.types import ContextSnapshot
+
+from compiler import context_loader
 
 
 @pytest.fixture
@@ -74,7 +87,12 @@ def gdb(tmp_path: Path):
         yield g
 
 
-from compiler import context_loader
+def _fm(keys, domain: str | None = "value-investing") -> SourceFrontmatter:
+    return SourceFrontmatter(
+        kdb_signal="signal", domain=domain, source_type="essay",
+        author="Test", summary="A summary.", key_themes=["a"],
+        entity_search_keys=keys,
+    )
 
 
 class TestTierRanking:
@@ -83,7 +101,6 @@ class TestTierRanking:
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="unrelated text with no slug mentions",
             page_cap=50,
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
@@ -94,66 +111,91 @@ class TestTierRanking:
         # They should be the first 3 (highest tier)
         assert set(slugs[:3]) == {"hub", "spoke-1", "spoke-2"}
 
-    def test_t2_slug_in_text_ranked_below_t1(self, gdb):
-        """Slugs mentioned in source_text rank below source-supported."""
+    def test_t2_selection_ranked_below_t1(self, gdb):
+        """Selector hits rank below source-supported entities."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="See also leaf-b for more context.",
+            t2_selection=["leaf-b"],
             page_cap=50,
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
-        # leaf-b is T2 (slug in text), should appear after T1 seeds
         assert "leaf-b" in slugs
-        t1_slugs = {"hub", "spoke-1", "spoke-2"}
         leaf_b_idx = slugs.index("leaf-b")
-        for s in t1_slugs:
+        for s in ("hub", "spoke-1", "spoke-2"):
             assert slugs.index(s) < leaf_b_idx
 
     def test_t3_neighbors_ranked_below_t2(self, gdb):
-        """1-hop neighbors of seeds rank below text-mention seeds."""
+        """1-hop neighbors of seeds rank below selector hits."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-beta",
-            source_text="no slug mentions here",
+            t2_selection=["spoke-2"],
             page_cap=50,
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
-        # src-beta supports leaf-a (T1). leaf-a has no outgoing links,
-        # but spoke-2 links TO leaf-a (incoming). spoke-2 is T3.
-        assert "leaf-a" in slugs
-        if "spoke-2" in slugs:
-            assert slugs.index("leaf-a") < slugs.index("spoke-2")
+        # src-beta T1 = {leaf-a}; T2 = {spoke-2}. T3 = 1-hop of {leaf-a, spoke-2}
+        # → hub, spoke-1 (via hub)… all below T2.
+        assert slugs.index("leaf-a") < slugs.index("spoke-2")
+        assert "hub" in slugs
+        assert slugs.index("spoke-2") < slugs.index("hub")
 
-    def test_pagerank_breaks_ties_within_tier(self, gdb):
-        """Within same tier, higher PageRank sorts first."""
+    def test_pagerank_breaks_ties_within_t1(self, gdb):
+        """Within T1 (constant rank_index), higher PageRank sorts first."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="",
             page_cap=50,
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
         # Within T1: hub has highest PageRank (most inbound).
-        # hub should sort before spoke-1, spoke-2 within the T1 band.
         assert slugs[0] == "hub"
+
+    def test_selector_rank_beats_pagerank_within_t2(self, gdb):
+        """§4.3's explicit sort key: rank_index (fat-stage rank) sorts before
+        -pagerank — a lower-PageRank hit selected EARLIER by the selector
+        ranks first. leaf-a has more inbound links (hub, spoke-2) than
+        leaf-b (none) yet is ranked second by the selector here."""
+        snapshot = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a"],   # selector order, not PageRank
+            page_cap=50,
+        ).snapshot
+        slugs = [p.slug for p in snapshot.pages]
+        assert slugs.index("leaf-b") < slugs.index("leaf-a")
 
     def test_page_cap_truncates(self, gdb):
         """page_cap limits total output."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="leaf-b orphan-x",
+            t2_selection=["leaf-b", "orphan-x"],
             page_cap=3,
         ).snapshot
         assert len(snapshot.pages) == 3
+
+    def test_binding_cap_selector_rank_decides_t2_survivors(self, gdb):
+        """§3.2's ratified behavior change: under a binding cap, selector
+        rank — not PageRank — decides which T2 pages survive. Cap leaves
+        exactly one T2 slot; the FIRST selector hit wins it even though the
+        second has the higher PageRank."""
+        snapshot = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a"],
+            page_cap=4,                          # 3 T1 + exactly 1 T2 slot
+        ).snapshot
+        slugs = [p.slug for p in snapshot.pages]
+        assert len(slugs) == 4
+        assert "leaf-b" in slugs                 # selector rank 1 survives
+        assert "leaf-a" not in slugs             # higher PageRank, cut anyway
 
     def test_outgoing_links_populated(self, gdb):
         """Each ContextPage carries its outgoing_links from the graph."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="",
             page_cap=50,
         ).snapshot
         hub_page = next(p for p in snapshot.pages if p.slug == "hub")
@@ -164,449 +206,194 @@ class TestTierRanking:
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="",
             page_cap=50,
         ).snapshot
         assert snapshot.source_id == "src-alpha"
 
 
-class TestEdgeCases:
-    def test_empty_graph_returns_empty_snapshot(self, tmp_path):
-        """Empty graph → empty pages, no crash."""
-        with GraphDB(tmp_path / "empty-graph") as g:
-            snapshot = context_loader.build_context_snapshot(
-                g.conn,
-                source_id="nonexistent",
-                source_text="anything",
-                page_cap=50,
-            ).snapshot
-        assert snapshot.pages == []
-        assert snapshot.source_id == "nonexistent"
-
-    def test_unknown_source_returns_text_matches_and_neighbors(self, gdb):
-        """Source not in graph → no T1 seeds, but T2/T3 still work."""
-        snapshot = context_loader.build_context_snapshot(
-            gdb.conn,
-            source_id="unknown-source",
-            source_text="hub is mentioned here",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        assert "hub" in slugs
-
-    def test_only_active_entities_included(self, gdb):
-        """Entities with status != 'active' are excluded."""
-        # Mark orphan-x as inactive
-        gdb.conn.execute(
-            "MATCH (e:Entity {slug: 'orphan-x'}) SET e.status = 'inactive'"
-        )
+class TestT2SelectionContract:
+    def test_t2_selection_intersected_with_pool_minus_t1(self, gdb):
+        """T2 = t2_selection ∩ (active pool − T1), order preserved — the
+        minus-T1 is a no-op safeguard under §4.1's pre-selector exclusion;
+        unknown slugs drop out too."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
-            source_text="orphan-x is mentioned",
+            t2_selection=["leaf-b", "hub", "no-such-slug", "leaf-a"],
+            page_cap=50,
+        ).snapshot
+        telemetry_t2 = [p.slug for p in snapshot.pages
+                        if p.slug in ("leaf-a", "leaf-b")]
+        assert telemetry_t2 == ["leaf-b", "leaf-a"]  # order preserved
+        # hub is T1 — it appears exactly once, in the T1 band
+        slugs = [p.slug for p in snapshot.pages]
+        assert slugs.index("hub") < slugs.index("leaf-b")
+
+    def test_none_and_empty_selection_both_empty_t2(self, gdb):
+        """None (no search ran — replay/tooling) and [] (searched, nothing
+        selected) both produce an empty T2; T1/T3 proceed (R-P3a-3)."""
+        for selection in (None, []):
+            result = context_loader.build_context_snapshot(
+                gdb.conn,
+                source_id="src-alpha",
+                t2_selection=selection,
+                page_cap=50,
+            )
+            assert result.telemetry.t2.candidates == 0
+            assert result.telemetry.t1.candidates == 3
+
+    def test_duplicate_selection_entries_deduped_first_rank_wins(self, gdb):
+        snapshot = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a", "leaf-b"],
             page_cap=50,
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
-        assert "orphan-x" not in slugs
+        assert slugs.count("leaf-b") == 1
+        assert slugs.index("leaf-b") < slugs.index("leaf-a")
 
 
-# ---------- Task #71: Cold-start widening ----------
+class TestT3OneHopAlways:
+    """The cold-start 2-hop widening is deleted (§7) — T3 is a deterministic
+    1-hop expansion of T1∪T2 seeds, even for a cold-start source with a
+    single T2 seed."""
 
-
-@pytest.fixture
-def cold_start_gdb(tmp_path: Path):
-    """Graph with a source that has NO supports edges (cold-start scenario).
-
-    Entities:
-      - margin-of-safety (title="Margin of Safety", concept) — multi-token title
-      - legalism (title="Legalism", concept) — single token >= 6 chars
-      - value (title="Value", concept) — single token < 6 chars (SHOULD BE FILTERED)
-      - ai (title="AI", concept) — len <= 3 (SHOULD BE FILTERED)
-      - hub-node (title="Hub Node", concept) — high PageRank, 2-hop reachable
-      - deep-leaf (title="Deep Leaf", article) — only reachable via 2-hop
-
-    Sources:
-      - src-existing: supports margin-of-safety, legalism, value, hub-node
-      - src-new: NO supports edges (cold-start)
-
-    Topology:
-      margin-of-safety -> legalism -> hub-node -> deep-leaf
-      hub-node -> margin-of-safety (back-link to create hub)
-    """
-    with GraphDB(tmp_path / "cold-start-graph") as g:
-        conn = g.conn
-        for slug, title, ptype in [
-            ("margin-of-safety", "Margin of Safety", "concept"),
-            ("legalism", "Legalism", "concept"),
-            ("value", "Value", "concept"),
-            ("ai", "AI", "concept"),
-            ("hub-node", "Hub Node", "concept"),
-            ("deep-leaf", "Deep Leaf", "article"),
-        ]:
+    @pytest.fixture
+    def cold_start_gdb(self, tmp_path: Path):
+        """legalism -> hub-node -> deep-leaf chain; src-new has NO supports."""
+        with GraphDB(tmp_path / "cold-start-graph") as g:
+            conn = g.conn
+            for slug, title, ptype in [
+                ("margin-of-safety", "Margin of Safety", "concept"),
+                ("legalism", "Legalism", "concept"),
+                ("hub-node", "Hub Node", "concept"),
+                ("deep-leaf", "Deep Leaf", "article"),
+            ]:
+                conn.execute(
+                    "CREATE (e:Entity {slug: $s, title: $t, page_type: $pt, "
+                    "status: 'active', confidence: 'medium', "
+                    "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                    "first_run_id: 'r1', last_run_id: 'r1'})",
+                    {"s": slug, "t": title, "pt": ptype},
+                )
             conn.execute(
-                "CREATE (e:Entity {slug: $s, title: $t, page_type: $pt, "
-                "status: 'active', confidence: 'medium', "
-                "created_at: '2026-01-01', updated_at: '2026-01-01', "
-                "first_run_id: 'r1', last_run_id: 'r1'})",
-                {"s": slug, "t": title, "pt": ptype},
+                "CREATE (s:Source {source_id: 'src-new', source_type: 'raw', "
+                "canonical_path: 'src-new', status: 'active', file_type: 'markdown', "
+                "hash: 'sha256:bbb', size_bytes: 200, "
+                "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
+                "last_ingested_at: '', ingest_state: 'pending', "
+                "ingest_count: 0, last_run_id: '', moved_to: ''})"
             )
+            for f, t in [
+                ("margin-of-safety", "legalism"),
+                ("legalism", "hub-node"),
+                ("hub-node", "deep-leaf"),
+                ("hub-node", "margin-of-safety"),
+            ]:
+                conn.execute(
+                    "MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t}) "
+                    "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)",
+                    {"f": f, "t": t},
+                )
+            yield g
 
-        # Source with supports (represents previously compiled source)
-        conn.execute(
-            "CREATE (s:Source {source_id: 'src-existing', source_type: 'raw', "
-            "canonical_path: 'src-existing', status: 'active', file_type: 'markdown', "
-            "hash: 'sha256:aaa', size_bytes: 100, "
-            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
-            "last_ingested_at: '2026-01-01', ingest_state: 'compiled', "
-            "ingest_count: 1, last_run_id: 'r1', moved_to: ''})"
+    def test_cold_start_sparse_t2_stays_one_hop(self, cold_start_gdb):
+        """Cold-start + one T2 seed ⇒ still 1-hop: legalism's 1-hop neighbors
+        (hub-node, margin-of-safety) are T3; deep-leaf is 2-hop — EXCLUDED
+        (the widening is gone)."""
+        snapshot = context_loader.build_context_snapshot(
+            cold_start_gdb.conn,
+            source_id="src-new",
+            t2_selection=["legalism"],
+            page_cap=50,
+        ).snapshot
+        slugs = [p.slug for p in snapshot.pages]
+        assert "legalism" in slugs               # T2
+        assert "hub-node" in slugs               # T3, 1-hop
+        assert "margin-of-safety" in slugs       # T3, 1-hop (incoming)
+        assert "deep-leaf" not in slugs          # 2-hop — widening deleted
+
+    def test_empty_seeds_empty_t3_is_valid(self, cold_start_gdb):
+        """R-P3a-3: empty T1/T2 ⇒ empty T3, and that is a valid answer."""
+        result = context_loader.build_context_snapshot(
+            cold_start_gdb.conn,
+            source_id="src-new",
+            t2_selection=[],
+            page_cap=50,
         )
-        # New source — no supports (cold-start)
-        conn.execute(
-            "CREATE (s:Source {source_id: 'src-new', source_type: 'raw', "
-            "canonical_path: 'src-new', status: 'active', file_type: 'markdown', "
-            "hash: 'sha256:bbb', size_bytes: 200, "
-            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
-            "last_ingested_at: '', ingest_state: 'pending', "
-            "ingest_count: 0, last_run_id: '', moved_to: ''})"
-        )
-
-        # SUPPORTS edges — src-existing only
-        for slug in ["margin-of-safety", "legalism", "value", "hub-node"]:
-            conn.execute(
-                "MATCH (s:Source {source_id: 'src-existing'}), (e:Entity {slug: $slug}) "
-                "CREATE (s)-[:SUPPORTS {run_id: 'r1'}]->(e)",
-                {"slug": slug},
-            )
-
-        # LINKS_TO topology
-        for f, t in [
-            ("margin-of-safety", "legalism"),
-            ("legalism", "hub-node"),
-            ("hub-node", "deep-leaf"),
-            ("hub-node", "margin-of-safety"),
-        ]:
-            conn.execute(
-                "MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t}) "
-                "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)",
-                {"f": f, "t": t},
-            )
-
-        yield g
-
-
-class TestColdStartTitleMatching:
-    """Task #71.1–71.2: Title-in-text matching on cold-start."""
-
-    def test_title_match_finds_multi_token_title(self, cold_start_gdb):
-        """Multi-token title 'Margin of Safety' matches in source text."""
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-new",
-            source_text="The concept of Margin of Safety is fundamental to investing.",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        assert "margin-of-safety" in slugs
-
-    def test_title_match_finds_long_single_token(self, cold_start_gdb):
-        """Single-token title >= 6 chars ('Legalism') matches in source text."""
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-new",
-            source_text="Chinese Legalism influenced governance structures.",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        assert "legalism" in slugs
-
-    def test_title_guardrail_skips_short_single_token_integration(self, cold_start_gdb):
-        """Title 'Value' (single-token < 6 chars) does NOT widen T2 via title matching.
-
-        Uses source text containing 'Value' but NOT the slug 'value' in a
-        context where slug-matching alone wouldn't fire (capital V at sentence
-        start is case-insensitive match for slug 'value', so this tests that
-        the TITLE path doesn't add duplicate matches for ineligible titles).
-        Guardrail correctness is primarily verified in the isolated tests.
-        """
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Value") is False
-
-    def test_title_guardrail_skips_very_short_integration(self, cold_start_gdb):
-        """Title 'AI' (len <= 3) does NOT widen T2 via title matching."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("AI") is False
-
-    def test_title_matching_only_fires_on_cold_start(self, cold_start_gdb):
-        """When source has SUPPORTS edges (non-cold-start), title matching does NOT fire."""
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-existing",
-            source_text="Deep Leaf is very interesting.",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        # src-existing has T1 seeds (margin-of-safety, legalism, value, hub-node).
-        # "Deep Leaf" is only reachable via title match or 2-hop.
-        # Title matching should NOT fire (not cold-start).
-        # deep-leaf IS reachable via T3 (hub-node -> deep-leaf, 1-hop from T1 seed).
-        # So it WILL be in results — but via T3, not title matching.
-        # This test just verifies non-cold-start still works normally.
-        assert "margin-of-safety" in slugs  # T1 seed present
-
-
-class TestColdStartTitleGuardrailIsolated:
-    """Isolated tests for the title eligibility function."""
-
-    def test_multi_token_title_eligible(self):
-        """'Margin of Safety' — 3 tokens, eligible."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Margin of Safety") is True
-
-    def test_long_single_token_eligible(self):
-        """'Legalism' — 1 token, 8 chars, eligible."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Legalism") is True
-
-    def test_short_single_token_ineligible(self):
-        """'Value' — 1 token, 5 chars, ineligible."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Value") is False
-
-    def test_very_short_title_ineligible(self):
-        """'AI' — 2 chars, ineligible."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("AI") is False
-
-    def test_three_char_title_ineligible(self):
-        """'Oil' — 3 chars, ineligible (rule is > 3 not >= 3)."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Oil") is False
-
-    def test_six_char_single_token_eligible(self):
-        """'Taoism' — 1 token, 6 chars, eligible (rule is >= 6)."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Taoism") is True
-
-    def test_five_char_single_token_ineligible(self):
-        """'Stoic' — 1 token, 5 chars, ineligible."""
-        from compiler.context_loader import _title_eligible
-        assert _title_eligible("Stoic") is False
-
-
-class TestColdStart2HopExpansion:
-    """Task #71.3–71.4: Conditional 2-hop T3 when cold-start + sparse T2."""
-
-    def test_2hop_fires_when_cold_start_and_sparse_t2(self, cold_start_gdb):
-        """Cold-start + fewer than 5 T2 seeds → T3 expands to 2-hop."""
-        # Source text mentions only "legalism" (slug) — just 1 T2 seed.
-        # Topology: legalism -> hub-node -> deep-leaf
-        # 1-hop from legalism: hub-node (outgoing), margin-of-safety (incoming)
-        # 2-hop from legalism: deep-leaf (via hub-node)
-        # deep-leaf is ONLY reachable at 2-hop from this seed.
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-new",
-            source_text="legalism shaped political thought",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        # T2 = {legalism} (1 seed, < 5 threshold → 2-hop fires)
-        assert "legalism" in slugs  # T2
-        assert "hub-node" in slugs  # T3 1-hop (legalism -> hub-node)
-        assert "deep-leaf" in slugs  # T3 2-hop ONLY (hub-node -> deep-leaf)
-
-    def test_2hop_does_not_fire_when_t2_above_threshold(self, cold_start_gdb):
-        """Cold-start but T2 >= 5 seeds → T3 stays 1-hop."""
-        # Need 5+ slug/title matches. We only have 6 entities total.
-        # Use text that matches many slugs/titles.
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-new",
-            source_text=(
-                "margin-of-safety and legalism and hub-node and deep-leaf "
-                "and Margin of Safety again"
-            ),
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        # With 4+ slug matches + title matches, T2 should be >= 5
-        # Regardless, the main assertion is that the system works correctly
-        # with many seeds — deep-leaf is directly in T2 via slug match.
-        assert "deep-leaf" in slugs
-
-    def test_2hop_does_not_fire_when_not_cold_start(self, cold_start_gdb):
-        """Non-cold-start (T1 non-empty) → always 1-hop T3 regardless of T2 size."""
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb.conn,
-            source_id="src-existing",
-            source_text="no extra slug mentions",
-            page_cap=50,
-        ).snapshot
-        slugs = [p.slug for p in snapshot.pages]
-        # src-existing has T1 seeds. T3 is 1-hop only.
-        # hub-node (T1) -> deep-leaf (1-hop T3) — should be reachable.
-        assert "deep-leaf" in slugs  # 1-hop from hub-node (T1)
-        # This just confirms non-cold-start still finds 1-hop normally.
-
-
-# ---------- #81: Step-3 V0 ops regression foundation (compile-time strand) ----------
+        assert result.snapshot.pages == []
+        assert result.telemetry.t3.candidates == 0
+        assert result.telemetry.cold_start is True
 
 
 class TestT3NeighborsRegression:
-    """#81: lock the `_t3_neighbors` primitive's contract so any future
-    refactor must preserve it. Direct unit tests — independent of the
-    higher-level `build_context_snapshot` wiring. Per Task #75 §4.3 V0
-    regression-guardrail scope (formerly #78c)."""
+    """#81: lock the `_t3_neighbors` primitive's contract (unchanged by
+    P3a.2b — the builder now always calls it with max_hops=1)."""
 
-    def test_t3_neighbors_is_deterministic(self, cold_start_gdb):
-        """Same inputs twice → identical output. Locks the function's
-        order-independence; future query-shape changes that introduce
-        nondeterminism will trip this guard."""
+    @pytest.fixture
+    def chain_gdb(self, tmp_path: Path):
+        with GraphDB(tmp_path / "chain-graph") as g:
+            conn = g.conn
+            for slug in ["margin-of-safety", "legalism", "hub-node", "deep-leaf"]:
+                conn.execute(
+                    "CREATE (e:Entity {slug: $s, title: $s, page_type: 'concept', "
+                    "status: 'active', confidence: 'medium', "
+                    "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                    "first_run_id: 'r1', last_run_id: 'r1'})",
+                    {"s": slug},
+                )
+            for f, t in [
+                ("margin-of-safety", "legalism"),
+                ("legalism", "hub-node"),
+                ("hub-node", "deep-leaf"),
+            ]:
+                conn.execute(
+                    "MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t}) "
+                    "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)",
+                    {"f": f, "t": t},
+                )
+            yield g
+
+    def test_t3_neighbors_is_deterministic(self, chain_gdb):
         from compiler.context_loader import _t3_neighbors
 
         seeds = {"margin-of-safety"}
-        candidates = {
-            "margin-of-safety", "legalism", "value", "ai",
-            "hub-node", "deep-leaf",
-        }
-        a = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
-        b = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        candidates = {"margin-of-safety", "legalism", "hub-node", "deep-leaf"}
+        a = _t3_neighbors(chain_gdb.conn, seeds, candidates, max_hops=1)
+        b = _t3_neighbors(chain_gdb.conn, seeds, candidates, max_hops=1)
         assert a == b
 
-    def test_t3_neighbors_expands_outgoing_and_incoming(self, cold_start_gdb):
-        """The primitive walks both directions (per §4.3 contract — "in+out
-        neighbors"). Regression guard against a future change that
-        accidentally drops one direction."""
+    def test_t3_neighbors_expands_outgoing_and_incoming(self, chain_gdb):
         from compiler.context_loader import _t3_neighbors
 
-        # legalism: outgoing → hub-node; incoming ← margin-of-safety
         seeds = {"legalism"}
         candidates = {"margin-of-safety", "hub-node"}
-        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        result = _t3_neighbors(chain_gdb.conn, seeds, candidates, max_hops=1)
         assert "hub-node" in result, "outgoing neighbor dropped"
         assert "margin-of-safety" in result, "incoming neighbor dropped"
 
-    def test_t3_neighbors_respects_candidate_filter(self, cold_start_gdb):
-        """Neighbors outside the candidate set are filtered out — the
-        `candidate_slugs` parameter is honored, not advisory."""
+    def test_t3_neighbors_respects_candidate_filter(self, chain_gdb):
         from compiler.context_loader import _t3_neighbors
 
-        # legalism reaches both hub-node and margin-of-safety; restrict
-        # candidates to hub-node only.
         seeds = {"legalism"}
         candidates = {"hub-node"}
-        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        result = _t3_neighbors(chain_gdb.conn, seeds, candidates, max_hops=1)
         assert result == {"hub-node"}
 
-    def test_t3_neighbors_excludes_seeds_from_output(self, cold_start_gdb):
-        """The seed slugs themselves never appear in the output set —
-        traversal excludes the starting frontier."""
+    def test_t3_neighbors_excludes_seeds_from_output(self, chain_gdb):
         from compiler.context_loader import _t3_neighbors
 
         seeds = {"legalism", "hub-node"}
-        candidates = {
-            "margin-of-safety", "legalism", "hub-node", "deep-leaf",
-        }
-        result = _t3_neighbors(cold_start_gdb.conn, seeds, candidates, max_hops=1)
+        candidates = {"margin-of-safety", "legalism", "hub-node", "deep-leaf"}
+        result = _t3_neighbors(chain_gdb.conn, seeds, candidates, max_hops=1)
         assert "legalism" not in result
         assert "hub-node" not in result
-
-
-@pytest.fixture
-def cold_start_gdb_rich(tmp_path: Path):
-    """#81: cold-start fixture with ≥5 reachable entities for the
-    Task #71 widening invariant test (§4.3 V0 regression gate).
-
-    8 entities, all with eligible titles (≥6 chars single-token or
-    multi-token), all reachable from each other via LINKS_TO so 2-hop
-    widening can fan out. Source `src-new` has no SUPPORTS edges
-    (cold-start)."""
-    with GraphDB(tmp_path / "cold-start-rich-graph") as g:
-        conn = g.conn
-        entities = [
-            ("margin-of-safety", "Margin of Safety", "concept"),
-            ("intrinsic-value", "Intrinsic Value", "concept"),
-            ("circle-of-competence", "Circle of Competence", "concept"),
-            ("economic-moat", "Economic Moat", "concept"),
-            ("mr-market", "Mr Market", "concept"),
-            ("compound-interest", "Compound Interest", "concept"),
-            ("opportunity-cost", "Opportunity Cost", "concept"),
-            ("benjamin-graham", "Benjamin Graham", "person"),
-        ]
-        for slug, title, ptype in entities:
-            conn.execute(
-                "CREATE (e:Entity {slug: $s, title: $t, page_type: $pt, "
-                "status: 'active', confidence: 'medium', "
-                "created_at: '2026-01-01', updated_at: '2026-01-01', "
-                "first_run_id: 'r1', last_run_id: 'r1'})",
-                {"s": slug, "t": title, "pt": ptype},
-            )
-
-        # Cold-start source
-        conn.execute(
-            "CREATE (s:Source {source_id: 'src-new', source_type: 'raw', "
-            "canonical_path: 'src-new', status: 'active', file_type: 'markdown', "
-            "hash: 'sha256:new', size_bytes: 200, "
-            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
-            "last_ingested_at: '', ingest_state: 'pending', "
-            "ingest_count: 0, last_run_id: '', moved_to: ''})"
-        )
-
-        # Hub-and-spoke topology around margin-of-safety, with 2-hop
-        # reach to economic-moat / mr-market / compound-interest.
-        edges = [
-            ("margin-of-safety", "intrinsic-value"),
-            ("margin-of-safety", "circle-of-competence"),
-            ("intrinsic-value", "economic-moat"),
-            ("circle-of-competence", "mr-market"),
-            ("benjamin-graham", "margin-of-safety"),
-            ("benjamin-graham", "compound-interest"),
-            ("compound-interest", "opportunity-cost"),
-        ]
-        for f, t in edges:
-            conn.execute(
-                "MATCH (a:Entity {slug: $f}), (b:Entity {slug: $t}) "
-                "CREATE (a)-[:LINKS_TO {run_id: 'r1'}]->(b)",
-                {"f": f, "t": t},
-            )
-        yield g
-
-
-class TestColdStartWideningInvariant:
-    """#81: lock the Task #71 ≥5-seed invariant for cold-start widening.
-    §4.3 quantitative gate — 'cold-start widening still produces ≥5
-    seeds for new sources with empty SUPPORTS edges.'"""
-
-    def test_cold_start_widening_produces_at_least_five_seeds(
-        self, cold_start_gdb_rich,
-    ):
-        """Given a cold-start source whose text mentions a small number
-        of seed entities (Margin of Safety + Benjamin Graham), #71's
-        title-match + 2-hop expansion widens the snapshot to ≥5 unique
-        entities. Locks the primary value of #71: a new source without
-        SUPPORTS edges still gets meaningful graph context."""
-        snapshot = context_loader.build_context_snapshot(
-            cold_start_gdb_rich.conn,
-            source_id="src-new",
-            source_text=(
-                "This essay discusses Margin of Safety as taught by "
-                "Benjamin Graham — the foundational concept of value "
-                "investing."
-            ),
-            page_cap=50,
-        ).snapshot
-        slugs = {p.slug for p in snapshot.pages}
-        assert len(slugs) >= 5, (
-            f"cold-start widening produced only {len(slugs)} seeds "
-            f"({slugs!r}); #71 invariant requires ≥5"
-        )
 
 
 # ---------------------------------------------------------------------------
 # Same-domain gate (D3 override): T2/T3 pull only from the source's Pass-1 domain
 # ---------------------------------------------------------------------------
-
-from common.source_io import SourceFrontmatter
 
 
 @pytest.fixture
@@ -654,32 +441,27 @@ def gdb_dom(tmp_path: Path):
         yield g
 
 
-def _vi_fm(keys):
-    return SourceFrontmatter.from_dict({
-        "kdb_signal": "signal", "domain": "value-investing",
-        "source_type": "raw", "summary": "s", "entity_search_keys": keys})
-
-
-def test_t2_off_domain_key_is_dropped(gdb_dom):
+def test_t2_off_domain_selection_is_dropped(gdb_dom):
     snap = context_loader.build_context_snapshot(
-        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm(["ai-node"])).snapshot
-    slugs = [p.slug for p in snap.pages]
-    assert "ai-node" not in slugs            # off-domain key resolution dropped
+        gdb_dom.conn, source_id="src-vi", page_cap=50,
+        frontmatter=_fm(["ai-node"]),
+        t2_selection=["ai-node"]).snapshot
+    assert "ai-node" not in [p.slug for p in snap.pages]
 
 
-def test_t2_same_domain_key_is_kept(gdb_dom):
+def test_t2_same_domain_selection_is_kept(gdb_dom):
     snap = context_loader.build_context_snapshot(
-        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm(["vi-leaf"])).snapshot
+        gdb_dom.conn, source_id="src-vi", page_cap=50,
+        frontmatter=_fm(["vi-leaf"]),
+        t2_selection=["vi-leaf"]).snapshot
     assert "vi-leaf" in [p.slug for p in snap.pages]
 
 
 def test_t3_excludes_cross_domain_neighbor(gdb_dom):
     # vi-hub LINKS_TO ai-node (cross-domain) and vi-leaf (same-domain).
     snap = context_loader.build_context_snapshot(
-        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm([])).snapshot
+        gdb_dom.conn, source_id="src-vi", page_cap=50,
+        frontmatter=_fm([])).snapshot
     slugs = [p.slug for p in snap.pages]
     assert "ai-node" not in slugs            # cross-domain neighbor excluded
     assert "vi-leaf" in slugs                # same-domain neighbor admitted
@@ -687,16 +469,168 @@ def test_t3_excludes_cross_domain_neighbor(gdb_dom):
 
 def test_no_padding_and_all_same_domain(gdb_dom):
     snap = context_loader.build_context_snapshot(
-        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
-        frontmatter=_vi_fm([])).snapshot
+        gdb_dom.conn, source_id="src-vi", page_cap=50,
+        frontmatter=_fm([])).snapshot
     slugs = {p.slug for p in snap.pages}
     assert slugs <= {"vi-hub", "vi-spoke", "vi-leaf"}   # no off-domain top-up
     assert "ai-node" not in slugs
 
 
-def test_no_domain_source_falls_back_to_full_graph(gdb_dom):
-    # frontmatter=None → un-scoped; ai-node is reachable via T3 (vi-hub→ai-node).
+def test_no_domain_source_tiering_pool_is_whole_active_graph(gdb_dom):
+    """§4.3's stated absent-domain rule: a source with no domain tiers over
+    the WHOLE ACTIVE GRAPH (frontmatter=None → un-scoped; ai-node reachable
+    via T3 from vi-hub)."""
     snap = context_loader.build_context_snapshot(
-        gdb_dom.conn, source_id="src-vi", source_text="", page_cap=50,
+        gdb_dom.conn, source_id="src-vi", page_cap=50,
         frontmatter=None).snapshot
     assert "ai-node" in [p.slug for p in snap.pages]
+
+
+# ---------------------------------------------------------------------------
+# T1 pass-through (§4.3, [v0.3] scoped adapter read)
+# ---------------------------------------------------------------------------
+
+
+class TestT1SlugsPassThrough:
+    def test_t1_slugs_param_is_authoritative(self, gdb):
+        """The adapter's single scoped T1 read is passed through — the builder
+        does NOT re-read SUPPORTS when t1_slugs is given (src-beta's real T1
+        is {leaf-a}; the passed subset stands)."""
+        result = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-beta",
+            t1_slugs=frozenset(),
+            page_cap=50,
+        )
+        assert result.telemetry.t1.candidates == 0
+        assert result.telemetry.cold_start is True
+        assert "leaf-a" not in [p.slug for p in result.snapshot.pages]
+
+    def test_t1_slugs_none_builder_reads_and_scopes_itself(self, gdb):
+        """None (replay/tooling path) ⇒ the builder reads + scopes T1 itself,
+        as today — including the inactive-SUPPORTS KeyError guard (§4.1 B1)."""
+        gdb.conn.execute(
+            "MATCH (s:Source {source_id: 'src-alpha'}), (e:Entity {slug: 'orphan-x'}) "
+            "CREATE (s)-[:SUPPORTS {run_id: 'r1'}]->(e)")
+        gdb.conn.execute(
+            "MATCH (e:Entity {slug: 'orphan-x'}) SET e.status = 'inactive'")
+        result = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            page_cap=50,
+        )
+        assert result.telemetry.t1.candidates == 3   # retracted entity scoped out
+        assert "orphan-x" not in [p.slug for p in result.snapshot.pages]
+
+
+# ---------------------------------------------------------------------------
+# Telemetry (the persistence-facing product, #122's two-product split)
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetry:
+    def test_telemetry_fields_new_contract(self, gdb):
+        """keys_emitted carries the ORIGINAL frontmatter expressions; tiers
+        are pre-cap candidates + post-cap delivered; no V1 vocabulary."""
+        search_sentinel = object()
+        outcome_sentinel = object()
+        result = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            frontmatter=_fm(["leaf-b", "leaf-a"], domain=None),
+            t2_selection=["leaf-b", "leaf-a"],
+            search_summary=search_sentinel,   # pass-through, never prompt-serialized
+            key_outcomes=[outcome_sentinel, outcome_sentinel],
+            page_cap=50,
+        )
+        t = result.telemetry
+        assert t.source_id == "src-alpha"
+        assert t.keys_emitted == ["leaf-b", "leaf-a"]   # originals, emission order
+        assert t.key_outcomes == [outcome_sentinel, outcome_sentinel]
+        assert t.t1.candidates == 3 and t.t1.delivered == 3
+        assert t.t2.candidates == 2 and t.t2.slugs == ["leaf-b", "leaf-a"]
+        assert t.candidate_universe_size == 6           # whole-graph pool (absent domain)
+        assert t.cold_start is False
+        assert t.page_cap == 50
+        assert t.search is search_sentinel
+        # The retired V1 vocabulary is gone from the telemetry shape.
+        assert not hasattr(t, "configured_t2_mode")
+        assert not hasattr(t, "effective_t2_strategy")
+        assert not hasattr(t, "max_hops")
+
+    def test_telemetry_pre_pass1_keys_empty(self, gdb):
+        result = context_loader.build_context_snapshot(
+            gdb.conn, source_id="src-alpha", frontmatter=None, page_cap=50)
+        assert result.telemetry.keys_emitted == []
+        assert result.telemetry.key_outcomes == []
+        assert result.telemetry.search is None
+
+    def test_telemetry_tier_records_pre_and_post_cap(self, gdb):
+        """candidates = pre-cap tier sets; delivered/slugs = post-cap pages."""
+        result = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a"],
+            page_cap=4,
+        )
+        t = result.telemetry
+        assert t.t2.candidates == 2
+        assert t.t2.delivered == 1 and t.t2.slugs == ["leaf-b"]
+        total = t.t1.delivered + t.t2.delivered + t.t3.delivered
+        assert total == 4 <= t.page_cap
+
+    def test_empty_graph_full_telemetry(self, tmp_path):
+        """Empty-graph early return: FULL telemetry — zero tiers,
+        cold_start=True, candidate_universe_size=0, search passed through
+        (§4.3: the adapter searched the empty space upstream — populated,
+        not null)."""
+        search_sentinel = object()
+        with GraphDB(tmp_path / "empty-graph") as g:
+            result = context_loader.build_context_snapshot(
+                g.conn,
+                source_id="nonexistent",
+                frontmatter=_fm(["k1", "k2"]),
+                key_outcomes=["o1", "o2"],
+                search_summary=search_sentinel,
+                page_cap=50,
+            )
+        assert result.snapshot.pages == []
+        assert result.snapshot.source_id == "nonexistent"
+        t = result.telemetry
+        assert t.keys_emitted == ["k1", "k2"]
+        assert t.key_outcomes == ["o1", "o2"]
+        assert t.t1.candidates == t.t2.candidates == t.t3.candidates == 0
+        assert t.candidate_universe_size == 0
+        assert t.cold_start is True
+        assert t.search is search_sentinel
+
+
+# ---------------------------------------------------------------------------
+# Deletion guards (§7 — the retiring surface is GONE, no compatibility shim)
+# ---------------------------------------------------------------------------
+
+
+class TestDeletionGuards:
+    def test_deleted_symbols_are_gone(self):
+        for name in (
+            "T2Mode", "_build_t2", "_t2_structured", "_t2_layered", "_t2_legacy",
+            "_t2_from_search_keys", "_t2_slug_in_text", "_t2_title_in_text",
+            "_title_eligible", "_whole_word_alternation", "_MIN_SEED_THRESHOLD",
+            "_effective_strategy",
+            "_resolve_to_canonical_slugs", "_resolve_to_canonical_slugs_batch",
+            "_resolve_to_canonical_slugs_with_provenance",
+            "_resolve_to_canonical_slugs_with_provenance_batch",
+        ):
+            assert not hasattr(context_loader, name), f"{name} survived §7"
+
+    def test_re_import_is_gone(self):
+        assert "re" not in vars(context_loader)
+
+    def test_signature_has_no_mode_resolver_source_text(self):
+        params = set(inspect.signature(
+            context_loader.build_context_snapshot).parameters)
+        assert "mode" not in params
+        assert "resolver" not in params
+        assert "source_text" not in params
+        # The new contract's inputs are present.
+        assert {"t2_selection", "t1_slugs", "search_summary"} <= params

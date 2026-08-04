@@ -489,15 +489,18 @@ def test_v1_and_v2_vocabularies_cannot_mix():
     with pytest.raises(ContextRecordError):
         parse_context_record_v2(v2_payload)
 
-    from compiler.context_record import build_context_record_v1, ContextFailureInput
-    v1_payload = build_context_record_v1(
-        run_id="run-1", status="context_failed",
-        failure_input=ContextFailureInput(
-            source_id=SOURCE_ID, configured_t2_mode="structured",
-            effective_t2_strategy="structured_keys",
-            keys_emitted=["moats"], domain_scope="value-investing",
-            page_cap=50)).to_dict()
-    v1_payload["key_outcomes"] = []
+    # A hand-built V1 payload (the V1 factory is retired read-only, §7 row 5).
+    v1_payload = {
+        "schema_version": 1, "run_id": "run-1", "source_id": SOURCE_ID,
+        "status": "context_failed", "configured_t2_mode": "structured",
+        "effective_t2_strategy": "structured_keys", "keys_emitted": ["moats"],
+        "key_outcomes": [],
+        "t1": {"candidates": 0, "delivered": 0, "slugs": []},
+        "t2": {"candidates": 0, "delivered": 0, "slugs": []},
+        "t3": {"candidates": 0, "delivered": 0, "slugs": []},
+        "candidate_universe_size": None, "domain_scope": "value-investing",
+        "cold_start": None, "max_hops": None, "page_cap": 50,
+    }
     with pytest.raises(ContextRecordError):
         parse_context_record_v1(v2_payload)  # version 2 through the V1 parser
     v2_as_v1 = {**v1_payload, "schema_version": 1,
