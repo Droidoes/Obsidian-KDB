@@ -411,15 +411,18 @@ def _finalize_ran_gate(header: dict) -> bool | None:
 
 def _extract_pass1_watched(meas: dict) -> dict:
     """Task #122 §7d: extract the event-time watched fields from a
-    measurements payload's graph section (all tiers) — every `search_key_*`
-    and `context_*` key (means/rates, coverage, and the §5 integrity
-    diagnostics). Merged EXPLICITLY into Pass-1 board raw_values downstream."""
+    measurements payload's graph section (all tiers) — every `search_*` and
+    `context_*` key (means/rates, coverage, and the §5 integrity
+    diagnostics). #123 P3a.3 §4.6: the prefix widened from `search_key_` to
+    `search_` so the V2 series (search_expression_* / search_hit_recency_* /
+    search_stage2_budget_bound_rate) surface too. Merged EXPLICITLY into
+    Pass-1 board raw_values downstream."""
     graph = meas.get("graph", {}) or {}
     all_vals: dict = {}
     for tier in ("scored", "watched", "diagnostic"):
         all_vals.update(graph.get(tier, {}) or {})
     return {k: v for k, v in all_vals.items()
-            if k.startswith("search_key_") or k.startswith("context_")}
+            if k.startswith("search_") or k.startswith("context_")}
 
 
 def _scored_and_diag(meas: dict) -> tuple[dict, dict]:

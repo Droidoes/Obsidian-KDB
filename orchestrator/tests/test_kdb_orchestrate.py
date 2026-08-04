@@ -1402,11 +1402,9 @@ def test_emit_kpis_no_finalize_emits_audit_artifact(tmp_path, monkeypatch):
     assert m["graph"]["watched"]["orphan_rate"] is None
     assert m["graph"]["watched"]["entity_search_key_resolution"] is None
     # Task-122 event-time fields: the context build succeeded per source
-    # (empty graph → complete records) — but #123 P3a.2b writes V2 records
-    # and the KPI loader is still V1-only (dispatching loader is P3a.3
-    # scope), so the record-derived rate is None in the interim window.
-    assert m["graph"]["watched"]["context_build_success_rate"] is None
-    assert m["graph"]["watched"]["context_record_coverage"] == 0.0
+    # (empty graph → complete records).
+    assert m["graph"]["watched"]["context_build_success_rate"] == 1.0
+    assert m["graph"]["watched"]["context_record_coverage"] == 1.0
 
 
 def test_cli_emit_kpis_flag_parsed(tmp_path):

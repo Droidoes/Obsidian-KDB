@@ -135,8 +135,13 @@ def _stage_splits(stages: tuple[StageRecord, ...]) -> tuple[SearchStageSplit, ..
 
 
 def _budget_record(record: BudgetRecord) -> SearchBudgetRecord:
+    # kdb_search's BudgetRecord names stages with the short Stage vocabulary
+    # ("thin"/"fat"); the persistence mirror + V2 record parser pin the
+    # StageName vocabulary ("thin_selection"/"fat_selection") — translate at
+    # the boundary (same mapping as kdb_search.stage._STAGE_NAMES).
+    stage_name = {"thin": "thin_selection", "fat": "fat_selection"}[record.stage]
     return SearchBudgetRecord(
-        stage=record.stage,
+        stage=stage_name,
         budget_estimate_tokens=record.budget_estimate_tokens,
         selector_window=record.selector_window,
         headroom_factor=record.headroom_factor,

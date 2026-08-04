@@ -171,14 +171,13 @@ def test_return_dict_keys(graph_dir):
     }
     assert set(out["watched"]) == {
         "orphan_rate", "entity_search_key_resolution",
-        # Task #122 event-time context fields (§6)
-        "search_key_resolved_at_load_rate",
-        "search_key_late_resolution_rate",
-        "search_key_never_resolved_rate",
-        "search_key_resolved_pre_run_rate",
-        "search_key_resolved_cohort_rate",
-        "search_key_resolved_age_unknown_rate",
-        "search_key_t2_seed_rate",
+        # Task #123 §4.6 event-time search fields (B5)
+        "search_expression_matched_rate",
+        "search_expression_unresolved_rate",
+        "search_hit_recency_pre_run_rate",
+        "search_hit_recency_cohort_rate",
+        "search_hit_recency_age_unknown_rate",
+        "search_stage2_budget_bound_rate",
         "context_build_success_rate",
         "context_explicit_empty_count",
         "context_t1_candidates_mean", "context_t1_delivered_mean",
@@ -258,23 +257,37 @@ def test_connectivity_skips_noncanonical_endpoints():
 
 # =====================================================================
 # Task #122 §6 — event-time context fields + finalize_ran execution branch
+# #123 P3a.3 — V1/V2 dispatching readers (blueprint §4.6): the seven
+# search_key_* series are retired (one rename, one per-key→per-hit
+# re-baseline, three clean cuts); the KPI-time resolver read is dead.
 # =====================================================================
 
 from compiler.context_record import (
     ContextEvidence,
     ContextIntegrity,
     ContextRecordV1,
+    ContextRecordV2,
     KeyOutcomeV1,
+    KeyOutcomeV2,
 )
-from common.types import TierRecord
-from kdb_graph import queries
+from common.types import SearchHitSummary, SearchSummary, TierRecord
 
 _ZERO_TIER = TierRecord(0, 0, [])
+
+_RETIRED_SEARCH_KEY_SERIES = (
+    "search_key_resolved_at_load_rate",
+    "search_key_late_resolution_rate",
+    "search_key_never_resolved_rate",
+    "search_key_resolved_pre_run_rate",
+    "search_key_resolved_cohort_rate",
+    "search_key_resolved_age_unknown_rate",
+    "search_key_t2_seed_rate",
+)
 
 
 def _mk_record(source_id: str, outcomes: list[tuple], *,
                tiers=None, status="complete") -> object:
-    """One complete/context_failed record. outcomes = [(key, disposition,
+    """One V1 complete/context_failed record. outcomes = [(key, disposition,
     resolved, stamp)] — status='context_failed' synthesizes the frozen shape.
     #123 P3a.2b: the V1 factory is retired (parse-only history) — V1 records
     are built directly."""
@@ -305,6 +318,67 @@ def _mk_record(source_id: str, outcomes: list[tuple], *,
     )
 
 
+def _outcome_v2(expression: str, status: str, *, annotation=None,
+                stamp=None, recency=None) -> KeyOutcomeV2:
+    return KeyOutcomeV2(
+        expression=expression, status=status, annotation=annotation,
+        matched_first_run_id=stamp, match_recency=recency)
+
+
+def _search_summary(**overrides) -> SearchSummary:
+    """Canned §5.2 summary (same shape test_compile_source.py uses)."""
+    base = dict(
+        search_ran=True, query_kind="state_b", status="completed",
+        failure_class=None, execution="two_stage_attempted",
+        evidence_status="complete", body_coverage=1.0,
+        query_truncated_indices=(), eligible_space_size=0,
+        stage1_retained=0, stage2_pool_size=0, returned_entries=0,
+        valid_entry_yield=1.0, unattributed_hit_count=0, retry_attempts=0,
+        watched=(), concordance=1.0,
+        selector_provider="deepseek", selector_model="test",
+        selector_route="openai_compat",
+        latency_ms=24, cost_usd=0.0, budget_records=(),
+        stage2_budget_bound=False, stage_splits=(),
+        artifact_path="/state/runs/m/search/s.json",
+        search_snapshot_hash="sha256:abc", space_entity_count=0, hits=(),
+    )
+    return SearchSummary(**{**base, **overrides})
+
+
+def _hit(slug: str, recency: str, *, first_run_id="r0") -> SearchHitSummary:
+    return SearchHitSummary(
+        slug=slug, first_run_id=first_run_id, match_recency=recency,
+        matched_expressions=("k",))
+
+
+def _mk_record_v2(source_id: str, outcomes: list[KeyOutcomeV2] | None = None, *,
+                  tiers=None, search=None, status="complete") -> ContextRecordV2:
+    """One V2 record, built directly (mirrors _mk_record). `search` is the
+    §5.2 summary or None (no search ran)."""
+    if status == "context_failed":
+        return ContextRecordV2(
+            schema_version=2, run_id="m", source_id=source_id,
+            status="context_failed",
+            keys_emitted=["k"], key_outcomes=[],
+            t1=_ZERO_TIER, t2=_ZERO_TIER, t3=_ZERO_TIER,
+            candidate_universe_size=None, domain_scope=None,
+            cold_start=None, page_cap=50, search=search)
+    outcomes = outcomes or []
+    t1, t2, t3 = tiers or (_ZERO_TIER, _ZERO_TIER, _ZERO_TIER)
+    return ContextRecordV2(
+        schema_version=2, run_id="m", source_id=source_id,
+        status="complete",
+        keys_emitted=[o.expression for o in outcomes],
+        key_outcomes=list(outcomes),
+        t1=t1, t2=t2, t3=t3,
+        candidate_universe_size=10,
+        domain_scope="value-investing",
+        cold_start=False,
+        page_cap=50,
+        search=search,
+    )
+
+
 def _evidence(records, expected_ids, *, complete=True) -> ContextEvidence:
     matched = expected_ids & {r.source_id for r in records}
     return ContextEvidence(
@@ -317,67 +391,124 @@ def _evidence(records, expected_ids, *, complete=True) -> ContextEvidence:
     )
 
 
-def _seed_late_graph(gdb):
-    """Minimal graph for the L/V read: 'late-hit' exists post-run (an
-    event-time miss that became resolvable); 'never-hit' does not."""
-    c = gdb.conn
-    _mk_entity(c, "late-hit")
-
-
-def test_context_fields_rate_equations(graph_dir):
-    """N=5: R=3 (alpha cohort stamp 'm'; beta ×2 pre_run stamp 'r-old'),
-    L=1 (late-hit resolves post-run), V=1 (never-hit). R+L+V==N;
-    pre+cohort+unknown==R; all rates divide by N."""
-    outcomes = [
-        ("alpha", "resolved_t2_seed", "alpha", "m"),
-        ("k1", "resolved_t2_seed", "beta", "r-old"),
-        ("k2", "resolved_duplicate_seed", "beta", "r-old"),
-        ("late-hit", "unresolved", None, None),
-        ("never-hit", "unresolved", None, None),
-    ]
-    rec = _mk_record("src-a", outcomes)
+def test_retired_search_key_series_are_gone(graph_dir):
+    """§4.6: the seven search_key_* series are removed — one rename, one
+    per-key→per-hit re-baseline, three clean cuts, no tombstones."""
+    rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m")])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        _seed_late_graph(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+    for key in _RETIRED_SEARCH_KEY_SERIES:
+        assert key not in out["watched"]
+
+
+def test_expression_rates_mixed_v1_v2(graph_dir):
+    """The RENAME: search_expression_matched_rate is resolved_at_load's
+    population under the V2 vocabulary. V1 maps disposition != 'unresolved';
+    V2 reads status — one combined population across a mixed run."""
+    v1 = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m"),
+                              ("ghost", "unresolved", None, None)])
+    v2 = _mk_record_v2("src-b", [
+        _outcome_v2("k1", "matched", stamp="m", recency="cohort"),
+        _outcome_v2("k2", "unresolved", annotation="no_match")])
+    ev = _evidence([v1, v2], {"src-a", "src-b"})
+    with GraphDB(graph_dir) as gdb:
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
     w = out["watched"]
-    assert w["search_key_resolved_at_load_rate"] == pytest.approx(3 / 5)
-    assert w["search_key_late_resolution_rate"] == pytest.approx(1 / 5)
-    assert w["search_key_never_resolved_rate"] == pytest.approx(1 / 5)
-    assert w["search_key_resolved_cohort_rate"] == pytest.approx(1 / 5)
-    assert w["search_key_resolved_pre_run_rate"] == pytest.approx(2 / 5)
-    # zero numerator with N>0 → 0.0 (NOT None)
-    assert w["search_key_resolved_age_unknown_rate"] == 0.0
-    assert w["search_key_t2_seed_rate"] == pytest.approx(2 / 5)
-    assert w["context_build_success_rate"] == pytest.approx(1.0)
+    assert w["search_expression_matched_rate"] == pytest.approx(0.5)
+    assert w["search_expression_unresolved_rate"] == pytest.approx(0.5)
+    assert w["context_build_success_rate"] == 1.0
     assert w["context_record_coverage"] == 1.0
     assert w["context_integrity_ok"] is True
 
 
-def test_context_fields_n_zero_rates_none(graph_dir):
-    """N==0 (a complete record with zero emissions) → key rates None."""
-    rec = _mk_record("src-a", [])
-    ev = _evidence([rec], {"src-a"})
+def test_hit_recency_rates_are_per_hit(graph_dir):
+    """§4.6's explicit RE-BASELINE (denominator change, NOT a rename): the
+    recency series divide by HITS, not keys. 2 matched keys but 3 hits —
+    a per-key read would give halves; the per-hit read gives thirds."""
+    v2 = _mk_record_v2("src-a", [
+        _outcome_v2("k1", "matched", stamp="m", recency="cohort"),
+        _outcome_v2("k2", "matched", stamp="r-old", recency="pre_run")],
+        search=_search_summary(hits=(
+            _hit("a", "cohort", first_run_id="m"),
+            _hit("b", "cohort", first_run_id="m"),
+            _hit("c", "pre_run", first_run_id="r-old"))))
+    ev = _evidence([v2], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
     w = out["watched"]
-    assert w["search_key_resolved_at_load_rate"] is None
-    assert w["search_key_late_resolution_rate"] is None
-    assert w["search_key_never_resolved_rate"] is None
-    assert w["search_key_t2_seed_rate"] is None
+    assert w["search_hit_recency_cohort_rate"] == pytest.approx(2 / 3)
+    assert w["search_hit_recency_pre_run_rate"] == pytest.approx(1 / 3)
+    assert w["search_hit_recency_age_unknown_rate"] == 0.0
+
+
+def test_hit_recency_includes_context_failed_search_sections(graph_dir):
+    """B8: a context_failed record's non-null search section still feeds the
+    per-hit population (the search completed before the builder raised)."""
+    good = _mk_record_v2("src-a", [
+        _outcome_v2("k1", "matched", stamp="m", recency="cohort")],
+        search=_search_summary(hits=(_hit("a", "cohort", first_run_id="m"),)))
+    failed = _mk_record_v2("src-b", status="context_failed",
+                           search=_search_summary(
+                               hits=(_hit("b", "pre_run", first_run_id="r-old"),)))
+    ev = _evidence([good, failed], {"src-a", "src-b"})
+    with GraphDB(graph_dir) as gdb:
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+    w = out["watched"]
+    assert w["search_hit_recency_cohort_rate"] == pytest.approx(0.5)
+    assert w["search_hit_recency_pre_run_rate"] == pytest.approx(0.5)
+    assert w["context_build_success_rate"] == pytest.approx(0.5)
+
+
+def test_expression_and_recency_rates_none_on_empty_populations(graph_dir):
+    """N==0 expressions ⇒ both expression rates None; zero hits ⇒ recency
+    rates None; a search-ran record still answers stage2_budget_bound (0.0)."""
+    v1 = _mk_record("src-a", [])
+    v2 = _mk_record_v2("src-b", [], search=_search_summary(query_kind="state_c"))
+    ev = _evidence([v1, v2], {"src-a", "src-b"})
+    with GraphDB(graph_dir) as gdb:
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+    w = out["watched"]
+    assert w["search_expression_matched_rate"] is None
+    assert w["search_expression_unresolved_rate"] is None
+    assert w["search_hit_recency_cohort_rate"] is None
+    assert w["search_hit_recency_pre_run_rate"] is None
+    assert w["search_hit_recency_age_unknown_rate"] is None
+    assert w["search_stage2_budget_bound_rate"] == 0.0
+
+
+def test_stage2_budget_bound_rate(graph_dir):
+    """B5/§4.5: the 0/N fail-safe evidence, aggregated over search-ran
+    records — 1 of 2 bound ⇒ 0.5. None when no search ran (V1-only run)."""
+    v2_bound = _mk_record_v2("src-a", [
+        _outcome_v2("k1", "matched", stamp="m", recency="cohort")],
+        search=_search_summary(stage2_budget_bound=True))
+    v2_free = _mk_record_v2("src-b", [
+        _outcome_v2("k2", "unresolved", annotation="no_match")],
+        search=_search_summary(stage2_budget_bound=False))
+    ev = _evidence([v2_bound, v2_free], {"src-a", "src-b"})
+    with GraphDB(graph_dir) as gdb:
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+    assert out["watched"]["search_stage2_budget_bound_rate"] == pytest.approx(0.5)
+
+    v1_only = _evidence([_mk_record("src-c", [])], {"src-c"})
+    with GraphDB(graph_dir) as gdb:
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=v1_only)
+    assert out["watched"]["search_stage2_budget_bound_rate"] is None
 
 
 def test_context_failed_in_coverage_not_in_means(graph_dir):
     """context_failed records count for coverage + build-success denominator
-    but NEVER for the tier means (complete records only)."""
+    but NEVER for the tier means (complete records only) — mixed V1/V2."""
     good = _mk_record(
         "src-a", [("alpha", "resolved_t2_seed", "alpha", "m")],
         tiers=(TierRecord(2, 1, ["x"]), TierRecord(4, 3, ["a", "b", "c"]),
                TierRecord(6, 0, [])))
-    failed = _mk_record("src-b", [], status="context_failed")
+    failed = _mk_record_v2("src-b", status="context_failed",
+                           search=_search_summary())   # B8: non-null search
     ev = _evidence([good, failed], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
     w = out["watched"]
     assert w["context_record_coverage"] == 1.0          # failed IS captured
     assert w["context_build_success_rate"] == pytest.approx(0.5)
@@ -395,11 +526,11 @@ def test_evidence_incomplete_nulls_aggregates_keeps_integrity(graph_dir):
     rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m")])
     ev = _evidence([rec], {"src-a"}, complete=False)
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
     w = out["watched"]
-    for k in ("search_key_resolved_at_load_rate", "search_key_t2_seed_rate",
-              "context_build_success_rate", "context_explicit_empty_count",
-              "context_t1_candidates_mean"):
+    for k in ("search_expression_matched_rate", "search_hit_recency_cohort_rate",
+              "search_stage2_budget_bound_rate", "context_build_success_rate",
+              "context_explicit_empty_count", "context_t1_candidates_mean"):
         assert w[k] is None, k
     assert w["context_record_coverage"] == 1.0
     assert w["context_integrity_ok"] is False      # expected non-empty → bool False
@@ -410,59 +541,63 @@ def test_no_evidence_all_aggregates_none(graph_dir):
     """Pre-#122 artifact (context_evidence=None): aggregates None, integrity
     counts 0, coverage/integrity_ok None — and no resolver read fires."""
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=None)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=None)
     w = out["watched"]
-    assert w["search_key_resolved_at_load_rate"] is None
+    assert w["search_expression_matched_rate"] is None
+    assert w["search_hit_recency_cohort_rate"] is None
+    assert w["search_stage2_budget_bound_rate"] is None
     assert w["context_record_coverage"] is None
     assert w["context_integrity_ok"] is None
     assert w["context_missing_record_count"] == 0
     assert w["context_expected_count_mismatch"] is False
 
 
-def test_explicit_empty_count(graph_dir):
-    rec = _mk_record("src-a", [])
-    # flip strategy to explicit_empty via a custom record
-    rec2 = ContextRecordV1(
-        schema_version=1, run_id="m", source_id="src-b",
-        status="complete",
-        configured_t2_mode="structured",
-        effective_t2_strategy="explicit_empty",
+def test_explicit_empty_count_mixed_v1_v2(graph_dir):
+    """§4.6 re-source: V1 counts effective_t2_strategy == 'explicit_empty'
+    (complete records); V2 counts search.query_kind == 'state_c' over records
+    where a search ran (search section non-null). Population change, stated:
+    a pre-Pass-1 V2 source cannot answer."""
+    v1_normal = _mk_record("src-a", [])
+    v1_empty = ContextRecordV1(
+        schema_version=1, run_id="m", source_id="src-b", status="complete",
+        configured_t2_mode="structured", effective_t2_strategy="explicit_empty",
         keys_emitted=[], key_outcomes=[],
-        t1=TierRecord(0, 0, []), t2=TierRecord(0, 0, []), t3=TierRecord(0, 0, []),
+        t1=_ZERO_TIER, t2=_ZERO_TIER, t3=_ZERO_TIER,
         candidate_universe_size=0, domain_scope=None, cold_start=False,
         max_hops=1, page_cap=50)
-    ev = _evidence([rec, rec2], {"src-a", "src-b"})
+    v2_state_c = _mk_record_v2("src-c", [], search=_search_summary(query_kind="state_c"))
+    v2_state_b = _mk_record_v2(
+        "src-d", [_outcome_v2("k1", "unresolved", annotation="no_match")],
+        search=_search_summary(query_kind="state_b"))
+    v2_no_search = _mk_record_v2("src-e", [], search=None)
+    ev = _evidence(
+        [v1_normal, v1_empty, v2_state_c, v2_state_b, v2_no_search],
+        {"src-a", "src-b", "src-c", "src-d", "src-e"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, run_id="m", context_evidence=ev)
-    assert out["watched"]["context_explicit_empty_count"] == 1
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+    assert out["watched"]["context_explicit_empty_count"] == 2
 
 
 # ---------- R4 F1 execution branch (finalize_ran=False) ----------
 
 def test_no_finalize_branch_skips_finalized_reads(graph_dir, monkeypatch):
     """R4 F1 pin: on the no-finalize branch an ordinary finalized graph-quality
-    read is NEVER executed; finalized keys emit None; Task-122 fields still
-    compute; the unresolved resolver runs (unresolved evidence exists)."""
+    read is NEVER executed; finalized keys emit None; the context fields still
+    compute — and #123 P3a.3: WITHOUT any resolver read, even with an
+    unresolved population present (late/never classification is dead)."""
     def boom(*_args, **_kwargs):
         raise AssertionError("finalized graph-quality read executed on no-finalize branch")
     monkeypatch.setattr("compiler.kpi.graph.queries.active_canonical_entity_slugs", boom)
     monkeypatch.setattr("compiler.kpi.graph.queries.total_source_count", boom)
     monkeypatch.setattr("compiler.kpi.graph.queries.links_to_edges", boom)
-
-    resolver_calls: list[list[str]] = []
-    real_resolve = queries.resolve_to_canonical_slugs
-
-    def counting(conn, keys):
-        resolver_calls.append(list(keys))
-        return real_resolve(conn, keys)
-    monkeypatch.setattr("compiler.kpi.graph.queries.resolve_to_canonical_slugs", counting)
+    monkeypatch.setattr("compiler.kpi.graph.queries.resolve_to_canonical_slugs", boom)
 
     rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m"),
                                ("never-hit", "unresolved", None, None)])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
         out = compute_graph(gdb.conn, _FINALIZE, finalize_ran=False,
-                            run_id="m", context_evidence=ev)
+                            context_evidence=ev)
     assert out["scored"] == {"entity_reuse": None, "graph_connectivity": None,
                              "link_density": None, "supports_density": None}
     w = out["watched"]
@@ -470,30 +605,29 @@ def test_no_finalize_branch_skips_finalized_reads(graph_dir, monkeypatch):
     assert w["entity_search_key_resolution"] is None
     assert out["diagnostic"] == {"belongs_to_coverage": None,
                                  "domain_null_rate": None, "domain_breadth": None}
-    # Task-122 fields retained; the L/V read fired exactly once on the
-    # unresolved population only.
-    assert resolver_calls == [["never-hit"]]
-    assert w["search_key_resolved_at_load_rate"] == pytest.approx(0.5)
-    assert w["search_key_never_resolved_rate"] == pytest.approx(0.5)
-    assert w["search_key_late_resolution_rate"] == 0.0
+    # Event-time rates computed WITHOUT the (deleted) L/V resolver read.
+    assert w["search_expression_matched_rate"] == pytest.approx(0.5)
+    assert w["search_expression_unresolved_rate"] == pytest.approx(0.5)
 
 
-def test_no_finalize_branch_no_query_when_no_unresolved(graph_dir, monkeypatch):
-    """The L/V resolver read is skipped entirely when the unresolved-at-load
-    population is empty (R4 F1: no wasted query)."""
+def test_no_resolver_call_in_the_context_evidence_path(graph_dir, monkeypatch):
+    """§4.6: the KPI-time resolver recomputation dies with the seven series —
+    on the finalize path the context-evidence computation fires NO resolver
+    call either (the only remaining resolver use is the established
+    entity_search_key_resolution series, driven by pass1_search_keys)."""
     def boom_resolve(*_args, **_kwargs):
-        raise AssertionError("resolver read fired with an empty unresolved population")
-    monkeypatch.setattr("compiler.kpi.graph.queries.resolve_to_canonical_slugs", boom_resolve)
+        raise AssertionError("resolver read fired from the context-evidence path")
+    monkeypatch.setattr(
+        "compiler.kpi.graph.queries.resolve_to_canonical_slugs", boom_resolve)
 
-    rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m")])
+    rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m"),
+                               ("never-hit", "unresolved", None, None)])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, finalize_ran=False,
-                            run_id="m", context_evidence=ev)
+        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
     w = out["watched"]
-    assert w["search_key_resolved_at_load_rate"] == 1.0
-    assert w["search_key_late_resolution_rate"] == 0.0
-    assert w["search_key_never_resolved_rate"] == 0.0
+    assert w["search_expression_matched_rate"] == pytest.approx(0.5)
+    assert w["search_expression_unresolved_rate"] == pytest.approx(0.5)
 
 
 def test_finalize_branch_legacy_resolution_unchanged_with_evidence(graph_dir):
@@ -509,7 +643,7 @@ def test_finalize_branch_legacy_resolution_unchanged_with_evidence(graph_dir):
         out_ev = compute_graph(
             gdb.conn, _FINALIZE,
             pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"],
-            run_id="m", context_evidence=ev)
+            context_evidence=ev)
     assert (out_no_ev["watched"]["entity_search_key_resolution"]
             == out_ev["watched"]["entity_search_key_resolution"]
             == pytest.approx(2 / 3))

@@ -318,10 +318,10 @@ class TestCompleteness:
 # ---------------------------------------------------------------------------
 
 _WATCHED = {
-    "search_key_resolved_at_load_rate": 0.5,
-    "search_key_late_resolution_rate": 0.25,
-    "search_key_never_resolved_rate": 0.25,
-    "search_key_t2_seed_rate": 0.5,
+    "search_expression_matched_rate": 0.5,
+    "search_hit_recency_cohort_rate": 0.25,
+    "search_hit_recency_pre_run_rate": 0.25,
+    "search_stage2_budget_bound_rate": 0.5,
     "context_build_success_rate": 1.0,
     "context_record_coverage": 1.0,
     "context_integrity_ok": True,
@@ -347,7 +347,7 @@ class TestPass1WatchedSurfacing:
         for k, v in _WATCHED.items():
             assert rows["prov/a@unversioned"]["raw_values"][k] == v
         # a row with no extracted watched evidence merges nothing
-        assert "search_key_resolved_at_load_rate" not in \
+        assert "search_expression_matched_rate" not in \
             rows["prov/b@unversioned"]["raw_values"]
 
     def test_fallback_row_carries_watched_fields(self, tmp_path):
@@ -394,7 +394,7 @@ class TestPass1WatchedSurfacing:
             pass1_watched_by_model={"prov/a@unversioned": dict(_WATCHED)},
         )
         raw = board["ranking"][0]["raw_values"]
-        assert "search_key_resolved_at_load_rate" not in raw
+        assert "search_expression_matched_rate" not in raw
 
     def test_json_payload_and_markdown_render_from_same_raw_values(self, tmp_path):
         """JSON + Markdown render the same raw_values — the new fields appear
@@ -411,7 +411,7 @@ class TestPass1WatchedSurfacing:
         )
         # JSON payload
         raw = board["ranking"][0]["raw_values"]
-        assert raw["search_key_resolved_at_load_rate"] == 0.5
+        assert raw["search_expression_matched_rate"] == 0.5
         # Markdown via the CLI renderer (same construction as _score_command)
         md = _render_leaderboard_md(
             board["ranking"], {},
@@ -419,5 +419,5 @@ class TestPass1WatchedSurfacing:
             board["effective_top_weights"], "2026-07-24T00:00:00",
             board={"scope": "pass1", "unranked": board["unranked"],
                    "effective_top_weights": board["effective_top_weights"]})
-        assert "search_key_resolved_at_load_rate" in md
+        assert "search_expression_matched_rate" in md
         assert "context_build_success_rate" in md

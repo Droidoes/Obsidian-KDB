@@ -11,7 +11,10 @@ One ContextRecordV1 per source per run, written by compile_source to
 
 `.to_dict()` is the ONLY serialization path. `parse_context_record_v1` /
 `parse_context_record_v2` are the strict readers — rejects, never coerces;
-both status-invariant sides enforced. `compiler`'s allowed imports are
+both status-invariant sides enforced. `parse_context_record` is the
+version-dispatching reader (#123 P3a.3, §4.5): it pre-reads
+`schema_version` and hands off to the matching parser; unknown versions
+reject. `compiler`'s allowed imports are
 {common, kdb_graph, kdb_search}, so this module is importable by the
 orchestrator + KPI layers without inversion (P2).
 
@@ -116,7 +119,7 @@ class ContextIntegrityIssue:
 
 @dataclass(frozen=True)
 class ContextLoadResult:
-    records: list[ContextRecordV1]
+    records: list[ContextRecordV1 | ContextRecordV2]
     issues: list[ContextIntegrityIssue]
 
 
@@ -132,7 +135,7 @@ class ContextIntegrity:
 
 @dataclass(frozen=True)
 class ContextEvidence:
-    records: list[ContextRecordV1]
+    records: list[ContextRecordV1 | ContextRecordV2]
     expected_ids: set[str]
     matched_ids: set[str]
     coverage: float | None           # None when expected empty
@@ -838,3 +841,21 @@ def parse_context_record_v2(raw: dict) -> ContextRecordV2:
         page_cap=page_cap,
         search=search,
     )
+
+
+# ---------- dispatching reader (§4.5, #123 P3a.3) ----------
+
+
+def parse_context_record(raw: dict) -> ContextRecordV1 | ContextRecordV2:
+    """Version-dispatching strict reader — pre-reads `schema_version` and
+    hands off to the matching parser (1 → v1, 2 → v2). Any other value
+    (missing, non-int, unknown version) raises ContextRecordError; never
+    coerces, never guesses."""
+    if not isinstance(raw, dict):
+        raise _err("$", f"expected a record dict, got {raw!r}")
+    version = raw.get("schema_version")
+    if version == CONTEXT_RECORD_SCHEMA_VERSION:
+        return parse_context_record_v1(raw)
+    if version == CONTEXT_RECORD_V2_SCHEMA_VERSION:
+        return parse_context_record_v2(raw)
+    raise _err("schema_version", f"missing/unsupported: {version!r}")

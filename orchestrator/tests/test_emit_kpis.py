@@ -18,8 +18,13 @@ import pytest
 import orchestrator.emit_kpis as emit_mod
 import orchestrator.kdb_orchestrate as kdb_orchestrate
 from common.measurement import RunMeasurementHeader
-from common.types import TierRecord
-from compiler.context_record import ContextRecordV1, KeyOutcomeV1
+from common.types import SearchHitSummary, SearchSummary, TierRecord
+from compiler.context_record import (
+    ContextRecordV1,
+    ContextRecordV2,
+    KeyOutcomeV1,
+    KeyOutcomeV2,
+)
 from kdb_graph.graphdb import GraphDB
 from orchestrator.emit_kpis import emit_run_kpis, maybe_emit_kpis
 from orchestrator.tests.test_kdb_orchestrate import (
@@ -131,6 +136,65 @@ def _write_record(run_dir: Path, run_id: str, source_id: str,
         json.dumps(rec.to_dict()), encoding="utf-8")
 
 
+def _search_summary(**overrides) -> SearchSummary:
+    """Canned §5.2 summary (same shape test_compile_source.py uses)."""
+    base = dict(
+        search_ran=True, query_kind="state_b", status="completed",
+        failure_class=None, execution="two_stage_attempted",
+        evidence_status="complete", body_coverage=1.0,
+        query_truncated_indices=(), eligible_space_size=0,
+        stage1_retained=0, stage2_pool_size=0, returned_entries=0,
+        valid_entry_yield=1.0, unattributed_hit_count=0, retry_attempts=0,
+        watched=(), concordance=1.0,
+        selector_provider="deepseek", selector_model="test",
+        selector_route="openai_compat",
+        latency_ms=24, cost_usd=0.0, budget_records=(),
+        stage2_budget_bound=False, stage_splits=(),
+        artifact_path="/state/runs/run-1/search/s.json",
+        search_snapshot_hash="sha256:abc", space_entity_count=0, hits=(),
+    )
+    return SearchSummary(**{**base, **overrides})
+
+
+def _hit(slug: str, recency: str, *, first_run_id="r0") -> SearchHitSummary:
+    return SearchHitSummary(
+        slug=slug, first_run_id=first_run_id, match_recency=recency,
+        matched_expressions=(slug,))
+
+
+def _record_v2(run_id: str, source_id: str, outcomes: list[KeyOutcomeV2], *,
+               t1=None, t2=None, t3=None, search=None) -> ContextRecordV2:
+    zero = TierRecord(0, 0, [])
+    return ContextRecordV2(
+        schema_version=2,
+        run_id=run_id,
+        source_id=source_id,
+        status="complete",
+        keys_emitted=[o.expression for o in outcomes],
+        key_outcomes=list(outcomes),
+        t1=t1 or zero, t2=t2 or zero, t3=t3 or zero,
+        candidate_universe_size=10, domain_scope="value-investing",
+        cold_start=False, page_cap=50, search=search,
+    )
+
+
+def _outcome_v2(expression: str, status: str, *, annotation=None,
+                stamp=None, recency=None) -> KeyOutcomeV2:
+    return KeyOutcomeV2(
+        expression=expression, status=status, annotation=annotation,
+        matched_first_run_id=stamp, match_recency=recency)
+
+
+def _write_record_v2(run_dir: Path, run_id: str, source_id: str,
+                     outcomes: list[KeyOutcomeV2], *, search=None,
+                     **tier_kw) -> None:
+    ctx = run_dir / "context"
+    ctx.mkdir(parents=True, exist_ok=True)
+    rec = _record_v2(run_id, source_id, outcomes, search=search, **tier_kw)
+    (ctx / f"{source_id.replace('/', '__')}.json").write_text(
+        json.dumps(rec.to_dict()), encoding="utf-8")
+
+
 def _emit(tmp_path: Path, monkeypatch, run_dir: Path,
           header: RunMeasurementHeader, *, finalize_ran: bool = True) -> dict:
     bench = tmp_path / "bench"
@@ -162,34 +226,74 @@ def _watched(payload: dict) -> dict:
 # §6 rate equations through emit (exact counts, approx rates)
 # =====================================================================
 
-def test_emit_rate_equations_and_late_vs_never(tmp_path, monkeypatch):
-    """N=3 (alpha resolved pre_run; late-hit unresolved-at-load resolves on the
-    post-run read; never-hit never resolves) → R/L/V rates 1/3 each."""
+_RETIRED_SEARCH_KEY_SERIES = (
+    "search_key_resolved_at_load_rate",
+    "search_key_late_resolution_rate",
+    "search_key_never_resolved_rate",
+    "search_key_resolved_pre_run_rate",
+    "search_key_resolved_cohort_rate",
+    "search_key_resolved_age_unknown_rate",
+    "search_key_t2_seed_rate",
+)
+
+
+def test_emit_expression_and_hit_rates_through_emit(tmp_path, monkeypatch):
+    """§4.6 rates through the full emit path (N=3: alpha matched pre_run; k2
+    unresolved no_match; k3 unresolved cap_exhausted_possible). Hits are a
+    SEPARATE population: 2 hits (1 pre_run, 1 cohort)."""
     run_dir = tmp_path / "run"
     hdr = _header("run-1", 1)
     _write_header(run_dir, hdr)
-    _write_sidecar(run_dir, "src-a", keys=["alpha", "late-hit", "never-hit"])
-    _write_record(run_dir, "run-1", "src-a", [
-        ("alpha", "resolved_t2_seed", "alpha", "r0"),
-        ("late-hit", "unresolved", None, None),
-        ("never-hit", "unresolved", None, None),
-    ])
+    _write_sidecar(run_dir, "src-a", keys=["alpha", "k2", "k3"])
+    _write_record_v2(run_dir, "run-1", "src-a", [
+        _outcome_v2("alpha", "matched", stamp="r0", recency="pre_run"),
+        _outcome_v2("k2", "unresolved", annotation="no_match"),
+        _outcome_v2("k3", "unresolved", annotation="cap_exhausted_possible"),
+    ], search=_search_summary(
+        stage2_budget_bound=True,
+        hits=(_hit("alpha", "pre_run", first_run_id="r0"),
+              _hit("beta", "cohort", first_run_id="run-1"))))
     with GraphDB(tmp_path / "graph") as g:
         _seed_entity(g.conn, "alpha", first_run_id="r0")
-        _seed_entity(g.conn, "late-hit", first_run_id="run-1")
     payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
     w = _watched(payload)
-    assert w["search_key_resolved_at_load_rate"] == pytest.approx(1 / 3)
-    assert w["search_key_late_resolution_rate"] == pytest.approx(1 / 3)
-    assert w["search_key_never_resolved_rate"] == pytest.approx(1 / 3)
-    # alpha's stamp 'r0' ≠ run 'run-1' → pre_run; no cohort/unknown → 0.0
-    assert w["search_key_resolved_pre_run_rate"] == pytest.approx(1 / 3)
-    assert w["search_key_resolved_cohort_rate"] == 0.0
-    assert w["search_key_resolved_age_unknown_rate"] == 0.0
-    assert w["search_key_t2_seed_rate"] == pytest.approx(1 / 3)
+    assert w["search_expression_matched_rate"] == pytest.approx(1 / 3)
+    assert w["search_expression_unresolved_rate"] == pytest.approx(2 / 3)
+    assert w["search_hit_recency_pre_run_rate"] == pytest.approx(0.5)
+    assert w["search_hit_recency_cohort_rate"] == pytest.approx(0.5)
+    assert w["search_hit_recency_age_unknown_rate"] == 0.0
+    assert w["search_stage2_budget_bound_rate"] == 1.0
+    for key in _RETIRED_SEARCH_KEY_SERIES:
+        assert key not in w
     assert w["context_build_success_rate"] == 1.0
     assert w["context_integrity_ok"] is True
     assert payload["header"]["finalize_ran"] is True
+
+
+def test_emit_mixed_v1_v2_records_one_population(tmp_path, monkeypatch):
+    """The dispatching loader feeds V1 history and V2 current records into
+    ONE expression-rate population (V1 disposition != 'unresolved' ⇒ matched)."""
+    run_dir = tmp_path / "run"
+    hdr = _header("run-1", 2)
+    _write_header(run_dir, hdr)
+    _write_sidecar(run_dir, "src-a", keys=["alpha", "ghost"])
+    _write_sidecar(run_dir, "src-b", keys=["beta"])
+    _write_record(run_dir, "run-1", "src-a",
+                  [("alpha", "resolved_t2_seed", "alpha", "r0"),
+                   ("ghost", "unresolved", None, None)])
+    _write_record_v2(run_dir, "run-1", "src-b", [
+        _outcome_v2("beta", "matched", stamp="r0", recency="pre_run"),
+    ], search=_search_summary(hits=(_hit("beta", "pre_run"),)))
+    with GraphDB(tmp_path / "graph") as g:
+        _seed_entity(g.conn, "alpha", first_run_id="r0")
+        _seed_entity(g.conn, "beta", first_run_id="r0")
+    payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
+    w = _watched(payload)
+    assert w["search_expression_matched_rate"] == pytest.approx(2 / 3)
+    assert w["search_expression_unresolved_rate"] == pytest.approx(1 / 3)
+    assert w["search_hit_recency_pre_run_rate"] == 1.0
+    assert w["context_build_success_rate"] == 1.0
+    assert w["context_record_coverage"] == 1.0
 
 
 def test_emit_context_failed_in_coverage_not_in_means(tmp_path, monkeypatch):
@@ -227,7 +331,7 @@ def test_emit_legacy_resolution_unchanged(tmp_path, monkeypatch):
     payload = _emit(tmp_path, monkeypatch, run_dir, hdr)
     w = _watched(payload)
     assert w["entity_search_key_resolution"] == pytest.approx(0.5)
-    assert w["search_key_resolved_at_load_rate"] == pytest.approx(0.5)
+    assert w["search_expression_matched_rate"] == pytest.approx(0.5)
 
 
 # =====================================================================
@@ -267,7 +371,7 @@ def test_emit_reconcile_missing(tmp_path, monkeypatch):
     assert w["context_integrity_ok"] is False
     assert w["context_missing_record_count"] == 1
     assert w["context_record_coverage"] == 0.5
-    assert w["search_key_resolved_at_load_rate"] is None
+    assert w["search_expression_matched_rate"] is None
 
 
 def test_emit_reconcile_substituted(tmp_path, monkeypatch):
@@ -278,7 +382,7 @@ def test_emit_reconcile_substituted(tmp_path, monkeypatch):
     assert w["context_integrity_ok"] is False
     assert w["context_missing_record_count"] == 2
     assert w["context_unexpected_record_count"] == 1
-    assert w["search_key_resolved_at_load_rate"] is None
+    assert w["search_expression_matched_rate"] is None
 
 
 def test_emit_reconcile_duplicate(tmp_path, monkeypatch):
@@ -331,7 +435,7 @@ def test_emit_reconcile_zero_expected(tmp_path, monkeypatch):
     w = _watched(payload)
     assert w["context_record_coverage"] is None
     assert w["context_integrity_ok"] is None
-    assert w["search_key_resolved_at_load_rate"] is None
+    assert w["search_expression_matched_rate"] is None
     assert w["context_missing_record_count"] == 0
     assert w["context_expected_count_mismatch"] is False
 
@@ -348,7 +452,7 @@ def test_emit_expected_count_mismatch_flagged(tmp_path, monkeypatch):
     w = _watched(payload)
     assert w["context_expected_count_mismatch"] is True
     assert w["context_integrity_ok"] is False
-    assert w["search_key_resolved_at_load_rate"] is None   # aggregates gated
+    assert w["search_expression_matched_rate"] is None   # aggregates gated
 
 
 # =====================================================================
@@ -390,7 +494,7 @@ def test_gate_emits_when_expected_despite_no_finalize(tmp_path, monkeypatch):
     payload = json.loads(matches[0].read_text(encoding="utf-8"))
     assert payload["header"]["finalize_ran"] is False
     assert payload["graph"]["scored"]["entity_reuse"] is None
-    assert _watched(payload)["search_key_resolved_at_load_rate"] == 1.0
+    assert _watched(payload)["search_expression_matched_rate"] == 1.0
 
 
 def test_gate_emit_kpis_false_writes_nothing(tmp_path, monkeypatch):
@@ -450,14 +554,9 @@ def test_lifecycle_all_context_failed_unchanged_graph(tmp_path, monkeypatch):
         "entity_reuse": None, "graph_connectivity": None,
         "link_density": None, "supports_density": None}
     w = _watched(payload)
-    # #123 P3a.2b↔P3a.3 window: compile_source now writes V2 records and the
-    # KPI loader is still V1-only (the dispatching loader is P3a.3 scope) —
-    # the V2 record travels as a malformed integrity issue, coverage 0.0,
-    # record-derived aggregates None. P3a.3 restores the V2 reads.
-    assert w["context_build_success_rate"] is None
-    assert w["context_record_coverage"] == 0.0
-    assert w["context_integrity_ok"] is False
-    assert w["context_malformed_record_count"] == 1
+    assert w["context_build_success_rate"] == 0.0
+    assert w["context_record_coverage"] == 1.0
+    assert w["context_integrity_ok"] is True
     # the record in run_state is the frozen context_failed shape
     ctx_records = list(matches_dir(bench, "context"))
     assert ctx_records, "context records must be packaged in run_state/"
@@ -502,13 +601,9 @@ def test_lifecycle_manifest_post_graph_first_source_residual(tmp_path, monkeypat
     assert payload["header"]["finalize_ran"] is False
     assert payload["graph"]["scored"]["entity_reuse"] is None
     w = _watched(payload)
-    # #123 P3a.2b↔P3a.3 window: the V2 complete record is unread by the
-    # V1-only KPI loader (dispatching loader is P3a.3 scope) — malformed
-    # integrity issue, coverage 0.0, aggregates None.
-    assert w["context_build_success_rate"] is None
-    assert w["context_record_coverage"] == 0.0
-    assert w["context_integrity_ok"] is False
-    assert w["context_malformed_record_count"] == 1
+    assert w["context_build_success_rate"] == 1.0
+    assert w["context_record_coverage"] == 1.0
+    assert w["context_integrity_ok"] is True
 
 
 def test_lifecycle_one_committed_then_manifest_post_graph_partial(tmp_path, monkeypatch):
@@ -550,12 +645,9 @@ def test_lifecycle_one_committed_then_manifest_post_graph_partial(tmp_path, monk
     assert payload["header"]["finalize_ran"] is False
     assert payload["graph"]["scored"]["graph_connectivity"] is None
     w = _watched(payload)
-    # #123 P3a.2b↔P3a.3 window: both V2 records are unread by the V1-only
-    # KPI loader (dispatching loader is P3a.3 scope) — coverage 0.0,
-    # aggregates None; the records ARE packaged either way.
-    assert w["context_record_coverage"] == 0.0
-    assert w["context_build_success_rate"] is None
-    assert w["context_malformed_record_count"] == 2
+    assert w["context_record_coverage"] == 1.0
+    assert w["context_build_success_rate"] == 1.0
+    assert w["context_integrity_ok"] is True
     assert len(matches_dir(bench, "context")) == 2
 
 

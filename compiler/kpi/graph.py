@@ -13,10 +13,11 @@ Task #122 §6/§7: compute_graph gains an execution branch keyed on
 `finalize_ran`. When the run never crossed the finalize boundary
 (finalize_ran=False), finalized-run graph quality is INELIGIBLE — none of the
 finalized graph-quality or legacy-resolution reads execute (their established
-keys emit None); the Task #122 event-time fields are computed from the
-reconciled context evidence instead, and the ONLY graph read is the
-deterministic unresolved-at-load resolver read for late/never classification
-(skipped entirely when that population is empty).
+keys emit None); the event-time fields are computed from the reconciled
+context evidence instead. #123 P3a.3 §4.6 reshaped those fields for the V2
+record (mixed V1/V2 populations, per-record schema dispatch; per-hit recency
+baseline) and retired the KPI-time resolver read along with the seven
+search_key_* series — the evidence computation performs NO graph read.
 
 Scored set (2026-06-06 §6 — combined graph score): the four graph quality KPIs
 ``entity_reuse`` · ``graph_connectivity`` · ``link_density`` · ``supports_density``
@@ -86,24 +87,29 @@ def _largest_component_fraction(
 
 
 def _context_watched_fields(
-    conn: kuzu.Connection,
     *,
-    run_id: str | None,
     evidence: ContextEvidence | None,
 ) -> dict[str, Any]:
-    """Task #122 event-time watched fields from reconciled context evidence.
+    """Event-time search/context watched fields from reconciled context
+    evidence (Task #122 §6, reshaped by #123 P3a.3 §4.6).
 
-    Over status=="complete" records only. N = all emitted keys; R = resolver
-    hits at load; L = unresolved-at-load resolving on the deterministic
-    post-run read; V = unresolved-at-load still unresolved. R + L + V == N
-    (exact); pre_run + cohort + age_unknown == R (exact); every key rate
-    divides by N (N == 0 → None; zero numerator → 0.0).
+    Mixed V1/V2 populations with per-record schema dispatch (B11):
+    V1 outcomes read `disposition` (matched ⟺ disposition != "unresolved");
+    V2 outcomes read `status`. N = all emitted expressions across complete
+    records; expression rates divide by N (N == 0 → None).
+
+    Hit recency is a SEPARATE, per-HIT population (§4.6 re-baseline — NOT a
+    rename): hits come from every record whose search section is non-null
+    (context_failed records included, B8 — the search completed before the
+    builder raised); each rate divides by total hits. V1 records have no
+    search section and contribute no hits. stage2_budget_bound aggregates
+    over search-ran records (any status) — None when no search ran.
 
     The frozen integrity diagnostics + coverage are emitted ALWAYS (None only
     when expected is empty); the substantive aggregates require
     evidence.complete — an integrity failure nulls the aggregates but never
-    hides coverage/integrity. The unresolved-at-load resolver read is the ONLY
-    graph read here and is skipped entirely when that population is empty.
+    hides coverage/integrity. NO graph read happens here: the KPI-time
+    resolver recomputation died with the seven search_key_* series.
     """
     records = evidence.records if evidence is not None else []
     complete_records = [r for r in records if r.status == "complete"]
@@ -126,40 +132,37 @@ def _context_watched_fields(
             integrity.expected_count_mismatch if integrity else False),
     }
 
-    outcomes = [o for r in complete_records for o in r.key_outcomes]
-    n = len(outcomes)
-    resolved = [o for o in outcomes if o.disposition != "unresolved"]
-    r_count = len(resolved)
-    unresolved_keys = [o.key for o in outcomes if o.disposition == "unresolved"]
-
-    # L/V — the deterministic post-run read (§7.3): reads the ACTUAL post-run
-    # graph state solely to classify event-time misses; never redefines a
-    # load-time outcome and never makes the artifact rankable. Skipped
-    # entirely when the unresolved population is empty.
-    l_count = 0
-    if unresolved_keys:
-        l_count = len(queries.resolve_to_canonical_slugs(conn, unresolved_keys))
-    v_count = len(unresolved_keys) - l_count
-
-    # Age decomposition of R: stamp == this run → cohort (created earlier in
-    # the same run); stamp ≠ this run → pre_run; missing stamp → age_unknown.
-    pre_run = cohort = age_unknown = 0
-    for o in resolved:
-        if o.target_first_run_id is None:
-            age_unknown += 1
-        elif run_id is not None and o.target_first_run_id == run_id:
-            cohort += 1
-        else:
-            pre_run += 1
-
-    def _rate(num: int) -> float | None:
-        return (num / n) if n else None
-
     def _gated(value):
         """evidence_complete == False ⇒ substantive aggregates None."""
         return value if evidence_complete else None
 
-    t2_seeds = sum(1 for o in outcomes if o.disposition == "resolved_t2_seed")
+    # Expression population — per-record schema dispatch (V1 disposition vs
+    # V2 status), one combined rate across a mixed run.
+    matched = unresolved = 0
+    for r in complete_records:
+        for o in r.key_outcomes:
+            if r.schema_version == 1:
+                if o.disposition == "unresolved":
+                    unresolved += 1
+                else:
+                    matched += 1
+            elif o.status == "matched":
+                matched += 1
+            else:
+                unresolved += 1
+    n = matched + unresolved
+
+    # Per-hit recency population — hits from EVERY record with a non-null
+    # search section (B8: context_failed records still feed it).
+    searches = [r.search for r in records if getattr(r, "search", None) is not None]
+    hits = [h for s in searches for h in s.hits]
+    h = len(hits)
+    recency_counts = {"pre_run": 0, "cohort": 0, "age_unknown": 0}
+    for hit in hits:
+        recency_counts[hit.match_recency] += 1
+
+    def _hit_rate(recency: str) -> float | None:
+        return (recency_counts[recency] / h) if h else None
 
     def _tier_mean(tier: str, field: str) -> float | None:
         if not complete_records:
@@ -168,19 +171,27 @@ def _context_watched_fields(
                 / len(complete_records))
 
     fields.update({
-        "search_key_resolved_at_load_rate": _gated(_rate(r_count)),
-        "search_key_late_resolution_rate": _gated(_rate(l_count)),
-        "search_key_never_resolved_rate": _gated(_rate(v_count)),
-        "search_key_resolved_pre_run_rate": _gated(_rate(pre_run)),
-        "search_key_resolved_cohort_rate": _gated(_rate(cohort)),
-        "search_key_resolved_age_unknown_rate": _gated(_rate(age_unknown)),
-        # pre-cap: t2_seed outcomes over ALL emissions
-        "search_key_t2_seed_rate": _gated(_rate(t2_seeds)),
+        "search_expression_matched_rate": _gated((matched / n) if n else None),
+        "search_expression_unresolved_rate": _gated((unresolved / n) if n else None),
+        "search_hit_recency_pre_run_rate": _gated(_hit_rate("pre_run")),
+        "search_hit_recency_cohort_rate": _gated(_hit_rate("cohort")),
+        "search_hit_recency_age_unknown_rate": _gated(_hit_rate("age_unknown")),
+        # B5: 0/N fail-safe evidence over search-ran records (any status).
+        "search_stage2_budget_bound_rate": _gated(
+            (sum(1 for s in searches if s.stage2_budget_bound) / len(searches))
+            if searches else None),
         "context_build_success_rate": _gated(
             len(complete_records) / len(records) if records else None),
+        # §4.6 re-source: V1 reads effective_t2_strategy (complete records);
+        # V2 reads the search section (any status — B8 search survives).
         "context_explicit_empty_count": _gated(
-            sum(1 for r in complete_records
-                if r.effective_t2_strategy == "explicit_empty")),
+            sum(1 for r in records
+                if (r.schema_version == 1
+                    and r.status == "complete"
+                    and r.effective_t2_strategy == "explicit_empty")
+                or (r.schema_version == 2
+                    and r.search is not None
+                    and r.search.query_kind == "state_c"))),
         "context_t1_candidates_mean": _gated(_tier_mean("t1", "candidates")),
         "context_t1_delivered_mean": _gated(_tier_mean("t1", "delivered")),
         "context_t2_candidates_mean": _gated(_tier_mean("t2", "candidates")),
@@ -197,7 +208,6 @@ def compute_graph(
     *,
     finalize_ran: bool = True,
     pass1_search_keys: list[str] | None = None,
-    run_id: str | None = None,
     context_evidence: ContextEvidence | None = None,
 ) -> dict:
     """Compute GRAPH-family KPIs for one benchmark run.
@@ -214,15 +224,13 @@ def compute_graph(
         Task #122 §7 execution branch. False = the run did not complete the
         finalize boundary — finalized graph-quality and legacy-resolution
         reads are NEVER executed (their established keys emit None); only the
-        Task-122 fields and the deterministic unresolved-at-load read run.
+        event-time evidence fields compute (no graph read at all on this
+        path — #123 P3a.3 §4.6 retired the KPI-time resolver read).
     pass1_search_keys:
         Union/concat of all emitted entity_search_keys across the run's
         Pass-1 sidecars (kebab-case slugs). Feeds entity_search_key_resolution
         (watched diagnostic, ↑ better). None or [] → None (don't conflate
         no-keys with zero-resolution). Wired by the orchestrator (#109 §3D).
-    run_id:
-        The run being measured — stamps the cohort age decomposition
-        (first_run_id == run_id → cohort; ≠ → pre_run; missing → age_unknown).
     context_evidence:
         Reconciled Task #122 context evidence (orchestrator.emit_kpis §5).
         None (pre-#122 artifacts) → all event-time aggregates None, integrity
@@ -356,8 +364,10 @@ def compute_graph(
         }
 
     # Task #122 event-time watched fields — computed from the reconciled
-    # evidence in BOTH branches; the ONLY graph read on the no-finalize path
-    # is the unresolved-at-load resolver read inside (skipped when empty).
-    watched.update(_context_watched_fields(conn, run_id=run_id, evidence=context_evidence))
+    # evidence in BOTH branches. #123 P3a.3 §4.6: pure evidence computation,
+    # NO graph read on either path (the KPI-time resolver read is retired;
+    # the only remaining resolver use is entity_search_key_resolution above,
+    # driven by pass1_search_keys on the finalize branch).
+    watched.update(_context_watched_fields(evidence=context_evidence))
 
     return {"scored": scored, "watched": watched, "diagnostic": diagnostic}
