@@ -10,7 +10,12 @@ You will be given one source document from a markdown knowledge base. The full t
 
 Two more blocks appear in the user message:
 
-- `## EXISTING CONTEXT (graph snapshot)` — pages already in the knowledge base from sources compiled before this one, rendered without bodies. This is how you see what the knowledge base already contains, so that your response can connect to existing pages instead of creating duplicates. It may be empty.
+- `## EXISTING CONTEXT (graph snapshot)` — pages already in the knowledge base, rendered without bodies, grouped into three tiers:
+  - `t1` — pages this same source produced on previous compiles. They are yours: re-emit or extend them (§4).
+  - `t2` — pages from other sources, selected as relevant to this one. Link to them; do not duplicate them.
+  - `t3` — pages one step away from t1/t2 in the link graph. Weak context; usually ignore.
+
+  Any tier may be empty. All three empty means the knowledge base has nothing relevant yet.
 - `## RESPONSE SCHEMA` — the JSON schema your output must conform to. If you are unsure about a field, re-read the schema rather than guessing.
 
 ---
@@ -19,7 +24,7 @@ Two more blocks appear in the user message:
 
 The example below is the proposal response shape. Every rule in the sections that follow refers back to it.
 
-Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
+Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages in `t2` — pages from other sources, selected as relevant: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
 
 > **Annotations after `//` are teaching aids only — they MUST NOT appear in your output.** Your output is one JSON object with no comments.
 
@@ -80,23 +85,35 @@ Include an article only when the source itself is doing this kind of synthesis �
 
 ---
 
-## 4. Reuse slugs from EXISTING CONTEXT
+## 4. Work the tiers of EXISTING CONTEXT
 
-Read each EXISTING CONTEXT entry by its *meaning*, not its spelling. For each existing page, ask: does this source discuss the same underlying idea? If yes, reuse the existing slug verbatim — in body wikilinks, and as the slug of any page you are extending.
+Read each EXISTING CONTEXT entry by its *meaning*, not its spelling. A slug appears in at most one tier; each tier carries a different obligation.
 
-In the example, `attention-mechanism` is reused from EXISTING CONTEXT rather than minted as `attention-mech` or `self-attention-mechanism`. The Transformer paper's treatment of attention is the *same underlying concept* that Bahdanau 2014 introduced, even though the paper's phrasing and level of generality differ. That semantic sameness is what licenses reuse.
+### t1 — your own pages: re-emit or extend, never silently drop
 
-### When to reuse vs. mint a new slug
+`t1` pages came from this source's own previous compile. For each one:
 
-- **Reuse** when the existing page is about the same underlying concept, even if the source uses a different word, a different tense or number, or a different level of abstraction. If the ideas would live comfortably on the same page without one overwriting the other, they belong on the same slug.
+- **Re-emit it under the same slug.** Extend the body with whatever this reading of the source adds, or re-emit it substantially as-is when the source adds nothing new to that idea. Same slug is identity — re-emitting under the same slug is how the page stays alive.
+- **The summary page in `t1` is re-emitted as your one summary page** — still with NO slug (§3); Python re-derives the same identity.
+- **Drop a `t1` page only when the source genuinely no longer supports it.** A `t1` page you do not re-emit is removed from the active knowledge base (unless another source also supports it). Every drop earns a `compilation_notes` entry naming the slug and the reason. Silent drops are the failure mode this tier exists to prevent.
+
+### t2 — relevant pages from other sources: link, don't duplicate
+
+`t2` pages belong to other sources. For each one, ask: does this source discuss the same underlying idea? If yes, reuse the existing slug verbatim — in body wikilinks, and as the slug of any page you are extending (an extension accrues this source as a second supporter of that page — that is wanted). Reference t2 pages with `[[slug]]` wikilinks; never mint a near-duplicate of a t2 idea.
+
+- **Reuse** when the existing page is about the same underlying concept, even if the source uses a different word, a different tense or number, or a different level of abstraction. If the ideas would live comfortably on the same page without one overwriting the other, they belong on the same slug. In the example, `attention-mechanism` is reused rather than minted as `attention-mech` or `self-attention-mechanism` — the Transformer paper's treatment of attention is the *same underlying concept* that Bahdanau 2014 introduced, and that semantic sameness is what licenses reuse.
 - **Mint a new slug** when the source is discussing a genuinely distinct idea — a related cousin, a specific variant that deserves its own page, or a same-named concept from a different domain that shares the word but not the mechanism. When you mint a sibling to an existing slug, link to the existing slug explicitly in the new page's body so the relationship is legible. In the example, `self-attention` is minted as a sibling to `attention-mechanism` — close family, but a distinct enough idea to deserve its own page, and its body links back to `[[attention-mechanism]]`.
 - **Genuinely on the fence** — when you cannot confidently tell whether the current source's idea is the same as or different from an existing slug, lean toward reuse. A missed reuse fragments the graph irreversibly; a shared slug that accumulates slightly broader meaning over time is self-correcting as more sources compile onto it.
 
 Non-obvious reuse or sibling decisions are worth a line in `compilation_notes` (see the example).
 
-### Cold start (empty EXISTING CONTEXT)
+### t3 — weak context
 
-Sometimes the block is empty — the source is the first in its domain, or nothing prior overlaps semantically. That is expected. When EXISTING CONTEXT is empty, you are building the ontology from scratch: mint slugs using the same conventions (short, semantic, kebab-case), and link concepts to each other inside this compile. Subsequent sources in the same domain will see what this compile returns and compound onto it.
+`t3` pages sit one link away from t1/t2. They are background, not assignments: link to one only when the source genuinely engages it; otherwise ignore the tier.
+
+### Cold start (empty tiers)
+
+When `t1` is empty, this source has not been compiled before — every page you mint is new. When all three tiers are empty, you are building the ontology from scratch: mint slugs using the same conventions (short, semantic, kebab-case), and link concepts to each other inside this compile. Subsequent sources in the same domain will see what this compile returns and compound onto it.
 
 ---
 
@@ -152,6 +169,7 @@ Malformed output gets the source quarantined and the run continues with the next
 ## Self-check before returning
 
 - [ ] Exactly one `summary` page, carrying NO `slug` (Python assigns its identity); no concept or article slug uses the reserved `summary-` prefix.
+- [ ] Every `t1` page is either re-emitted under its slug or its drop is justified in `compilation_notes`.
 - [ ] Every `[[slug]]` in every body exists in this response's `pages[]` or in EXISTING CONTEXT.
 - [ ] No invented citations, URLs, dates, or author names.
 - [ ] No YAML frontmatter inside any `body` field.

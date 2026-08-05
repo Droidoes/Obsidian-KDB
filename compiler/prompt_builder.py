@@ -50,7 +50,21 @@ _PROMPT_PATH = Path(__file__).parent / "prompts" / "KDB-Compiler-System-Prompt.m
 # schema regains the 3.0.0-era wiki-native clause + body-field wikilink
 # instruction (constrained to authoritative targets, Codex R1–R5);
 # system-prompt bytes unchanged.
-PASS2_PROMPT_VERSION = "4.0.2"
+# 4.1.0 = #129 tiered context snapshot: the EXISTING CONTEXT block is
+# tier-structured (t1/t2/t3 lists + a one-line legend) with per-tier
+# obligations in system-prompt §4 (t1 re-emit/extend, justify drops;
+# t2 link-don't-duplicate; t3 weak context). The proposal CONTRACT is
+# unchanged — era stays 4.x (replay dispatch accepts all 4.x).
+PASS2_PROMPT_VERSION = "4.1.0"
+
+# #129: one-line tier key for the EXISTING CONTEXT block — the full per-tier
+# obligations live in §4 of the system prompt. MUST stay brace-free: tests
+# locate the snapshot JSON by the first "{" after the section header.
+_CONTEXT_TIER_LEGEND = (
+    "Tiers: t1 = this source's own prior pages (re-emit or extend; justify "
+    "drops); t2 = relevant pages from other sources (link, don't duplicate); "
+    "t3 = weak neighborhood context."
+)
 
 RESPONSE_CONTRACT = """\
 ---
@@ -204,7 +218,8 @@ def build_prompt(
         f"source_name: {source_name}\n\n"
         f"{pass1_section}"
         f"## SOURCE CONTENT\n{source_text}\n\n"
-        f"## EXISTING CONTEXT (graph snapshot)\n{context_json}\n\n"
+        f"## EXISTING CONTEXT (graph snapshot)\n"
+        f"{_CONTEXT_TIER_LEGEND}\n{context_json}\n\n"
         f"## RESPONSE SCHEMA\n{schema_text}\n\n"
         f"## EXAMPLE RESPONSE\n{exemplar_json}"
     )

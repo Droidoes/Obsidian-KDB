@@ -25,6 +25,7 @@ import pytest
 
 from compiler import prompt_builder
 from compiler.prompt_builder import (
+    _CONTEXT_TIER_LEGEND,
     RESPONSE_CONTRACT,
     build_prompt,
     exemplar_response,
@@ -48,7 +49,7 @@ def _clear_caches() -> None:
 def _snapshot() -> ContextSnapshot:
     return ContextSnapshot(
         source_id=SOURCE_ID,
-        pages=[
+        t1=[
             ContextPage(
                 slug="attention",
                 title="Attention",
@@ -88,14 +89,16 @@ def test_packaged_prompt_is_the_phase1_wiki_native_contract() -> None:
     assert "summary-<stem>" in p                             # Python's derived form noted
 
 
-def test_pass2_prompt_version_is_4() -> None:
+def test_pass2_prompt_version_is_4_1() -> None:
     """Phase-3 bump guard: content and version move together (D-115-13).
     2.0.0 = repo-packaged (Phase 0); 3.0.0 = wiki-native contract (Phase 1);
     4.0.0 = proposal contract (#119 Phase 3) — the summary page carries no
     slug; Python assigns its identity via the normalization bridge.
     4.0.1 = wording-only patch (Codex exec-review R1 F5); era unchanged.
-    4.0.2 = schema link-surface restoration (#120 D1, spec v1.4)."""
-    assert prompt_builder.PASS2_PROMPT_VERSION == "4.0.2"
+    4.0.2 = schema link-surface restoration (#120 D1, spec v1.4).
+    4.1.0 = #129 tiered context snapshot (t1/t2/t3) + per-tier instructions;
+    proposal contract unchanged — era stays 4.x."""
+    assert prompt_builder.PASS2_PROMPT_VERSION == "4.1.0"
 
 
 def test_packaged_prompt_matches_golden_sha() -> None:
@@ -104,7 +107,7 @@ def test_packaged_prompt_matches_golden_sha() -> None:
     # change fails here.
     assert (
         hashlib.sha256(prompt_builder.load_system_prompt().encode()).hexdigest()
-        == "afeff429761a98b71eadccfc3ca5b067d542d7e37764a8b4a90ae2192a8e5e1b"
+        == "c5ef5cb24cce7ea9af1e6bbaad3d5fc3a82d2c27d8c02324cacb351b9d1fd752"
     )
 
 
@@ -264,6 +267,53 @@ def test_user_includes_context_snapshot_as_json() -> None:
     )
     expected = json.dumps(snap.to_dict(), indent=2, ensure_ascii=False)
     assert expected in bp.user
+
+
+# ---------- #129 tiered context snapshot ----------
+
+def test_context_block_renders_tier_legend_and_tiered_json() -> None:
+    """#129: the EXISTING CONTEXT block carries the one-line tier legend
+    between the section header and the tier-structured snapshot JSON
+    ({source_id, t1, t2, t3} — the pre-#129 "pages" key is gone)."""
+    snap = _snapshot()
+    bp = build_prompt(
+        source_name=SOURCE_NAME,
+        source_text="hi",
+        context_snapshot=snap,
+    )
+    ctx_idx = bp.user.index("## EXISTING CONTEXT (graph snapshot)")
+    legend_idx = bp.user.index(_CONTEXT_TIER_LEGEND, ctx_idx)
+    json_idx = bp.user.index("{", legend_idx)
+    assert ctx_idx < legend_idx < json_idx
+    doc = json.loads(bp.user[json_idx:bp.user.index("\n\n## ", json_idx)])
+    assert set(doc) == {"source_id", "t1", "t2", "t3"}
+    assert "pages" not in doc
+    assert [p["slug"] for p in doc["t1"]] == ["attention"]
+    assert doc["t2"] == doc["t3"] == []
+    # The legend MUST stay brace-free — tests locate the snapshot JSON by
+    # the first "{" after the section header (mirrors the constant's note).
+    assert "{" not in _CONTEXT_TIER_LEGEND and "}" not in _CONTEXT_TIER_LEGEND
+
+
+def test_system_prompt_teaches_tiers() -> None:
+    """#129 canary: the system prompt teaches the per-tier obligations —
+    t1 re-emit/extend with justified drops, t2 link-don't-duplicate, t3
+    weak context — plus the t1-summary no-slug clause and the self-check."""
+    p = load_system_prompt()
+    # t1 — the anti-churn rule
+    assert "### t1 — your own pages: re-emit or extend, never silently drop" in p
+    assert "Re-emit it under the same slug" in p
+    assert "Every drop earns a `compilation_notes` entry" in p
+    # the t1 summary page is re-emitted slug-less
+    assert "The summary page in `t1` is re-emitted as your one summary page" in p
+    assert "still with NO slug" in p
+    # t2 — link, don't duplicate
+    assert "### t2 — relevant pages from other sources: link, don't duplicate" in p
+    assert "never mint a near-duplicate" in p
+    # t3 — weak context
+    assert "### t3 — weak context" in p
+    # self-check
+    assert "Every `t1` page is either re-emitted under its slug or its drop is justified" in p
 
 
 def test_user_includes_schema_and_exemplar() -> None:
