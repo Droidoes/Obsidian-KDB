@@ -56,9 +56,12 @@ from compiler.prompt_builder import PASS2_PROMPT_VERSION, load_system_prompt
 
 MANIFEST_NAME = "manifest.json"
 
-#: #123 P3a.2b — the pass-1.5 selector seat (R-P3a-5; settled 2026-08-03 in
-#: docs/TASKS.md #123). Resolved ONCE per run() and threaded into every
-#: compile_source call; the adapter itself is seat-agnostic.
+#: #123 P3a.2b — the pass-1.5 selector seat fallback (R-P3a-5; settled
+#: 2026-08-03 in docs/TASKS.md #123). Used only when run() gets no
+#: selector_model_id — the CLI passes --selector-model, or --model when that
+#: is absent (single-model default, Joseph 2026-08-04). Resolved ONCE per
+#: run() and threaded into every compile_source call; the adapter itself is
+#: seat-agnostic.
 PASS15_SELECTOR_MODEL_ID = "qwen3.7-flash"
 
 
@@ -506,6 +509,7 @@ def run(
     temperature: float | None = 0.0,
     ctx_window: int | None = None, price_in: float = 0.0, price_out: float = 0.0,
     route: ModelRoute | None = None,
+    selector_model_id: str | None = None,
 ) -> OrchestrateResult:
     """End-to-end conductor for one pipeline: scan → per-source enrich/compile/
     commit (β) → reconcile → finalize. Source-local failures are quarantined
@@ -616,16 +620,19 @@ def run(
     # after the dry-run early return, before the graph opens (§4.4). An
     # unknown seat, a seat without a ctx_window (cannot budget), or a
     # max_tokens exceeding the seat's output envelope are run-level config
-    # defects — fail-hard before any source is processed.
-    selector = resolve_models_json(PASS15_SELECTOR_MODEL_ID)
+    # defects — fail-hard before any source is processed. Per-run override
+    # (selector_model_id) beats the module fallback (single-model default:
+    # the CLI passes --model when --selector-model is absent).
+    seat_id = selector_model_id or PASS15_SELECTOR_MODEL_ID
+    selector = resolve_models_json(seat_id)
     if selector.ctx_window is None:
         raise PoolError(
-            f"pass-1.5 selector seat {PASS15_SELECTOR_MODEL_ID!r} has no "
+            f"pass-1.5 selector seat {seat_id!r} has no "
             "ctx_window — the selector cannot be budgeted")
     if max_tokens > selector.max_output_tokens:
         raise ValueError(
             f"max_tokens={max_tokens} exceeds the pass-1.5 selector seat "
-            f"{PASS15_SELECTOR_MODEL_ID!r} output envelope "
+            f"{seat_id!r} output envelope "
             f"({selector.max_output_tokens})")
 
     try:
@@ -1068,6 +1075,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="escape hatch: required only when --model is NOT a pool id "
                         "(then --model is treated as a raw SDK model string)")
     p.add_argument("--max-tokens", type=int, default=32768)
+    p.add_argument("--selector-model", default=None, metavar="POOL_ID",
+                   help="pass-1.5 selector seat; defaults to --model (single-model "
+                        "runs). Pass a pool id to pin a different seat.")
     p.add_argument("--dry-run", action="store_true",
                    help="scan + print the plan; no enrich/compile/graph writes, no API")
     p.add_argument("--limit", type=int, default=None, metavar="N",
@@ -1131,6 +1141,9 @@ def main(argv: list[str] | None = None) -> int:
         temperature = spec.temperature
         ctx_window = spec.ctx_window
         price_in, price_out = spec.price_in, spec.price_out
+        # Single-model default (Joseph 2026-08-04): the pass-1.5 selector
+        # seat follows --model unless --selector-model pins a different one.
+        selector_model_id = args.selector_model or args.model
     except UnknownModelError:
         # A dropped id is now simply not in the active pool (archived to
         # models_dropped.json), so it arrives here as UnknownModelError. The
@@ -1144,6 +1157,9 @@ def main(argv: list[str] | None = None) -> int:
         use_completion_tokens, extra_body, ctx_window = False, None, None
         temperature = 0.0
         price_in, price_out = 0.0, 0.0
+        # Escape-hatch runs have no pool id to follow; the selector seat
+        # stays on the module fallback unless --selector-model pins one.
+        selector_model_id = args.selector_model
 
     res = run(
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
@@ -1153,7 +1169,8 @@ def main(argv: list[str] | None = None) -> int:
         emit_kpis=args.emit_kpis,
         use_completion_tokens=use_completion_tokens, extra_body=extra_body,
         temperature=temperature, route=route,
-        ctx_window=ctx_window, price_in=price_in, price_out=price_out)
+        ctx_window=ctx_window, price_in=price_in, price_out=price_out,
+        selector_model_id=selector_model_id)
 
     print(f"kdb-orchestrate: run_id={res.run_id} exit={res.exit_code} "
           f"reason={res.exit_reason}")

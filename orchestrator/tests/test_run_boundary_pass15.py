@@ -159,3 +159,74 @@ def test_max_tokens_above_seat_output_cap_raises_before_loop(tmp_path, monkeypat
 
     with pytest.raises(ValueError, match="max_tokens"):
         _run(vault, state_root, tmp_path, max_tokens=70_000)
+
+
+def test_selector_model_id_overrides_the_constant_seat(tmp_path, monkeypatch):
+    """Per-run selector_model_id beats the module fallback: resolved ONCE,
+    same ModelSpec threaded into every compile_source call."""
+    source_ids = ["AIML/a.md", "AIML/b.md"]
+    vault = _vault(tmp_path, source_ids)
+    state_root = vault / "KDB" / "state"
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+
+    resolutions: list[str] = []
+    real_resolve = resolve_models_json
+
+    def spy_resolve(model_id: str) -> ModelSpec:
+        resolutions.append(model_id)
+        return real_resolve(model_id)
+
+    monkeypatch.setattr(kdb_orchestrate, "resolve_models_json", spy_resolve)
+
+    compile_calls: list[dict] = []
+
+    def fake_compile(**kwargs):
+        compile_calls.append(kwargs)
+        return CompileSourceResult(
+            cr=None, failure_stage="compile", exception_type="Boom", error="stop")
+
+    monkeypatch.setattr(kdb_orchestrate, "compile_source", fake_compile)
+
+    _run(vault, state_root, tmp_path, selector_model_id="deepseek-v4-flash")
+
+    assert resolutions == ["deepseek-v4-flash"]
+    assert [c["selector"].id for c in compile_calls] == ["deepseek-v4-flash"] * 2
+
+
+class _StubResult:
+    run_id = "r"
+    exit_code = 0
+    exit_reason = "ok"
+    counts = {"sources_scanned": 0, "sources_compiled": 0, "sources_noise": 0,
+              "sources_moved": 0, "sources_deleted": 0, "sources_failed": 0}
+    planned = None
+    finalize = None
+    summary_path = None
+    event_log_path = None
+    quarantined_sources = []
+
+
+def test_main_defaults_selector_seat_to_model(tmp_path, monkeypatch):
+    """Single-model default (Joseph 2026-08-04): no --selector-model ⇒
+    run() receives selector_model_id = args.model; --selector-model pins."""
+    captured: dict = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return _StubResult()
+
+    monkeypatch.setattr(kdb_orchestrate, "run", fake_run)
+
+    rc = kdb_orchestrate.main([
+        "--pipeline", "vt", "--vault-root", str(tmp_path),
+        "--model", "deepseek-v4-flash"])
+    assert rc == 0
+    assert captured["selector_model_id"] == "deepseek-v4-flash"
+
+    captured.clear()
+    rc = kdb_orchestrate.main([
+        "--pipeline", "vt", "--vault-root", str(tmp_path),
+        "--model", "deepseek-v4-flash", "--selector-model", "qwen3.7-flash"])
+    assert rc == 0
+    assert captured["selector_model_id"] == "qwen3.7-flash"
