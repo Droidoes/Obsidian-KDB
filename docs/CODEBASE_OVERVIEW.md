@@ -12,6 +12,8 @@ This is the **single source of truth** for the Obsidian-KDB project. All design 
 
 Dated architectural inflection points. Full retrospective and three-iteration history in [`docs/JOURNEY.md`](JOURNEY.md).
 
+- **2026-08-05** — **🏁 Task #130 CLOSED — the deprecated page lifecycle: graph↔disk status moves in lockstep, zombies are structurally impossible, source deletion is total erasure.** Blueprint v0.1 (R-130-1..6; `docs/superpowers/specs/2026-08-05-task130-deprecated-lifecycle-blueprint-v0.1.md`), four TDD stages, commit `a37d680`, suite 3111 green. **The lifecycle (replaces the orphan-reap era):** a page the model drops on recompile (SUPPORTS-loss) is marked **`deprecated`** at finalize on the graph node **and** the file frontmatter in one convergence pass — never reaped, never archived, revivable on re-emit via the pre-existing revive query + the compile path's wholesale rewrite (deprecated pages keep LINKS_TO/BELONGS_TO; they are invisible to all readers, the Pass-1.5 search space, Pass-2 context incl. T1, and MCP, by design). **Source deletion ⇒ ERASED at reconcile** — sole-supported canonical nodes DETACH DELETEd with their alias rows, files unlinked, **no `orphan-archive/`** (Joseph: "not in KDB/wiki, not archived" — supersedes D12's flag-don't-nuke); dual-supported pages survive active. `orphan_candidate` is gone from the live vocabulary: retraction.json / cleanup journal / `apply_cleanup` left the run loop (historical cleanup journals still replay), `kdb-clean orphans` prints a retirement notice, `graphdb-kdb orphans` → `deprecated`, KPI `orphan_rate` → `deprecation_rate`. **Two blueprint deviations on record:** (1) finalize re-flips ALL deprecated nodes every run, not just newly detected — idempotent convergence that heals dry-run/crash graph↔disk divergence; (2) KPI queries + context-loader PageRank needed active-only filtering restored (the blueprint's "no reader changes" was wrong for KPI). **§13 sandbox verification (Vault-in-place-test-run, deepseek-v4-flash all passes):** cold 288/288 clean · warm exactly **1 model-drop** deprecated on both sides (vs the 15-drop #129-era baseline; #131's t1-cap never triggered) · natural revival none (T1-invisible by design) + forced re-emit through the real intake/page_writer path ⇒ `active` both sides · erasure probe 7 sole-supported pages erased graph+disk / 5 dual-supported survive / no archive · final audit **316 files ↔ 316 nodes, all active, 0 problems**. Follow-ups filed: **#132** (replay/journal hardening), **#133** (legacy cleanup dead code), **#134** (deprecated-GC candidate).
+
 - **2026-08-05** — **Task #129 CLOSED — Pass-2 tier-structured context shipped; the first cold/warm stewardship probe makes deepseek-v4-flash the single standing model for all three passes.** The EXISTING CONTEXT block no longer renders one flat `pages` list: `ContextSnapshot` carries `t1`/`t2`/`t3` (`common/types.py`; a projection-only split — selection, scoring, tier order, and the global `page_cap` byte-untouched), and system prompt **4.1.0** teaches per-tier contracts (t1 re-emit-or-extend, never silently drop; t2 link-don't-duplicate; t3 weak context) — `31aaf2d` → `2c7ed8e` → `78e193e`; era stays 4.x so replay dispatch and 4.x fixtures are untouched. The pass-1.5 selector seat is unpinned (`47981c2`): it follows `--model` by default with `--selector-model` as override — one model now runs all three passes (Joseph 2026-08-04). **The verification arc** (sandbox `Vault-in-place-test-run`, 36 unedited sources; a cold run, then a warm recompile over the run's own warm graph with the manifest cold): warm t1 churn went **49.4% → 23.3% → 0.3%** across the table below — the <20% ship bar cleared by two orders of magnitude under deepseek ("we have more than met the 20% threshold" — Joseph). Two findings outlive the task. **(1) Both models misreport `compilation_notes`** — qwen confabulates re-emission at scale (all 12 dropping sources claimed t1 re-emission while emitting none of those slugs); deepseek's note says "No t1 pages dropped" while dropping 1 of 25 — so notes are demoted to soft telemetry and the validator/keep-list enforcement lever is dropped as a standing task (owner call 2026-08-05); with a compliant model the blast radius is ~0.3%. **(2) The audit surfaced a system-side defect**: the global `page_cap=50` applies to t1 — a source owning >50 of its own pages has its tail silently amputated from the model's view and then retracted (14 of run-7's 15 zombies were cap-cut, never model drops). Filed as **#131** (exempt t1; the cap exists for t2/t3 flood control). #130 (dormant lifecycle, option C) proceeds as ratified — it neutralizes the residual rather than legitimizing it. **Model call (Joseph 2026-08-05): deepseek-v4-flash confirmed as the standing default** — already the `--model` default, now also the selector seat; context: the model moved preview → public beta on 2026-07-31 after drastic recent improvement. The cold/warm pair protocol is retained as the **standing model-evaluation harness** (~25 min per candidate model): cold-run pages minted, warm t1 shown, in-t1 model drops, cap-cut system drops, zombie count, note truthfulness.
 
   | warm run | prompt | model (all 3 passes) | cold pages minted | warm t1 shown | in-t1 model drops | cap-cut drops | zombies | t1 churn |
@@ -167,7 +169,7 @@ tools/           ← operational tools: replay, cleanup, benchmark, viewer, diag
 - `orchestrator` → all packages (the conductor)
 - `tools` → `common` / `kdb_graph` / `ingestion` / `compiler` / `kdb_search`
 
-Nothing depends on `tools` EXCEPT one documented exception: `orchestrator` calls `tools.cleanup` for orphan cleanup inline (deferred decoupling, out of Phase B's move-only scope).
+Nothing depends on `tools`. (Historical note: one documented exception — `orchestrator` calling `tools.cleanup` for orphan cleanup inline — was retired by #130: the orchestrator no longer imports `tools.cleanup`; the boundary-guard allowance row is filed for removal under #133.)
 
 ---
 
@@ -195,7 +197,7 @@ The live conductor is `orchestrator/kdb_orchestrate.py`. Per-source flow:
                                                                                                           runs/<run_id>/
 ```
 
-**Finalize pass** (after all sources committed): merge the per-source compile_results → batch `wire_links` → single deferred `detect_orphans` pass → `kdb-clean` orphan reaping → write the combined `compile_result.json` replay payload. (Graph intake itself runs **per source**, inside the commit sequence — see stages below and §8.3.)
+**Finalize pass** (after all sources committed): merge the per-source compile_results → batch `wire_links` → single deferred `detect_deprecations` pass → convergence flip: every `deprecated` node's file frontmatter is marked `deprecated` (`page_writer.mark_deprecated`, #130 — model-dropped pages are deprecated in place; deleted sources were already erased at reconcile; no retraction journal, no `kdb-clean` in the loop) → write the combined `compile_result.json` replay payload. (Graph intake itself runs **per source**, inside the commit sequence — see stages below and §8.3.)
 
 **Strict separation of concerns:**
 - **LLM is stateless compute.** It receives prompt + source content + graph-derived context snapshot; returns structured JSON (no paths, no timestamps, no frontmatter). Never writes files. Never reads filesystem state.
@@ -235,7 +237,7 @@ No `index.md` (D23) and no `log.md` (D24) are generated. Obsidian's file explore
 | Layer | Path | Role |
 |---|---|---|
 | **Source corpus** | `KDB/raw/` | Human-authored raw sources |
-| **Live ontology authority** | `GraphDB-KDB/` (Kuzu) | Primary. Updated immediately on every compile (Stage 7 `graph_sync` post-#115 renumbering). Owns Entity, LINKS_TO (derived from body wikilinks post-#115), SUPPORTS, ALIAS_OF, canonical_id, orphan status |
+| **Live ontology authority** | `GraphDB-KDB/` (Kuzu) | Primary. Updated immediately on every compile (Stage 7 `graph_sync` post-#115 renumbering). Owns Entity, LINKS_TO (derived from body wikilinks post-#115), SUPPORTS, ALIAS_OF, canonical_id, entity lifecycle status (`active` | `deprecated` — #130) |
 | **Reconstruction material** | `KDB/state/runs/<run_id>/` sidecars | Backup. Durable compile_result + scan snapshots. Enables `graphdb-kdb rebuild` if GraphDB is lost/corrupted |
 | **Audit log** | `KDB/state/runs/<run_id>.json` journals | What happened, when, with which model, what failed |
 | **Source-file lifecycle** | `KDB/state/manifest.json` | Source-state metadata ledger (hashes, run_state, timestamps). Not an ontology index (D50) |
@@ -307,7 +309,7 @@ Two families, kept structurally separate — never blended at scoring time.
 | `entity_reuse` | ↑ | fraction of entities referenced by ≥2 sources |
 
 **Watched diagnostics** (emitted each run, not scored; evaluated for promotion after each cohort via `tools/benchmark/promotion.py`):
-`entity_search_key_resolution` · `orphan_rate` · `semantic_pass_rate` · `signal_noise_ratio` · `retry_load` · `token_overrun_rate` · `repair_rung_rate` · `domain_breadth` · `domain_null_rate` · `belongs_to_coverage` · per-pass breakdowns (`quarantine_rate_pass1/2`, `latency_pass1/2`; #117 adds `recovery_rate_pass1/2`, `retry_load_pass1/2`, `cost_usd_pass1/2`, `cost_unknown_calls_pass1/2`) · search-event rates (#123 P3a.3, V2-re-baselined: `search_expression_matched_rate`/`_unresolved_rate`, `search_hit_recency_{pre_run,cohort,age_unknown}_rate`, `search_stage2_budget_bound_rate` — the seven #122 `search_key_*` series are retired and historical values are NOT comparable across the re-baseline) · pass-1.5 diagnostic columns (#123 P3a.4: `calls/attempts/retries/cost_usd/cost_unknown_calls/input_tokens/input_token_unknown_attempts/latency`, all `_pass1_5`-suffixed, surfaced on both pass boards' `raw_values` — diagnostics only, never a scored axis, no third ranked board)
+`entity_search_key_resolution` · `deprecation_rate` (#130 — was `orphan_rate`) · `semantic_pass_rate` · `signal_noise_ratio` · `retry_load` · `token_overrun_rate` · `repair_rung_rate` · `domain_breadth` · `domain_null_rate` · `belongs_to_coverage` · per-pass breakdowns (`quarantine_rate_pass1/2`, `latency_pass1/2`; #117 adds `recovery_rate_pass1/2`, `retry_load_pass1/2`, `cost_usd_pass1/2`, `cost_unknown_calls_pass1/2`) · search-event rates (#123 P3a.3, V2-re-baselined: `search_expression_matched_rate`/`_unresolved_rate`, `search_hit_recency_{pre_run,cohort,age_unknown}_rate`, `search_stage2_budget_bound_rate` — the seven #122 `search_key_*` series are retired and historical values are NOT comparable across the re-baseline) · pass-1.5 diagnostic columns (#123 P3a.4: `calls/attempts/retries/cost_usd/cost_unknown_calls/input_tokens/input_token_unknown_attempts/latency`, all `_pass1_5`-suffixed, surfaced on both pass boards' `raw_values` — diagnostics only, never a scored axis, no third ranked board)
 
 ### 7.4 Weights & penalty (all PINNED)
 
@@ -415,7 +417,7 @@ CREATE NODE TABLE Entity (
     slug          STRING PRIMARY KEY,    -- producer-emitted identifier; bare per D-S1 grandfather for Obsidian
     title         STRING,
     page_type     STRING,                -- summary | concept | article | alias  (values still Obsidian-flavored, per D-A2 deferred)
-    status        STRING,                -- active | stale | archived | orphan_candidate | alias
+    status        STRING,                -- active | deprecated (#130 lifecycle, canonical pages only — aliases exempt)
     confidence    STRING,                -- low | medium | high — LOGICALLY DEPRECATED (D-115-12, post-#115): no writes/reads/queries/snapshots; dead column stays until the next destructive schema change
     canonical_id  STRING,                -- Task #74: NULL ⇒ self is canonical; otherwise root canonical slug (chain-flattened, D-R5-13)
     created_at    STRING,                -- ISO with local offset (no UTC normalization per feedback_local_time_everywhere)
@@ -453,7 +455,7 @@ CREATE REL TABLE ALIAS_OF ( FROM Entity TO Entity, run_id STRING, created_at STR
 - **C3** — `ALIAS_OF` is acyclic AND **flat** (D-R5-13): every `Entity.canonical_id` points at an `Entity` with `canonical_id IS NULL` — no chains, no cycles.
 - **C4** — every `LINKS_TO` edge's destination has `canonical_id IS NULL`: LINKS_TO never points at an alias (D-R5-12; alias→canonical remap happens at the canonicalize stage — Stage 5 post-#115 — before graph_sync).
 
-Aliases are exempt from orphan detection (no `SUPPORTS` edges by OQ-E; canonical-only routing); `_detect_and_mark_orphans` is scoped to `canonical_id IS NULL`.
+Aliases are exempt from deprecation detection (no `SUPPORTS` edges by OQ-E; canonical-only routing); `_detect_and_mark_deprecations` is scoped to `canonical_id IS NULL`.
 
 **Naming history**: `Entity` was originally `Page` (renamed per D-A1 2026-05-14); graph-side `ingest_*` fields were originally `compile_*` (renamed per D-A2). The producer source-state ledger now uses `run_state` for source lifecycle status (Task #96 C1 prep, schema v3.1); deprecated `compile_state` is accepted only as a migration/replay fallback. The verifier's `_SOURCE_DIRECT_FIELDS` tuples are the alias bridge: `("run_state", "ingest_state")` etc.
 
@@ -469,7 +471,7 @@ Per-source commit (β order):  scan → enrich (Pass-1) → compile (Pass-2) →
 
   Graph intake (D50: fatal for non-dry-run; revokes D38 non-fatal):
     kdb_graph.intake.apply_compile_result(cr, single_scan, run_id, conn=conn,
-                                          detect_orphans=False, wire_links=False)
+                                          detect_deprecations=False, wire_links=False)
     — one Kuzu transaction per source over the run's shared read-write
       GraphDB connection; a throw rolls back clean and the manifest is never
       written (β case-a self-heal). Post-#115 the LINKS_TO target-set is
@@ -478,13 +480,14 @@ Per-source commit (β order):  scan → enrich (Pass-1) → compile (Pass-2) →
       prefer the stored list. Delete-then-recreate per source unchanged.
 
 Finalize passes (once, over the final graph): merge per-source compile_results
-  → batch wire_links → single detect_orphans pass → kdb-clean orphan reaping
-  → write the combined compile_result.json replay payload.
+  → batch wire_links → single detect_deprecations pass → mark dropped pages
+  `deprecated` on graph node AND file frontmatter (#130 — no reaping, no
+  retraction journal) → write the combined compile_result.json replay payload.
 ```
 
 Two architectural properties of the wiring:
 
-1. **The orchestrator holds a shared `GraphDB` connection and calls `kdb_graph.intake` entry points directly** (Task #91 shared-connection design — `kdb_orchestrate.py` imports `GraphDB` + `apply_compile_result` / `wire_links` / `detect_orphans` / `apply_cleanup`). This supersedes the original D-S0 adapter-only wiring for the live path; the `ObsidianRunsAdapter` remains the single producer→graph entry point for **rebuild/replay** (`graphdb-kdb rebuild`, D39). (The D-S0 ledger row below is kept as the historical record.)
+1. **The orchestrator holds a shared `GraphDB` connection and calls `kdb_graph.intake` entry points directly** (Task #91 shared-connection design — `kdb_orchestrate.py` imports `GraphDB` + `apply_compile_result` / `wire_links` / `detect_deprecations`). This supersedes the original D-S0 adapter-only wiring for the live path; the `ObsidianRunsAdapter` remains the single producer→graph entry point for **rebuild/replay** (`graphdb-kdb rebuild`, D39). (The D-S0 ledger row below is kept as the historical record.)
 2. **Replay material survives a sync failure.** Per-source Kuzu failures roll back before the manifest commit boundary (β case-a), and the combined `compile_result.json` replay payload is written at finalize — so `graphdb-kdb rebuild` remains a real recovery path. (Per D50, graph intake failure is fatal for non-dry-run compiles since GraphDB is the live ontology authority; D38 non-fatal semantics were revoked for ontology writes.)
 
 **Adapter's canonicalization responsibilities** (Task #74, Phase 3.5 in `kdb_graph/intake.py`): on top of canonical-entity upsert + LINKS_TO + SUPPORTS, the adapter reads `canonical_meta.aliases_emitted` from the canonicalized compile_result and writes one `Entity` row per alias (`canonical_id` = root canonical slug, `page_type` = `'alias'`) plus one `ALIAS_OF` edge alias→canonical with `algorithm` provenance. Promotion edge case: when a slug previously written as alias appears as canonical, `_upsert_entity` resets `canonical_id = NULL` and drops outgoing `ALIAS_OF` (preserves C1). Re-running the same `canonical_meta` is idempotent (drop-then-create on `ALIAS_OF` keeps the flat invariant — one edge per alias, run_id reflects most recent run; older provenance lives in the per-run sidecar).
@@ -501,10 +504,14 @@ Two architectural properties of the wiring:
 
 Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap (Layer 1 source-state preflight + Layer 2 replay structural diff + Layer 3 C1–C4 canonicalization invariants); `graphdb-kdb rebuild` regenerates either store from the post-#63 run history. `graphdb-kdb snapshot` (#63.9) writes a JSONL+manifest+schema export under `state/graph-snapshots/<run_id>/` — Task #74 bumped `snapshot_format_version` to `2` to include per-Entity `canonical_id` and an `alias_of.jsonl` file with full ALIAS_OF provenance, so Tier-2 OneDrive recovery preserves alias state.
 
-**Maintenance — `kdb-clean orphans`:** `--apply` archives orphan pages, removes
-them from `manifest.json`, and emits a replayable `cleanup` run journal +
-`retraction.json` sidecar into `state/runs/`. `graphdb-kdb rebuild` replays the
-cleanup event chronologically, so reaped pages stay retracted (Task #68).
+**Maintenance — `kdb-clean orphans` is RETIRED (#130):** the command prints a
+retirement notice and exits 0 — the `orphan_candidate` status no longer exists
+(model-dropped pages are marked `deprecated` in place at finalize; pages of a
+deleted source are erased at reconcile, no archive). Historical `cleanup`
+journals remain replayable through `kdb_graph.intake.apply_cleanup`, so
+`graphdb-kdb rebuild` over pre-#130 history still reproduces reaped retractions
+(Task #68); the legacy `reap_orphans` / `build_cleanup_artifacts` helpers
+survive only for the historical backfill tooling (removal filed as #133).
 
 ### 8.5 Pointers to companion docs
 
@@ -533,7 +540,7 @@ graphdb-kdb cypher "<query>" [--params <json>]          # ad-hoc Cypher escape h
 graphdb-kdb pagerank [--top N]                          # NetworkX-backed PageRank
 graphdb-kdb communities                                 # Louvain community assignments
 graphdb-kdb structural-holes                            # inter-community bridge counts
-graphdb-kdb orphans                                     # list orphan-candidate entities
+graphdb-kdb deprecated                                  # list deprecated entities (#130 — was `orphans`)
 graphdb-kdb subgraph-by-source <source_id>              # source's induced subgraph
 graphdb-kdb verify --vault-root <P>                     # diff Kuzu vs manifest.json
 graphdb-kdb rebuild --vault-root <P> [--backfill-baton] # drop + replay (D-S2 whole-DB)
@@ -581,7 +588,7 @@ A source is still cold-start when `len(t1_slugs) == 0` — it has no `SUPPORTS` 
 | D9 | 2026-04-18 | Controller pipeline over mega-prompt (chunk 10–20 sources/batch) | Prevents prompt drift at 100+ files (Codex guidance) |
 | D10 | 2026-04-18 | Reject SQLite for v1 (possibly v2 if scale demands) | JSON is LLM-inspectable, diff-friendly, OneDrive-compatible |
 | D11 | 2026-04-18 | Content-hash (SHA-256) as source-of-truth; mtime is advisory only | Survives renames, OneDrive timestamp rewrites, cross-machine sync |
-| D12 | 2026-04-18 | Flag-don't-nuke on delete: `orphan_candidate` + `tombstones`, never auto-delete wiki pages | User reviews orphans manually; no data loss |
+| D12 | 2026-04-18 | Flag-don't-nuke on delete: `orphan_candidate` + `tombstones`, never auto-delete wiki pages | User reviews orphans manually; no data loss — **SUPERSEDED by #130 (2026-08-05):** model-drop ⇒ `deprecated` in place (graph node + file frontmatter, revivable on re-emit); source deletion ⇒ total erasure, no archive (Joseph: "not in KDB/wiki, not archived") |
 | D13 | 2026-04-18 | Two-pass rename detection (hash-match before NEW/DELETED classification) | Prevents double-counting moved files (Codex fix) |
 | D14 | 2026-04-18 | Minimal atomic write: temp + fsync + os.replace + ≤2-retry on transient I/O. **No lock files, no 6-retry ladder, no multi-phase commit.** | Single-user single-process workload; heavier machinery is imaginary-risk complexity. Revised from original Codex proposal after user philosophy note. |
 | D15 | 2026-04-18 | Journal-then-pointer manifest writes (`runs/<run_id>.json` first, manifest.json last) | Crash-safe: failed runs don't corrupt ledger. Cheap; keep it. |
@@ -613,7 +620,7 @@ A source is still cold-start when `len(t1_slugs) == 0` — it has no `SUPPORTS` 
 | D41 | 2026-05-15 (Task #64) | **Recompile supersession.** A source's recompile removes that source's support from prior pages the new run no longer emits. The graph ingestor already implements this; D41 binds the manifest path to parity. See `docs/archive/tasks/task64-recompile-supersession-blueprint.md`. | Graph ingestor's `_replace_supports_for_source` is the reference design (Codex CRITICAL #2 fix in #63). Manifest-only union (`_ensure_page` always unions) diverges from graph truth after any recompile that emits fewer pages. D41 closes that gap without touching `graphdb_kdb`. |
 | D42 | 2026-05-15 (Task #64) | **`source_refs` is current-state provenance, not an eternal log.** Stripped on supersession alongside `supports_page_existence`. History lives in run journals, `sources[].previous_versions`, and `orphans[].previous_supporting_sources`. See `docs/archive/tasks/task64-recompile-supersession-blueprint.md`. | Keeping stale `source_refs` after supersession creates false provenance claims (a source "supports" a page it no longer emits). Run journals and `previous_supporting_sources` preserve history without polluting current-state. |
 | D43 | 2026-05-15 (Task #64) | **Status-aware `source_refs` invariant.** `active` page → `source_refs` non-empty. `orphan_candidate` page → may be empty (provenance preserved in `orphans[].previous_supporting_sources`). Also fixes the pre-existing DELETED-path invariant crash. See `docs/archive/tasks/task64-recompile-supersession-blueprint.md`. | Prior invariant rejected empty `source_refs` for all pages without a status filter — supersession legitimately empties them for orphan candidates. DELETED path had the same latent crash (never triggered because no source has been deleted in practice). Status-aware check makes the invariant correct for all reachable states. |
-| D44 | 2026-05-15 (Task #64) | **D12 preserved.** Supersession flags pages `orphan_candidate`; never deletes page records or files. `delete_policy` stays `mark_orphan_candidate`. See `docs/archive/tasks/task64-recompile-supersession-blueprint.md`. | D12 is the non-destructive safety invariant: orphan candidacy is a flag, not a deletion. #64 adds a new trigger (recompile supersession) but the outcome is identical to the existing orphan path — page stays in manifest and on disk, human reviews. |
+| D44 | 2026-05-15 (Task #64) | **D12 preserved.** Supersession flags pages `orphan_candidate`; never deletes page records or files. `delete_policy` stays `mark_orphan_candidate`. See `docs/archive/tasks/task64-recompile-supersession-blueprint.md`. | D12 is the non-destructive safety invariant: orphan candidacy is a flag, not a deletion. #64 adds a new trigger (recompile supersession) but the outcome is identical to the existing orphan path — page stays in manifest and on disk, human reviews. **Superseded with D12 by #130 (2026-08-05):** supersession-dropped pages become `deprecated` in place (graph + file, revivable); only source deletion erases. |
 | D45 | 2026-05-15 (Task #65) | **`pairing_type_mismatch` is reconcilable; `pages[].page_type` is authoritative.** A new unconditional `reconcile_slug_lists()` rebuilds `concept_slugs`/`article_slugs` from `pages[]` in `compile_one` (mirroring Task #57's body-wins `reconcile_body_links`). The validator demotes `pairing_type_mismatch` `gate`→`measure` and drops it from `HARD_ZERO_FINDING_TYPES`. See `docs/archive/tasks/task65-pairing-reconcilable-blueprint.md`. | `concept_slugs`/`article_slugs` are denormalized indexes of `pages[].page_type`; the page object (title+body-bearing) is the deliberate classification. Hard-gating a slug-list mis-file discarded whole good compiles (EP1: 28 valid pages lost over 2 mis-filed slugs). Rebuilding from `pages[]` makes the pairing-inconsistency class structurally impossible. Removing `pairing_type_mismatch` from `HARD_ZERO_FINDING_TYPES` redefines the benchmark hard-zero pass-rate measure — a post-#65 re-fire sets the new baseline. |
 | D46 | 2026-05-16 (Task #66) | **Compile eligibility is `current_hash != last_compiled_hash`.** A new source field `last_compiled_hash` records the hash last *successfully processed*; it advances **only on successful processing of the current content** — `apply_compile_result` for LLM-compiled text sources, `apply_scan_reconciliation` for metadata-only binaries (Q6) — never by the scan merely *seeing* a changed text source, never for an error-marked / missing source. The scan carries the prior value onto every `ScanEntry` as `compiled_hash` (required-but-nullable); `to_compile`/`to_skip` partition purely on the hash comparison, never on `action`. The `error_retry` side-channel is removed; lifecycle state is informational but no longer affects eligibility (`compile_state` historically, `run_state` after Task #96 schema v3.1). Force-recompile = a real source-content change; no manifest flag, no `--force`; content hash only, never mtime. See `docs/archive/tasks/task66-compile-trigger-model-blueprint.md`. | `manifest.hash` advances during the *scan* (it means "last hash seen"), so reading it back as "last hash compiled" conflated two facts: a failed compile left `hash` already advanced, so the file read UNCHANGED next scan despite never compiling. `error_retry` was a patch over that conflation — and it made force-recompile possible by hand-editing `compile_state: "error"` into the manifest. Splitting the two hashes makes the trigger one honest comparison and removes the manifest-editable force path; Task #96 later deprecated `compile_state` in favor of `run_state` without changing the trigger. |
 | D47 | 2026-05-16 (Task #70) | **Superseded by D49.** Originally held manifest as default context source pending cold-start fix. Cold-start resolved (#71); D49 removed manifest-as-context entirely. | Historical: prevented premature default flip while graph context was weaker on cold-start. Now moot — graph is the only context authority. |
