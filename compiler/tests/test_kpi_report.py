@@ -44,7 +44,7 @@ def _payload() -> dict:
                 "supports_density": 6.24,
             },
             "watched": {
-                "orphan_rate": 0.0,
+                "deprecation_rate": 0.0,
                 "entity_search_key_resolution": None,
             },
             "diagnostic": {

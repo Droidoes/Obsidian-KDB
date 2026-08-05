@@ -62,8 +62,9 @@ def _mk_supports(conn, sid, slug):
 
 
 def _seed(gdb):
-    """Canonical entities: alpha, beta, gamma, summary-x (summary), orphan-z
-    (status orphan_candidate). Alias: alpha-alias (canonical_id=alpha).
+    """Canonical entities: alpha, beta, gamma, summary-x (summary), dep-z
+    (status deprecated — #130: invisible to every KPI denominator except the
+    deprecation_rate numerator). Alias: alpha-alias (canonical_id=alpha).
     Sources: s1, s2 (finance), s3 (NULL domain). SUPPORTS: alpha<-s1,s2;
     beta<-s1; gamma none. Domain finance + BELONGS_TO from alpha. LINKS_TO:
     alpha->beta (the only edge; both canonical → one 2-node component, the
@@ -73,7 +74,7 @@ def _seed(gdb):
     _mk_entity(c, "beta")
     _mk_entity(c, "gamma")
     _mk_entity(c, "summary-x", page_type="summary")
-    _mk_entity(c, "orphan-z", status="orphan_candidate")
+    _mk_entity(c, "dep-z", status="deprecated")
     _mk_entity(c, "alpha-alias", canonical_id="alpha", page_type="alias")
     c.execute(
         "MATCH (a:Entity {slug: 'alpha-alias'}), (b:Entity {slug: 'alpha'}) "
@@ -96,46 +97,49 @@ def _seed(gdb):
     )
 
 
-_FINALIZE = {"reaped": [{"page_id": "p", "slug": "orphan-z", "page_type": "concept"}],
-             "retracted_slugs": ["orphan-z"]}
-
-
 # ---------- SCORED: entity_reuse ----------
 
 def test_entity_reuse_scored(graph_dir):
-    """canonical non-summary: alpha(2 sources), beta(1), gamma(0), orphan-z(0).
-    >=2 sources: alpha → 1/4 = 0.25. entity_reuse is now the SCORED graph KPI."""
+    """ACTIVE canonical non-summary (#130): alpha(2 sources), beta(1), gamma(0);
+    dep-z excluded (deprecated). >=2 sources: alpha → 1/3."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
-    assert out["scored"]["entity_reuse"] == pytest.approx(0.25)
+        out = compute_graph(gdb.conn)
+    assert out["scored"]["entity_reuse"] == pytest.approx(1 / 3)
 
 
 # ---------- WATCHED ----------
 
 def test_graph_connectivity_two_components(graph_dir):
-    """canonical = {alpha,beta,gamma,summary-x,orphan-z} (5). Edge alpha-beta
-    → largest component {alpha,beta}=2; gamma/summary-x/orphan-z singletons.
-    2/5 = 0.4.  graph_connectivity is now a SCORED graph KPI (§6)."""
+    """active canonical = {alpha,beta,gamma,summary-x} (4 — dep-z excluded).
+    Edge alpha-beta → largest component {alpha,beta}=2 → 2/4 = 0.5."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
-    assert out["scored"]["graph_connectivity"] == pytest.approx(0.4)
+        out = compute_graph(gdb.conn)
+    assert out["scored"]["graph_connectivity"] == pytest.approx(0.5)
 
 
-def test_orphan_rate(graph_dir):
-    """len(reaped)=1 ÷ total entities=6 (5 canonical + 1 alias) = 1/6."""
+def test_deprecation_rate(graph_dir):
+    """dep-z (status='deprecated', last_run_id='m') ÷ total entities=6
+    (4 active canonical + 1 deprecated + 1 alias) = 1/6."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
-    assert out["watched"]["orphan_rate"] == pytest.approx(1 / 6)
+        out = compute_graph(gdb.conn, run_id="m")
+    assert out["watched"]["deprecation_rate"] == pytest.approx(1 / 6)
 
 
-def test_orphan_rate_empty_finalize_is_zero(graph_dir):
+def test_deprecation_rate_unknown_run_is_zero(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, {})
-    assert out["watched"]["orphan_rate"] == 0.0
+        out = compute_graph(gdb.conn, run_id="zzz-no-such-run")
+    assert out["watched"]["deprecation_rate"] == 0.0
+
+
+def test_deprecation_rate_no_run_id_is_none(graph_dir):
+    with GraphDB(graph_dir) as gdb:
+        _seed(gdb)
+        out = compute_graph(gdb.conn)
+    assert out["watched"]["deprecation_rate"] is None
 
 
 # ---------- DIAGNOSTIC ----------
@@ -144,18 +148,18 @@ def test_scored_density_values(graph_dir):
     """link_density + supports_density are now SCORED graph KPIs (§6)."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
+        out = compute_graph(gdb.conn)
     s = out["scored"]
-    assert s["link_density"] == pytest.approx(1 / 5)          # 1 edge / 5 canonical
+    assert s["link_density"] == pytest.approx(1 / 4)          # 1 active edge / 4 active canonical
     assert s["supports_density"] == pytest.approx(3 / 3)      # 3 SUPPORTS / 3 sources
 
 
 def test_diagnostic_values(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
+        out = compute_graph(gdb.conn)
     d = out["diagnostic"]
-    assert d["belongs_to_coverage"] == pytest.approx(1 / 5)   # alpha of 5 canonical
+    assert d["belongs_to_coverage"] == pytest.approx(1 / 4)   # alpha of 4 active canonical
     assert d["domain_null_rate"] == pytest.approx(1 / 3)      # s3 of 3 sources
     assert d["domain_breadth"] == pytest.approx(1 / 23)       # 1 domain / 23
 
@@ -163,14 +167,14 @@ def test_diagnostic_values(graph_dir):
 def test_return_dict_keys(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE)
+        out = compute_graph(gdb.conn)
     assert set(out) == {"scored", "watched", "diagnostic"}
     # §6: the 4 graph quality KPIs are scored together (combined graph score).
     assert set(out["scored"]) == {
         "entity_reuse", "graph_connectivity", "link_density", "supports_density",
     }
     assert set(out["watched"]) == {
-        "orphan_rate", "entity_search_key_resolution",
+        "deprecation_rate", "entity_search_key_resolution",
         # Task #123 §4.6 event-time search fields (B5)
         "search_expression_matched_rate",
         "search_expression_unresolved_rate",
@@ -206,7 +210,7 @@ def test_entity_search_key_resolution_alias_aware(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out = compute_graph(
-            gdb.conn, _FINALIZE,
+            gdb.conn,
             pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"],
         )
     assert out["watched"]["entity_search_key_resolution"] == pytest.approx(2 / 3)
@@ -217,7 +221,7 @@ def test_entity_search_key_resolution_none_keys(graph_dir):
     zero-resolution)."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE, pass1_search_keys=None)
+        out = compute_graph(gdb.conn, pass1_search_keys=None)
     assert out["watched"]["entity_search_key_resolution"] is None
 
 
@@ -225,7 +229,7 @@ def test_entity_search_key_resolution_empty_keys(graph_dir):
     """pass1_search_keys=[] → None (same rationale as None)."""
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
-        out = compute_graph(gdb.conn, _FINALIZE, pass1_search_keys=[])
+        out = compute_graph(gdb.conn, pass1_search_keys=[])
     assert out["watched"]["entity_search_key_resolution"] is None
 
 
@@ -397,7 +401,7 @@ def test_retired_search_key_series_are_gone(graph_dir):
     rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m")])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     for key in _RETIRED_SEARCH_KEY_SERIES:
         assert key not in out["watched"]
 
@@ -413,7 +417,7 @@ def test_expression_rates_mixed_v1_v2(graph_dir):
         _outcome_v2("k2", "unresolved", annotation="no_match")])
     ev = _evidence([v1, v2], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["search_expression_matched_rate"] == pytest.approx(0.5)
     assert w["search_expression_unresolved_rate"] == pytest.approx(0.5)
@@ -435,7 +439,7 @@ def test_hit_recency_rates_are_per_hit(graph_dir):
             _hit("c", "pre_run", first_run_id="r-old"))))
     ev = _evidence([v2], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["search_hit_recency_cohort_rate"] == pytest.approx(2 / 3)
     assert w["search_hit_recency_pre_run_rate"] == pytest.approx(1 / 3)
@@ -453,7 +457,7 @@ def test_hit_recency_includes_context_failed_search_sections(graph_dir):
                                hits=(_hit("b", "pre_run", first_run_id="r-old"),)))
     ev = _evidence([good, failed], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["search_hit_recency_cohort_rate"] == pytest.approx(0.5)
     assert w["search_hit_recency_pre_run_rate"] == pytest.approx(0.5)
@@ -467,7 +471,7 @@ def test_expression_and_recency_rates_none_on_empty_populations(graph_dir):
     v2 = _mk_record_v2("src-b", [], search=_search_summary(query_kind="state_c"))
     ev = _evidence([v1, v2], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["search_expression_matched_rate"] is None
     assert w["search_expression_unresolved_rate"] is None
@@ -488,12 +492,12 @@ def test_stage2_budget_bound_rate(graph_dir):
         search=_search_summary(stage2_budget_bound=False))
     ev = _evidence([v2_bound, v2_free], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     assert out["watched"]["search_stage2_budget_bound_rate"] == pytest.approx(0.5)
 
     v1_only = _evidence([_mk_record("src-c", [])], {"src-c"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=v1_only)
+        out = compute_graph(gdb.conn, context_evidence=v1_only)
     assert out["watched"]["search_stage2_budget_bound_rate"] is None
 
 
@@ -508,7 +512,7 @@ def test_context_failed_in_coverage_not_in_means(graph_dir):
                            search=_search_summary())   # B8: non-null search
     ev = _evidence([good, failed], {"src-a", "src-b"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["context_record_coverage"] == 1.0          # failed IS captured
     assert w["context_build_success_rate"] == pytest.approx(0.5)
@@ -526,7 +530,7 @@ def test_evidence_incomplete_nulls_aggregates_keeps_integrity(graph_dir):
     rec = _mk_record("src-a", [("alpha", "resolved_t2_seed", "alpha", "m")])
     ev = _evidence([rec], {"src-a"}, complete=False)
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     for k in ("search_expression_matched_rate", "search_hit_recency_cohort_rate",
               "search_stage2_budget_bound_rate", "context_build_success_rate",
@@ -541,7 +545,7 @@ def test_no_evidence_all_aggregates_none(graph_dir):
     """Pre-#122 artifact (context_evidence=None): aggregates None, integrity
     counts 0, coverage/integrity_ok None — and no resolver read fires."""
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=None)
+        out = compute_graph(gdb.conn, context_evidence=None)
     w = out["watched"]
     assert w["search_expression_matched_rate"] is None
     assert w["search_hit_recency_cohort_rate"] is None
@@ -574,7 +578,7 @@ def test_explicit_empty_count_mixed_v1_v2(graph_dir):
         [v1_normal, v1_empty, v2_state_c, v2_state_b, v2_no_search],
         {"src-a", "src-b", "src-c", "src-d", "src-e"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     assert out["watched"]["context_explicit_empty_count"] == 2
 
 
@@ -596,12 +600,12 @@ def test_no_finalize_branch_skips_finalized_reads(graph_dir, monkeypatch):
                                ("never-hit", "unresolved", None, None)])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, finalize_ran=False,
+        out = compute_graph(gdb.conn, finalize_ran=False,
                             context_evidence=ev)
     assert out["scored"] == {"entity_reuse": None, "graph_connectivity": None,
                              "link_density": None, "supports_density": None}
     w = out["watched"]
-    assert w["orphan_rate"] is None
+    assert w["deprecation_rate"] is None
     assert w["entity_search_key_resolution"] is None
     assert out["diagnostic"] == {"belongs_to_coverage": None,
                                  "domain_null_rate": None, "domain_breadth": None}
@@ -624,7 +628,7 @@ def test_no_resolver_call_in_the_context_evidence_path(graph_dir, monkeypatch):
                                ("never-hit", "unresolved", None, None)])
     ev = _evidence([rec], {"src-a"})
     with GraphDB(graph_dir) as gdb:
-        out = compute_graph(gdb.conn, _FINALIZE, context_evidence=ev)
+        out = compute_graph(gdb.conn, context_evidence=ev)
     w = out["watched"]
     assert w["search_expression_matched_rate"] == pytest.approx(0.5)
     assert w["search_expression_unresolved_rate"] == pytest.approx(0.5)
@@ -638,10 +642,10 @@ def test_finalize_branch_legacy_resolution_unchanged_with_evidence(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed(gdb)
         out_no_ev = compute_graph(
-            gdb.conn, _FINALIZE,
+            gdb.conn,
             pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"])
         out_ev = compute_graph(
-            gdb.conn, _FINALIZE,
+            gdb.conn,
             pass1_search_keys=["alpha", "alpha-alias", "nonexistent-key"],
             context_evidence=ev)
     assert (out_no_ev["watched"]["entity_search_key_resolution"]

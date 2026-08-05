@@ -55,7 +55,7 @@ def apply_compile_result(
     *,
     conn: kuzu.Connection,
     now: str | None = None,
-    detect_orphans: bool = True,
+    detect_deprecations: bool = True,
     wire_links: bool = True,
 ) -> IntakeResult:
     """Apply one compile run's deltas to the Kuzu graph (atomic per run).
@@ -66,8 +66,9 @@ def apply_compile_result(
         run_id: run id string.
         conn: open kuzu.Connection.
         now: ISO timestamp; defaults to datetime.now().astimezone().isoformat().
-        detect_orphans: when False, skip Phase-4 orphan marking (Task #91 —
-            orchestrator runs one end-of-run detect_orphans() pass).
+        detect_deprecations: when False, skip Phase-4 deprecation marking
+            (Task #91 — orchestrator runs one end-of-run detect_deprecations()
+            pass; #130 renamed the marked status orphan_candidate → deprecated).
         wire_links: when False, skip Phase-3 LINKS_TO wiring only (Task #91 C1 —
             orchestrator defers link-wiring to a single finalize wire_links()
             pass over the accumulated batch, so cross-source edges resolve with
@@ -93,13 +94,16 @@ def apply_compile_result(
         for entry in scan_dict.get("files", []):
             _upsert_source_from_scan(conn, entry, run_id, now, result)
 
-        # Phase 2: reconcile MOVED + DELETED sources
+        # Phase 2: reconcile MOVED + DELETED sources. DELETED also erases the
+        # pages whose only SUPPORTS came from the deleted source (#130 R-130-4).
         for op in scan_dict.get("to_reconcile", []):
             t = op.get("type")
             if t == "MOVED":
                 _handle_source_moved(conn, op, run_id, now)
             elif t == "DELETED":
-                _handle_source_deleted(conn, op, run_id, now)
+                erased, dead_links = _handle_source_deleted(conn, op, run_id, now)
+                result.erased_pages.extend(erased)
+                result.erased_dead_links.extend(dead_links)
 
         # Phase 3: ingest compiled_sources. Two passes within the phase so that
         # cross-entity (and cross-source) references resolve correctly: pass 1
@@ -125,12 +129,14 @@ def apply_compile_result(
         # canonical entities exist for the ALIAS_OF endpoints to MATCH.
         _upsert_alias_entities_and_edges(conn, cr, run_id, now, result)
 
-        # Phase 4: orphan detection (mark orphans + revive previously-orphaned pages
-        # that have regained SUPPORTS). Task #91: skipped when detect_orphans=False
-        # — the orchestrator runs a single end-of-run detect_orphans() pass instead
-        # (deferred-marking decision, avoids transient-orphan context pollution).
-        if detect_orphans:
-            result.orphans_detected = _detect_and_mark_orphans(conn, run_id, now)
+        # Phase 4: deprecation marking (#130 — mark pages that lost all SUPPORTS
+        # deprecated + revive previously-deprecated pages that have regained
+        # SUPPORTS). Task #91: skipped when detect_deprecations=False — the
+        # orchestrator runs a single end-of-run detect_deprecations() pass
+        # instead (deferred-marking decision, avoids transient-deprecation
+        # context pollution).
+        if detect_deprecations:
+            result.deprecations_detected = _detect_and_mark_deprecations(conn, run_id, now)
 
         conn.execute("COMMIT")
     except Exception:
@@ -261,13 +267,40 @@ def _handle_source_deleted(
     op: dict,
     run_id: str,
     now: str,
-) -> None:
-    """Phase 2 DELETED: mark Source as deleted. Existing SUPPORTS edges
-    remain (left for orphan detection to flag dependent pages)."""
+) -> tuple[list[dict], list[dict]]:
+    """Phase 2 DELETED: mark Source as deleted + erase its orphaned pages
+    (#130 R-130-4 — source deletion is total erasure, not deprecation).
+
+    A canonical page whose ONLY SUPPORTS came from the deleted source is
+    DETACH DELETEd along with its alias rows; pages with another supporting
+    source survive untouched. Returns (erased, dead_links):
+      erased     — [{slug, page_type}] so the caller can delete the wiki files
+                   (graph layer does no I/O);
+      dead_links — [{from_slug, to_slug}] surviving pages whose LINKS_TO pointed
+                   at erased slugs (their edges die with the node; their wiki
+                   bodies keep a dangling [[link]] — reported, never rewritten).
+    """
     sid = op.get("source_id") or op.get("from") or op.get("path")
     if not sid:
-        return
-    # Drop the source's SUPPORTS edges (page state is reflected in orphan detection).
+        return [], []
+    # 1. Pages whose only SUPPORTS is this source (canonical only) — captured
+    # BEFORE the edge drop.
+    erased: list[dict] = []
+    r = conn.execute(
+        """
+        MATCH (s:Source {source_id: $sid})-[:SUPPORTS]->(p:Entity)
+        WHERE p.canonical_id IS NULL
+          AND NOT EXISTS {
+              MATCH (s2:Source)-[:SUPPORTS]->(p) WHERE s2.source_id <> $sid
+          }
+        RETURN p.slug, p.page_type
+        """,
+        {"sid": sid},
+    )
+    while r.has_next():
+        row = r.get_next()
+        erased.append({"slug": row[0], "page_type": row[1]})
+    # 2. Drop the source's SUPPORTS edges + mark it deleted.
     conn.execute(
         "MATCH (s:Source {source_id: $sid})-[r:SUPPORTS]->() DELETE r",
         {"sid": sid},
@@ -279,6 +312,36 @@ def _handle_source_deleted(
         """,
         {"sid": sid, "run_id": run_id, "ts": now},
     )
+    # 3. Erase: alias rows pointing at the erased canonicals, then the canonicals
+    # (DETACH DELETE takes LINKS_TO/BELONGS_TO with the node). Surviving pages'
+    # inbound links to the erased slugs are captured first (report-only).
+    dead_links: list[dict] = []
+    if erased:
+        slugs = [e["slug"] for e in erased]
+        r3 = conn.execute(
+            """
+            MATCH (p:Entity)-[:LINKS_TO]->(t:Entity)
+            WHERE t.slug IN $slugs AND NOT p.slug IN $slugs
+            RETURN DISTINCT p.slug, t.slug
+            """,
+            {"slugs": slugs},
+        )
+        while r3.has_next():
+            row = r3.get_next()
+            dead_links.append({"from_slug": row[0], "to_slug": row[1]})
+        conn.execute(
+            "MATCH (a:Entity) WHERE a.canonical_id IN $slugs DETACH DELETE a",
+            {"slugs": slugs},
+        )
+        conn.execute(
+            """
+            MATCH (p:Entity)
+            WHERE p.slug IN $slugs AND p.canonical_id IS NULL
+            DETACH DELETE p
+            """,
+            {"slugs": slugs},
+        )
+    return erased, dead_links
 
 
 # ---------- Phase 3: page + edges + SUPPORTS + compile-state ----------
@@ -679,48 +742,49 @@ def _upsert_alias_entities_and_edges(
 
 # ---------- Phase 4: orphan detection + revival ----------
 
-def _detect_and_mark_orphans(
+def _detect_and_mark_deprecations(
     conn: kuzu.Connection,
     run_id: str,
     now: str,
-) -> list[str]:
-    """Phase 4: mark Entities with zero SUPPORTS as orphan_candidate; revive
-    previously-orphaned entities that have regained SUPPORTS. Returns the
-    list of NEWLY orphan_candidate slugs (not revivals).
+) -> list[dict]:
+    """Phase 4: mark Entities with zero SUPPORTS as deprecated (#130); revive
+    previously-deprecated entities that have regained SUPPORTS. Returns the
+    NEWLY deprecated [{slug, page_type}] (not revivals).
 
     #74.5 scope: only canonical entities (`canonical_id IS NULL`) are
-    eligible for orphan flagging. Aliases (OQ-E direct-to-canonical) never
-    receive SUPPORTS by design — flagging them would mass-orphan every
+    eligible for deprecation flagging. Aliases (OQ-E direct-to-canonical) never
+    receive SUPPORTS by design — flagging them would mass-deprecate every
     alias on first compile. Aliases are graph-level identity assertions,
     not support-bearing pages.
     """
-    # Find newly-orphaned pages (no SUPPORTS, not already marked, canonical only).
+    # Find newly-deprecated pages (no SUPPORTS, not already marked, canonical only).
     r = conn.execute(
         """
         MATCH (p:Entity)
         WHERE p.canonical_id IS NULL
           AND NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
-          AND p.status <> 'orphan_candidate'
-        RETURN p.slug
+          AND p.status <> 'deprecated'
+        RETURN p.slug, p.page_type
         """
     )
-    new_orphans: list[str] = []
+    new_deprecations: list[dict] = []
     while r.has_next():
-        new_orphans.append(r.get_next()[0])
-    for slug in new_orphans:
+        row = r.get_next()
+        new_deprecations.append({"slug": row[0], "page_type": row[1]})
+    for d in new_deprecations:
         conn.execute(
             """
             MATCH (p:Entity {slug: $slug})
-            SET p.status='orphan_candidate', p.last_run_id=$run_id, p.updated_at=$ts
+            SET p.status='deprecated', p.last_run_id=$run_id, p.updated_at=$ts
             """,
-            {"slug": slug, "run_id": run_id, "ts": now},
+            {"slug": d["slug"], "run_id": run_id, "ts": now},
         )
 
-    # Revive previously-orphaned pages that now have SUPPORTS.
+    # Revive previously-deprecated pages that now have SUPPORTS.
     r2 = conn.execute(
         """
         MATCH (p:Entity)
-        WHERE p.status = 'orphan_candidate'
+        WHERE p.status = 'deprecated'
           AND EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
         RETURN p.slug
         """
@@ -737,23 +801,23 @@ def _detect_and_mark_orphans(
             {"slug": slug, "run_id": run_id, "ts": now},
         )
 
-    return new_orphans
+    return new_deprecations
 
 
-def detect_orphans(
+def detect_deprecations(
     conn: kuzu.Connection, run_id: str, *, now: str | None = None
-) -> list[str]:
-    """Task #91: standalone end-of-run orphan-marking pass. The orchestrator
-    calls this ONCE at finalize — after all per-source apply_compile_result
-    calls (which run with detect_orphans=False) — so orphan status is computed
-    once over the final graph, not per-source (avoids transient-orphan context
-    pollution / variant creation). Owns its own transaction. Returns the newly
-    orphan_candidate slugs."""
+) -> list[dict]:
+    """Task #91: standalone end-of-run deprecation-marking pass (#130 vocabulary).
+    The orchestrator calls this ONCE at finalize — after all per-source
+    apply_compile_result calls (which run with detect_deprecations=False) — so
+    deprecation status is computed once over the final graph, not per-source
+    (avoids transient-deprecation context pollution / variant creation). Owns its
+    own transaction. Returns the newly deprecated [{slug, page_type}]."""
     if now is None:
         now = datetime.now().astimezone().isoformat()
     conn.execute("BEGIN TRANSACTION")
     try:
-        orphans = _detect_and_mark_orphans(conn, run_id, now)
+        deprecations = _detect_and_mark_deprecations(conn, run_id, now)
         conn.execute("COMMIT")
     except Exception:
         try:
@@ -761,7 +825,7 @@ def detect_orphans(
         except Exception:
             pass
         raise
-    return orphans
+    return deprecations
 
 
 def wire_links(

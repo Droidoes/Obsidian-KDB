@@ -6,9 +6,9 @@ is written to the run dir and AFTER the Kuzu graph context manager has exited.
 Design notes:
 - The Kuzu connection is reopened read-only (the with-block has closed it by the
   time finalize artifacts and the header are written in `finally`).
-- finalize_artifacts is read from state_root/runs/<run_id>/retraction.json when it
-  exists (written by _finalize when cleanup ran). Re-running reap on the post-cleanup
-  graph would return [] because the orphans are already retracted.
+- #130: deprecation_rate is read from the graph itself (status='deprecated' AND
+  last_run_id=run_id) — finalize no longer writes retraction.json, and
+  deprecated nodes persist (no reap to re-derive).
 - The benchmark path (benchmark/runs/<run_id>/) is computed from the repo root
   (two parents up from this file) and is monkeypatchable in tests via
   `get_benchmark_runs_dir`.
@@ -198,22 +198,6 @@ def reconcile_context_records(
     )
 
 
-def _load_finalize_artifacts(state_root: Path, run_id: str) -> dict:
-    """Load finalize artifacts from retraction.json if it exists.
-
-    Using the persisted retraction.json is critical: by the time we reopen the
-    graph, apply_cleanup has already retracted orphans from GraphDB, so
-    reap_orphans_from_graph() would return [] — silently zeroing orphan_rate.
-    """
-    retraction_path = state_root / "runs" / run_id / "retraction.json"
-    if retraction_path.exists():
-        try:
-            return json.loads(retraction_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"reaped": []}
-
-
 def emit_run_kpis(
     *,
     run_id: str,
@@ -270,9 +254,6 @@ def emit_run_kpis(
         "reconciled": reconciled,
     }
 
-    # Load finalize artifacts (from persisted retraction.json, not re-running reap)
-    finalize_artifacts = _load_finalize_artifacts(state_root, run_id)
-
     # Gather Pass-1 entity_search_keys
     pass1_search_keys = _gather_pass1_search_keys(run_dir) or None
 
@@ -287,8 +268,9 @@ def emit_run_kpis(
     # Compute GRAPH KPIs (reopen read-only after the context manager exited)
     with GraphDB(graph_path, read_only=True) as gdb:
         graph = compute_graph(
-            gdb.conn, finalize_artifacts,
+            gdb.conn,
             finalize_ran=finalize_ran,
+            run_id=run_id,
             pass1_search_keys=pass1_search_keys,
             context_evidence=context_evidence,
         )

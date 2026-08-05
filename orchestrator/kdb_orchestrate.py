@@ -4,16 +4,17 @@ feeder → ingestion (Pass-1 enrich) → compiler (Pass-2 compile_source) → Gr
 driven per-source over a single shared read-write GraphDB connection.
 
 Wires the four shipped foundations — compile_source (produce-don't-write),
-detect_orphans / wire_links (deferred finalize passes), the pipeline registry,
+detect_deprecations / wire_links (deferred finalize passes), the pipeline registry,
 and scan_scope — into one loop, ending in the first live run on the test sandbox.
 
 Commit model (β, D-91-15 — graph-sync-first): per source the conductor applies
-the wiki pages, graph-syncs (Kuzu txn, orphan-marking + link-wiring deferred to
+the wiki pages, graph-syncs (Kuzu txn, deprecation-marking + link-wiring deferred to
 finalize), then — only on graph-sync success — writes the manifest. The manifest
 write is the commit boundary, so a graph-sync failure rolls back cleanly and the
 manifest is never written → the source self-heals on the next run (case-a).
-Finalize runs one detect_orphans() pass, the batch wire_links() pass, kdb-clean,
-and writes last_orchestrate.json.
+Finalize runs one detect_deprecations() pass, the batch wire_links() pass, the
+frontmatter convergence flip (#130 — every deprecated node gets a deprecated
+file), and writes last_orchestrate.json.
 """
 from __future__ import annotations
 
@@ -27,8 +28,9 @@ from pathlib import Path
 
 from kdb_graph.graphdb import GraphDB
 from kdb_graph.intake import (
-    apply_cleanup, apply_compile_result, detect_orphans, wire_links,
+    apply_compile_result, detect_deprecations, wire_links,
 )
+from kdb_graph.queries import deprecated_entities
 from orchestrator import manifest_writer
 from compiler import page_writer
 from ingestion.config import pipeline_registry
@@ -36,7 +38,6 @@ from common.atomic_io import atomic_write_json
 from compiler.canonicalize import load_or_empty
 from compiler.compiler import compile_source
 from ingestion.enrich.enrich import enrich_one
-from tools.cleanup import build_cleanup_artifacts, reap_orphans_from_graph
 from ingestion.kdb_scan import scan_scope
 from orchestrator.orchestrator_events import (
     EventRecorder,
@@ -135,12 +136,12 @@ def _commit_source(
         return CommitResult(
             failure_stage="apply", exception_type=type(e).__name__, error=str(e))
 
-    # 2. graph-sync (Kuzu txn). detect_orphans + wire_links deferred to finalize.
+    # 2. graph-sync (Kuzu txn). detect_deprecations + wire_links deferred to finalize.
     #    Throws ⇒ Kuzu rolled back clean; manifest never written ⇒ case-(a) self-heal.
     try:
         apply_compile_result(
             cr, single_scan, ctx.run_id, conn=conn,
-            detect_orphans=False, wire_links=False)
+            detect_deprecations=False, wire_links=False)
     except Exception as e:
         return CommitResult(
             pages_written=apply_res.pages_written,
@@ -161,7 +162,7 @@ def _commit_source(
         cr=cr, graph_committed=True)
 
 
-# ---------- finalize: merge crs → wire_links → orphans → cleanup → summary ----------
+# ---------- finalize: merge crs → wire_links → deprecations → summary ----------
 
 def _combine_crs(crs: list[dict], run_id: str) -> dict:
     """Merge the per-source compile_results accumulated over the loop into one
@@ -197,12 +198,18 @@ def _finalize(
     conn, accumulated_crs: list[dict], *,
     state_root: Path, ctx: RunContext, dry_run: bool = False,
 ) -> dict:
-    """End-of-run passes over the final graph (combined commit sequence 5-8):
+    """End-of-run passes over the final graph (combined commit sequence 5-8,
+    #130 shape):
 
-      5. wire_links(combined)  — batch LINKS_TO, all entities present (C1 fix).
-      6. detect_orphans()      — single deferred orphan-marking pass.
-      7. kdb-clean orphans     — reap_orphans_from_graph + build_cleanup_artifacts
-                                 (cleanup journal + retraction.json, m1) + apply_cleanup.
+      5. wire_links(combined)   — batch LINKS_TO, all entities present (C1 fix).
+      6. detect_deprecations()  — single deferred deprecation-marking pass
+                                  (#130: SUPPORTS-loss flips status, NEVER deletes;
+                                  the old orphan reap + retraction.json are gone).
+      7. mark_deprecated(files) — frontmatter CONVERGENCE: every deprecated graph
+                                  node gets a deprecated file (idempotent — heals
+                                  dry-run/crash divergence, not just this run's
+                                  new flips). This is the zombie invariant,
+                                  enforced as a fixpoint every run.
       8. write compile_result.json (combined replay payload).
 
     Returns finalize counts for the run summary.
@@ -210,28 +217,21 @@ def _finalize(
     combined = _combine_crs(accumulated_crs, ctx.run_id)
 
     wl = wire_links(combined, conn, ctx.run_id)
-    orphans = detect_orphans(conn, ctx.run_id)
+    deprecations = detect_deprecations(conn, ctx.run_id)
 
-    report = reap_orphans_from_graph(conn)
-    reaped = len(report["reaped"])
-    if not dry_run and report["reaped"]:
-        finished = now_iso()
-        journal, retraction = build_cleanup_artifacts(
-            report, ctx.run_id, ctx.started_at, finished)
-        runs_root = state_root / "runs"
-        sidecar_dir = runs_root / ctx.run_id
-        sidecar_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(sidecar_dir / "retraction.json", retraction, sort_keys=True)
-        atomic_write_json(runs_root / f"{ctx.run_id}.json", journal, sort_keys=True)
-        apply_cleanup(retraction, ctx.run_id, conn=conn)
-
+    flipped: list = []
     if not dry_run:
+        all_deprecated = [
+            {"slug": e.slug, "page_type": e.page_type}
+            for e in deprecated_entities(conn)
+        ]
+        flipped = page_writer.mark_deprecated(ctx.vault_root, all_deprecated)
         atomic_write_json(state_root / "compile_result.json", combined)
 
     return {
         "links_wired": wl.edges_upserted,
-        "orphans_marked": len(orphans),
-        "reaped": reaped,
+        "deprecated": len(deprecations),
+        "deprecated_files": len(flipped),
     }
 
 
@@ -403,13 +403,29 @@ def _commit_reconcile_op(
     op, *, moved_entry, prior_manifest: dict, conn, state_root: Path, ctx: RunContext,
 ) -> dict:
     """Commit a MOVED/DELETED reconcile op. Graph handles both via to_reconcile
-    (Phase 2); manifest handles MOVED via files[] + DELETED via to_reconcile[]."""
+    (Phase 2); manifest handles MOVED via files[] + DELETED via to_reconcile[].
+
+    #130 R-130-4: DELETED is total erasure — the graph layer already removed
+    the sole-supported pages (IntakeResult.erased_pages); their wiki files are
+    deleted here (no archive). Surviving pages linking to erased slugs are
+    reported to the run log, never rewritten."""
     op_dict = op.to_dict()
     files = [moved_entry.to_dict()] if (op.type == "MOVED" and moved_entry) else []
     single_scan = {"files": files, "to_compile": [], "to_reconcile": [op_dict]}
-    apply_compile_result(
+    intake_res = apply_compile_result(
         {"compiled_sources": []}, single_scan, ctx.run_id,
-        conn=conn, detect_orphans=False, wire_links=False)
+        conn=conn, detect_deprecations=False, wire_links=False)
+    if op.type == "DELETED" and intake_res.erased_pages and not ctx.dry_run:
+        deleted_files = page_writer.delete_page_files(
+            ctx.vault_root, intake_res.erased_pages)
+        ctx.append_log(
+            "info",
+            f"source deletion erased {len(deleted_files)} page file(s): "
+            + ", ".join(sorted(e["slug"] for e in intake_res.erased_pages)))
+        for dl in intake_res.erased_dead_links:
+            ctx.append_log(
+                "warning",
+                f"dead link — {dl['from_slug']} -> {dl['to_slug']} (erased page)")
     next_manifest, _ = manifest_writer.build_source_state_update(
         prior_manifest, single_scan, {"compiled_sources": [], "success": True}, ctx)
     atomic_write_json(state_root / MANIFEST_NAME, next_manifest)

@@ -204,9 +204,9 @@ def _context_watched_fields(
 
 def compute_graph(
     conn: kuzu.Connection,
-    finalize_artifacts: dict,
     *,
     finalize_ran: bool = True,
+    run_id: str | None = None,
     pass1_search_keys: list[str] | None = None,
     context_evidence: ContextEvidence | None = None,
 ) -> dict:
@@ -216,10 +216,11 @@ def compute_graph(
     ----------
     conn:
         Live Kuzu connection to the graph the run built.
-    finalize_artifacts:
-        The cleanup/finalize report (tools.cleanup.reap_orphans_from_graph
-        shape): {"reaped": [...], "retracted_slugs": [...], ...}. orphan_rate
-        is derived from len(reaped); pass {} if cleanup did not run.
+    run_id:
+        The run being measured. Feeds deprecation_rate (#130): newly deprecated
+        pages are read from the graph itself (status='deprecated' AND
+        last_run_id=run_id — the finalize mark persists both). None →
+        deprecation_rate None (don't conflate unknown-run with zero-deprecation).
     finalize_ran:
         Task #122 §7 execution branch. False = the run did not complete the
         finalize boundary — finalized graph-quality and legacy-resolution
@@ -242,10 +243,16 @@ def compute_graph(
     """
     if finalize_ran:
         # ---- shared reads -------------------------------------------------
+        # #130: every KPI population is ACTIVE-only. Deprecated pages persist
+        # in the graph (pre-#130 they were reaped before KPI time); without
+        # the active filter they would silently dilute every denominator.
         active_canonical = queries.active_canonical_entity_slugs(conn)
-        canonical = queries.canonical_entity_slugs(conn)
+        canonical = active_canonical
         n_canonical = len(canonical)
-        edges = queries.links_to_edges(conn)
+        edges = [
+            (f, t) for f, t in queries.links_to_edges(conn)
+            if f in active_canonical and t in active_canonical
+        ]
         total_sources = queries.total_source_count(conn)
 
         # ---- SCORED -----------------------------------------------------------
@@ -278,14 +285,17 @@ def compute_graph(
         )
 
         # ---- WATCHED (finalize-dependent) ------------------------------------
-        # orphan_rate: orphans marked by finalize ÷ total entities (all Entity
-        # nodes). Derivation: len(finalize_artifacts["reaped"]) — the cleanup
-        # report's list of orphan_candidate entities reaped this run. None when
-        # 0 total entities.
+        # deprecation_rate (#130): pages THIS run's finalize marked deprecated ÷
+        # total entities (all Entity nodes). Derived from the graph itself — the
+        # finalize mark persists the node with last_run_id set (no retraction
+        # artifact needed). None when run_id unknown or 0 total entities.
         total_entities = queries.total_entity_count(conn)
-        n_orphans = len(finalize_artifacts.get("reaped", []) or [])
-        orphan_rate: float | None = (
-            n_orphans / total_entities if total_entities else None
+        n_deprecated = (
+            queries.newly_deprecated_count(conn, run_id) if run_id else None
+        )
+        deprecation_rate: float | None = (
+            (n_deprecated / total_entities)
+            if (n_deprecated is not None and total_entities) else None
         )
 
         # entity_search_key_resolution (#120 D3, spec v1.4): the MIXED downstream
@@ -333,7 +343,7 @@ def compute_graph(
             "supports_density": supports_density,
         }
         watched: dict[str, Any] = {
-            "orphan_rate": orphan_rate,
+            "deprecation_rate": deprecation_rate,
             "entity_search_key_resolution": entity_search_key_resolution,
         }
         diagnostic: dict[str, Any] = {
@@ -354,7 +364,7 @@ def compute_graph(
             "supports_density": None,
         }
         watched = {
-            "orphan_rate": None,
+            "deprecation_rate": None,
             "entity_search_key_resolution": None,
         }
         diagnostic = {

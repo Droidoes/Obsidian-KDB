@@ -282,15 +282,19 @@ def _pagerank_scores(conn: Any) -> dict[str, float]:
     except ImportError:
         return {}
 
+    # #130: rank over the ACTIVE topology only — deprecated pages persist with
+    # their stale edges and would leak rank into the neighborhood tie-breaks.
+    active = queries.active_entity_slugs(conn)
     g = nx.DiGraph()
     for from_slug, to_slug in queries.links_to_edges(conn):
-        g.add_edge(from_slug, to_slug)
+        if from_slug in active and to_slug in active:
+            g.add_edge(from_slug, to_slug)
 
     if not g.nodes:
         return {}
 
     # Add isolated active entities so they get a base score
-    for slug in queries.active_entity_slugs(conn):
+    for slug in active:
         g.add_node(slug)
 
     return nx.pagerank(g)

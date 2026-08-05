@@ -292,10 +292,10 @@ def test_alias_promoted_to_canonical_clears_canonical_id_and_alias_of(
 # ---------- 6. orphan-detection scope (canonical only) ----------
 
 
-def test_aliases_excluded_from_orphan_detection(graph_dir):
-    """OQ-E: aliases never receive SUPPORTS. Phase 4 must scope orphan
+def test_aliases_excluded_from_deprecation(graph_dir):
+    """OQ-E: aliases never receive SUPPORTS. Phase 4 must scope deprecation
     flagging to canonical entities (canonical_id IS NULL), otherwise
-    every alias would be flagged orphan_candidate on first compile."""
+    every alias would be flagged deprecated on first compile."""
     cs = make_compiled_source("KDB/raw/x.md", [make_page("apple-inc")])
     cr = make_compile_result(
         [cs],
@@ -305,9 +305,9 @@ def test_aliases_excluded_from_orphan_detection(graph_dir):
     with GraphDB(graph_dir) as gdb:
         res = gdb.apply_compile_result(cr, scan, "run-1")
         alias = gdb.get_entity("aapl")
-    # The alias has zero SUPPORTS but is NOT flagged orphan_candidate.
+    # The alias has zero SUPPORTS but is NOT flagged deprecated.
     assert alias.status == "alias"
-    assert "aapl" not in res.orphans_detected
+    assert "aapl" not in [d["slug"] for d in res.deprecations_detected]
 
 
 # ---------- 7. stats + provenance reporting ----------

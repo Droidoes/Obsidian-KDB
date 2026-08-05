@@ -193,18 +193,76 @@ def test_finalize_wires_links_and_writes_compile_result(tmp_path):
     with GraphDB(tmp_path / "graph") as g:
         # Per-source sync with links deferred (mirrors the orchestrator loop).
         g.apply_compile_result(crA, _scan_files("a.md"), ctx.run_id,
-                               detect_orphans=False, wire_links=False)
+                               detect_deprecations=False, wire_links=False)
         g.apply_compile_result(crB, _scan_files("b.md"), ctx.run_id,
-                               detect_orphans=False, wire_links=False)
+                               detect_deprecations=False, wire_links=False)
         before = _count(g, edge_q)
         stats = kdb_orchestrate._finalize(
             g.conn, [crA, crB], state_root=state_root, ctx=ctx)
         after = _count(g, edge_q)
     assert before == 0 and after == 1          # finalize wire_links wired the edge
     assert stats["links_wired"] >= 1
-    assert stats["reaped"] == 0                # both entities supported → no orphans
+    assert stats["deprecated"] == 0            # both entities supported → no deprecations
     cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
     assert len(cr_json["compiled_sources"]) == 2
+
+
+def test_finalize_deprecates_dropped_pages_in_graph_and_on_disk(tmp_path):
+    """#130: a page dropped by its source's recompile is DEPRECATED — graph node
+    kept with status flip, file frontmatter flipped in lockstep, no
+    retraction.json, no cleanup journal (the old reap is gone)."""
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    ctx = RunContext.new(vault_root=tmp_path)
+    scan = _scan_files("a.md")
+    cr1 = _cr("a.md", [_page("ent-a"), _page("ent-b")])
+    cr2 = _cr("a.md", [_page("ent-a")])
+    f = tmp_path / "KDB/wiki/concepts/ent-b.md"
+    f.parent.mkdir(parents=True)
+    f.write_text(
+        "---\ntitle: B\nslug: ent-b\npage_type: concept\nstatus: active\n---\nbody\n",
+        encoding="utf-8")
+    with GraphDB(tmp_path / "graph") as g:
+        g.apply_compile_result(cr1, scan, ctx.run_id,
+                               detect_deprecations=False, wire_links=False)
+        g.apply_compile_result(cr2, scan, ctx.run_id,
+                               detect_deprecations=False, wire_links=False)
+        stats = kdb_orchestrate._finalize(
+            g.conn, [cr2], state_root=state_root, ctx=ctx)
+        ent_b = g.get_entity("ent-b")
+    assert ent_b is not None and ent_b.status == "deprecated"   # node kept, flipped
+    assert stats["deprecated"] == 1
+    assert stats["deprecated_files"] == 1
+    assert "status: deprecated" in f.read_text(encoding="utf-8")
+    assert not (state_root / "runs" / ctx.run_id / "retraction.json").exists()
+    assert not (state_root / "runs" / f"{ctx.run_id}.json").exists()
+
+
+def test_commit_reconcile_deleted_erases_pages_and_files(tmp_path):
+    """#130 R-130-4: source deletion is total erasure — node DETACH DELETEd in
+    the graph layer, file unlinked by the conductor, tombstone written."""
+    from types import SimpleNamespace
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    ctx = RunContext.new(vault_root=tmp_path)
+    scan = _scan_files("gone.md")
+    cr = _cr("gone.md", [_page("ent-z")])
+    f = tmp_path / "KDB/wiki/concepts/ent-z.md"
+    f.parent.mkdir(parents=True)
+    f.write_text("---\nstatus: active\n---\nbody\n", encoding="utf-8")
+    op = SimpleNamespace(
+        type="DELETED", path="gone.md",
+        to_dict=lambda: {"type": "DELETED", "source_id": "gone.md",
+                         "path": "gone.md"})
+    with GraphDB(tmp_path / "graph") as g:
+        g.apply_compile_result(cr, scan, ctx.run_id)
+        assert g.get_entity("ent-z") is not None
+        next_manifest = kdb_orchestrate._commit_reconcile_op(
+            op, moved_entry=None, prior_manifest={}, conn=g.conn,
+            state_root=state_root, ctx=ctx)
+        assert g.get_entity("ent-z") is None                    # node erased
+    assert not f.exists()                                       # file erased
+    assert next_manifest["tombstones"]["gone.md"]["status"] == "deleted"
 
 
 def test_write_last_orchestrate_json_fields(tmp_path):
@@ -1404,7 +1462,7 @@ def test_emit_kpis_no_finalize_emits_audit_artifact(tmp_path, monkeypatch):
     m = json.loads(matches[0].read_text(encoding="utf-8"))
     assert m["header"]["finalize_ran"] is False
     assert m["graph"]["scored"]["entity_reuse"] is None
-    assert m["graph"]["watched"]["orphan_rate"] is None
+    assert m["graph"]["watched"]["deprecation_rate"] is None
     assert m["graph"]["watched"]["entity_search_key_resolution"] is None
     # Task-122 event-time fields: the context build succeeded per source
     # (empty graph → complete records).

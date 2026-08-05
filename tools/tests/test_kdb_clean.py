@@ -1,12 +1,18 @@
-"""Tests for `kdb-clean` — the KDB maintenance CLI.
+"""Tests for `kdb-clean` — the KDB maintenance CLI (orphans mode retired in #130).
 
-`reap_orphans()` is the pure manifest-mutation core of the `orphans` mode
-(internal vocabulary: "reap"; user-facing command: `kdb-clean orphans`). File
-archival is a main()-level side effect and is not covered by the unit tests.
+The `orphans` mode is RETIRED (#130 — deprecated page lifecycle): the
+orphan_candidate status no longer exists. Model-dropped pages are marked
+`deprecated` in place (graph + frontmatter at finalize), and pages of a
+deleted source are erased at reconcile time — there is nothing to reap. The
+command now prints a retirement notice and exits 0; that notice is covered
+here.
+
+`reap_orphans()` / `build_cleanup_artifacts()` are kept as LEGACY helpers for
+historical-journal tooling (scripts/backfill_cleanup_journal.py, replay-era
+tests); their pure manifest/artifact math is still covered by the unit tests
+below.
 """
 from __future__ import annotations
-
-import json
 
 import pytest
 
@@ -25,41 +31,6 @@ def _page(status, slug, *, page_type="concept", outgoing_links=None):
 
 def _manifest(pages, orphans=None):
     return {"schema_version": "1.0", "pages": pages, "orphans": orphans or {}}
-
-
-def _stub_sync(monkeypatch):
-    """Stub the graph live-sync so --apply tests don't spin up Kuzu."""
-    import types as _types
-    monkeypatch.setattr(
-        "kdb_graph.adapters.obsidian_runs.ObsidianRunsAdapter.sync_cleanup_run",
-        lambda self, retraction, run_id, graph_dir=None: _types.SimpleNamespace(
-            entities_deleted=0, run_id=run_id),
-    )
-
-
-def _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone"):
-    """Create an in-memory GraphDB with one orphan_candidate entity."""
-    from kdb_graph.graphdb import GraphDB
-    from kdb_graph.testing import (
-        make_compile_result, make_compiled_source, make_page,
-        make_scan, make_scan_entry,
-    )
-    graph_dir = tmp_path / "GraphDB-KDB"
-    with GraphDB(graph_dir) as gdb:
-        pages = [make_page(slug)]
-        cr1 = make_compile_result([
-            make_compiled_source("KDB/raw/a.md", pages),
-        ], run_id="run-1")
-        scan1 = make_scan([make_scan_entry("KDB/raw/a.md")])
-        gdb.apply_compile_result(cr1, scan1, "run-1")
-        # Delete source to orphan the entity
-        cr2 = make_compile_result([], run_id="run-2")
-        scan2 = make_scan(
-            [],
-            to_reconcile=[{"type": "DELETED", "path": "KDB/raw/a.md"}],
-        )
-        gdb.apply_compile_result(cr2, scan2, "run-2")
-    monkeypatch.setattr("tools.cleanup.default_graph_path", lambda: graph_dir)
 
 
 def test_reap_removes_orphan_from_pages_and_orphans():
@@ -180,19 +151,19 @@ def test_reap_retracted_slugs_excludes_slug_surviving_under_another_type():
     assert report["retracted_slugs"] == ["solo"]
 
 
-def test_main_orphans_dry_run_reads_graph_without_mutating(tmp_path, monkeypatch):
-    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
-    state = tmp_path / "KDB" / "state"
-    state.mkdir(parents=True)
-    rc = main(["orphans", "--vault-root", str(tmp_path)])
-    assert rc == 0
-    # dry-run is the default — no files written
-    assert not list(state.glob("runs/clean-orphans-*"))
-
-
 def test_main_requires_a_subcommand():
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_main_orphans_prints_retirement_notice(tmp_path, capsys):
+    # Retired (#130): prints the notice, exits 0, writes nothing — even with
+    # --apply (kept for argparse compat only).
+    rc = main(["orphans", "--vault-root", str(tmp_path), "--apply"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "RETIRED" in out
+    assert not list(tmp_path.rglob("*"))
 
 
 def test_build_cleanup_artifacts_shapes_journal_and_retraction():
@@ -214,57 +185,3 @@ def test_build_cleanup_artifacts_shapes_journal_and_retraction():
     assert retraction["event_type"] == "cleanup"
     assert retraction["retracted_slugs"] == ["s"]
     assert retraction["reaped"] == report["reaped"]
-
-
-def test_main_orphans_apply_writes_cleanup_journal_and_retraction(tmp_path, monkeypatch):
-    _stub_sync(monkeypatch)
-    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
-    state = tmp_path / "KDB" / "state"
-    state.mkdir(parents=True)
-    pid = "KDB/wiki/concepts/gone.md"
-    md = tmp_path / pid
-    md.parent.mkdir(parents=True, exist_ok=True)
-    md.write_text("# gone", encoding="utf-8")
-
-    rc = main(["orphans", "--vault-root", str(tmp_path), "--apply"])
-    assert rc == 0
-
-    runs = state / "runs"
-    journals = list(runs.glob("clean-orphans-*.json"))
-    assert len(journals) == 1
-    journal = json.loads(journals[0].read_text(encoding="utf-8"))
-    assert journal["event_type"] == "cleanup"
-    assert journal["schema_version"] == "2.1"
-
-    run_id = journal["run_id"]
-    retraction = json.loads(
-        (runs / run_id / "retraction.json").read_text(encoding="utf-8"))
-    assert retraction["event_type"] == "cleanup"
-    assert retraction["retracted_slugs"] == ["gone"]
-
-
-def test_main_orphans_apply_writes_retraction_before_journal(tmp_path, monkeypatch):
-    _stub_sync(monkeypatch)
-    _seed_graph_with_orphan(tmp_path, monkeypatch, slug="gone")
-    from common import atomic_io
-    state = tmp_path / "KDB" / "state"
-    state.mkdir(parents=True)
-    pid = "KDB/wiki/concepts/gone.md"
-    md = tmp_path / pid
-    md.parent.mkdir(parents=True, exist_ok=True)
-    md.write_text("# gone", encoding="utf-8")
-
-    calls: list[str] = []
-    real = atomic_io.atomic_write_json
-
-    def spy(path, obj, **kw):
-        from pathlib import Path
-        calls.append(Path(path).name)
-        return real(path, obj, **kw)
-
-    monkeypatch.setattr("tools.cleanup.atomic_io.atomic_write_json", spy)
-    main(["orphans", "--vault-root", str(tmp_path), "--apply"])
-
-    journal_idx = next(i for i, n in enumerate(calls)
-                       if n.startswith("clean-orphans"))
-    assert calls.index("retraction.json") < journal_idx

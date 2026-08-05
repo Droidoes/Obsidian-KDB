@@ -295,3 +295,52 @@ def apply(
     return result
 
 
+
+
+# -------------------------------------------------------------------------
+# #130 — deprecated lifecycle file operations (I/O shell, same D14 atomicity)
+# -------------------------------------------------------------------------
+
+def mark_deprecated(vault_root: Path, pages: list[dict]) -> list[Path]:
+    """Flip frontmatter `status: active` → `status: deprecated` in place
+    (#130 R-130-3 — the file's status moves in lockstep with the graph node's).
+
+    Surgical single-line rewrite: files are machine-emitted (emit_frontmatter),
+    so the status line is stable; `count=1` hits the frontmatter occurrence
+    (frontmatter precedes the body). Idempotent — already-deprecated files and
+    absent files are skipped untouched. Returns the paths actually flipped.
+
+    `pages` entries are {slug, page_type} as returned by
+    kdb_graph.intake.detect_deprecations().
+    """
+    flipped: list[Path] = []
+    for page in pages:
+        path = vault_root / paths.slug_to_relpath(page["slug"], page["page_type"])
+        if not path.is_file():
+            print(f"note    {path} — file absent, deprecation mark skipped")
+            continue
+        text = path.read_text(encoding="utf-8")
+        new_text, n = re.subn(r"(?m)^status: active$", "status: deprecated",
+                              text, count=1)
+        if n == 0:
+            continue  # already deprecated or unexpected shape — never rewrite blindly
+        atomic_write_text(path, new_text)
+        flipped.append(path)
+    return flipped
+
+
+def delete_page_files(vault_root: Path, pages: list[dict]) -> list[Path]:
+    """Delete wiki page files for source-deletion erasures (#130 R-130-4 —
+    total erasure: plain unlink, no archive, no move). Absent files tolerated.
+    Returns the paths actually deleted.
+
+    `pages` entries are {slug, page_type} as carried by
+    IntakeResult.erased_pages.
+    """
+    deleted: list[Path] = []
+    for page in pages:
+        path = vault_root / paths.slug_to_relpath(page["slug"], page["page_type"])
+        if path.is_file():
+            path.unlink()
+            deleted.append(path)
+    return deleted

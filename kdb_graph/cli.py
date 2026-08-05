@@ -154,14 +154,14 @@ def cmd_structural_holes(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_orphans(args: argparse.Namespace) -> int:
+def cmd_deprecated(args: argparse.Namespace) -> int:
     with _open_read_only(args) as gdb:
-        entities = gdb.orphan_entities()
+        entities = gdb.deprecated_entities()
     if args.json:
         _print_json([dataclasses.asdict(e) for e in entities])
         return 0
     if not entities:
-        print("(no orphan-candidate entities)")
+        print("(no deprecated entities)")
         return 0
     for e in entities:
         print(f"  {e.slug:<40} {e.page_type:<10} last_run_id={e.last_run_id}")
@@ -569,7 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_sh.add_argument("--json", action="store_true", help="JSON output.")
 
-    p_o = sub.add_parser("orphans", help="List orphan-candidate entities.")
+    p_o = sub.add_parser("deprecated", help="List deprecated entities (#130).")
     p_o.add_argument("--json", action="store_true", help="JSON output.")
 
     p_sg = sub.add_parser(
@@ -664,7 +664,7 @@ _DISPATCH = {
     "pagerank": cmd_pagerank,
     "communities": cmd_communities,
     "structural-holes": cmd_structural_holes,
-    "orphans": cmd_orphans,
+    "deprecated": cmd_deprecated,
     "subgraph-by-source": cmd_subgraph_by_source,
     "verify": cmd_verify,
     "rebuild": cmd_rebuild,

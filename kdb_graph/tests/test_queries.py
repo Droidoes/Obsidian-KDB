@@ -274,10 +274,10 @@ def test_subgraph_by_unknown_source_is_empty(graph_dir):
     assert sg == {"nodes": [], "edges": []}
 
 
-# ---------- 6. orphan_entities ----------
+# ---------- 6. deprecated_entities ----------
 
-def test_orphan_entities_listing(graph_dir):
-    """Pages flagged orphan_candidate at ingestion are returned here."""
+def test_deprecated_entities_listing(graph_dir):
+    """Pages flagged deprecated at ingestion (#130) are returned here."""
     src = "KDB/raw/s.md"
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
@@ -285,20 +285,20 @@ def test_orphan_entities_listing(graph_dir):
             make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
             scan, "r1",
         )
-        # Drop 'b' from this source — b becomes orphan_candidate.
+        # Drop 'b' from this source — b becomes deprecated.
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
             scan, "r2",
         )
-        orphans = gdb.orphan_entities()
-    assert [p.slug for p in orphans] == ["b"]
+        deprecated = gdb.deprecated_entities()
+    assert [p.slug for p in deprecated] == ["b"]
 
 
-def test_orphan_entities_empty_when_none(graph_dir):
+def test_deprecated_entities_empty_when_none(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_linear_chain(gdb)
-        orphans = gdb.orphan_entities()
-    assert orphans == []
+        deprecated = gdb.deprecated_entities()
+    assert deprecated == []
 
 
 # ---------- 7. cypher escape hatch ----------
@@ -396,7 +396,8 @@ def _mk_supports(conn, sid, slug):
 
 
 def _seed_kpi_graph(gdb):
-    """Canonical: alpha, beta, gamma, summary-x (summary), orphan-z.
+    """Canonical: alpha, beta, gamma, summary-x (summary), dep-z (deprecated —
+    #130: excluded from every active-filtered read below).
     Alias: aapl -> apple-inc? No — alias targets alpha. Sources: s1 (finance),
     s2 (finance), s3 (NULL domain). Domain: finance with BELONGS_TO from alpha.
     SUPPORTS: alpha<-s1,s2 (reuse); beta<-s1; gamma<-(none).
@@ -406,7 +407,7 @@ def _seed_kpi_graph(gdb):
     _mk_entity(c, "beta")
     _mk_entity(c, "gamma")
     _mk_entity(c, "summary-x", page_type="summary")
-    _mk_entity(c, "orphan-z", status="orphan_candidate")
+    _mk_entity(c, "dep-z", status="deprecated")
     # alias entity pointing at alpha (canonical_id set + ALIAS_OF edge)
     _mk_entity(c, "alpha-alias", canonical_id="alpha", page_type="alias",
                status="active")
@@ -439,7 +440,7 @@ def test_active_canonical_entity_slugs(graph_dir):
         _seed_kpi_graph(gdb)
         slugs = _q.active_canonical_entity_slugs(gdb.conn)
     # active + canonical_id IS NULL: alpha, beta, gamma, summary-x.
-    # Excludes alpha-alias (canonical_id set) and orphan-z (status != active).
+    # Excludes alpha-alias (canonical_id set) and dep-z (status != active).
     assert slugs == {"alpha", "beta", "gamma", "summary-x"}
 
 
@@ -447,8 +448,8 @@ def test_canonical_entity_slugs(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_kpi_graph(gdb)
         slugs = set(_q.canonical_entity_slugs(gdb.conn))
-    # canonical_id IS NULL (any status): includes orphan-z, excludes alias.
-    assert slugs == {"alpha", "beta", "gamma", "summary-x", "orphan-z"}
+    # canonical_id IS NULL (any status): includes dep-z, excludes alias.
+    assert slugs == {"alpha", "beta", "gamma", "summary-x", "dep-z"}
 
 
 def test_total_entity_count(graph_dir):
@@ -463,9 +464,9 @@ def test_canonical_nonsummary_supports_counts(graph_dir):
     with GraphDB(graph_dir) as gdb:
         _seed_kpi_graph(gdb)
         counts = sorted(_q.canonical_nonsummary_supports_counts(gdb.conn))
-    # canonical non-summary: alpha(2), beta(1), gamma(0), orphan-z(0).
-    # summary-x excluded (summary); alias excluded (canonical_id set).
-    assert counts == [0, 0, 1, 2]
+    # ACTIVE canonical non-summary (#130): alpha(2), beta(1), gamma(0); dep-z
+    # excluded (deprecated). summary-x excluded (summary); alias excluded.
+    assert counts == [0, 1, 2]
 
 
 def test_canonical_belongs_to_count(graph_dir):

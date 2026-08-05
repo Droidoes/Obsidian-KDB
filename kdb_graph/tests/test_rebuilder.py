@@ -197,7 +197,7 @@ def test_rebuilder_chronological_order(graph_dir, tmp_path):
 
     Verify by exercising MOVED-style time dependency: run 'r2' drops page 'b'
     introduced by run 'r1'; only the correct (r1 then r2) order yields b
-    orphan_candidate. If replayed r2-first then r1-last, b would be active.
+    deprecated (#130). If replayed r2-first then r1-last, b would be active.
     """
     adapter = FakeAdapter()
     # Add in reverse-chronological order — sort_key should re-order them.
@@ -224,7 +224,7 @@ def test_rebuilder_chronological_order(graph_dir, tmp_path):
     with GraphDB(graph_dir) as gdb:
         b = gdb.get_entity("b")
     assert b is not None
-    assert b.status == "orphan_candidate"  # r2 dropped b, so b is orphan
+    assert b.status == "deprecated"  # r2 dropped b, so b is deprecated (#130)
 
 
 def test_rebuilder_skip_reasons_preserved(graph_dir, tmp_path):
@@ -345,7 +345,7 @@ def test_obsidian_adapter_discover_and_replay(graph_dir, tmp_path):
         assert gdb.get_entity("alpha") is not None
         beta = gdb.get_entity("beta")
     assert beta is not None
-    assert beta.status == "orphan_candidate"  # ordered replay made beta orphan
+    assert beta.status == "deprecated"  # ordered replay made beta deprecated (#130)
 
 
 def test_obsidian_adapter_skip_dry_run(graph_dir, tmp_path):
@@ -1165,11 +1165,11 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
         page_writer.apply(vault, compile_result=cr1, last_scan=scan1,
                           run_ctx=ctx, write=True)
         gdb.apply_compile_result(cr1, scan1, "r-batch",
-                                 detect_orphans=False, wire_links=False)
+                                 detect_deprecations=False, wire_links=False)
         page_writer.apply(vault, compile_result=cr2, last_scan=scan2,
                           run_ctx=ctx, write=True)
         gdb.apply_compile_result(cr2, scan2, "r-batch",
-                                 detect_orphans=False, wire_links=False)
+                                 detect_deprecations=False, wire_links=False)
 
         # Deferred finalizer is load-bearing: NO edges exist before it runs
         # (and concept-b's target didn't exist during cr1's apply anyway).

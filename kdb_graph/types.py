@@ -24,7 +24,9 @@ class IntakeResult:
     domains_upserted: int = 0     # total Domain nodes in the derived projection after rederive_domains (D1-A)
     belongs_to_upserted: int = 0  # total BELONGS_TO edges in the derived projection after rederive_domains (D1-A)
     entities_deleted: int = 0     # Entity DETACH DELETE ops in apply_cleanup (#68)
-    orphans_detected: list[str] = field(default_factory=list)  # newly orphan_candidate slugs
+    deprecations_detected: list[dict] = field(default_factory=list)  # newly deprecated {slug, page_type} (#130)
+    erased_pages: list[dict] = field(default_factory=list)           # source-deletion erasures {slug, page_type} (#130)
+    erased_dead_links: list[dict] = field(default_factory=list)      # surviving pages linking to erased slugs {from_slug, to_slug} (#130 — report-only)
 
 
 @dataclass(frozen=True)

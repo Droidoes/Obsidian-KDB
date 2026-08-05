@@ -304,9 +304,11 @@ def test_moved_reconcile_marks_old_source(graph_dir):
     assert old.moved_to == new_sid
 
 
-# ---------- 5. DELETED reconciliation ----------
+# ---------- 5. DELETED reconciliation (erasure — #130 R-130-4) ----------
 
-def test_deleted_reconcile_marks_source(graph_dir):
+def test_deleted_reconcile_erases_sole_supported_page(graph_dir):
+    """#130: source deletion is total erasure. A page whose ONLY SUPPORTS came
+    from the deleted source is DETACH DELETEd — not deprecated, no residue."""
     sid = "KDB/raw/gone.md"
     cr1 = make_compile_result([make_compiled_source(sid, [make_page("zeta")])])
     scan1 = make_scan([make_scan_entry(sid)])
@@ -319,20 +321,109 @@ def test_deleted_reconcile_marks_source(graph_dir):
     )
     cr2 = make_compile_result([])
     with GraphDB(graph_dir) as gdb:
-        gdb.apply_compile_result(cr2, scan2, "run-2")
+        res = gdb.apply_compile_result(cr2, scan2, "run-2")
         s = gdb.get_source(sid)
-        # SUPPORTS edges dropped, so zeta should be orphaned
-        r = gdb.conn.execute("MATCH (p:Entity {slug: 'zeta'}) RETURN p.status")
-        zeta_status = r.get_next()[0] if r.has_next() else None
+        zeta = gdb.get_entity("zeta")
     assert s is not None
     assert s.status == "deleted"
-    assert zeta_status == "orphan_candidate"
+    assert zeta is None  # erased, not deprecated
+    assert {"slug": "zeta", "page_type": "concept"} in res.erased_pages
 
 
-# ---------- 6. orphan detection + revival ----------
+def test_deleted_reconcile_keeps_dual_supported_page_active(graph_dir):
+    """A page with a second supporting source survives the deletion active,
+    with exactly one SUPPORTS edge remaining."""
+    s1, s2 = "KDB/raw/one.md", "KDB/raw/two.md"
+    scan = make_scan([make_scan_entry(s1), make_scan_entry(s2)])
+    cr1 = make_compile_result([
+        make_compiled_source(s1, [make_page("shared")]),
+        make_compiled_source(s2, [make_page("shared")]),
+    ])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan, "run-1")
 
-def test_orphan_detection_flags_page_with_no_supports(graph_dir):
-    """A page whose only supporting source recompiles without it becomes orphan_candidate."""
+    scan2 = make_scan(
+        files=[make_scan_entry(s2)],
+        to_reconcile=[{"type": "DELETED", "source_id": s1}],
+    )
+    with GraphDB(graph_dir) as gdb:
+        res = gdb.apply_compile_result(make_compile_result([]), scan2, "run-2")
+        shared = gdb.get_entity("shared")
+        r = gdb.conn.execute(
+            "MATCH (:Source)-[r:SUPPORTS]->(:Entity {slug: 'shared'}) RETURN COUNT(r)"
+        )
+        n_supports = int(r.get_next()[0])
+    assert shared is not None
+    assert shared.status == "active"
+    assert n_supports == 1
+    assert res.erased_pages == []
+
+
+def _alias_entry(alias_slug: str, canonical_slug: str) -> dict:
+    return {"alias_slug": alias_slug, "canonical_slug": canonical_slug,
+            "algorithm": "ledger"}
+
+
+def _canonical_meta(aliases: list[dict]) -> dict:
+    return {
+        "algorithm_version": "1.0",
+        "ledger_snapshot_sha256": "deadbeef",
+        "aliases_emitted": aliases,
+        "outgoing_link_remaps": [],
+        "merged_pages": [],
+    }
+
+
+def test_deleted_reconcile_erases_alias_rows(graph_dir):
+    """Alias rows are identity assertions about the canonical — erasure removes
+    them with it (no dangling aliases)."""
+    sid = "KDB/raw/x.md"
+    cr1 = make_compile_result(
+        [make_compiled_source(sid, [make_page("apple-inc")])],
+        canonical_meta=_canonical_meta([_alias_entry("aapl", "apple-inc")]),
+    )
+    scan1 = make_scan([make_scan_entry(sid)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan1, "run-1")
+        assert gdb.get_entity("aapl") is not None
+
+    scan2 = make_scan(files=[], to_reconcile=[{"type": "DELETED", "source_id": sid}])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(make_compile_result([]), scan2, "run-2")
+        assert gdb.get_entity("apple-inc") is None
+        assert gdb.get_entity("aapl") is None
+
+
+def test_deleted_reconcile_reports_dead_links(graph_dir):
+    """Surviving pages that linked to an erased page are reported (never
+    rewritten) via IntakeResult.erased_dead_links; the edge dies with the node."""
+    s1, s2 = "KDB/raw/keep.md", "KDB/raw/gone.md"
+    scan = make_scan([make_scan_entry(s1), make_scan_entry(s2)])
+    cr1 = make_compile_result([
+        make_compiled_source(s1, [make_page("a", outgoing_links=["zeta"])]),
+        make_compiled_source(s2, [make_page("zeta")]),
+    ])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan, "run-1")
+
+    scan2 = make_scan(
+        files=[make_scan_entry(s1)],
+        to_reconcile=[{"type": "DELETED", "source_id": s2}],
+    )
+    with GraphDB(graph_dir) as gdb:
+        res = gdb.apply_compile_result(make_compile_result([]), scan2, "run-2")
+        r = gdb.conn.execute("MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+        n_edges = int(r.get_next()[0])
+    assert {"slug": "zeta", "page_type": "concept"} in res.erased_pages
+    assert res.erased_dead_links == [{"from_slug": "a", "to_slug": "zeta"}]
+    assert n_edges == 0
+
+
+# ---------- 6. deprecation + revival (#130) ----------
+
+def test_deprecation_flags_page_with_no_supports(graph_dir):
+    """A page whose only supporting source recompiles without it becomes deprecated
+    (#130 R-130-1 — the node stays, invisible to active-readers, revivable)."""
     src = "KDB/raw/s.md"
     pages_v1 = [make_page("a"), make_page("b")]
     cr1 = make_compile_result([make_compiled_source(src, pages_v1)])
@@ -345,15 +436,15 @@ def test_orphan_detection_flags_page_with_no_supports(graph_dir):
     with GraphDB(graph_dir) as gdb:
         res = gdb.apply_compile_result(cr2, scan, "run-2")
         page_b = gdb.get_entity("b")
-    assert "b" in res.orphans_detected
+    assert {"slug": "b", "page_type": "concept"} in res.deprecations_detected
     assert page_b is not None
-    assert page_b.status == "orphan_candidate"
+    assert page_b.status == "deprecated"
 
 
-def test_orphan_revival_on_resupport(graph_dir):
+def test_deprecation_revival_on_resupport(graph_dir):
     """A page re-supported by a new compile transitions back to active."""
     src = "KDB/raw/s.md"
-    # Initial: a, b. Then drop b → orphan. Then re-add b → revival.
+    # Initial: a, b. Then drop b → deprecated. Then re-add b → revival.
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(
@@ -364,7 +455,7 @@ def test_orphan_revival_on_resupport(graph_dir):
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
             scan, "r2",
         )
-        assert gdb.get_entity("b").status == "orphan_candidate"
+        assert gdb.get_entity("b").status == "deprecated"
 
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
@@ -616,27 +707,27 @@ def test_ingest_source_meta_without_source_type_preserves_default(graph_dir):
     assert source.source_type == "obsidian-kdb-raw"
 
 
-# ---------- Task #91 Plan 2: deferred orphan-marking ----------
+# ---------- Task #91 Plan 2: deferred deprecation-marking (#130 vocabulary) ----------
 
-def test_apply_skips_orphan_marking_when_disabled(graph_dir):
+def test_apply_skips_deprecation_marking_when_disabled(graph_dir):
     src = "KDB/raw/s.md"
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
             scan, "r1")
-        # Source drops 'b' but with detect_orphans=False — 'b' must NOT be flagged.
+        # Source drops 'b' but with detect_deprecations=False — 'b' must NOT be flagged.
         res = gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
-            scan, "r2", detect_orphans=False)
+            scan, "r2", detect_deprecations=False)
         b = gdb.get_entity("b")
-    assert res.orphans_detected == []
+    assert res.deprecations_detected == []
     assert b.status == "active"  # marking deferred to finalize
 
 
-def test_standalone_detect_orphans_marks_after_deferred_apply(graph_dir):
-    """Deferred model: per-source apply with detect_orphans=False leaves the
-    orphan unmarked; the end-of-run detect_orphans() pass then marks it."""
+def test_standalone_detect_deprecations_marks_after_deferred_apply(graph_dir):
+    """Deferred model: per-source apply with detect_deprecations=False leaves the
+    page unmarked; the end-of-run detect_deprecations() pass then marks it."""
     src = "KDB/raw/s.md"
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
@@ -645,13 +736,13 @@ def test_standalone_detect_orphans_marks_after_deferred_apply(graph_dir):
             scan, "r1")
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
-            scan, "r2", detect_orphans=False)
+            scan, "r2", detect_deprecations=False)
         assert gdb.get_entity("b").status == "active"   # not yet marked
 
-        orphans = gdb.detect_orphans("r2")              # finalize pass
+        deprecations = gdb.detect_deprecations("r2")    # finalize pass
         b = gdb.get_entity("b")
-    assert "b" in orphans
-    assert b.status == "orphan_candidate"
+    assert {"slug": "b", "page_type": "concept"} in deprecations
+    assert b.status == "deprecated"
 
 
 # ---------- 3. #115 T2.4: graph-owned edge derivation from body wikilinks ----------

@@ -204,15 +204,15 @@ def subgraph_by_source(conn: kuzu.Connection, source_id: str) -> dict[str, Any]:
     return {"nodes": entities, "edges": edges}
 
 
-# ---------- orphan listing ----------
+# ---------- deprecated listing ----------
 
-def orphan_entities(conn: kuzu.Connection) -> list[Entity]:
-    """Entities currently flagged orphan_candidate (zero SUPPORTS at last ingest).
+def deprecated_entities(conn: kuzu.Connection) -> list[Entity]:
+    """Entities currently flagged deprecated (zero SUPPORTS at last ingest, #130).
 
     The flag itself is set during ingestion (Phase 4); this is the read view.
     """
     query = f"""
-    MATCH (e:Entity) WHERE e.status = 'orphan_candidate'
+    MATCH (e:Entity) WHERE e.status = 'deprecated'
     RETURN {_ENTITY_RETURN_COLS}
     ORDER BY e.slug
     """
@@ -356,10 +356,11 @@ def entity_first_run_ids(conn: kuzu.Connection, slugs: list[str]) -> dict[str, s
 #
 # Two canonical populations are deliberately distinct (do not unify):
 #   - active_canonical_entity_slugs: status='active' AND canonical_id IS NULL —
-#     the membership set for link_resolution (a link resolves iff it lands here).
-#   - canonical_entity_slugs: canonical_id IS NULL (no status filter) — the
-#     denominator for entity_reuse / connectivity / belongs_to_coverage /
-#     link_density.
+#     the membership set for link_resolution (a link resolves iff it lands here)
+#     AND (#130) every KPI denominator — deprecated pages are invisible to
+#     entity_reuse / connectivity / belongs_to_coverage / link_density.
+#   - canonical_entity_slugs: canonical_id IS NULL (no status filter) — raw
+#     population read; no longer a KPI input since #130.
 
 
 def active_canonical_entity_slugs(conn: kuzu.Connection) -> set[str]:
@@ -391,14 +392,29 @@ def canonical_entity_slugs(conn: kuzu.Connection) -> list[str]:
 
 def total_entity_count(conn: kuzu.Connection) -> int:
     """Count of ALL Entity nodes (any status, alias or canonical). The
-    orphan_rate denominator."""
+    deprecation_rate denominator (#130)."""
     result = conn.execute("MATCH (e:Entity) RETURN count(e)")
     return int(result.get_next()[0]) if result.has_next() else 0
 
 
+def newly_deprecated_count(conn: kuzu.Connection, run_id: str) -> int:
+    """Entities marked deprecated by THIS run (status='deprecated' AND
+    last_run_id=run_id). The deprecation_rate numerator (#130) — the finalize
+    mark sets last_run_id, so the graph itself is the artifact."""
+    result = conn.execute(
+        "MATCH (e:Entity) WHERE e.status = 'deprecated' AND e.last_run_id = $rid "
+        "RETURN count(e)",
+        {"rid": run_id},
+    )
+    return int(result.get_next()[0]) if result.has_next() else 0
+
+
 def canonical_nonsummary_supports_counts(conn: kuzu.Connection) -> list[int]:
-    """For each canonical (canonical_id IS NULL) non-summary (page_type !=
-    'summary') entity, the number of DISTINCT supporting Sources.
+    """For each ACTIVE canonical (canonical_id IS NULL, status='active')
+    non-summary (page_type != 'summary') entity, the number of DISTINCT
+    supporting Sources. #130: deprecated pages are invisible to the KPI
+    denominator (pre-#130 they never survived to be read — this filter
+    preserves that effective semantics now that they persist).
 
     Returns one int per qualifying entity (0 for entities with no SUPPORTS).
     Feeds entity_reuse (share with >= 2 distinct sources).
@@ -406,6 +422,7 @@ def canonical_nonsummary_supports_counts(conn: kuzu.Connection) -> list[int]:
     result = conn.execute(
         "MATCH (e:Entity) "
         "WHERE e.canonical_id IS NULL AND e.page_type <> 'summary' "
+        "AND e.status = 'active' "
         "OPTIONAL MATCH (s:Source)-[:SUPPORTS]->(e) "
         "RETURN e.slug, count(DISTINCT s.source_id)"
     )
@@ -416,11 +433,11 @@ def canonical_nonsummary_supports_counts(conn: kuzu.Connection) -> list[int]:
 
 
 def canonical_belongs_to_count(conn: kuzu.Connection) -> int:
-    """Count of canonical (canonical_id IS NULL) entities with >= 1 BELONGS_TO
-    edge. The belongs_to_coverage numerator."""
+    """Count of ACTIVE canonical (canonical_id IS NULL, status='active' — #130)
+    entities with >= 1 BELONGS_TO edge. The belongs_to_coverage numerator."""
     result = conn.execute(
         "MATCH (e:Entity)-[:BELONGS_TO]->(:Domain) "
-        "WHERE e.canonical_id IS NULL "
+        "WHERE e.canonical_id IS NULL AND e.status = 'active' "
         "RETURN count(DISTINCT e.slug)"
     )
     return int(result.get_next()[0]) if result.has_next() else 0
@@ -443,8 +460,12 @@ def null_domain_source_count(conn: kuzu.Connection) -> int:
 
 
 def total_links_to_count(conn: kuzu.Connection) -> int:
-    """Count of all LINKS_TO edges. The link_density numerator."""
-    result = conn.execute("MATCH (:Entity)-[r:LINKS_TO]->(:Entity) RETURN count(r)")
+    """Count of LINKS_TO edges between two ACTIVE entities (#130 — deprecated
+    pages and their stale edges are invisible to link_density)."""
+    result = conn.execute(
+        "MATCH (a:Entity)-[r:LINKS_TO]->(b:Entity) "
+        "WHERE a.status = 'active' AND b.status = 'active' RETURN count(r)"
+    )
     return int(result.get_next()[0]) if result.has_next() else 0
 
 

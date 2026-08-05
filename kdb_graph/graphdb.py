@@ -207,19 +207,20 @@ class GraphDB:
         run_id: str,
         *,
         now: str | None = None,
-        detect_orphans: bool = True,
+        detect_deprecations: bool = True,
         wire_links: bool = True,
     ) -> IntakeResult:
         """Apply one compile run's deltas. Atomic per run. Delegates to intake.
 
-        Task #91: detect_orphans=False skips Phase-4 orphan-marking (the
-        orchestrator runs a single end-of-run detect_orphans() pass instead);
+        Task #91: detect_deprecations=False skips Phase-4 deprecation-marking
+        (the orchestrator runs a single end-of-run detect_deprecations() pass
+        instead; #130 renamed orphan-marking → deprecation-marking);
         wire_links=False skips per-source LINKS_TO wiring (the orchestrator runs
         a single finalize wire_links() pass over the accumulated batch — C1)."""
         self._require_writable()
         from kdb_graph.intake import apply_compile_result as _apply
         return _apply(cr, scan_dict, run_id, conn=self.conn, now=now,
-                      detect_orphans=detect_orphans, wire_links=wire_links)
+                      detect_deprecations=detect_deprecations, wire_links=wire_links)
 
     def apply_cleanup(self, retraction: dict, run_id: str) -> IntakeResult:
         """Retract entities a cleanup run removed. Delegates to intake (#68)."""
@@ -227,10 +228,11 @@ class GraphDB:
         from kdb_graph.intake import apply_cleanup as _apply
         return _apply(retraction, run_id, conn=self.conn)
 
-    def detect_orphans(self, run_id: str, *, now: str | None = None) -> list[str]:
-        """End-of-run orphan-marking pass (Task #91). Delegates to intake."""
+    def detect_deprecations(self, run_id: str, *, now: str | None = None) -> list[dict]:
+        """End-of-run deprecation-marking pass (Task #91; #130 vocabulary).
+        Returns newly deprecated {slug, page_type} pairs. Delegates to intake."""
         self._require_writable()
-        from kdb_graph.intake import detect_orphans as _detect
+        from kdb_graph.intake import detect_deprecations as _detect
         return _detect(self.conn, run_id, now=now)
 
     def wire_links(
@@ -323,9 +325,9 @@ class GraphDB:
         from kdb_graph import queries
         return queries.subgraph_by_source(self.conn, source_id)
 
-    def orphan_entities(self) -> list[Entity]:
+    def deprecated_entities(self) -> list[Entity]:
         from kdb_graph import queries
-        return queries.orphan_entities(self.conn)
+        return queries.deprecated_entities(self.conn)
 
     def cypher(self, query: str, params: dict | None = None) -> list[dict]:
         from kdb_graph import queries

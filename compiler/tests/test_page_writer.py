@@ -201,19 +201,19 @@ def test_build_page_patches_summary_has_primary_role() -> None:
     assert patches[0].frontmatter["raw_path"] == "KDB/raw/main.md"
 
 
-def test_build_page_patches_orphan_status_propagates() -> None:
+def test_build_page_patches_status_propagates() -> None:
     ctx = _ctx()
     scan = _scan(files=[_scan_file("KDB/raw/x.md")])
     cr = {"compiled_sources": [{
         "source_id": "KDB/raw/x.md", "summary_slug": "p",
         "pages": [{"slug": "p", "page_type": "summary", "title": "P",
-                   "body": "b", "status": "orphan_candidate",
+                   "body": "b", "status": "deprecated",
                    "supports_page_existence": [], "outgoing_links": [],
                    "confidence": "low"}],
         "concept_slugs": [], "article_slugs": [],
     }]}
     patches = build_page_patches(cr, scan, ctx)
-    assert patches[0].frontmatter["status"] == "orphan_candidate"
+    assert patches[0].frontmatter["status"] == "deprecated"
 
 
 def test_build_page_patches_source_missing_raises() -> None:
@@ -495,3 +495,65 @@ def test_render_page_roundtrip_frontmatter() -> None:
     assert fm["source_refs"] == [
         {"source_id": "KDB/raw/x.md", "hash": H1, "role": "primary"},
     ]
+
+
+# ===========================================================================
+# #130 — mark_deprecated / delete_page_files
+# ===========================================================================
+
+def _write_one_page(tmp_path: Path, slug: str = "p",
+                    page_type: str = "concept") -> Path:
+    """Write one page on disk via the real apply() path; return its path."""
+    ctx = _ctx(vault_root=tmp_path)
+    scan = _scan(files=[_scan_file("KDB/raw/x.md")])
+    cr = {"compiled_sources": [{
+        "source_id": "KDB/raw/x.md", "summary_slug": slug,
+        "pages": [{"slug": slug, "page_type": page_type, "title": "P",
+                   "body": "body line\n", "supports_page_existence": [],
+                   "outgoing_links": [], "confidence": "medium"}],
+        "concept_slugs": [], "article_slugs": [],
+    }]}
+    apply(tmp_path, compile_result=cr, last_scan=scan, run_ctx=ctx)
+    return tmp_path / f"KDB/wiki/{page_type}s/{slug}.md"
+
+
+def test_mark_deprecated_flips_only_the_status_line(tmp_path) -> None:
+    """#130 R-130-3: the file's frontmatter flips with the graph, surgically —
+    every other byte (body included) is unchanged."""
+    path = _write_one_page(tmp_path)
+    before = path.read_text(encoding="utf-8")
+    assert "\nstatus: active\n" in before
+
+    flipped = page_writer.mark_deprecated(
+        tmp_path, [{"slug": "p", "page_type": "concept"}])
+
+    after = path.read_text(encoding="utf-8")
+    assert flipped == [path]
+    assert before.replace("status: active", "status: deprecated") == after
+
+
+def test_mark_deprecated_idempotent_and_tolerates_missing(tmp_path) -> None:
+    path = _write_one_page(tmp_path)
+    page_writer.mark_deprecated(tmp_path, [{"slug": "p", "page_type": "concept"}])
+    stable = path.read_text(encoding="utf-8")
+
+    again = page_writer.mark_deprecated(tmp_path, [
+        {"slug": "p", "page_type": "concept"},     # already deprecated
+        {"slug": "ghost", "page_type": "concept"},  # file absent
+    ])
+    assert again == []
+    assert path.read_text(encoding="utf-8") == stable
+
+
+def test_delete_page_files_unlinks_and_tolerates_missing(tmp_path) -> None:
+    """#130 R-130-4: source-deletion erasure deletes the file outright —
+    no archive, no move."""
+    path = _write_one_page(tmp_path)
+    assert path.is_file()
+
+    deleted = page_writer.delete_page_files(tmp_path, [
+        {"slug": "p", "page_type": "concept"},
+        {"slug": "ghost", "page_type": "concept"},  # absent — tolerated
+    ])
+    assert deleted == [path]
+    assert not path.exists()
