@@ -68,7 +68,7 @@ def _job(vault: Path, source_id: str) -> CompileJob:
     return CompileJob(
         source_id=source_id,
         abs_path=str(vault / source_id),
-        context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
+        context_snapshot=ContextSnapshot(source_id=source_id),
     )
 
 
@@ -1066,7 +1066,7 @@ def test_source_text_for_returns_tuple_with_frontmatter(tmp_path: Path) -> None:
     job = CompileJob(
         source_id="essay",
         abs_path=str(src),
-        context_snapshot=ContextSnapshot(source_id="essay", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="essay"),
     )
     fm, body = source_text_for(job)
     assert isinstance(fm, SourceFrontmatter)
@@ -1089,7 +1089,7 @@ def test_source_text_for_handles_pristine_source(tmp_path: Path) -> None:
     job = CompileJob(
         source_id="essay",
         abs_path=str(src),
-        context_snapshot=ContextSnapshot(source_id="essay", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="essay"),
     )
     fm, body = source_text_for(job)
     assert fm is None

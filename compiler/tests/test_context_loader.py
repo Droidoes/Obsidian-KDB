@@ -211,6 +211,110 @@ class TestTierRanking:
         assert snapshot.source_id == "src-alpha"
 
 
+class TestSnapshotTierShape:
+    """#129: the snapshot is tier-structured — t1/t2/t3 lists, pairwise
+    disjoint, each in global rank order; `pages` is the derived flat view
+    (t1+t2+t3). Selection is untouched, so these shape tests double as the
+    parity net: tier membership + order pin the pre-#129 slug sequence."""
+
+    def test_to_dict_shape(self, gdb):
+        d = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-a"],
+            page_cap=50,
+        ).snapshot.to_dict()
+        assert set(d.keys()) == {"source_id", "t1", "t2", "t3"}
+        assert "pages" not in d
+        for tier in ("t1", "t2", "t3"):
+            assert isinstance(d[tier], list)
+            for page in d[tier]:
+                assert set(page.keys()) == {
+                    "slug", "title", "page_type", "outgoing_links"}
+
+    def test_tiers_disjoint_union_is_rank_order(self, gdb):
+        snap = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-a"],
+            page_cap=50,
+        ).snapshot
+        t1 = [p.slug for p in snap.t1]
+        t2 = [p.slug for p in snap.t2]
+        t3 = [p.slug for p in snap.t3]
+        # Topology: T1 = src-alpha SUPPORTS; T2 = the selector hit; T3 =
+        # 1-hop of seeds minus seeds → leaf-b (via hub); orphan-x excluded.
+        assert set(t1) == {"hub", "spoke-1", "spoke-2"}
+        assert t2 == ["leaf-a"]
+        assert t3 == ["leaf-b"]
+        # Disjoint, and the flat view is the strict tier concatenation.
+        assert len(t1 + t2 + t3) == len(set(t1 + t2 + t3))
+        assert [p.slug for p in snap.pages] == t1 + t2 + t3
+
+    def test_t1_carries_exactly_source_supported(self, gdb):
+        """The anti-churn precondition: the model is always shown exactly
+        the pages this source currently SUPPORTS, in its own tier."""
+        snap = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            page_cap=50,
+        ).snapshot
+        assert {p.slug for p in snap.t1} == {"hub", "spoke-1", "spoke-2"}
+
+    def test_tier_lists_match_telemetry(self, gdb):
+        """The snapshot tiers and the telemetry TierRecords are the same
+        partition — under a binding cap they are the cap-truncated prefixes
+        (T1 survives first, §3.2), at full delivery they are the tier sets."""
+        # Binding cap: 3 T1 + exactly 1 T2 slot — selector rank 1 survives.
+        capped = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a"],
+            page_cap=4,
+        )
+        for tier_pages, record in (
+            (capped.snapshot.t1, capped.telemetry.t1),
+            (capped.snapshot.t2, capped.telemetry.t2),
+            (capped.snapshot.t3, capped.telemetry.t3),
+        ):
+            assert [p.slug for p in tier_pages] == record.slugs
+        assert capped.telemetry.t2.slugs == ["leaf-b"]   # cap-truncated
+        # Full delivery.
+        full = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            t2_selection=["leaf-b", "leaf-a"],
+            page_cap=50,
+        )
+        for tier_pages, record in (
+            (full.snapshot.t1, full.telemetry.t1),
+            (full.snapshot.t2, full.telemetry.t2),
+            (full.snapshot.t3, full.telemetry.t3),
+        ):
+            assert [p.slug for p in tier_pages] == record.slugs
+        assert full.telemetry.t2.slugs == ["leaf-b", "leaf-a"]
+
+    def test_empty_tiers_serialize_empty(self, gdb):
+        """No search ⇒ t2 is [] in the dict; empty tiers are valid (R-P3a-3)."""
+        d = context_loader.build_context_snapshot(
+            gdb.conn,
+            source_id="src-alpha",
+            page_cap=50,
+        ).snapshot.to_dict()
+        assert d["t1"] != []
+        assert d["t2"] == []
+
+    def test_empty_graph_all_tiers_empty(self, tmp_path):
+        with GraphDB(tmp_path / "empty-tier-graph") as g:
+            result = context_loader.build_context_snapshot(
+                g.conn, source_id="nonexistent", page_cap=50)
+        snap = result.snapshot
+        assert snap.t1 == [] and snap.t2 == [] and snap.t3 == []
+        assert snap.pages == []
+        assert snap.to_dict() == {
+            "source_id": "nonexistent", "t1": [], "t2": [], "t3": []}
+
+
 class TestT2SelectionContract:
     def test_t2_selection_intersected_with_pool_minus_t1(self, gdb):
         """T2 = t2_selection ∩ (active pool − T1), order preserved — the

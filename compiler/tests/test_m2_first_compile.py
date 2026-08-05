@@ -60,7 +60,7 @@ def test_first_real_compile_end_to_end(tmp_path: Path) -> None:
     job = CompileJob(
         source_id=source_id,
         abs_path=str(abs_path),
-        context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
+        context_snapshot=ContextSnapshot(source_id=source_id),
     )
 
     cs, logs, warnings, err = compiler.compile_one(

@@ -56,7 +56,7 @@ def _job(vault: Path, source_id: str) -> CompileJob:
     return CompileJob(
         source_id=source_id,
         abs_path=str(vault / source_id),
-        context_snapshot=ContextSnapshot(source_id=source_id, pages=[]),
+        context_snapshot=ContextSnapshot(source_id=source_id),
     )
 
 

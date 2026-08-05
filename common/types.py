@@ -326,14 +326,30 @@ class ContextPage:
 
 @dataclass
 class ContextSnapshot:
-    """Per-source manifest snapshot passed into the prompt."""
+    """Per-source graph snapshot passed into the prompt (#129: tier-structured).
+
+    t1 = pages this source SUPPORTS (its own prior compiles) — the model
+        re-emits/extends these under the same slug.
+    t2 = pass-1.5 selector hits from other sources — link, don't duplicate.
+    t3 = 1-hop neighbors of t1∪t2 — weak context.
+    Tiers are pairwise disjoint by construction; each list preserves the
+    global rank order (strict tier ordering: t1, then t2, then t3)."""
     source_id: str
-    pages: list[ContextPage] = field(default_factory=list)
+    t1: list[ContextPage] = field(default_factory=list)
+    t2: list[ContextPage] = field(default_factory=list)
+    t3: list[ContextPage] = field(default_factory=list)
+
+    @property
+    def pages(self) -> list[ContextPage]:
+        """Flat rank-ordered view (t1 then t2 then t3) — the pre-#129 shape."""
+        return [*self.t1, *self.t2, *self.t3]
 
     def to_dict(self) -> dict:
         return {
             "source_id": self.source_id,
-            "pages": [p.to_dict() for p in self.pages],
+            "t1": [p.to_dict() for p in self.t1],
+            "t2": [p.to_dict() for p in self.t2],
+            "t3": [p.to_dict() for p in self.t3],
         }
 
 
@@ -378,7 +394,7 @@ class ContextTelemetry:           # builder-owned — NO run_id, NO schema metad
 
 @dataclass(frozen=True)
 class ContextBuildResult:
-    snapshot: ContextSnapshot     # prompt-facing — unchanged
+    snapshot: ContextSnapshot     # prompt-facing — tier-structured (#129)
     telemetry: ContextTelemetry   # persistence-facing — never serialized into the prompt
 
 

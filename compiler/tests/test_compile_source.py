@@ -144,7 +144,7 @@ def test_source_text_for_prefers_in_memory(tmp_path: Path) -> None:
     fm = _fm()
     job = CompileJob(
         source_id="KDB/raw/s.md", abs_path=str(p),
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md"),
         source_text="MEM BODY", frontmatter=fm,
     )
     got_fm, got_text = compiler.source_text_for(job)
@@ -158,7 +158,7 @@ def test_source_text_for_falls_back_to_disk(tmp_path: Path) -> None:
     p.write_text("DISK BODY", encoding="utf-8")
     job = CompileJob(
         source_id="KDB/raw/s.md", abs_path=str(p),
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md"),
     )
     got_fm, got_text = compiler.source_text_for(job)
     assert got_text == "DISK BODY"
@@ -320,7 +320,7 @@ def test_compile_source_accepts_prebuilt_snapshot(tmp_path, monkeypatch):
     ctx = RunContext.new(dry_run=False, vault_root=vault)
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry", _fake_model(_good_response("s.md")))
-    snap = ContextSnapshot(source_id="KDB/raw/s.md", pages=[])
+    snap = ContextSnapshot(source_id="KDB/raw/s.md")
 
     # conn=None proves the pre-built snapshot path does no graph read.
     result = compiler.compile_source(
@@ -515,7 +515,7 @@ def test_precall_underivable_stem_inner_and_outer_validate(tmp_path, monkeypatch
         vault_root=vault, state_root=state_root, ctx=ctx,
         ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
         provider="p", model="m", max_tokens=4096,
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/日本語.md", pages=[]))
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/日本語.md"))
 
     # OUTER stage pinned (≠ generic "compile")
     assert not result.ok and result.cr is None
@@ -557,7 +557,7 @@ def test_postcall_semantic_failure_inner_and_outer_validate(tmp_path, monkeypatc
         vault_root=vault, state_root=state_root, ctx=ctx,
         ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
         provider="p", model="m", max_tokens=4096,
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]))
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md"))
 
     # OUTER stage pinned (≠ generic "compile")
     assert not result.ok and result.cr is None
@@ -993,7 +993,7 @@ def test_compile_source_caller_supplied_snapshot_never_searches_writes_no_record
         vault_root=vault, state_root=state_root, ctx=ctx,
         ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
         provider="p", model="m", max_tokens=4096,
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md"),
     )
     assert result.ok, (result.failure_stage, result.error)
     context_dir = state_root / "runs" / ctx.run_id / "context"
@@ -1052,7 +1052,7 @@ def test_compile_source_search_counters_caller_supplied_snapshot_false(
         vault_root=vault, state_root=state_root, ctx=ctx,
         ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
         provider="p", model="m", max_tokens=4096,
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md", pages=[]),
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/s.md"),
     )
     assert result.ok, (result.failure_stage, result.error)
     assert result.search_attempted is False

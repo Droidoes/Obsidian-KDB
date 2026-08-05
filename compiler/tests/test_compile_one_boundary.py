@@ -22,8 +22,7 @@ class _Resp:
 
 def _job(source_id):
     return CompileJob(source_id=source_id, abs_path="",
-                      context_snapshot=ContextSnapshot(source_id=source_id,
-                                                       pages=[]),
+                      context_snapshot=ContextSnapshot(source_id=source_id),
                       source_text="body", frontmatter=None)
 
 

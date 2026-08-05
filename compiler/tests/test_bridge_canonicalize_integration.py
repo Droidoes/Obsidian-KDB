@@ -80,7 +80,7 @@ def test_compile_source_end_to_end_through_boundary(tmp_path, monkeypatch):
         vault_root=tmp_path, state_root=state_root, ctx=_ctx(tmp_path),
         ledger=AliasLedger(),                     # empty ledger
         provider="test", model="test-model", max_tokens=1000,
-        context_snapshot=ContextSnapshot(source_id="KDB/raw/x.md", pages=[]))
+        context_snapshot=ContextSnapshot(source_id="KDB/raw/x.md"))
     assert res.cr is not None and res.failure_stage is None
     pages = res.cr["compiled_sources"][0]["pages"]
     by_type = {p["page_type"]: p for p in pages}

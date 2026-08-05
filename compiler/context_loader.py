@@ -11,10 +11,16 @@ resolver wrappers, the cold-start 2-hop widening, and the `source_text` /
 `mode` / `resolver` params — is DELETED, no compatibility shim.
 
 Task #122: build_context_snapshot returns a ContextBuildResult — TWO products:
-the prompt-facing ContextSnapshot (byte-identical) + the persistence-facing
-ContextTelemetry (event-time capture: per-expression key outcomes, pre/post-cap
-tier records, the pass-1.5 search summary). The telemetry is NEVER serialized
-into the prompt.
+the prompt-facing ContextSnapshot + the persistence-facing ContextTelemetry
+(event-time capture: per-expression key outcomes, pre/post-cap tier records,
+the pass-1.5 search summary). The telemetry is NEVER serialized into the
+prompt.
+
+Task #129: the snapshot is TIER-STRUCTURED (t1/t2/t3 ContextPage lists) — the
+projection partitions the ranked pages by tier so the prompt can state a
+different obligation per tier. Selection, scoring, strict tier order, and the
+global page_cap are untouched: `snapshot.pages` (derived flat view) is exactly
+the slug sequence the pre-#129 flat snapshot emitted for the same inputs.
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
@@ -63,7 +69,8 @@ def build_context_snapshot(
 ) -> ContextBuildResult:
     """Build a tier-ranked, source-specific context snapshot from GraphDB —
     returning BOTH products (Task #122): the prompt-facing ContextSnapshot
-    (byte-identical to pre-#122) and the persistence-facing ContextTelemetry
+    (tier-structured since #129: t1/t2/t3 lists — the same ranked pages,
+    partitioned by tier) and the persistence-facing ContextTelemetry
     (event-time capture; never serialized into the prompt).
 
     Pure graph reads — no manifest access, no env var reads.
@@ -93,7 +100,7 @@ def build_context_snapshot(
         # empty space upstream — populated, not null).
         zero = TierRecord(candidates=0, delivered=0, slugs=[])
         return ContextBuildResult(
-            snapshot=ContextSnapshot(source_id=source_id, pages=[]),
+            snapshot=ContextSnapshot(source_id=source_id),
             telemetry=ContextTelemetry(
                 source_id=source_id,
                 keys_emitted=keys_emitted,
@@ -179,11 +186,22 @@ def build_context_snapshot(
     for slug in t3_slugs:
         tier_of[slug] = 3
     tier_slugs: dict[int, list[str]] = {1: [], 2: [], 3: []}
+    tier_pages: dict[int, list[ContextPage]] = {1: [], 2: [], 3: []}
     for page in pages:
-        tier_slugs[tier_of[page.slug]].append(page.slug)
+        tier = tier_of[page.slug]
+        tier_slugs[tier].append(page.slug)
+        tier_pages[tier].append(page)
 
+    # #129: the snapshot carries the SAME ranked pages, partitioned by tier —
+    # snapshot.t{i} slugs are identical to telemetry.t{i}.slugs, and the
+    # derived flat `snapshot.pages` is the pre-#129 rank-ordered sequence.
     return ContextBuildResult(
-        snapshot=ContextSnapshot(source_id=source_id, pages=pages),
+        snapshot=ContextSnapshot(
+            source_id=source_id,
+            t1=tier_pages[1],
+            t2=tier_pages[2],
+            t3=tier_pages[3],
+        ),
         telemetry=ContextTelemetry(
             source_id=source_id,
             keys_emitted=keys_emitted,

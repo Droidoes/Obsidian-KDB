@@ -26,11 +26,11 @@ def test_pass2_plumbing_on_empty_context_state_c() -> None:
     Deepseek F-5: blueprint v0.1 assumed Pass-2 handles empty context but
     never verified. This test exercises build_prompt directly to confirm:
     (a) no exception, (b) prompt assembled, (c) the EXISTING CONTEXT block
-    renders as a valid JSON envelope with empty pages array. No LLM cost.
+    renders as a valid JSON envelope with empty tier arrays (#129). No LLM cost.
 
     The system prompt is repo-packaged (post-#115) — no vault fixture.
     """
-    empty_snapshot = ContextSnapshot(source_id="KDB/raw/stub.md", pages=[])
+    empty_snapshot = ContextSnapshot(source_id="KDB/raw/stub.md")
 
     built = build_prompt(
         source_name="stub.md",
@@ -42,20 +42,20 @@ def test_pass2_plumbing_on_empty_context_state_c() -> None:
     assert built.system, "system prompt empty"
     assert built.user, "user prompt empty"
 
-    # (b) The EXISTING CONTEXT block is present and renders empty pages.
+    # (b) The EXISTING CONTEXT block is present and renders empty tiers.
     assert "## EXISTING CONTEXT (graph snapshot)" in built.user
     # Extract the JSON block between EXISTING CONTEXT and the next "## " header.
     context_section_start = built.user.index("## EXISTING CONTEXT")
     next_section_start = built.user.index("## ", context_section_start + 5)
     context_section = built.user[context_section_start:next_section_start]
-    # Parse the JSON inside the section to verify it's well-formed and pages=[].
+    # Parse the JSON inside the section to verify it's well-formed; #129:
+    # the envelope carries tier arrays, all empty here.
     json_start = context_section.index("{")
     json_end = context_section.rindex("}") + 1
     context_doc = json.loads(context_section[json_start:json_end])
     assert context_doc["source_id"] == "KDB/raw/stub.md"
-    assert context_doc["pages"] == [], (
-        f"Expected empty pages array, got: {context_doc['pages']!r}"
-    )
+    assert context_doc["t1"] == context_doc["t2"] == context_doc["t3"] == []
+    assert "pages" not in context_doc
 
     # (c) Source text + schema + exemplar sections all rendered.
     assert "## SOURCE CONTENT" in built.user
