@@ -560,7 +560,8 @@ def _cold_wipe(
     """#135: erase derived state so the run re-plans from sources alone.
 
     Targets (derived, fully rebuildable): the KDB/wiki tree, the graph
-    directory, manifest.json, and the canonicalization alias ledger (whose
+    database (single file or directory, depending on the Kuzu layout),
+    manifest.json, and the canonicalization alias ledger (whose
     entries reference graph entities that no longer exist post-wipe).
     Preserved: pipelines.json (config, not derived), state/runs/ (audit
     trail / #132 replay journals), and per-run outputs
@@ -584,8 +585,12 @@ def _cold_wipe(
         return stats
     if wiki_root.exists():
         shutil.rmtree(wiki_root)
-    if graph_path.exists():
+    # Kuzu's layout is a single FILE in current versions (older layouts used
+    # a directory) — remove whichever is present.
+    if graph_path.is_dir():
         shutil.rmtree(graph_path)
+    elif graph_path.exists():
+        graph_path.unlink()
     for p in (manifest_path, alias_ledger):
         if p.exists():
             p.unlink()

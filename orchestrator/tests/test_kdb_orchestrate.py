@@ -5,6 +5,7 @@ pattern). Run: python -m pytest orchestrator/tests/test_kdb_orchestrate.py -m "n
 """
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -1894,6 +1895,28 @@ def test_cold_wipe_removes_derived_state(tmp_path):
     assert (state_root / "pipelines.json").exists()
     assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
     assert (state_root / "last_orchestrate.json").exists()
+
+
+def test_cold_wipe_removes_single_file_graph(tmp_path):
+    """Kuzu's single-file layout: KDB/graph is a FILE, not a directory —
+    the wipe must unlink it, not rmtree it (live defect 2026-08-06: the
+    first real --cold run crashed NotADirectoryError mid-wipe, after the
+    wiki tree was already gone; every test had seeded a directory graph)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    _seed_derived_state(vault, state_root, graph_path)
+    shutil.rmtree(graph_path)  # replace the dir seed with a file seed
+    graph_path.write_text("old graph", encoding="utf-8")
+
+    stats = kdb_orchestrate._cold_wipe(
+        vault_root=vault, state_root=state_root, graph_path=graph_path)
+
+    assert stats["graph_removed"] is True
+    assert not graph_path.exists()
+    assert not (vault / "KDB" / "wiki").exists()
+    assert not (state_root / "manifest.json").exists()
+    assert not (state_root / "canonicalization" / "aliases.json").exists()
 
 
 def test_cold_wipe_dry_run_reports_without_deleting(tmp_path):
