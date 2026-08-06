@@ -234,6 +234,9 @@ def test_finalize_deprecates_dropped_pages_in_graph_and_on_disk(tmp_path):
     assert stats["deprecated"] == 1
     assert stats["deprecated_files"] == 1
     assert "status: deprecated" in f.read_text(encoding="utf-8")
+    # _finalize itself writes no run-level artifacts: retraction journals are
+    # gone post-#130, and the #132 replay journal/sidecars are archived by
+    # run()'s finally block, not here (see the #132 run()-level pins below).
     assert not (state_root / "runs" / ctx.run_id / "retraction.json").exists()
     assert not (state_root / "runs" / f"{ctx.run_id}.json").exists()
 
@@ -1508,3 +1511,337 @@ def test_run_header_search_counters_envelope_write_failure(tmp_path, monkeypatch
         .read_text(encoding="utf-8"))
     assert hdr["searches_attempted"] == 1
     assert hdr["searches_written"] == 0
+
+
+# ============================================================================
+# #132: replay journal + sidecar archival (D39 for the orchestrator era)
+# ============================================================================
+
+def _journal_paths(state_root: Path, run_id: str) -> tuple[Path, Path]:
+    return (state_root / "runs" / f"{run_id}.json",
+            state_root / "runs" / run_id)
+
+
+def _rows(conn, query: str) -> list:
+    r = conn.execute(query)
+    out = []
+    while r.has_next():
+        out.append(list(r.get_next()))
+    return out
+
+
+def test_run_archives_replay_journal_and_sidecars(tmp_path, monkeypatch):
+    """#132 happy path: one signal source + one noise source ⇒ journal with
+    2.3 eligibility fields, archived compile_result byte-equal to the flat
+    baton, and a last_scan union containing ONLY the committed source's
+    post-embed entry (noise never reached intake → never archived)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n", encoding="utf-8")
+    (vault / "noise").mkdir()
+    (vault / "noise" / "b.md").write_text("# B\n\nStandup notes.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+    assert res.ok, res.exit_reason
+
+    journal_path, sidecar = _journal_paths(state_root, res.run_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["schema_version"] == "2.3"
+    assert journal["producer"] == "kdb-orchestrate"
+    assert journal["run_id"] == res.run_id
+    assert journal["started_at"] and journal["finished_at"]
+    assert journal["dry_run"] is False
+    assert journal["success"] is True
+    assert journal["replayable_payload"] is True
+    assert journal["finalize_progress"] == "deprecated"
+    assert set(journal["counts"]) == {
+        "sources_scanned", "sources_compiled", "sources_noise",
+        "sources_failed", "sources_moved", "sources_deleted"}
+    assert journal["counts"]["sources_compiled"] == 1
+    assert journal["counts"]["sources_noise"] == 1
+
+    archived = json.loads((sidecar / "compile_result.json").read_text(encoding="utf-8"))
+    baton = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
+    assert archived == baton                       # byte-identical payloads
+    assert [cs["source_id"] for cs in archived["compiled_sources"]] == ["AIML/a.md"]
+
+    scan = json.loads((sidecar / "last_scan.json").read_text(encoding="utf-8"))
+    assert [f["path"] for f in scan["files"]] == ["AIML/a.md"]
+    assert scan["to_compile"] == ["AIML/a.md"]
+    assert scan["moved_files"] == [] and scan["to_reconcile"] == []
+    # Post-embed override: the archived hash is the file's hash AFTER the
+    # Pass-1 frontmatter embed — the same value the manifest recorded.
+    manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
+    assert scan["files"][0]["current_hash"] == manifest["sources"]["AIML/a.md"]["hash"]
+    assert not (sidecar / "retraction.json").exists()   # still gone post-#130
+
+
+def test_run_archives_partial_journal_on_manifest_post_graph_abort(tmp_path, monkeypatch):
+    """#132 β residual: graph COMMITTED but manifest write threw ⇒ run aborts
+    (success=false), yet the archived payload INCLUDES the graph-committed
+    source — replay rebuilds the graph, and the graph has these pages."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+
+    def model(req):
+        if "a.md" in req.prompt:
+            return _fake_model(_compiled_response("a.md", "summary-a"))(req)
+        return _fake_model(_compiled_response("b.md", "summary-b"))(req)
+
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
+    original_commit_source = kdb_orchestrate._commit_source
+
+    def flaky_commit(*args, **kwargs):
+        if kwargs["source_id"] == "AIML/a.md":
+            return kdb_orchestrate.CommitResult(
+                failure_stage="manifest_post_graph", graph_committed=True,
+                exception_type="OSError", error="disk full",
+                scan_entry_used={"path": "AIML/a.md", "current_hash": "h-post-embed"})
+        return original_commit_source(*args, **kwargs)
+
+    monkeypatch.setattr(kdb_orchestrate, "_commit_source", flaky_commit)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+    assert res.exit_code == 1 and res.exit_reason.startswith("manifest_post_graph")
+
+    journal_path, sidecar = _journal_paths(state_root, res.run_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["success"] is False
+    assert journal["replayable_payload"] is True      # D50 amendment leg
+    assert journal["finalize_progress"] == "none"     # finalize never ran
+    archived = json.loads((sidecar / "compile_result.json").read_text(encoding="utf-8"))
+    assert [cs["source_id"] for cs in archived["compiled_sources"]] == ["AIML/a.md"]
+    scan = json.loads((sidecar / "last_scan.json").read_text(encoding="utf-8"))
+    assert scan["files"] == [{"path": "AIML/a.md", "current_hash": "h-post-embed"}]
+    assert scan["to_compile"] == ["AIML/a.md"]
+
+
+def test_run_archives_applied_moved_op_only(tmp_path, monkeypatch):
+    """#132 reconcile phase: run 2 renames m.md → m2.md (content unchanged) ⇒
+    the journal archives the APPLIED MOVED op + moved entry, with empty
+    commits phase and finalize_progress='none' (finalize skipped)."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "m.md").write_text("# M\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("m.md", "summary-m")))
+
+    res1 = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+    assert res1.ok, res1.exit_reason
+    (vault / "AIML" / "m.md").rename(vault / "AIML" / "m2.md")
+
+    res2 = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+    assert res2.ok, res2.exit_reason
+    assert res2.counts["sources_moved"] == 1
+
+    journal_path, sidecar = _journal_paths(state_root, res2.run_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["success"] is True
+    assert journal["finalize_progress"] == "none"
+    assert journal["counts"]["sources_moved"] == 1
+    archived = json.loads((sidecar / "compile_result.json").read_text(encoding="utf-8"))
+    assert archived["compiled_sources"] == []
+    scan = json.loads((sidecar / "last_scan.json").read_text(encoding="utf-8"))
+    assert scan["files"] == [] and scan["to_compile"] == []
+    assert [f["path"] for f in scan["moved_files"]] == ["AIML/m2.md"]
+    assert len(scan["to_reconcile"]) == 1
+    op = scan["to_reconcile"][0]
+    assert op["type"] == "MOVED"
+    assert "AIML/m.md" in json.dumps(op) and "AIML/m2.md" in json.dumps(op)
+
+
+def test_run_dry_run_archives_journal_marked_dry_run(tmp_path, monkeypatch):
+    """#132: dry runs early-return before the graph opens — no payload exists
+    — but still archive a journal (empty sidecars) marked dry_run=true; the
+    adapter's eligibility gate skips it on replay."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096,
+        dry_run=True)
+    assert res.ok and res.exit_reason == "dry-run"
+
+    journal_path, sidecar = _journal_paths(state_root, res.run_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["dry_run"] is True
+    assert journal["success"] is True
+    assert journal["finalize_progress"] == "none"
+    archived = json.loads((sidecar / "compile_result.json").read_text(encoding="utf-8"))
+    assert archived["compiled_sources"] == []
+    scan = json.loads((sidecar / "last_scan.json").read_text(encoding="utf-8"))
+    assert scan == {"files": [], "to_compile": [],
+                    "moved_files": [], "to_reconcile": []}
+
+
+def test_journal_archive_failure_sets_replayable_false(tmp_path, monkeypatch):
+    """#132 warn-only archival: sidecar writes failing ⇒ journal still written
+    with replayable_payload=false (the adapter skips it), run unaffected."""
+    from orchestrator import journal_writer
+
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nNote.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    real_write = journal_writer.atomic_write_json
+
+    def disk_full(path, payload):
+        p = str(path)
+        if "/runs/" in p and p.endswith(("compile_result.json", "last_scan.json")):
+            raise OSError("disk full")
+        return real_write(path, payload)
+
+    monkeypatch.setattr(journal_writer, "atomic_write_json", disk_full)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=tmp_path / "graph", provider="p", model="m", max_tokens=4096)
+    assert res.ok, res.exit_reason
+
+    journal_path, _ = _journal_paths(state_root, res.run_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert journal["success"] is True
+    assert journal["replayable_payload"] is False
+
+
+def test_run_journals_rebuild_identical_graph_e2e(tmp_path, monkeypatch):
+    """#132 E2E (D39 restored): three orchestrator runs — cold (3 sources),
+    warm no-op, then an edit (page dropped) + a source deletion — each
+    archiving 2.3 journals. `rebuild` from those journals alone must produce
+    a graph IDENTICAL to the live one (entities, sources, SUPPORTS, LINKS_TO,
+    domains), with zero LLM calls on the replay side."""
+    from kdb_graph.adapters.obsidian_runs import ObsidianRunsAdapter
+    from kdb_graph.rebuilder import rebuild
+
+    def _page(slug, ptype="concept", body="Body."):
+        return {"slug": slug, "page_type": ptype, "title": slug, "body": body}
+
+    def model(req):
+        p = req.prompt
+        if "a.md" in p:
+            if "Version two" in p:
+                return _fake_model({"pages": [
+                    _page("summary-a", "summary", "Overview a v2."),
+                    _page("concept-x2", body="Fresh.")]})(req)
+            return _fake_model({"pages": [
+                _page("summary-a", "summary", "Overview a."),
+                _page("concept-x", body="Links [[concept-y]].")]})(req)
+        if "b.md" in p:
+            return _fake_model({"pages": [
+                _page("summary-b", "summary", "Overview b."),
+                _page("concept-y", body="Deep y.")]})(req)
+        return _fake_model({"pages": [
+            _page("summary-c", "summary", "Overview c.")]})(req)
+
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nVersion one.\n", encoding="utf-8")
+    (vault / "AIML" / "b.md").write_text("# B\n\nNote b.\n", encoding="utf-8")
+    (vault / "AIML" / "c.md").write_text("# C\n\nNote c.\n", encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
+    # Distinct run_ids: RunContext.new mints from now_iso() at second precision
+    # — three runs inside one second would collide and overwrite journals.
+    from datetime import datetime, timedelta, timezone
+    base = datetime(2026, 8, 6, 12, 0, 0, tzinfo=timezone.utc).astimezone()
+    tick = {"n": 0}
+
+    def fake_now_iso():
+        tick["n"] += 1
+        return (base + timedelta(seconds=tick["n"])).replace(microsecond=0).isoformat()
+
+    monkeypatch.setattr("common.run_context.now_iso", fake_now_iso)
+    # The package conftest scripts ONE selector reply; this test compiles 4
+    # times (3 cold + 1 warm-edit), so the selector (non-empty graph) fires 3
+    # times — script enough honest-empty replies for all of them.
+    from kdb_search.tests import fakes
+    monkeypatch.setattr(
+        "compiler.search_adapter.call_model",
+        fakes.FakeSelector(*[
+            fakes.ScriptedReply(fakes.retained_empty_document())
+            for _ in range(4)]))
+
+    def _run():
+        res = kdb_orchestrate.run(
+            pipeline_id="vt", vault_root=vault, state_root=state_root,
+            graph_path=graph_path, provider="p", model="m", max_tokens=4096)
+        assert res.ok, res.exit_reason
+        return res
+
+    res1 = _run()                                    # cold: 3 sources
+    assert res1.counts["sources_compiled"] == 3
+    res2 = _run()                                    # warm no-op
+    assert res2.counts["sources_compiled"] == 0
+    (vault / "AIML" / "a.md").write_text("# A\n\nVersion two.\n", encoding="utf-8")
+    (vault / "AIML" / "c.md").unlink()
+    res3 = _run()                                    # edit + deletion
+    assert res3.counts["sources_compiled"] == 1
+    assert res3.counts["sources_deleted"] == 1
+
+    journals = state_root / "runs"
+    assert len(list(journals.glob("*.json"))) == 3   # one journal per run
+    result = rebuild(graph_dir=tmp_path / "rebuilt",
+                     adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 3 and result.failed == 0
+
+    queries = [
+        ("MATCH (e:Entity) RETURN e.slug, e.page_type, e.status, "
+         "e.canonical_id, e.first_run_id, e.last_run_id ORDER BY e.slug"),
+        ("MATCH (s:Source) RETURN s.source_id, s.status, s.hash, "
+         "s.ingest_state, s.ingest_count, s.last_run_id, s.moved_to "
+         "ORDER BY s.source_id"),
+        ("MATCH (s:Source)-[r:SUPPORTS]->(e:Entity) "
+         "RETURN s.source_id, e.slug, r.role ORDER BY s.source_id, e.slug"),
+        ("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+         "RETURN a.slug, b.slug ORDER BY a.slug, b.slug"),
+        ("MATCH (d:Domain) RETURN d.name ORDER BY d.name"),
+        ("MATCH (s:Source)-[:BELONGS_TO]->(d:Domain) "
+         "RETURN s.source_id, d.name ORDER BY s.source_id, d.name"),
+    ]
+    with GraphDB(graph_path) as live, GraphDB(tmp_path / "rebuilt") as reb:
+        for q in queries:
+            assert _rows(reb.conn, q) == _rows(live.conn, q), q
+        statuses = {r[0]: r[1] for r in _rows(
+            live.conn, "MATCH (e:Entity) RETURN e.slug, e.status")}
+        src_status = {r[0]: r[1] for r in _rows(
+            live.conn, "MATCH (s:Source) RETURN s.source_id, s.status")}
+    # Semantic spots: dropped page deprecated (not erased), deleted source's
+    # sole-supported page ERASED, source row marked deleted.
+    assert statuses["concept-x"] == "deprecated"
+    assert statuses["concept-x2"] == "active"
+    assert "summary-c" not in statuses
+    assert src_status["AIML/c.md"] == "deleted"

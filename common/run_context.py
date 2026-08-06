@@ -96,7 +96,9 @@ class RunContext:
         }
 
     def append_log(self, level: str, message: str, **extras) -> None:
-        """Accumulate a log entry; persisted to state/runs/<run_id>.json journal."""
+        """Accumulate a log entry in memory. (The per-run journal at
+        state/runs/<run_id>.json — archived by run()'s finally per #132 —
+        carries eligibility/audit fields, not these entries.)"""
         entry = {"level": level, "message": message, "run_id": self.run_id}
         entry.update(extras)
         self.log_entries.append(entry)

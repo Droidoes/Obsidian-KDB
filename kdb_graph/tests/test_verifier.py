@@ -264,6 +264,41 @@ def test_source_state_preflight_reports_divergences(graph_dir, tmp_path):
     assert all(d.source == "source_state_preflight" for d in divs)
 
 
+def test_source_state_preflight_skips_non_graph_run_states(graph_dir, tmp_path):
+    """Noise/pending/error sources are correctly absent from the graph —
+    preflight must not flag them (#132 sandbox gate false positive)."""
+    journals_dir = tmp_path / "runs"
+    with GraphDB(graph_dir) as gdb:
+        _seed_and_journal(gdb, journals_dir)
+        base = {
+            "status": "active",
+            "compile_count": 0,
+            "hash": "sha256:x",
+            "file_type": "markdown",
+            "size_bytes": 10,
+            "last_run_id": "run-1",
+        }
+        manifest = {
+            "sources": {
+                SRC_ID: {**base, "run_state": "in_graph_db", "compile_count": 1,
+                         "hash": "sha256:abc", "size_bytes": 100},
+                "KDB/raw/noise.md": {**base, "run_state": "no_graph_db"},
+                "KDB/raw/binary.md": {**base, "run_state": "no_graph_db"},
+                "KDB/raw/pending.md": {**base, "run_state": "pending"},
+                "KDB/raw/failed.md": {**base, "run_state": "error_compile"},
+                # in_graph_db but absent from the graph → genuine drift, flagged.
+                "KDB/raw/ghost.md": {**base, "run_state": "in_graph_db",
+                                     "compile_count": 1},
+            },
+        }
+        divs = verifier.verify_source_state(gdb.conn, manifest)
+    missing = {
+        d.key for d in divs
+        if d.kind == "missing_in_live" and d.category == "source"
+    }
+    assert missing == {"KDB/raw/ghost.md"}
+
+
 # ---------- 8. divergence source tagging ----------
 
 def test_divergences_are_properly_tagged(graph_dir, tmp_path):

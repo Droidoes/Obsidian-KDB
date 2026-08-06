@@ -1218,3 +1218,309 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
                            "RETURN a.slug, b.slug")
         }
     assert rebuilt_edges == live_edges
+
+
+# ============================================================================
+# 8. Orchestrator-era 2.3 journals (#132) — two-phase live-order replay
+#    with a finalize_progress-gated derive
+# ============================================================================
+
+from kdb_graph.intake import (  # noqa: E402 — section-local imports
+    apply_compile_result,
+    detect_deprecations,
+    wire_links,
+)
+
+
+def _write_run_23(
+    journals_dir: Path,
+    run_id: str,
+    mutation: dict,
+    scan: dict,
+    *,
+    started_at: str,
+    finalize_progress: str = "deprecated",
+    dry_run: bool = False,
+    schema_version: str = "2.3",
+) -> None:
+    """Write one orchestrator-era (2.3) run tree: journal + both sidecars.
+
+    Mirrors the journal shape the orchestrator archives per #132: slim
+    eligibility fields + `finalize_progress` (the derive gate). The sidecar
+    scan keeps the two live phases separate: `files` = committed post-embed
+    entries, `moved_files`/`to_reconcile` = applied reconcile ops.
+    """
+    journals_dir.mkdir(parents=True, exist_ok=True)
+    (journals_dir / f"{run_id}.json").write_text(json.dumps({
+        "schema_version": schema_version,
+        "producer": "kdb-orchestrate",
+        "run_id": run_id,
+        "started_at": started_at,
+        "success": True,
+        "dry_run": dry_run,
+        "replayable_payload": True,
+        "finalize_progress": finalize_progress,
+    }))
+    sidecar = journals_dir / run_id
+    sidecar.mkdir(parents=True, exist_ok=True)
+    (sidecar / "compile_result.json").write_text(json.dumps(mutation))
+    (sidecar / "last_scan.json").write_text(json.dumps(scan))
+
+
+_ENTITY_DIFF_Q = ("MATCH (e:Entity) RETURN e.slug, e.status, e.last_run_id "
+                  "ORDER BY e.slug")
+_SOURCE_DIFF_Q = ("MATCH (s:Source) RETURN s.source_id, s.status, s.hash, "
+                  "s.ingest_state ORDER BY s.source_id")
+_EDGE_Q = ("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+           "RETURN a.slug, b.slug ORDER BY a.slug, b.slug")
+
+
+def test_replay_23_finalize_deprecated_matches_live(graph_dir, tmp_path):
+    """#132: a 2.3 journal pair replays EXACTLY the deferred-commit live
+    sequence (per-source apply with wire/deprecate off + finalize derive)."""
+    live_dir = tmp_path / "live"
+    journals = tmp_path / "runs"
+    cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
+        make_page("drop-me"),
+    ])], run_id="r1")
+    scan1 = make_scan([make_scan_entry("KDB/raw/a.md")])
+    cr2 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
+    ])], run_id="r2")
+    scan2 = make_scan([make_scan_entry("KDB/raw/a.md")])
+
+    # LIVE sequence: deferred per-source applies + finalize derive per run.
+    with GraphDB(live_dir) as g:
+        apply_compile_result(cr1, scan1, "r1", conn=g.conn,
+                             detect_deprecations=False, wire_links=False)
+        wire_links(cr1, g.conn, "r1")
+        detect_deprecations(g.conn, "r1")
+        apply_compile_result(cr2, scan2, "r2", conn=g.conn,
+                             detect_deprecations=False, wire_links=False)
+        wire_links(cr2, g.conn, "r2")
+        detect_deprecations(g.conn, "r2")
+        live_entities = _rows(g.conn, _ENTITY_DIFF_Q)
+        live_sources = _rows(g.conn, _SOURCE_DIFF_Q)
+        live_edges = _rows(g.conn, _EDGE_Q)
+
+    _write_run_23(journals, "r1", cr1, scan1, started_at="2026-08-06T01")
+    _write_run_23(journals, "r2", cr2, scan2, started_at="2026-08-06T02")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as g:
+        assert _rows(g.conn, _ENTITY_DIFF_Q) == live_entities
+        assert _rows(g.conn, _SOURCE_DIFF_Q) == live_sources
+        assert _rows(g.conn, _EDGE_Q) == live_edges
+    # The semantic point: drop-me lost SUPPORTS → deprecated; keep active.
+    assert {s: st for s, st, _ in live_entities} == {
+        "keep": "active", "drop-me": "deprecated"}
+
+
+def test_replay_23_finalize_none_skips_derive(graph_dir, tmp_path):
+    """#132: finalize_progress='none' ⇒ neither wire_links nor deprecations
+    run for that run (mirrors an aborted run live)."""
+    journals = tmp_path / "runs"
+    cr0 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
+        make_page("drop-me"),
+    ])], run_id="r0")
+    _write_run_with_mutation(journals, "r0", cr0,
+                             make_scan([make_scan_entry("KDB/raw/a.md")]),
+                             started_at="2026-08-06T00")
+    cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me", "fresh"],
+                  body="Links [[drop-me]] and [[fresh]]."),
+        make_page("fresh"),
+    ])], run_id="r1")
+    _write_run_23(journals, "r1", cr1,
+                  make_scan([make_scan_entry("KDB/raw/a.md")]),
+                  started_at="2026-08-06T01", finalize_progress="none")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as g:
+        statuses = {r[0]: r[1] for r in _rows(
+            g.conn, "MATCH (e:Entity) RETURN e.slug, e.status")}
+        supports = _rows(
+            g.conn, "MATCH (s:Source)-[:SUPPORTS]->(e:Entity) "
+                    "RETURN s.source_id, e.slug")
+        edges = {tuple(r) for r in _rows(g.conn, _EDGE_Q)}
+    # Zero SUPPORTS but NOT marked — the deprecation derive never ran.
+    assert statuses["drop-me"] == "active"
+    assert supports == [["KDB/raw/a.md", "keep"], ["KDB/raw/a.md", "fresh"]]
+    # keep→fresh was never wired (deferred wiring skipped); r0's edge persists.
+    assert edges == {("keep", "drop-me")}
+
+
+def test_replay_23_finalize_wired_wires_without_deprecating(graph_dir, tmp_path):
+    """#132: finalize_progress='wired' (crash between the two finalize stages)
+    ⇒ links wired, deprecation pass NOT run."""
+    journals = tmp_path / "runs"
+    cr0 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
+        make_page("drop-me"),
+    ])], run_id="r0")
+    _write_run_with_mutation(journals, "r0", cr0,
+                             make_scan([make_scan_entry("KDB/raw/a.md")]),
+                             started_at="2026-08-06T00")
+    cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
+        make_page("keep", outgoing_links=["drop-me", "fresh"],
+                  body="Links [[drop-me]] and [[fresh]]."),
+        make_page("fresh"),
+    ])], run_id="r1")
+    _write_run_23(journals, "r1", cr1,
+                  make_scan([make_scan_entry("KDB/raw/a.md")]),
+                  started_at="2026-08-06T01", finalize_progress="wired")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as g:
+        statuses = {r[0]: r[1] for r in _rows(
+            g.conn, "MATCH (e:Entity) RETURN e.slug, e.status")}
+        edges = {tuple(r) for r in _rows(g.conn, _EDGE_Q)}
+    assert edges == {("keep", "drop-me"), ("keep", "fresh")}
+    # SUPPORTS for drop-me is gone, yet no deprecation pass ran.
+    assert statuses["drop-me"] == "active"
+
+
+def test_replay_23_commits_before_reconcile_preserves_reemitted_page(
+        graph_dir, tmp_path):
+    """#132 §2 ordering: live commits sources BEFORE reconcile ops. A page
+    whose sole supporter is deleted in a run, but which a compiled source in
+    the SAME run re-emits, must SURVIVE with its inbound links intact (a
+    naive unioned apply erases it in Phase 2 before re-adding it in Phase 3 —
+    DETACH DELETE destroys inbound LINKS_TO)."""
+    journals = tmp_path / "runs"
+    cr0 = make_compile_result([
+        make_compiled_source("KDB/raw/del.md", [make_page("victim")]),
+        make_compiled_source(
+            "KDB/raw/by.md",
+            [make_page("watcher", outgoing_links=["victim"],
+                       body="See [[victim]].")]),
+    ], run_id="r0")
+    _write_run_with_mutation(
+        journals, "r0", cr0,
+        make_scan([make_scan_entry("KDB/raw/del.md"),
+                   make_scan_entry("KDB/raw/by.md")]),
+        started_at="2026-08-06T00")
+    cr1 = make_compile_result(
+        [make_compiled_source("KDB/raw/new.md", [make_page("victim")])],
+        run_id="r1")
+    scan1 = {**make_scan([make_scan_entry("KDB/raw/new.md")]),
+             "to_reconcile": [{"type": "DELETED",
+                               "source_id": "KDB/raw/del.md"}]}
+    _write_run_23(journals, "r1", cr1, scan1,
+                  started_at="2026-08-06T01", finalize_progress="none")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as g:
+        supports = {tuple(r) for r in _rows(
+            g.conn, "MATCH (s:Source)-[:SUPPORTS]->(e:Entity {slug: 'victim'}) "
+                    "RETURN s.source_id, e.slug")}
+        inbound = _rows(
+            g.conn, "MATCH (a:Entity)-[:LINKS_TO]->(e:Entity {slug: 'victim'}) "
+                    "RETURN a.slug")
+        src_status = {r[0]: r[1] for r in _rows(
+            g.conn, "MATCH (s:Source) RETURN s.source_id, s.status")}
+    assert supports == {("KDB/raw/new.md", "victim")}
+    assert [r[0] for r in inbound] == ["watcher"]  # never detach-deleted
+    assert src_status["KDB/raw/del.md"] == "deleted"
+
+
+def test_replay_23_reconcile_only_run(graph_dir, tmp_path):
+    """#132: an archive with empty compiled_sources + moved_files/to_reconcile
+    replays the reconcile phase cleanly (MOVED transfers SUPPORTS)."""
+    journals = tmp_path / "runs"
+    cr0 = make_compile_result(
+        [make_compiled_source("KDB/raw/old.md", [make_page("page-old")])],
+        run_id="r0")
+    _write_run_with_mutation(journals, "r0", cr0,
+                             make_scan([make_scan_entry("KDB/raw/old.md")]),
+                             started_at="2026-08-06T00")
+    scan1 = {
+        "files": [],
+        "to_compile": [],
+        "moved_files": [make_scan_entry("KDB/raw/new-path.md")],
+        "to_reconcile": [{"type": "MOVED",
+                          "from_source_id": "KDB/raw/old.md",
+                          "to_source_id": "KDB/raw/new-path.md"}],
+    }
+    _write_run_23(journals, "r1", make_compile_result([], run_id="r1"), scan1,
+                  started_at="2026-08-06T01", finalize_progress="none")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 2 and result.failed == 0
+    with GraphDB(graph_dir) as g:
+        supports = {tuple(r) for r in _rows(
+            g.conn, "MATCH (s:Source)-[:SUPPORTS]->(e:Entity) "
+                    "RETURN s.source_id, e.slug")}
+        src_status = {r[0]: r[1] for r in _rows(
+            g.conn, "MATCH (s:Source) RETURN s.source_id, s.status")}
+    assert supports == {("KDB/raw/new-path.md", "page-old")}
+    assert src_status["KDB/raw/old.md"] == "moved"
+    assert src_status["KDB/raw/new-path.md"] == "active"
+
+
+def test_replay_24_journal_unsupported_version(graph_dir, tmp_path):
+    """#132: the D-S3 version gate still rejects unknown future versions."""
+    journals = tmp_path / "runs"
+    _write_run_23(
+        journals, "r-future",
+        make_compile_result(
+            [make_compiled_source("KDB/raw/s.md", [make_page("a")])],
+            run_id="r-future"),
+        make_scan([make_scan_entry("KDB/raw/s.md")]),
+        started_at="2026-08-06T01", schema_version="2.4")
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 0 and result.skipped == 1
+    assert result.outcomes[0].skip_reason == "unsupported_version"
+
+
+def test_replay_23_dry_run_journal_skipped(graph_dir, tmp_path):
+    """#132: dry-run journals are archived for audit but never replayed."""
+    journals = tmp_path / "runs"
+    _write_run_23(
+        journals, "r-dry",
+        make_compile_result(
+            [make_compiled_source("KDB/raw/s.md", [make_page("a")])],
+            run_id="r-dry"),
+        make_scan([make_scan_entry("KDB/raw/s.md")]),
+        started_at="2026-08-06T01", dry_run=True)
+    result = rebuild(graph_dir=graph_dir, adapter=ObsidianRunsAdapter(),
+                     journals_dir=journals, confirm=False)
+    assert result.replayed == 0 and result.skipped == 1
+    assert result.outcomes[0].skip_reason == "dry_run"
+
+
+def test_load_payload_23_finalize_progress_in_memory_only(tmp_path):
+    """#132: `finalize_progress` is channeled from the journal to apply() via
+    a reserved in-memory key; the on-disk sidecar stays pristine, and legacy
+    journals never carry the key."""
+    journals = tmp_path / "runs"
+    _write_run_23(
+        journals, "r1",
+        make_compile_result(
+            [make_compiled_source("KDB/raw/s.md", [make_page("a")])],
+            run_id="r1"),
+        make_scan([make_scan_entry("KDB/raw/s.md")]),
+        started_at="2026-08-06T01", finalize_progress="wired")
+    _write_run_with_mutation(
+        journals, "r0",
+        make_compile_result(
+            [make_compiled_source("KDB/raw/s.md", [make_page("a")])],
+            run_id="r0"),
+        make_scan([make_scan_entry("KDB/raw/s.md")]),
+        started_at="2026-08-06T00")
+    adapter = ObsidianRunsAdapter()
+    descs = {d.run_id: d for d in adapter.discover_runs(journals)}
+    mutation23, _, _ = adapter.load_payload(descs["r1"])
+    assert mutation23.pop("_finalize_progress") == "wired"
+    on_disk = json.loads(
+        (journals / "r1" / "compile_result.json").read_text(encoding="utf-8"))
+    assert "_finalize_progress" not in on_disk
+    mutation22, _, _ = adapter.load_payload(descs["r0"])
+    assert "_finalize_progress" not in mutation22

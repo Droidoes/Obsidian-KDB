@@ -174,6 +174,33 @@ A compliant producer emits **four kinds of artifacts**. Three are per-run; one i
 }
 ```
 
+**Orchestrator-era journal (schema `"2.3"`, #132):** `kdb-orchestrate` archives a
+slim journal per run via `orchestrator/journal_writer.py`:
+
+```
+{
+  "schema_version":      "2.3",
+  "producer":            "kdb-orchestrate",
+  "run_id":              "2026-08-06T…",
+  "started_at":          "...",          // adapter sort_key
+  "finished_at":         "...",
+  "dry_run":             false,
+  "success":             true,           // exit_code == 0
+  "replayable_payload":  true,           // false iff sidecar archival failed (D50 leg)
+  "finalize_progress":   "none | wired | deprecated",
+  "counts":              { "sources_scanned": 0, "sources_compiled": 0, ... },
+  "quarantined_sources": [ ... ]
+}
+```
+
+`finalize_progress` is the replay-derive gate: the live conductor defers
+`wire_links` + `detect_deprecations` to a finalize pass (Task #91), so replay
+must re-apply exactly the derive stages that committed live — both for
+`"deprecated"` (completed), `wire_links` only for `"wired"` (crash between the
+two finalize transactions), none for `"none"` (finalize never ran). Legacy
+journals (2.0–2.2) lack the field and replay with monolith defaults, exactly
+as those runs were ingested.
+
 **Contract requirements** (eligibility-filter relevant):
 
 | Requirement | Why | Notes |
@@ -185,6 +212,8 @@ A compliant producer emits **four kinds of artifacts**. Three are per-run; one i
 | Path to mutation payload | Used by sidecar lookup (see §3.4) for replay | Recommended via `artifacts.<key>_path` or implicit by sidecar convention |
 | Journal schema version | Adapters declare which versions they support (PR9 in extraction roadmap) — version mismatch raises `UnsupportedJournalVersionError` | Producer chooses field name (Obsidian uses `schema_version`); adapter declares `supported_journal_versions: list[str]` |
 | `event_type` (string, optional) | Discriminates run kinds in one journal stream — `"compile"` (or absent) vs `"cleanup"` (Task #68 retraction event) | Optional; **absent ⇒ `"compile"`** for back-compat with 2.0 journals. A `cleanup` journal is `schema_version: "2.1"`. |
+| `replayable_payload` (bool, optional — D50 amendment) | Lets a failed run still replay (partial-but-faithful payload) | Optional; when present it alone decides the success leg; absent ⇒ falls back to `success=true` (legacy D39 rule) |
+| `finalize_progress` (string, optional — #132) | Replays exactly the finalize derive stages that committed live (`none`/`wired`/`deprecated`) | Optional; present only on 2.3 journals. Absent ⇒ monolith-default replay (derive inside the single intake call) |
 
 **The "canonical eligibility" indirection**: the contract does NOT require exact field names (`success`, `dry_run`). The contract requires that the *adapter* normalizes producer-specific fields into canonical eligibility values when reporting to the generic replay driver. This preserves producer-shape independence (Obsidian's `success` can be arxiv's `compile_ok` can be youtube's `transcribed: true`) while keeping the rebuilder's interface stable.
 
@@ -210,6 +239,17 @@ state/runs/
 contains `retraction.json` (the retraction payload — `reaped` audit records +
 `retracted_slugs`) instead of `compile_result.json` + `last_scan.json`. The
 adapter selects the sidecar contents to require by the journal's `event_type`.
+
+**Orchestrator-era scan payload split (#132):** the 2.3 `last_scan.json`
+archives the union of the run's *actual intake inputs*, keeping the two live
+phases separate: `files` + `to_compile` hold the committed sources' post-embed
+scan entries (noise/failed/unchanged sources never reached intake and are
+excluded — unlike the monolith era's full-scan archive, which was correct for
+its single-call live path), while `moved_files` + `to_reconcile` hold the
+*applied* reconcile ops only (MOVED+CHANGED skips excluded). The adapter
+replays the phases in live order — commits first, reconcile second — so a
+page re-emitted in the same run its sole supporter was deleted survives with
+inbound edges intact.
 
 **Contract requirements**:
 

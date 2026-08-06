@@ -298,6 +298,16 @@ def _diff_sources_preflight(
     divs: list[Divergence] = []
     src = "source_state_preflight"
     for sid in sorted(manifest_sources.keys() - live_sources.keys()):
+        # Only sources the manifest itself asserts are in the graph may be
+        # flagged missing. pending / no_graph_db / error_* records (noise,
+        # binary, never-compiled, quarantined) are correctly absent from the
+        # graph — expecting them was a false positive on every run with
+        # noise sources (#132 sandbox gate, 2026-08-06). A missing run_state
+        # (legacy manifest record) keeps the conservative expect-present
+        # default.
+        rs = manifest_sources[sid].get("run_state")
+        if rs is not None and rs != "in_graph_db":
+            continue
         divs.append(Divergence(kind="missing_in_live", category="source", key=sid, source=src))
     for sid in sorted(live_sources.keys() - manifest_sources.keys()):
         divs.append(Divergence(kind="missing_in_replay", category="source", key=sid, source=src))

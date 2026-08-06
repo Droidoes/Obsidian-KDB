@@ -679,7 +679,8 @@ def _upsert_alias_entities_and_edges(
     Idempotency: re-applying the same `canonical_meta` produces the same
     graph state — one ALIAS_OF per alias, with the most recent run's
     `run_id`/`created_at`. Older provenance lives in the per-run sidecar
-    `state/runs/<run_id>/compile_result.json` (archived by Stage 10).
+    `state/runs/<run_id>/compile_result.json` (archived by the orchestrator's
+    journal writer, #132).
     """
     canonical_meta = cr.get("canonical_meta") or {}
     aliases = canonical_meta.get("aliases_emitted") or []

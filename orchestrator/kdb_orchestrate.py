@@ -31,7 +31,7 @@ from kdb_graph.intake import (
     apply_compile_result, detect_deprecations, wire_links,
 )
 from kdb_graph.queries import deprecated_entities
-from orchestrator import manifest_writer
+from orchestrator import journal_writer, manifest_writer
 from compiler import page_writer
 from ingestion.config import pipeline_registry
 from common.atomic_io import atomic_write_json
@@ -84,6 +84,9 @@ class CommitResult:
 
     On success `next_manifest` is the advanced full v3.0 manifest dict the caller
     threads into the next source; `cr` is accumulated for the finalize passes.
+    `scan_entry_used` is the post-embed scan entry handed to intake (#132: the
+    replay archive records the exact intake inputs, including when the manifest
+    leg failed after the graph committed).
     """
     next_manifest: dict | None = None
     pages_written: list[str] = field(default_factory=list)
@@ -92,6 +95,7 @@ class CommitResult:
     exception_type: str | None = None
     error: str | None = None
     graph_committed: bool = False
+    scan_entry_used: dict | None = None
 
     @property
     def ok(self) -> bool:
@@ -134,7 +138,8 @@ def _commit_source(
             run_ctx=ctx, write=True)
     except Exception as e:
         return CommitResult(
-            failure_stage="apply", exception_type=type(e).__name__, error=str(e))
+            failure_stage="apply", exception_type=type(e).__name__, error=str(e),
+            scan_entry_used=entry)
 
     # 2. graph-sync (Kuzu txn). detect_deprecations + wire_links deferred to finalize.
     #    Throws ⇒ Kuzu rolled back clean; manifest never written ⇒ case-(a) self-heal.
@@ -145,7 +150,8 @@ def _commit_source(
     except Exception as e:
         return CommitResult(
             pages_written=apply_res.pages_written,
-            failure_stage="graph_sync", exception_type=type(e).__name__, error=str(e))
+            failure_stage="graph_sync", exception_type=type(e).__name__, error=str(e),
+            scan_entry_used=entry)
 
     # 3. manifest write = COMMIT BOUNDARY (β). Throws here ⇒ graph committed but
     #    manifest absent ⇒ manifest_failed_after_graph_commit (self-heals on re-run).
@@ -155,11 +161,12 @@ def _commit_source(
         return CommitResult(
             pages_written=apply_res.pages_written, graph_committed=True,
             failure_stage="manifest_post_graph",
-            exception_type=type(e).__name__, error=str(e))
+            exception_type=type(e).__name__, error=str(e),
+            scan_entry_used=entry)
 
     return CommitResult(
         next_manifest=next_manifest, pages_written=apply_res.pages_written,
-        cr=cr, graph_committed=True)
+        cr=cr, graph_committed=True, scan_entry_used=entry)
 
 
 # ---------- finalize: merge crs → wire_links → deprecations → summary ----------
@@ -197,6 +204,7 @@ def _combine_crs(crs: list[dict], run_id: str) -> dict:
 def _finalize(
     conn, accumulated_crs: list[dict], *,
     state_root: Path, ctx: RunContext, dry_run: bool = False,
+    progress: dict | None = None,
 ) -> dict:
     """End-of-run passes over the final graph (combined commit sequence 5-8,
     #130 shape):
@@ -212,12 +220,21 @@ def _finalize(
                                   enforced as a fixpoint every run.
       8. write compile_result.json (combined replay payload).
 
+    `progress` (#132): optional mutable holder; `progress["stage"]` advances to
+    "wired" after wire_links commits and "deprecated" after detect_deprecations
+    commits, so the run journal can record exactly how far finalize got if a
+    crash lands between the two (each owns its transaction).
+
     Returns finalize counts for the run summary.
     """
     combined = _combine_crs(accumulated_crs, ctx.run_id)
 
     wl = wire_links(combined, conn, ctx.run_id)
+    if progress is not None:
+        progress["stage"] = "wired"
     deprecations = detect_deprecations(conn, ctx.run_id)
+    if progress is not None:
+        progress["stage"] = "deprecated"
 
     flipped: list = []
     if not dry_run:
@@ -563,6 +580,15 @@ def run(
 
     full_manifest = prior_full
     accumulated_crs: list[dict] = []
+    # #132 (D39): replay-archive accumulators — the EXACT intake inputs of this
+    # run, archived as sidecars at the end (committed post-embed scan entries
+    # vs applied reconcile ops, split by live phase; nothing else reaches the
+    # graph, so nothing else is archived).
+    replay_files: list[dict] = []
+    replay_to_compile: list[str] = []
+    replay_moved_files: list[dict] = []
+    replay_reconcile_ops: list[dict] = []
+    finalize_progress: dict = {"stage": "none"}
     counts = _empty_counts()
     finalize_stats: dict | None = None
     planned: dict | None = None
@@ -625,6 +651,16 @@ def run(
             **_event_alarm_counts(recorder))
         alarm_counts = _event_alarm_counts(recorder)
         counts.update(alarm_counts)
+        # #132 (D39): dry runs archive a journal too (empty payloads — a dry
+        # run ingests nothing; the adapter's dry_run gate skips it on replay).
+        journal_writer.archive_replay_artifacts(
+            runs_root, run_id=ctx.run_id, started_at=ctx.started_at,
+            finished_at=finished_at, dry_run=True, success=True,
+            finalize_progress="none", counts=counts,
+            quarantined_sources=_quarantined_sources(recorder),
+            compile_result=_combine_crs([], ctx.run_id),
+            last_scan={"files": [], "to_compile": [],
+                       "moved_files": [], "to_reconcile": []})
         return OrchestrateResult(
             run_id=ctx.run_id, exit_code=0, exit_reason="dry-run", counts=counts,
             manifest_delta={"added": [], "removed": [], "changed": []},
@@ -877,6 +913,13 @@ def run(
                         error=commit.error,
                         context={"failure_stage": commit.failure_stage,
                                  "graph_committed": commit.graph_committed})
+                    if commit.graph_committed:
+                        # #132: manifest_post_graph — the graph HAS this source's
+                        # pages (the manifest leg failed after the graph commit),
+                        # so the replay archive must include what was ingested.
+                        replay_files.append(commit.scan_entry_used)
+                        replay_to_compile.append(source_id)
+                        accumulated_crs.append(result.cr)
                     if severity == "run_fatal":
                         abort = (commit.failure_stage or "commit", source_id, commit.error)
                         break
@@ -912,6 +955,9 @@ def run(
                 )
                 full_manifest = commit.next_manifest
                 accumulated_crs.append(commit.cr)
+                # #132: archive the exact intake scan input for replay.
+                replay_files.append(commit.scan_entry_used)
+                replay_to_compile.append(source_id)
                 counts["sources_compiled"] += 1
                 recorder.record(
                     stage="commit", event_type="source_commit_completed",
@@ -935,6 +981,11 @@ def run(
                     full_manifest = _commit_reconcile_op(
                         op, moved_entry=moved_entry, prior_manifest=full_manifest,
                         conn=g.conn, state_root=state_root, ctx=ctx)
+                    # #132: archive APPLIED ops only (MOVED+CHANGED skips above
+                    # never reached intake and are never archived).
+                    replay_reconcile_ops.append(op.to_dict())
+                    if op.type == "MOVED" and moved_entry is not None:
+                        replay_moved_files.append(moved_entry.to_dict())
                     recorder.record(
                         stage="reconcile", event_type="reconcile_completed",
                         severity="info",
@@ -949,7 +1000,7 @@ def run(
                 if accumulated_crs:
                     finalize_stats = _finalize(
                         g.conn, accumulated_crs, state_root=state_root, ctx=ctx,
-                        dry_run=dry_run)
+                        dry_run=dry_run, progress=finalize_progress)
                     recorder.record(
                         stage="finalize", event_type="finalize_completed",
                         severity="info",
@@ -1045,6 +1096,30 @@ def run(
         run_dir = runs_root / ctx.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         atomic_write_json(run_dir / "measurement_header.json", dataclasses.asdict(header))
+        # #132 (D39): archive the run journal + replay sidecars — the exact
+        # intake inputs accumulated above — so graphdb-kdb rebuild can
+        # re-derive an orchestrator-era graph. Partial on abort/crash
+        # (faithful by construction: only committed inputs were accumulated).
+        # Audit infrastructure — never masks a propagating exception.
+        try:
+            journal_writer.archive_replay_artifacts(
+                runs_root, run_id=ctx.run_id, started_at=ctx.started_at,
+                finished_at=finished_at, dry_run=dry_run,
+                success=(exit_code == 0),
+                finalize_progress=finalize_progress["stage"], counts=counts,
+                quarantined_sources=quarantined_sources,
+                compile_result=_combine_crs(accumulated_crs, ctx.run_id),
+                last_scan={
+                    "files": replay_files, "to_compile": replay_to_compile,
+                    "moved_files": replay_moved_files,
+                    "to_reconcile": replay_reconcile_ops,
+                })
+        except Exception as e:
+            recorder.record(
+                stage="run", event_type="journal_archive_failed",
+                severity="warning",
+                message="replay journal archival failed",
+                exception_type=type(e).__name__, error=str(e))
         # --emit-kpis: compute + write benchmark/runs/<run_id>/measurements.json.
         # Gated: finalize must have run (compile_result.json exists); wrapped in
         # try/except inside maybe_emit_kpis so a failure NEVER aborts the run.

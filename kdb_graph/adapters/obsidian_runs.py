@@ -1,10 +1,16 @@
 """Obsidian-KDB producer adapter (reference implementation, #63.6).
 
-Bridges `kdb-compile`'s run-journal artifacts to GraphDB-KDB mutations:
+Bridges run-journal artifacts to GraphDB-KDB mutations:
 
   state/runs/<run_id>.json              ← run journal (audit record; eligibility fields)
-  state/runs/<run_id>/compile_result.json  ← per-run mutation payload (sidecar, post-#63.7)
-  state/runs/<run_id>/last_scan.json       ← per-run scan/state payload (sidecar, post-#63.7)
+  state/runs/<run_id>/compile_result.json  ← per-run mutation payload (sidecar)
+  state/runs/<run_id>/last_scan.json       ← per-run scan/state payload (sidecar)
+
+Journal producers by `schema_version`: legacy `kdb-compile` (2.0/2.2, deleted
+in the 0.5.1 realignment) and `kdb-clean` cleanup journals (2.1) replay with
+monolith defaults; orchestrator-era journals (2.3, #132 — archived per run by
+`orchestrator/journal_writer.py`) replay two-phase live-order with a
+`finalize_progress`-gated derive (see `apply`).
 
 Critical: no imports from `compiler`, `ingestion`, or `orchestrator` anywhere
 in this module. The adapter reads producer JSON by documented field names
@@ -42,7 +48,11 @@ class ObsidianRunsAdapter:
     # The adapter accepts 2.2 journals for replay; alias-Entity / ALIAS_OF
     # writes from canonical_meta land in #74.5 — until then a 2.2 journal
     # replays identically to a 2.0 journal (canonical_meta block ignored).
-    supported_journal_versions: ClassVar[list[str]]  = ["2.0", "2.1", "2.2"]
+    # +2.3 (#132): orchestrator-era journals — slim eligibility fields +
+    # `finalize_progress` (the replay-derive gate); sidecars archive the exact
+    # intake inputs in two live-order phases (committed files first, then
+    # moved_files/to_reconcile).
+    supported_journal_versions: ClassVar[list[str]]  = ["2.0", "2.1", "2.2", "2.3"]
 
     # ── discovery ─────────────────────────────────────────────────────────────
 
@@ -165,7 +175,8 @@ class ObsidianRunsAdapter:
         sidecar_dir = descriptor.journal_path.parent / descriptor.run_id
         # event_type lives in the journal; re-read to route payload loading (#68).
         with descriptor.journal_path.open() as f:
-            event_type = json.load(f).get("event_type", "compile")
+            journal = json.load(f)
+        event_type = journal.get("event_type", "compile")
         if event_type == "cleanup":
             with (sidecar_dir / "retraction.json").open() as f:
                 retraction = json.load(f)
@@ -174,6 +185,12 @@ class ObsidianRunsAdapter:
             mutation = json.load(f)
         with (sidecar_dir / "last_scan.json").open() as f:
             scan = json.load(f)
+        # #132: 2.3 journals carry `finalize_progress` — the replay-derive
+        # gate. Channel it to apply() via a reserved in-memory key; the
+        # on-disk sidecar stays pristine (apply pops before routing). Legacy
+        # journals lack the field ⇒ no key ⇒ monolith-default replay.
+        if "finalize_progress" in journal:
+            mutation["_finalize_progress"] = journal["finalize_progress"]
         return mutation, scan, descriptor.run_id
 
     # ── apply ─────────────────────────────────────────────────────────────────
@@ -189,15 +206,51 @@ class ObsidianRunsAdapter:
         carries `event_type` + `retracted_slugs`; a compile payload has no
         `event_type` key (absent ⇒ compile). An unrecognized `event_type`
         raises ValueError — `is_eligible` screens these out on the replay path,
-        but `apply` is also reachable directly (live sync), so it guards too."""
+        but `apply` is also reachable directly (live sync), so it guards too.
+
+        #132: a 2.3 payload carries the reserved in-memory key
+        `_finalize_progress` (stuffed by load_payload; popped here before the
+        payload reaches intake). Its presence selects the orchestrator-era
+        replay: two-phase live-order apply with the derive gated on the flag —
+        exactly the calls the live conductor made:
+          1. commits phase   — apply_compile_result(deferred wiring/deprecation)
+          2. reconcile phase — applied ops only (moved_files + to_reconcile)
+          3. finalize derive — wire_links iff progress ∈ {wired, deprecated},
+                               detect_deprecations iff progress = deprecated
+        Absent (legacy 2.0–2.2 journals + baton descriptors): the monolith
+        single call with defaults — the shape those runs were ingested with.
+        Unknown progress values derive nothing (same as 'none') — under-derive
+        is the safe direction for a hand-corrupted journal."""
+        from kdb_graph.intake import (
+            apply_cleanup,
+            apply_compile_result,
+            detect_deprecations,
+            wire_links,
+        )
+        finalize_progress = mutation.pop("_finalize_progress", None)
         event_type = mutation.get("event_type", "compile")
         if event_type == "cleanup":
-            from kdb_graph.intake import apply_cleanup
             return apply_cleanup(mutation, run_id, conn=conn)
-        if event_type == "compile":
-            from kdb_graph.intake import apply_compile_result
+        if event_type != "compile":
+            raise ValueError(f"unsupported event_type: {event_type!r}")
+        if finalize_progress is None:
             return apply_compile_result(mutation, scan, run_id, conn=conn)
-        raise ValueError(f"unsupported event_type: {event_type!r}")
+        result = apply_compile_result(
+            mutation, {**scan, "to_reconcile": []}, run_id, conn=conn,
+            detect_deprecations=False, wire_links=False)
+        reconcile_files = scan.get("moved_files", [])
+        reconcile_ops = scan.get("to_reconcile", [])
+        if reconcile_files or reconcile_ops:
+            apply_compile_result(
+                {"compiled_sources": []},
+                {"files": reconcile_files, "to_reconcile": reconcile_ops},
+                run_id, conn=conn,
+                detect_deprecations=False, wire_links=False)
+        if finalize_progress in ("wired", "deprecated"):
+            wire_links(mutation, conn, run_id)
+        if finalize_progress == "deprecated":
+            detect_deprecations(conn, run_id)
+        return result
 
     # ── live-sync path (#68 cleanup; D-S0 superseded by Task #91) ────────────
 
