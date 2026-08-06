@@ -17,6 +17,7 @@ class _Resp:
         self.output_tokens = 1
         self.latency_ms = 1
         self.stop_reason = "stop"
+        self.stop_reason_normalized = "complete"  # mirrors the #124 boundary
         self.attempts = 1
 
 

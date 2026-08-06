@@ -483,10 +483,15 @@ def test_write_resp_stats_content_is_json(tmp_path: Path) -> None:
 
 # ---------- stop_reason / token_overrun / source_words (Task #29) ----------
 
-def _model_response_with_stop(stop_reason: str | None) -> ModelResponse:
+def _model_response_with_stop(
+    stop_reason: str | None, normalized: str = "unknown"
+) -> ModelResponse:
+    # `normalized` mirrors what call_model computes at the boundary (#124);
+    # "unknown" by default so classification is never guessed test-side.
     return ModelResponse(
         text="{}", input_tokens=10, output_tokens=5, latency_ms=10,
         model="m", provider="anthropic", attempts=1, stop_reason=stop_reason,
+        stop_reason_normalized=normalized,
     )
 
 
@@ -519,14 +524,28 @@ def test_stop_reason_none_when_no_model_response(tmp_path: Path) -> None:
     assert record.stop_reason is None
 
 
+def test_token_overrun_true_for_gemini_max_tokens(tmp_path: Path) -> None:
+    """#124 regression pin: gemini's raw UPPERCASE 'MAX_TOKENS' — classified
+    output_cap at the boundary — flips token_overrun. Before #124 the flag
+    string-matched ("max_tokens", "length") and gemini truncation was
+    invisible here. Raw spelling stays on the record verbatim."""
+    record = _build_with(tmp_path, model_response=ModelResponse(
+        text="{}", input_tokens=10, output_tokens=5, latency_ms=10,
+        model="m", provider="gemini", attempts=1,
+        stop_reason="MAX_TOKENS", stop_reason_normalized="output_cap",
+    ))
+    assert record.stop_reason == "MAX_TOKENS"
+    assert record.token_overrun is True
+
+
 def test_token_overrun_true_for_max_tokens(tmp_path: Path) -> None:
-    record = _build_with(tmp_path, model_response=_model_response_with_stop("max_tokens"))
+    record = _build_with(tmp_path, model_response=_model_response_with_stop("max_tokens", "output_cap"))
     assert record.token_overrun is True
 
 
 def test_token_overrun_true_for_length(tmp_path: Path) -> None:
     """OpenAI-compat finish_reason='length' must also flip the flag."""
-    record = _build_with(tmp_path, model_response=_model_response_with_stop("length"))
+    record = _build_with(tmp_path, model_response=_model_response_with_stop("length", "output_cap"))
     assert record.token_overrun is True
 
 

@@ -14,7 +14,12 @@ import httpx
 import pytest
 from google.genai import types as genai_types
 
-from common.call_model import ModelConfigError, ModelRequest, call_model
+from common.call_model import (
+    ModelConfigError,
+    ModelRequest,
+    call_model,
+    normalize_stop_reason,
+)
 from common.model_route import ModelRoute
 
 
@@ -738,3 +743,101 @@ def test_unknown_api_call_type_on_fabricated_route_rejected(
         with pytest.raises(ModelConfigError, match="telepathy"):
             call_model(ModelRequest(provider="acme", model="m", prompt="hi", route=route))
     oai.assert_not_called()
+
+
+# ---------- stop-reason normalization (#124) ----------
+
+@pytest.mark.parametrize("raw,api_call_type,expected", [
+    # Cap stops — each family's own verified spelling.
+    ("length", "openai_compat", "output_cap"),
+    ("max_tokens", "anthropic", "output_cap"),
+    ("MAX_TOKENS", "gemini", "output_cap"),
+    # Ordinary completions.
+    ("stop", "openai_compat", "complete"),
+    ("end_turn", "anthropic", "complete"),
+    ("STOP", "gemini", "complete"),
+    # D9.4 no-guessing: a spelling outside the ROUTE's own sets is unknown,
+    # even when another route would classify it.
+    ("MAX_TOKENS", "openai_compat", "unknown"),
+    ("MAX_TOKENS", "anthropic", "unknown"),
+    ("max_tokens", "openai_compat", "unknown"),
+    ("max_tokens", "gemini", "unknown"),
+    ("length", "anthropic", "unknown"),
+    ("length", "gemini", "unknown"),
+    ("STOP", "openai_compat", "unknown"),
+    ("STOP", "anthropic", "unknown"),
+    ("stop", "anthropic", "unknown"),
+    ("stop", "gemini", "unknown"),
+    ("end_turn", "openai_compat", "unknown"),
+    ("end_turn", "gemini", "unknown"),
+    # Unclassified-but-real values, and absent values.
+    ("tool_calls", "openai_compat", "unknown"),
+    ("tool_use", "anthropic", "unknown"),
+    ("SAFETY", "gemini", "unknown"),
+    (None, "openai_compat", "unknown"),
+    (None, "anthropic", "unknown"),
+    (None, "gemini", "unknown"),
+    # Unknown route → never guessed.
+    ("length", "telepathy", "unknown"),
+    ("MAX_TOKENS", "", "unknown"),
+])
+def test_normalize_stop_reason_route_aware_table(
+    raw: str | None, api_call_type: str, expected: str
+) -> None:
+    """One closed api_call_type-aware map (D9.4 — never guesses)."""
+    assert normalize_stop_reason(raw, api_call_type=api_call_type) == expected
+
+
+def test_gemini_max_tokens_normalized_at_boundary_raw_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#124 regression pin: gemini's UPPERCASE enum value classifies as
+    output_cap at the boundary, and the raw spelling is preserved verbatim."""
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test")
+    gemini_resp = _make_gemini_resp()
+    gemini_resp.candidates[0].finish_reason = genai_types.FinishReason.MAX_TOKENS
+    client = _gemini_client(gemini_resp)
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.6-flash", prompt="hi",
+        ))
+    assert resp.stop_reason == "MAX_TOKENS"  # raw, verbatim
+    assert resp.stop_reason_normalized == "output_cap"
+
+
+def test_openai_length_normalized_at_boundary(
+    monkeypatch: pytest.MonkeyPatch, openai_resp: MagicMock
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-oai-test")
+    openai_resp.choices[0].finish_reason = "length"
+    client = _openai_client(openai_resp)
+    with patch("common.call_model.OpenAI", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="openai", model="gpt-4.1-mini", prompt="hi",
+        ))
+    assert resp.stop_reason == "length"
+    assert resp.stop_reason_normalized == "output_cap"
+
+
+def test_gemini_stop_normalized_complete_at_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test")
+    client = _gemini_client(_make_gemini_resp())  # finish_reason = FinishReason.STOP
+    with patch("common.call_model.genai.Client", return_value=client):
+        resp = call_model(ModelRequest(
+            provider="gemini", model="gemini-3.6-flash", prompt="hi",
+        ))
+    assert resp.stop_reason == "STOP"
+    assert resp.stop_reason_normalized == "complete"
+
+
+def test_stop_reason_normalized_defaults_unknown_for_direct_construction() -> None:
+    """Callers that build a ModelResponse without the boundary (tests, replay)
+    get 'unknown' — classification is the boundary's job, never guessed."""
+    from common.call_model import ModelResponse
+    resp = ModelResponse(
+        text="x", input_tokens=1, output_tokens=1, latency_ms=1,
+        model="m", provider="p", stop_reason="max_tokens",
+    )
+    assert resp.stop_reason_normalized == "unknown"

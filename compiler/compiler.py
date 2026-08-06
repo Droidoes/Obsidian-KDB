@@ -406,8 +406,10 @@ def compile_one(
                 # (a truncated-flagged response may still carry a complete
                 # document; stop_reason is carrier metadata, not proof of
                 # absence). A re-call won't fit a bigger output → no retry.
+                # Classifies on the boundary-normalized value (#124); the raw
+                # spelling stays in the message for diagnosis.
                 sr = state["model_response"].stop_reason
-                if sr in ("max_tokens", "length"):
+                if state["model_response"].stop_reason_normalized == "output_cap":
                     _set_failure(
                         state, "truncation", "TokenOverrun",
                         f"stop_reason={sr!r}; max_tokens={max_tokens}",

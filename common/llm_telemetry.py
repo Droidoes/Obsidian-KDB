@@ -139,6 +139,7 @@ def build_resp_stats(
         output_tokens = model_response.output_tokens
         response_hash = _sha256(raw_response_text) if raw_response_text else _sha256("")
         stop_reason = model_response.stop_reason
+        stop_reason_normalized = model_response.stop_reason_normalized
     else:
         persisted_provider = provider
         persisted_model = model
@@ -148,8 +149,11 @@ def build_resp_stats(
         output_tokens = 0
         response_hash = _NONE_HASH
         stop_reason = None
+        stop_reason_normalized = "unknown"
 
-    token_overrun = stop_reason in ("max_tokens", "length")
+    # Classify on the boundary-normalized value (#124) — never on the raw
+    # spelling, which differs per provider family (gemini's is UPPERCASE).
+    token_overrun = stop_reason_normalized == "output_cap"
 
     if prompt is not None:
         prompt_text = prompt.system + "\n\n" + prompt.user

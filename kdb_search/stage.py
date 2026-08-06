@@ -91,12 +91,14 @@ _STAGE_NAMES: dict[Stage, StageName] = {
 NormalizedStop = Literal["output_cap", "complete", "unknown"]
 
 #: The cap-stop spelling each `api_call_type` emits. Verified at the source:
-#: openai-compatible `"length"` (`common/call_model.py:299`), anthropic
-#: `"max_tokens"` (`:207`), gemini the enum value's UPPERCASE name (`:250-254`,
-#: via `finish_reason.value`). A literal `== "length"` test — which is what both
-#: existing repo predicates do, `llm_telemetry.py:152` and `compiler.py:411` —
-#: misses gemini entirely, and gemini is the interim default selector, so the
-#: truncation terminal would be invisible on the exact route it ships on (#124).
+#: openai-compatible `"length"` (`common/call_model._call_openai_compat`),
+#: anthropic `"max_tokens"` (`._call_anthropic`), gemini the enum value's
+#: UPPERCASE name (`._call_gemini`, via `finish_reason.value`). #124 (CLOSED
+#: 2026-08-06) promoted this table's design to
+#: `common.call_model.normalize_stop_reason` — pass-1/pass-2 now classify on
+#: `ModelResponse.stop_reason_normalized`; this copy stays for the artifact
+#: records (raw+normalized per stage), and adopting the shared copy here is a
+#: recorded dedupe follow-up, deliberately not part of the #124 diff.
 _CAP_STOPS: dict[str, frozenset[str]] = {
     "openai_compat": frozenset({"length"}),
     "anthropic": frozenset({"max_tokens"}),

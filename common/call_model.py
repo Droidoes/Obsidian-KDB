@@ -2,7 +2,10 @@
 
 Single sync entry point: sends a ModelRequest to a provider and returns a
 ModelResponse with the text, usage counts, wall-clock latency, and
-provider/model echo (resp-stats metadata per project memory).
+provider/model echo (resp-stats metadata per project memory). The provider's
+stop reason rides the response twice (#124): `stop_reason` raw/verbatim, and
+`stop_reason_normalized` classified route-aware (output_cap/complete/unknown,
+D9.4 — never guessed) so consumers never string-match provider spellings.
 
 Routing (Task #121): a request either carries an explicit ModelRoute
 (authoritative — its api_call_type alone selects the handler, even when it
@@ -40,7 +43,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import anthropic
 import httpx
@@ -62,6 +65,57 @@ from common.model_route import (
     validate_provider_identity,
     validate_route,
 )
+
+
+# ---------------------------------------------------------------------------
+# stop-reason normalization (#124) — one closed api_call_type-aware map
+# ---------------------------------------------------------------------------
+
+NormalizedStop = Literal["output_cap", "complete", "unknown"]
+
+#: The cap-stop spelling each `api_call_type` emits. Verified at the source:
+#: openai-compatible "length" (_call_openai_compat), anthropic "max_tokens"
+#: (_call_anthropic), gemini the enum value's UPPERCASE name (_call_gemini,
+#: via `finish_reason.value`). A literal `== "length"` test — which is what the
+#: pre-#124 repo predicates did — missed gemini entirely. Design promoted from
+#: kdb_search.stage (P2.3, D9.4), which keeps its own copy for its artifacts;
+#: adoption of this shared copy there is a recorded follow-up, not this diff.
+_CAP_STOPS: dict[str, frozenset[str]] = {
+    "openai_compat": frozenset({"length"}),
+    "anthropic": frozenset({"max_tokens"}),
+    "gemini": frozenset({"MAX_TOKENS"}),
+}
+
+#: Ordinary completion per family. Present so that "unknown" means *unknown*
+#: rather than "not a cap stop" — a predicate with only the cap set would call
+#: every ordinary completion unknown and make the D9.4 no-guessing rule vacuous.
+_OK_STOPS: dict[str, frozenset[str]] = {
+    "openai_compat": frozenset({"stop"}),
+    "anthropic": frozenset({"end_turn"}),
+    "gemini": frozenset({"STOP"}),
+}
+
+
+def normalize_stop_reason(raw: str | None, *, api_call_type: str) -> NormalizedStop:
+    """Normalize one provider stop reason. **Never guesses** (D9.4).
+
+    A value outside the route's two known sets — and `None`, which some routes
+    report — is `"unknown"`, and an unknown stop reason is never classified into
+    the cap class. That is the rule this function exists to make checkable:
+    with no normalization, `SAFETY` and `MAX_TOKENS` are equally "not `length`".
+
+    The anthropic row is kept even though anthropic models were retired from the
+    pool (2026-07-21, engine support retained): this is a stop-reason table, not
+    a capability table, and a route that returns to service must not find its
+    truncations mis-typed by a map that silently dropped the row.
+    """
+    if raw is None:
+        return "unknown"
+    if raw in _CAP_STOPS.get(api_call_type, frozenset()):
+        return "output_cap"
+    if raw in _OK_STOPS.get(api_call_type, frozenset()):
+        return "complete"
+    return "unknown"
 
 
 @dataclass
@@ -105,6 +159,11 @@ class ModelResponse:
     provider: str
     attempts: int = 1
     stop_reason: str | None = None
+    # Normalized classification of stop_reason (#124), computed by call_model
+    # where route.api_call_type is known. Consumers classify on THIS field;
+    # stop_reason stays the provider's raw spelling for archival/diagnosis.
+    # Direct constructions (tests, replay) default to "unknown" — never guessed.
+    stop_reason_normalized: NormalizedStop = "unknown"
     raw: Any = None
 
 
@@ -178,6 +237,9 @@ def call_model(req: ModelRequest) -> ModelResponse:
         model=req.model,
         provider=req.provider,
         stop_reason=stop_reason,
+        stop_reason_normalized=normalize_stop_reason(
+            stop_reason, api_call_type=route.api_call_type
+        ),
         raw=raw,
     )
 

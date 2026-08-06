@@ -5,9 +5,12 @@ Contract under test (spec §3.3):
     5-step selection ladder in compiler.response_recovery). Callers branch
     on ``result.recovered``, never on ``parsed is None`` (JSON null is a
     recovered value).
-  * stop_reason in ("max_tokens", "length") is terminal ONLY after recovery
+  * stop_reason_normalized == "output_cap" is terminal ONLY after recovery
     fails — a truncated-flagged response may still carry a complete
     document (stop_reason is carrier metadata, not proof of absence).
+    (#124: classification rides the boundary-normalized value; the raw
+    provider spelling — e.g. gemini's UPPERCASE MAX_TOKENS — stays in the
+    terminal message.)
   * extract_ok is non-gating telemetry; failure_stage="extract" is never
     emitted.
   * Winning-attempt semantics: boundary_recovered + discard counts reset
@@ -212,7 +215,8 @@ def test_truncation_flagged_complete_document_compiles(
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
         lambda req: _model_response(
-            json.dumps(_good_response(SOURCE_A)), stop_reason="length"
+            json.dumps(_good_response(SOURCE_A)), stop_reason="length",
+            stop_reason_normalized="output_cap",
         ),
     )
 
@@ -247,6 +251,7 @@ def test_truncated_unrecoverable_document_is_terminal_no_retry(
         return _model_response(
             '{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
             stop_reason="length",
+            stop_reason_normalized="output_cap",
         )
 
     monkeypatch.setattr("compiler.compiler.call_model_with_retry", fake)

@@ -328,6 +328,51 @@ def test_compile_meta_attempts_reflects_reprompt_count(
     assert meta.attempts == 2
 
 
+def test_compile_one_gemini_max_tokens_stop_reason_also_guarded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#124 regression pin: gemini emits the UPPERCASE enum value 'MAX_TOKENS'.
+    With a genuinely truncated (unrecoverable) document, the post-recovery
+    guard classifies on stop_reason_normalized and fires — terminal, no retry,
+    raw spelling preserved in the message. Before #124 this route fell through
+    to the generic recovery failure and the cap event was invisible."""
+    vault = _write_vault(tmp_path)
+    _write_raw(vault, SOURCE_A)
+    state_root = vault / "KDB" / "state"
+    ctx = _ctx(vault)
+
+    truncated = ModelResponse(
+        text='{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
+        input_tokens=100, output_tokens=4096, latency_ms=10,
+        model="gemini-3.6-flash", provider="gemini", attempts=1,
+        stop_reason="MAX_TOKENS", stop_reason_normalized="output_cap",
+    )
+    calls = {"n": 0}
+
+    def counting_fake(req):
+        calls["n"] += 1
+        return truncated
+
+    monkeypatch.setattr(
+        "compiler.compiler.call_model_with_retry",
+        _fake_call({SOURCE_A: counting_fake}),
+    )
+
+    _, _, err = compiler.compile_one(
+        _job(vault, SOURCE_A),
+        vault_root=vault,
+        state_root=state_root,
+        ctx=ctx,
+        provider="gemini",
+        model="gemini-3.6-flash",
+        max_tokens=4096,
+    )
+    assert err is not None
+    assert "truncated" in err
+    assert "stop_reason='MAX_TOKENS'" in err
+    assert calls["n"] == 1  # terminal — no retry
+
+
 def test_compile_one_openai_length_stop_reason_also_guarded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -343,7 +388,7 @@ def test_compile_one_openai_length_stop_reason_also_guarded(
         text='{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
         input_tokens=100, output_tokens=4096, latency_ms=10,
         model="gpt-something", provider="openai", attempts=1,
-        stop_reason="length",
+        stop_reason="length", stop_reason_normalized="output_cap",
     )
     calls = {"n": 0}
 
@@ -640,7 +685,7 @@ def test_compile_one_persists_stop_reason_and_token_overrun_on_truncation(
         text=json.dumps(_good_response(SOURCE_A)),
         input_tokens=10, output_tokens=4096, latency_ms=10,
         model="m", provider="anthropic", attempts=1,
-        stop_reason="max_tokens",
+        stop_reason="max_tokens", stop_reason_normalized="output_cap",
     )
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
@@ -767,7 +812,7 @@ def test_failure_triplet_truncation_uses_synthetic_token_overrun(
         text='{"source_name": "alpha.md", "pages": [{"slug": "summary-f',
         input_tokens=100, output_tokens=4096, latency_ms=10,
         model="m", provider="anthropic", attempts=1,
-        stop_reason="max_tokens",
+        stop_reason="max_tokens", stop_reason_normalized="output_cap",
     )
     monkeypatch.setattr(
         "compiler.compiler.call_model_with_retry",
