@@ -362,7 +362,8 @@ class ContextSnapshot:
 @dataclass(frozen=True)
 class TierRecord:
     """One ranking tier's capture: `candidates` = pre-cap tier set size;
-    `delivered`/`slugs` = post-cap, post-projection prompt pages in rank order."""
+    `delivered`/`slugs` = post-projection prompt pages in rank order — t1 in
+    full (#131: cap-exempt), t2/t3 post-cap."""
     candidates: int
     delivered: int
     slugs: list[str]              # ALL delivered slugs, prompt rank order
@@ -378,7 +379,8 @@ class ContextTelemetry:           # builder-owned — NO run_id, NO schema metad
     pass-1.5 SearchSummary (defined below — annotations resolve lazily).
     `key_outcomes` elements are compiler.context_record.KeyOutcomeV2 — common
     is a LEAF package and cannot import the compiler, so the field is a bare
-    list by annotation, by contract."""
+    list by annotation, by contract. #131: `page_cap` governs t2+t3 delivery
+    only — t1 is must-see, cap-exempt."""
     source_id: str
     keys_emitted: list[str]
     key_outcomes: list

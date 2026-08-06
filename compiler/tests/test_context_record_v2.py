@@ -447,6 +447,31 @@ def test_v2_parse_rejects_bad_hit_recency():
         parse_context_record_v2(payload)
 
 
+def test_v2_parse_accepts_t1_alone_over_page_cap():
+    """#131: t1 is must-see, cap-EXEMPT — a >cap t1 alone is valid (the
+    run-7 Pabrai shape: 65 t1 candidates > page_cap=50)."""
+    payload = _complete_dict()
+    payload["t1"] = {"candidates": 60, "delivered": 60,
+                     "slugs": [f"p{i}" for i in range(60)]}
+    payload["t2"] = {"candidates": 0, "delivered": 0, "slugs": []}
+    payload["t3"] = {"candidates": 0, "delivered": 0, "slugs": []}
+    rec = parse_context_record_v2(payload)
+    assert rec.t1.delivered == 60
+
+
+def test_v2_parse_rejects_t2_t3_delivered_over_page_cap():
+    """#131: the cap still governs t2+t3 — an over-budget t2/t3 tail rejects."""
+    payload = _complete_dict()
+    payload["t1"] = {"candidates": 1, "delivered": 1, "slugs": ["t1-page"]}
+    payload["t2"] = {"candidates": 40, "delivered": 30,
+                     "slugs": [f"q{i}" for i in range(30)]}
+    payload["t3"] = {"candidates": 40, "delivered": 30,
+                     "slugs": [f"r{i}" for i in range(30)]}
+    # t2+t3 delivered = 60 > page_cap=50
+    with pytest.raises(ContextRecordError, match="page_cap"):
+        parse_context_record_v2(payload)
+
+
 @pytest.mark.parametrize("outcome,match", [
     # unknown annotation — the vocabulary is CLOSED (B11)
     ({"expression": "management", "status": "unresolved", "annotation": "maybe",

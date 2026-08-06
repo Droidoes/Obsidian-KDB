@@ -18,9 +18,15 @@ prompt.
 
 Task #129: the snapshot is TIER-STRUCTURED (t1/t2/t3 ContextPage lists) — the
 projection partitions the ranked pages by tier so the prompt can state a
-different obligation per tier. Selection, scoring, strict tier order, and the
-global page_cap are untouched: `snapshot.pages` (derived flat view) is exactly
-the slug sequence the pre-#129 flat snapshot emitted for the same inputs.
+different obligation per tier. Selection, scoring, and strict tier order are
+untouched: `snapshot.pages` (derived flat view) is exactly the slug sequence
+the pre-#129 flat snapshot emitted for the same inputs.
+
+Task #131: T1 is must-see — EXEMPT from page_cap. The cap governs the t2∪t3
+tail only (flood control was always its purpose); a source owning more than
+page_cap of its own pages still has every one delivered (pre-#131 they were
+silently amputated from the model's view and then retracted — run 7's Pabrai
+source: 65 t1 candidates, 50 delivered, 14 retracted).
 
 Ranking tiers (strict ordering — no cross-tier promotion):
     T1 (score=3): entities supported by this source (SUPPORTS edges)
@@ -32,6 +38,8 @@ Ranking tiers (strict ordering — no cross-tier promotion):
                   ALWAYS 1-hop (the cold-start widening is gone).
     Sort key:     (-tier, rank_index, -pagerank, slug) — rank_index constant
                   for T1/T3, so PageRank (desc) then slug (asc) break ties there.
+    Cap (#131):   page_cap flood-caps the t2∪t3 tail only; T1 is must-see,
+                  delivered in full regardless of size.
 """
 from __future__ import annotations
 
@@ -147,17 +155,22 @@ def build_context_snapshot(
     pagerank_scores = _pagerank_scores(conn)
     rank_index = {slug: i for i, slug in enumerate(t2_ordered)}
 
-    scored: list[tuple[str, int, int, float]] = []
+    t1_scored: list[tuple[str, int, int, float]] = []
+    rest_scored: list[tuple[str, int, int, float]] = []
     for slug in t1:
-        scored.append((slug, 3, 0, pagerank_scores.get(slug, 0.0)))
+        t1_scored.append((slug, 3, 0, pagerank_scores.get(slug, 0.0)))
     for slug in t2_ordered:
-        scored.append((slug, 2, rank_index[slug], pagerank_scores.get(slug, 0.0)))
+        rest_scored.append((slug, 2, rank_index[slug], pagerank_scores.get(slug, 0.0)))
     for slug in t3_slugs:
-        scored.append((slug, 1, 0, pagerank_scores.get(slug, 0.0)))
+        rest_scored.append((slug, 1, 0, pagerank_scores.get(slug, 0.0)))
 
-    # Strict tier ordering: tier desc, selector rank asc (T2), pagerank desc, slug asc
-    scored.sort(key=lambda x: (-x[1], x[2], -x[3], x[0]))
-    selected_slugs = [s[0] for s in scored[:page_cap]]
+    # Strict tier ordering: tier desc, selector rank asc (T2), pagerank desc,
+    # slug asc. #131: T1 is must-see — cap-EXEMPT, delivered in full; page_cap
+    # flood-caps the t2∪t3 tail only. The flat sequence stays t1-first.
+    t1_scored.sort(key=lambda x: (-x[1], x[2], -x[3], x[0]))
+    rest_scored.sort(key=lambda x: (-x[1], x[2], -x[3], x[0]))
+    selected_slugs = ([s[0] for s in t1_scored]
+                      + [s[0] for s in rest_scored[:page_cap]])
 
     # --- Projection ---
     outgoing_map = _batch_outgoing_links(conn, selected_slugs)
@@ -175,9 +188,10 @@ def build_context_snapshot(
         ))
 
     # --- TierRecords: candidates = pre-cap tier sets; delivered/slugs =
-    # post-cap, post-projection prompt pages per tier, in rank order. The
-    # tiers are disjoint by construction (t2 ⊆ pool−t1, t3 ⊆ pool−seeds), so
-    # sum(delivered) == len(pages) ≤ page_cap.
+    # post-projection prompt pages per tier, in rank order — t1 in FULL
+    # (#131: cap-exempt), t2/t3 post-cap. The tiers are disjoint by
+    # construction (t2 ⊆ pool−t1, t3 ⊆ pool−seeds), so
+    # sum(delivered) == len(pages) ≤ len(t1) + page_cap.
     tier_of: dict[str, int] = {}
     for slug in t1:
         tier_of[slug] = 1

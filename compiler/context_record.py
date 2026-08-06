@@ -236,9 +236,10 @@ def parse_context_record_v1(raw: dict) -> ContextRecordV1:
     t2 = _parse_tier(raw.get("t2"), "t2")
     t3 = _parse_tier(raw.get("t3"), "t3")
     page_cap = _require_count(raw.get("page_cap"), "page_cap")
-    if t1.delivered + t2.delivered + t3.delivered > page_cap:
+    # #131: t1 is must-see, cap-EXEMPT — the cap governs the t2+t3 tail only.
+    if t2.delivered + t3.delivered > page_cap:
         raise _err("page_cap",
-                   f"sum(delivered)={t1.delivered + t2.delivered + t3.delivered} "
+                   f"t2+t3 delivered={t2.delivered + t3.delivered} "
                    f"> page_cap={page_cap}")
     domain_scope = raw.get("domain_scope")
     if domain_scope is not None and not isinstance(domain_scope, str):
@@ -791,9 +792,10 @@ def parse_context_record_v2(raw: dict) -> ContextRecordV2:
     t2 = _parse_tier(raw.get("t2"), "t2")
     t3 = _parse_tier(raw.get("t3"), "t3")
     page_cap = _require_count(raw.get("page_cap"), "page_cap")
-    if t1.delivered + t2.delivered + t3.delivered > page_cap:
+    # #131: t1 is must-see, cap-EXEMPT — the cap governs the t2+t3 tail only.
+    if t2.delivered + t3.delivered > page_cap:
         raise _err("page_cap",
-                   f"sum(delivered)={t1.delivered + t2.delivered + t3.delivered} "
+                   f"t2+t3 delivered={t2.delivered + t3.delivered} "
                    f"> page_cap={page_cap}")
     domain_scope = raw.get("domain_scope")
     if domain_scope is not None and not isinstance(domain_scope, str):

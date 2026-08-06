@@ -165,29 +165,38 @@ class TestTierRanking:
         slugs = [p.slug for p in snapshot.pages]
         assert slugs.index("leaf-b") < slugs.index("leaf-a")
 
-    def test_page_cap_truncates(self, gdb):
-        """page_cap limits total output."""
-        snapshot = context_loader.build_context_snapshot(
+    def test_page_cap_governs_t2_t3_only(self, gdb):
+        """#131: page_cap is t2/t3 flood control — t1 is must-see, cap-EXEMPT.
+        cap=3 with 3 T1 + 2 T2 + 1 T3 candidates: all 3 T1 delivered in full;
+        the t2∪t3 tail is capped at 3."""
+        result = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             t2_selection=["leaf-b", "orphan-x"],
             page_cap=3,
-        ).snapshot
-        assert len(snapshot.pages) == 3
+        )
+        snapshot, t = result.snapshot, result.telemetry
+        assert len(snapshot.t1) == 3                        # exempt — full delivery
+        assert t.t1.delivered == t.t1.candidates == 3
+        # The cap's real scope: exactly 3 of the t2∪t3 tail survive —
+        # both T2 hits (selector order), then the T3 neighbor.
+        assert t.t2.slugs == ["leaf-b", "orphan-x"]
+        assert t.t3.slugs == ["leaf-a"]
+        assert len(snapshot.pages) == 6                     # 3 T1 + 3 capped rest
 
     def test_binding_cap_selector_rank_decides_t2_survivors(self, gdb):
         """§3.2's ratified behavior change: under a binding cap, selector
-        rank — not PageRank — decides which T2 pages survive. Cap leaves
-        exactly one T2 slot; the FIRST selector hit wins it even though the
-        second has the higher PageRank."""
+        rank — not PageRank — decides which T2 pages survive. Cap=1 leaves
+        exactly one t2/t3 slot (t1 is cap-exempt, #131); the FIRST selector
+        hit wins it even though the second has the higher PageRank."""
         snapshot = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             t2_selection=["leaf-b", "leaf-a"],
-            page_cap=4,                          # 3 T1 + exactly 1 T2 slot
+            page_cap=1,                          # exactly 1 t2/t3 slot
         ).snapshot
         slugs = [p.slug for p in snapshot.pages]
-        assert len(slugs) == 4
+        assert len(slugs) == 4                   # 3 T1 (exempt) + 1 survivor
         assert "leaf-b" in slugs                 # selector rank 1 survives
         assert "leaf-a" not in slugs             # higher PageRank, cut anyway
 
@@ -209,6 +218,42 @@ class TestTierRanking:
             page_cap=50,
         ).snapshot
         assert snapshot.source_id == "src-alpha"
+
+
+class TestT1CapExemption:
+    """#131: t1 is must-see — delivered in full even when it alone exceeds
+    page_cap; the cap governs only the t2∪t3 tail."""
+
+    def test_t1_exceeding_cap_is_fully_delivered(self, gdb):
+        """The run-7 defect in miniature (Pabrai: 65 t1 candidates, 50
+        delivered → 15 silently amputated, 14 retracted): a source owning MORE
+        than page_cap of its own pages still has every one delivered."""
+        conn = gdb.conn
+        conn.execute(
+            "CREATE (s:Source {source_id: 'src-gamma', source_type: 'raw', "
+            "canonical_path: 'src-gamma', status: 'active', "
+            "file_type: 'markdown', hash: 'sha256:aaa', size_bytes: 100, "
+            "first_seen_at: '2026-01-01', last_seen_at: '2026-01-01', "
+            "last_ingested_at: '2026-01-01', ingest_state: 'compiled', "
+            "ingest_count: 1, last_run_id: 'r1', moved_to: ''})")
+        for i in range(8):
+            slug = f"gamma-{i}"
+            conn.execute(
+                "CREATE (e:Entity {slug: $s, title: $s, page_type: 'concept', "
+                "status: 'active', confidence: 'medium', "
+                "created_at: '2026-01-01', updated_at: '2026-01-01', "
+                "first_run_id: 'r1', last_run_id: 'r1'})", {"s": slug})
+            conn.execute(
+                "MATCH (s:Source {source_id: 'src-gamma'}), "
+                "(e:Entity {slug: $slug}) "
+                "CREATE (s)-[:SUPPORTS {run_id: 'r1'}]->(e)", {"slug": slug})
+        result = context_loader.build_context_snapshot(
+            conn, source_id="src-gamma", page_cap=3)
+        t = result.telemetry
+        assert t.t1.candidates == 8
+        assert t.t1.delivered == 8                     # cap=3 never touches t1
+        assert len(result.snapshot.t1) == 8
+        assert t.t2.delivered + t.t3.delivered <= 3
 
 
 class TestSnapshotTierShape:
@@ -263,14 +308,15 @@ class TestSnapshotTierShape:
 
     def test_tier_lists_match_telemetry(self, gdb):
         """The snapshot tiers and the telemetry TierRecords are the same
-        partition — under a binding cap they are the cap-truncated prefixes
-        (T1 survives first, §3.2), at full delivery they are the tier sets."""
-        # Binding cap: 3 T1 + exactly 1 T2 slot — selector rank 1 survives.
+        partition — under a binding cap the t2/t3 tiers are the cap-truncated
+        prefixes (selector-rank order, §3.2; t1 is cap-exempt, #131), at full
+        delivery they are the tier sets."""
+        # Binding cap: exactly 1 t2/t3 slot — selector rank 1 survives.
         capped = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             t2_selection=["leaf-b", "leaf-a"],
-            page_cap=4,
+            page_cap=1,
         )
         for tier_pages, record in (
             (capped.snapshot.t1, capped.telemetry.t1),
@@ -670,18 +716,20 @@ class TestTelemetry:
         assert result.telemetry.search is None
 
     def test_telemetry_tier_records_pre_and_post_cap(self, gdb):
-        """candidates = pre-cap tier sets; delivered/slugs = post-cap pages."""
+        """candidates = pre-cap tier sets; delivered/slugs = post-projection
+        prompt pages — t1 in FULL (#131: cap-exempt), t2/t3 post-cap."""
         result = context_loader.build_context_snapshot(
             gdb.conn,
             source_id="src-alpha",
             t2_selection=["leaf-b", "leaf-a"],
-            page_cap=4,
+            page_cap=1,
         )
         t = result.telemetry
+        assert t.t1.delivered == t.t1.candidates == 3    # exempt — full delivery
         assert t.t2.candidates == 2
         assert t.t2.delivered == 1 and t.t2.slugs == ["leaf-b"]
         total = t.t1.delivered + t.t2.delivered + t.t3.delivered
-        assert total == 4 <= t.page_cap
+        assert total == 4 <= t.t1.delivered + t.page_cap
 
     def test_empty_graph_full_telemetry(self, tmp_path):
         """Empty-graph early return: FULL telemetry — zero tiers,
