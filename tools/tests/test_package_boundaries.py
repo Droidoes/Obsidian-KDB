@@ -42,7 +42,7 @@ ALLOWED = {
     "kdb_search":   {"common"},
     "ingestion":    {"common"},
     "compiler":     {"common", "kdb_graph", "kdb_search"},  # #123 P3a: search_adapter
-    "orchestrator": {"common", "kdb_graph", "ingestion", "compiler", "tools"},  # 'tools' = documented cleanup edge
+    "orchestrator": {"common", "kdb_graph", "ingestion", "compiler"},  # #133: cleanup edge removed
     "tools":        {"common", "kdb_graph", "ingestion", "compiler", "kdb_search"},  # #123 P4 harness
     "kdb_mcp":      {"common", "kdb_graph"},
 }
@@ -55,8 +55,9 @@ def test_package_dependency_contract(pkg, allowed):
     assert not illegal, f"{pkg} imports outside its contract: {illegal}"
 
 
-def test_nothing_depends_on_tools_except_orchestrator_cleanup():
-    # 'nothing depends on tools' holds EXCEPT orchestrator->tools.cleanup
-    # (orchestrate.finalize calls cleanup inline; decoupling is deferred, out of Phase B move-scope).
-    for pkg in ("common", "ingestion", "compiler", "kdb_graph"):
+def test_nothing_depends_on_tools():
+    # 'nothing depends on tools' holds without exception since #133 (the
+    # orchestrator->tools.cleanup edge — finalize calling cleanup inline — was
+    # retired in #130 and its allowance removed in #133).
+    for pkg in ("common", "ingestion", "compiler", "kdb_graph", "orchestrator"):
         assert "tools" not in _top_level_imports(pkg), f"{pkg} must not depend on tools"

@@ -685,41 +685,19 @@ def test_rebuild_cleanup_then_later_compile_re_emits_slug(tmp_path, graph_dir):
 
 
 def test_rebuild_slug_safe_when_slug_survives_under_another_page(tmp_path, graph_dir):
-    # Codex's named slug-safe integration test: the same slug 'foo' is emitted
-    # by an active article AND an orphaned concept. The cleanup retracts only
-    # the concept's page_id — but 'foo' still has a surviving article page, so
-    # reap_orphans excludes 'foo' from retracted_slugs and the graph entity
-    # 'foo' (one slug-keyed node) must survive.
-    from tools.cleanup import reap_orphans
-
+    # Codex's named slug-safe integration test: the same slug 'foo' was emitted
+    # by an active article AND an orphaned concept. The historical cleanup
+    # retracted only the concept's page_id — 'foo' still had a surviving
+    # article page, so the slug-safe computation (#68, helper deleted in #133)
+    # excluded 'foo' from the journal's retracted_slugs. Rebuild over that
+    # journal must keep the graph entity 'foo' (one slug-keyed node).
     journals = tmp_path / "runs"
     _write_run(journals, "2026-01-01T00-00-00",
                started_at="2026-01-01T00:00:00",
                sources=[("KDB/raw/s.md", ["foo", "solo"])])
 
-    manifest = {
-        "pages": {
-            "KDB/wiki/articles/foo.md": {
-                "status": "active", "slug": "foo", "page_type": "article",
-                "page_id": "KDB/wiki/articles/foo.md", "outgoing_links": [],
-            },
-            "KDB/wiki/concepts/foo.md": {
-                "status": "orphan_candidate", "slug": "foo", "page_type": "concept",
-                "page_id": "KDB/wiki/concepts/foo.md", "outgoing_links": [],
-            },
-            "KDB/wiki/concepts/solo.md": {
-                "status": "orphan_candidate", "slug": "solo", "page_type": "concept",
-                "page_id": "KDB/wiki/concepts/solo.md", "outgoing_links": [],
-            },
-        },
-        "orphans": {"KDB/wiki/concepts/foo.md": {}, "KDB/wiki/concepts/solo.md": {}},
-    }
-    report = reap_orphans(manifest)
-    assert "foo" not in report["retracted_slugs"]   # survives under the article
-    assert report["retracted_slugs"] == ["solo"]
-
     _write_cleanup_run(journals, "clean-orphans-2026-02-01T00-00-00",
-                       report["retracted_slugs"],
+                       ["solo"],  # 'foo' survived under the article — not retracted
                        started_at="2026-02-01T00:00:00")
     result = rebuild(graph_dir, ObsidianRunsAdapter(),
                      journals_dir=journals, confirm=False)

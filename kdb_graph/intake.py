@@ -872,9 +872,10 @@ def apply_cleanup(
 
     DETACH DELETEs the Entity node — and its LINKS_TO + SUPPORTS edges — for
     every slug in `retraction['retracted_slugs']`, and ONLY those slugs.
-    `retracted_slugs` is the slug-safe key set computed by `reap_orphans`
-    (reaped slugs no surviving active page provides); the full `reaped` page
-    list in the retraction payload is audit-only and is NOT used for deletion.
+    `retracted_slugs` is the slug-safe key set the historical `kdb-clean
+    orphans` reap computed (#68; the helper was deleted in #133 — reaped slugs
+    no surviving active page provides); the full `reaped` page list in the
+    retraction payload is audit-only and is NOT used for deletion.
 
     Atomic per run, mirroring apply_compile_result's transaction handling.
 
