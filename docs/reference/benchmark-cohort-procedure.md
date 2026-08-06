@@ -20,10 +20,12 @@ here and are **not** repeated below.
 
 For **each** model in the cohort, in its own clean run:
 
-1. **Pause OneDrive** + **reset** the sandbox — exactly as in the test-run runbook
-   §0–§1 (`cd ~/Obsidian/Vault-in-place-test-run/KDB && rm -rf graph graph-view.html
-   wiki state/runs state/manifest.json state/compile_result.json
-   state/last_orchestrate.json`).
+1. **Pause OneDrive** (test-run runbook §0) + **reset** the sandbox — preferred:
+   `--cold` on the run itself (step 2; preserves `state/runs/` journals). The
+   manual wipe (test-run runbook §1: `cd ~/Obsidian/Vault-in-place-test-run/KDB
+   && rm -rf graph graph-view.html wiki state/runs state/manifest.json
+   state/compile_result.json state/last_orchestrate.json`) remains for when the
+   journal history should go too.
 2. Run the orchestrator with the model's provider/model and the **`--emit-kpis`**
    flag:
 

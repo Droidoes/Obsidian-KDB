@@ -1845,3 +1845,303 @@ def test_run_journals_rebuild_identical_graph_e2e(tmp_path, monkeypatch):
     assert statuses["concept-x2"] == "active"
     assert "summary-c" not in statuses
     assert src_status["AIML/c.md"] == "deleted"
+
+
+# ---------- #135: --cold first-class cold start ----------
+
+def _seed_derived_state(vault: Path, state_root: Path, graph_path: Path) -> None:
+    """Seed the four derived-state targets --cold must erase, plus the
+    config/audit artifacts it must preserve."""
+    (vault / "KDB" / "wiki" / "concepts").mkdir(parents=True, exist_ok=True)
+    (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").write_text(
+        "---\nstatus: active\n---\nGhost.\n", encoding="utf-8")
+    (vault / "KDB" / "wiki" / "articles").mkdir(parents=True, exist_ok=True)
+    (vault / "KDB" / "wiki" / "articles" / "stale-two.md").write_text(
+        "---\nstatus: active\n---\nGhost 2.\n", encoding="utf-8")
+    graph_path.mkdir(parents=True, exist_ok=True)
+    (graph_path / "marker").write_text("old graph", encoding="utf-8")
+    (state_root / "manifest.json").write_text(
+        json.dumps({"sources": {"ghost.md": {"run_state": "compiled"}}}),
+        encoding="utf-8")
+    (state_root / "canonicalization").mkdir(parents=True, exist_ok=True)
+    (state_root / "canonicalization" / "aliases.json").write_text(
+        json.dumps({"bogus-alias": "bogus-canonical"}), encoding="utf-8")
+    # preserved: config + audit trail + per-run outputs
+    _write_pipelines(state_root, vault)
+    (state_root / "runs").mkdir(parents=True, exist_ok=True)
+    (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").write_text(
+        "{}", encoding="utf-8")
+    (state_root / "last_orchestrate.json").write_text("{}", encoding="utf-8")
+
+
+def test_cold_wipe_removes_derived_state(tmp_path):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    _seed_derived_state(vault, state_root, graph_path)
+
+    stats = kdb_orchestrate._cold_wipe(
+        vault_root=vault, state_root=state_root, graph_path=graph_path)
+
+    assert stats == {"wiki_files_removed": 2, "graph_removed": True,
+                     "manifest_removed": True, "alias_ledger_removed": True,
+                     "dry_run": False}
+    assert not (vault / "KDB" / "wiki").exists()
+    assert not graph_path.exists()
+    assert not (state_root / "manifest.json").exists()
+    assert not (state_root / "canonicalization" / "aliases.json").exists()
+    # preserved
+    assert (state_root / "pipelines.json").exists()
+    assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
+    assert (state_root / "last_orchestrate.json").exists()
+
+
+def test_cold_wipe_dry_run_reports_without_deleting(tmp_path):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    _seed_derived_state(vault, state_root, graph_path)
+
+    stats = kdb_orchestrate._cold_wipe(
+        vault_root=vault, state_root=state_root, graph_path=graph_path,
+        dry_run=True)
+
+    assert stats["dry_run"] is True
+    assert stats["wiki_files_removed"] == 2
+    assert stats["graph_removed"] is True
+    assert stats["manifest_removed"] is True
+    assert stats["alias_ledger_removed"] is True
+    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert (graph_path / "marker").exists()
+    assert (state_root / "manifest.json").exists()
+    assert (state_root / "canonicalization" / "aliases.json").exists()
+
+
+def test_cold_wipe_idempotent_on_missing(tmp_path):
+    vault = _vault(tmp_path)
+    stats = kdb_orchestrate._cold_wipe(
+        vault_root=vault, state_root=vault / "KDB" / "state",
+        graph_path=tmp_path / "graph")
+    assert stats == {"wiki_files_removed": 0, "graph_removed": False,
+                     "manifest_removed": False, "alias_ledger_removed": False,
+                     "dry_run": False}
+
+
+def test_run_cold_wipes_stale_state_then_rebuilds(tmp_path, monkeypatch):
+    """End-to-end: a stale wiki file with no graph node (the #134-measured
+    class) is erased by --cold; the run then rebuilds from sources."""
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
+                                         encoding="utf-8")
+    _seed_derived_state(vault, state_root, graph_path)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry",
+                        _fake_model(_compiled_response("a.md", "summary-a")))
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=graph_path, provider="p", model="m", max_tokens=4096,
+        cold=True)
+
+    assert res.ok, res.exit_reason
+    assert res.counts["sources_compiled"] == 1
+    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert not (graph_path / "marker").exists()
+    assert list((vault / "KDB" / "wiki").rglob("summary-a.md"))
+    rows = _event_rows(res.event_log_path)
+    wipe = [r for r in rows if r.get("event_type") == "cold_wipe"]
+    assert len(wipe) == 1
+    assert wipe[0]["severity"] == "warning"
+    assert wipe[0]["context"]["wiki_files_removed"] == 2
+    assert wipe[0]["context"]["dry_run"] is False
+
+
+def test_run_cold_dry_run_wipes_nothing(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
+                                         encoding="utf-8")
+    _seed_derived_state(vault, state_root, graph_path)
+
+    res = kdb_orchestrate.run(
+        pipeline_id="vt", vault_root=vault, state_root=state_root,
+        graph_path=graph_path, provider="p", model="m", max_tokens=4096,
+        cold=True, dry_run=True, log_level="info")
+
+    assert res.exit_reason == "dry-run"
+    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert (graph_path / "marker").exists()
+    assert (state_root / "manifest.json").exists()
+    rows = _event_rows(res.event_log_path)
+    wipe = [r for r in rows if r.get("event_type") == "cold_wipe"]
+    assert len(wipe) == 1
+    assert wipe[0]["severity"] == "info"
+    assert wipe[0]["context"]["dry_run"] is True
+
+
+def test_main_cold_flag_wires_through(tmp_path, monkeypatch):
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
+                                         encoding="utf-8")
+    _seed_derived_state(vault, state_root, graph_path)
+    captured: dict = {}
+    _capture_pass_leaves(monkeypatch, captured)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--yes",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 0
+    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert captured["pass2_req"] is not None        # compile actually ran
+
+
+# ---------- #135: --cold confirmation gate + deprecated-total stat ----------
+
+def _main_cold_vault(tmp_path: Path) -> tuple[Path, Path, Path]:
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
+                                         encoding="utf-8")
+    _seed_derived_state(vault, state_root, graph_path)
+    return vault, state_root, graph_path
+
+
+def test_main_cold_prompts_and_decline_aborts(tmp_path, monkeypatch, capsys):
+    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "no")
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 1
+    out, err = capsys.readouterr()
+    assert "PERMANENTLY DELETE" in out
+    assert str(vault / "KDB" / "wiki") in out and "2 files" in out
+    assert str(graph_path) in out
+    assert "declined" in err
+    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert (graph_path / "marker").exists()
+    assert (state_root / "manifest.json").exists()
+
+
+def test_main_cold_prompts_and_yes_proceeds(tmp_path, monkeypatch):
+    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "yes")
+    captured: dict = {}
+    _capture_pass_leaves(monkeypatch, captured)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 0
+    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert captured["pass2_req"] is not None
+
+
+def test_main_cold_yes_flag_skips_prompt(tmp_path, monkeypatch):
+    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+    def _no_input(prompt=""):
+        raise AssertionError("input() must not fire under --yes")
+    monkeypatch.setattr("builtins.input", _no_input)
+    captured: dict = {}
+    _capture_pass_leaves(monkeypatch, captured)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--yes",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 0
+    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+
+
+def test_main_cold_dry_run_never_prompts(tmp_path, monkeypatch):
+    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+    def _no_input(prompt=""):
+        raise AssertionError("input() must not fire under --dry-run")
+    monkeypatch.setattr("builtins.input", _no_input)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--dry-run",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 0
+    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert (graph_path / "marker").exists()
+
+
+def test_main_cold_noninteractive_aborts_with_yes_guidance(
+        tmp_path, monkeypatch, capsys):
+    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+    def _eof(prompt=""):
+        raise EOFError
+    monkeypatch.setattr("builtins.input", _eof)
+
+    exit_code = kdb_orchestrate.main([
+        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--graph-path", str(graph_path), "--state-root", str(state_root),
+    ])
+
+    assert exit_code == 1
+    _, err = capsys.readouterr()
+    assert "--yes" in err
+    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+
+
+def test_count_deprecated_wiki_files(tmp_path):
+    wiki = tmp_path / "KDB" / "wiki"
+    (wiki / "concepts").mkdir(parents=True)
+    (wiki / "concepts" / "a.md").write_text(
+        "---\nslug: a\nstatus: deprecated\n---\nbody\n", encoding="utf-8")
+    (wiki / "concepts" / "b.md").write_text(
+        "---\nslug: b\nstatus: active\n---\nbody\n", encoding="utf-8")
+    (wiki / "articles").mkdir()
+    (wiki / "articles" / "c.md").write_text(
+        "---\nslug: c\nstatus: deprecated\n---\nbody\n", encoding="utf-8")
+    (wiki / "articles" / "no-fm.md").write_text("plain body\n", encoding="utf-8")
+
+    assert kdb_orchestrate._count_deprecated_wiki_files(tmp_path) == 2
+    assert kdb_orchestrate._count_deprecated_wiki_files(
+        tmp_path / "empty-vault") == 0
+
+
+def test_finalize_reports_deprecated_pages_total(tmp_path):
+    """#135: the standing deprecated-wiki total lands in the finalize stats —
+    the operator-visible #134 tripwire, post-convergence."""
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    ctx = RunContext.new(vault_root=tmp_path)
+    scan = _scan_files("a.md")
+    cr1 = _cr("a.md", [_page("ent-a"), _page("ent-b")])
+    cr2 = _cr("a.md", [_page("ent-a")])
+    f = tmp_path / "KDB/wiki/concepts/ent-b.md"
+    f.parent.mkdir(parents=True)
+    f.write_text(
+        "---\ntitle: B\nslug: ent-b\npage_type: concept\nstatus: active\n---\nbody\n",
+        encoding="utf-8")
+    with GraphDB(tmp_path / "graph") as g:
+        g.apply_compile_result(cr1, scan, ctx.run_id,
+                               detect_deprecations=False, wire_links=False)
+        g.apply_compile_result(cr2, scan, ctx.run_id,
+                               detect_deprecations=False, wire_links=False)
+        stats = kdb_orchestrate._finalize(
+            g.conn, [cr2], state_root=state_root, ctx=ctx)
+    assert stats["deprecated"] == 1
+    assert stats["deprecated_pages_total"] == 1

@@ -28,10 +28,19 @@ that keeps the *production* graph out of OneDrive).
 
 ## 1. Reset (wipe KDB outputs, keep config)
 
-Wipe the regenerated outputs; keep the pipeline config + system prompt. The source
-notes are **not** touched — Pass-1 re-enrich strips and replaces their frontmatter
-idempotently (enrich sends the LLM the frontmatter-stripped body; the content hash
-is body-based), so already-enriched notes re-run clean.
+**Preferred (#135):** skip the manual wipe and pass `--cold` to the run itself
+(§2) — it erases derived state (the `wiki/` tree, `graph/`, `state/manifest.json`,
+and the `canonicalization/aliases.json` ledger) before the scan, records a
+`cold_wipe` event (severity warning) in the run's event log, and **preserves
+`state/runs/`** (the #132 replay-journal audit trail). `--cold` asks for
+confirmation first — it prints exactly what dies and waits for `yes` (pass
+`--yes` to skip in scripts). `--dry-run --cold`
+previews the wipe without deleting. This is also the only mechanism that
+removes cold-run-orphaned wiki files (no graph node ⇒ invisible to the
+in-loop lifecycle — the #134 measurement).
+
+The manual equivalent (also deletes `state/runs/` — use only when the journal
+history should go too):
 
 ```bash
 cd ~/Obsidian/Vault-in-place-test-run/KDB && rm -rf \
@@ -44,6 +53,10 @@ cd ~/Obsidian/Vault-in-place-test-run/KDB && rm -rf \
 | `graph`, `graph-view.html` | `state/pipelines.json` (pipeline `vault-test` config) |
 | `wiki/` (articles/concepts/summaries) | `KDB-Compiler-System-Prompt.md` |
 | `state/{runs,manifest,compile_result,last_orchestrate}` | the source notes (`AIML/`, `Value Investing/`, …) |
+
+The source notes are **not** touched — Pass-1 re-enrich strips and replaces
+their frontmatter idempotently (enrich sends the LLM the frontmatter-stripped
+body; the content hash is body-based), so already-enriched notes re-run clean.
 
 A full wipe (vs `graphdb-kdb rebuild`) is the genuine end-to-end gate and **inits a
 fresh graph at the current schema** — no rebuild, no schema-version mismatch.
