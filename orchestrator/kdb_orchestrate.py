@@ -50,7 +50,7 @@ from orchestrator.orchestrator_events import (
 from common.measurement import RunMeasurementHeader
 from common.model_pool import resolve_models_json, UnknownModelError, PoolError
 from common.model_route import ModelRoute
-from common.run_context import RunContext, now_iso
+from common.run_context import RunContext, now_iso, run_id_from_timestamp
 from common.version import release_version
 from orchestrator.emit_kpis import maybe_emit_kpis
 from common.source_io import SourceFrontmatter, parse_existing_frontmatter
@@ -582,25 +582,35 @@ def _count_deprecated_wiki_files(vault_root: Path) -> int:
     return n
 
 
-def _cold_wipe(
+def _wipe_derived_state(
     *, vault_root: Path, state_root: Path, graph_path: Path,
     dry_run: bool = False,
 ) -> dict:
-    """#135: erase derived state so the run re-plans from sources alone.
+    """#138: erase derived state; archive the journal history first.
 
     Targets (derived, fully rebuildable): the KDB/wiki tree, the graph
     database (single file or directory, depending on the Kuzu layout),
     manifest.json, and the canonicalization alias ledger (whose
     entries reference graph entities that no longer exist post-wipe).
-    Preserved: pipelines.json (config, not derived), state/runs/ (audit
-    trail / #132 replay journals), and per-run outputs
+    Preserved: pipelines.json (config, not derived) and per-run outputs
     (last_orchestrate.json / compile_result.json — overwritten by the run).
-    Idempotent: missing targets are reported as absent, never an error.
+    Archived: a non-empty state/runs/ moves to state/pre-wipe-runs/<ts>/ so
+    replay/verify over the post-wipe replay root matches live by
+    construction (#137 — pre-wipe history is audit data, not live history).
+    Every executed wipe appends one line to the wipe ledger,
+    state/wipes.jsonl — the wipe has no run to journal into (it is
+    decoupled from run()), so the ledger is the audit trail. Idempotent:
+    missing targets are reported as absent, never an error. dry_run reports
+    the plan (counts + archive destination) and touches nothing; its only
+    consumer is the confirmation gate in main().
     """
     wiki_root = Path(vault_root) / "KDB" / "wiki"
     graph_path = Path(graph_path)
-    manifest_path = Path(state_root) / MANIFEST_NAME
-    alias_ledger = Path(state_root) / "canonicalization" / "aliases.json"
+    state_root = Path(state_root)
+    manifest_path = state_root / MANIFEST_NAME
+    alias_ledger = state_root / "canonicalization" / "aliases.json"
+    runs_root = state_root / "runs"
+    runs_entries = list(runs_root.iterdir()) if runs_root.exists() else []
     stats = {
         "wiki_files_removed": (
             sum(1 for p in wiki_root.rglob("*") if p.is_file())
@@ -608,10 +618,19 @@ def _cold_wipe(
         "graph_removed": graph_path.exists(),
         "manifest_removed": manifest_path.exists(),
         "alias_ledger_removed": alias_ledger.exists(),
+        "run_dirs_archived": len(runs_entries),
+        "archive_dir": (
+            str(state_root / "pre-wipe-runs" / run_id_from_timestamp(now_iso()))
+            if runs_entries else None),
         "dry_run": dry_run,
     }
     if dry_run:
         return stats
+    if runs_entries:
+        archive_dir = Path(stats["archive_dir"])
+        archive_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(runs_root), str(archive_dir))
+        runs_root.mkdir(parents=True, exist_ok=True)
     if wiki_root.exists():
         shutil.rmtree(wiki_root)
     # Kuzu's layout is a single FILE in current versions (older layouts used
@@ -623,13 +642,16 @@ def _cold_wipe(
     for p in (manifest_path, alias_ledger):
         if p.exists():
             p.unlink()
+    ledger = state_root / "wipes.jsonl"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": now_iso(), **stats}) + "\n")
     return stats
 
 
 def run(
     *, pipeline_id: str, vault_root: Path, state_root: Path, graph_path: Path,
     provider: str, model: str, max_tokens: int = 32768, dry_run: bool = False,
-    cold: bool = False,
     limit: int | None = None, log_level: OrchestratorLogLevel = "warning",
     quiet: bool = False, emit_kpis: bool = False,
     use_completion_tokens: bool = False, extra_body: dict | None = None,
@@ -650,22 +672,14 @@ def run(
     and finalize still run over the compiled batch — this is a clean stop, not
     an abort. Remainder is picked up on the next run (unchanged hashes skip).
 
-    `cold` (#135): if set, erase derived state (KDB/wiki tree, graph dir,
-    manifest, alias ledger) BEFORE the manifest load/scan so the run re-plans
-    from sources alone — the cold-run-orphaned wiki files measured in #134
-    have no graph node and are invisible to every in-loop lifecycle mechanism,
-    so the wipe is the only thing that removes them. Config (pipelines.json)
-    and the audit trail (state/runs/) are preserved. With dry_run, the wipe
-    is previewed in the event log only.
+    The run has no modes (#138): it is always incremental against whatever
+    state exists — an empty world simply means every source is new. Derived-
+    state erasure is a separate operation, `_wipe_derived_state` (`--wipe`),
+    decoupled from the run.
     """
     vault_root = Path(vault_root)
     state_root = Path(state_root)
     graph_path = Path(graph_path)
-    # #135: the wipe must precede the manifest load so prior state is empty
-    # and every source recompiles.
-    cold_stats = (_cold_wipe(vault_root=vault_root, state_root=state_root,
-                             graph_path=graph_path, dry_run=dry_run)
-                  if cold else None)
     manifest_path = state_root / MANIFEST_NAME
 
     pipeline = pipeline_registry.get_pipeline(state_root, pipeline_id)
@@ -682,15 +696,6 @@ def run(
         stage="run", event_type="run_started", severity="info",
         message="orchestrator run started",
         context={"pipeline_id": pipeline_id, "dry_run": dry_run, "limit": limit})
-    if cold_stats is not None:
-        recorder.record(
-            stage="run", event_type="cold_wipe",
-            severity="info" if dry_run else "warning",
-            message=("cold-start wipe preview (dry-run, nothing deleted)"
-                     if dry_run else
-                     "cold-start wipe: derived state erased (wiki tree, "
-                     "graph, manifest, alias ledger)"),
-            context=cold_stats)
     ledger = load_or_empty(state_root / "canonicalization" / "aliases.json")
     runs_root = state_root / "runs"
 
@@ -1301,18 +1306,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--selector-model", default=None, metavar="POOL_ID",
                    help="pass-1.5 selector seat; defaults to --model (single-model "
                         "runs). Pass a pool id to pin a different seat.")
-    p.add_argument("--dry-run", action="store_true",
+    wipe_grp = p.add_mutually_exclusive_group()
+    wipe_grp.add_argument("--dry-run", action="store_true",
                    help="scan + print the plan; no enrich/compile/graph writes, no API")
-    p.add_argument("--cold", action="store_true",
-                   help="cold start (#135): erase derived state — KDB/wiki tree, "
-                        "graph dir, manifest, alias ledger — before the scan, "
-                        "then rebuild from sources alone. pipelines.json and "
-                        "state/runs/ journals are preserved. With --dry-run, "
-                        "previews the wipe without deleting. Prompts for "
-                        "confirmation unless --yes.")
-    p.add_argument("--yes", action="store_true",
-                   help="skip the --cold confirmation prompt (scripts, "
-                        "non-interactive use)")
+    wipe_grp.add_argument("--wipe", action="store_true",
+                   help="wipe derived state (#138) — KDB/wiki tree, graph, "
+                        "manifest, alias ledger — and exit; never runs the "
+                        "pipeline and needs no pipeline/model. state/runs/ "
+                        "journals are archived to pre-wipe-runs/<ts>/ first; "
+                        "pipelines.json (config) is kept. Always prompts for "
+                        "typed confirmation — there is no bypass.")
     p.add_argument("--limit", type=int, default=None, metavar="N",
                    help="stop after N signal sources have been compiled; "
                         "noise is free and does not count. Finalize still runs "
@@ -1351,6 +1354,57 @@ def main(argv: list[str] | None = None) -> int:
                   else vault_root / "KDB" / "state")
     graph_path = (Path(args.graph_path).resolve() if args.graph_path
                   else vault_root / "KDB" / "graph")
+
+    if args.wipe:
+        # #138: wipe-and-exit — decoupled from the run (the run has no
+        # modes; wiping is its own operation). It precedes pipeline listing
+        # and model resolution: a wipe needs neither. Confirmation is always
+        # required; there is no bypass flag (D-138-3).
+        preview = _wipe_derived_state(vault_root=vault_root,
+                                      state_root=state_root,
+                                      graph_path=graph_path, dry_run=True)
+        print("*** --wipe will PERMANENTLY DELETE derived KDB state:")
+        print(f"    - wiki tree:    {vault_root / 'KDB' / 'wiki'} "
+              f"({preview['wiki_files_removed']} files)")
+        print(f"    - graph DB:     {graph_path} "
+              f"({'present' if preview['graph_removed'] else 'absent'})")
+        print(f"    - manifest:     {state_root / MANIFEST_NAME} "
+              f"({'present' if preview['manifest_removed'] else 'absent'})")
+        print(f"    - alias ledger: "
+              f"{state_root / 'canonicalization' / 'aliases.json'} "
+              f"({'present' if preview['alias_ledger_removed'] else 'absent'})")
+        if preview["archive_dir"]:
+            print(f"    state/runs/ journals ({preview['run_dirs_archived']} "
+                  f"entries) move to {state_root / 'pre-wipe-runs'}"
+                  f"/<wipe timestamp> (replay-clean archive).")
+        else:
+            print("    no state/runs/ journals to archive.")
+        print("    pipelines.json (config) is kept.")
+        try:
+            answer = input('Type "yes" to proceed: ')
+        except EOFError:
+            print("wipe confirmation requires an interactive terminal — "
+                  "aborting (there is no bypass flag by design).",
+                  file=sys.stderr)
+            return 1
+        if answer.strip().lower() != "yes":
+            print("wipe declined — aborting.", file=sys.stderr)
+            return 1
+        stats = _wipe_derived_state(vault_root=vault_root,
+                                    state_root=state_root,
+                                    graph_path=graph_path)
+        archived = (f"{stats['run_dirs_archived']} journal entries archived "
+                    f"to {stats['archive_dir']}" if stats["archive_dir"]
+                    else "no journals to archive")
+        print(f"wipe complete: {stats['wiki_files_removed']} wiki files "
+              f"removed, graph "
+              f"{'removed' if stats['graph_removed'] else 'absent'}, "
+              f"manifest "
+              f"{'removed' if stats['manifest_removed'] else 'absent'}, "
+              f"alias ledger "
+              f"{'removed' if stats['alias_ledger_removed'] else 'absent'}; "
+              f"{archived}; ledgered in {state_root / 'wipes.jsonl'}.")
+        return 0
 
     if not args.pipeline:
         ids = pipeline_registry.list_pipelines(state_root)
@@ -1394,37 +1448,10 @@ def main(argv: list[str] | None = None) -> int:
         # stays on the module fallback unless --selector-model pins one.
         selector_model_id = args.selector_model
 
-    if args.cold and not args.dry_run and not args.yes:
-        # #135 destructive-op gate: show exactly what dies, then require an
-        # explicit "yes". Skipped entirely by --dry-run (nothing is deleted)
-        # and --yes (scripts). EOF (non-interactive stdin) aborts with
-        # guidance rather than proceeding silently.
-        preview = _cold_wipe(vault_root=vault_root, state_root=state_root,
-                             graph_path=graph_path, dry_run=True)
-        print("*** --cold will PERMANENTLY DELETE derived KDB state:")
-        print(f"    - wiki tree:    {vault_root / 'KDB' / 'wiki'} "
-              f"({preview['wiki_files_removed']} files)")
-        print(f"    - graph DB:     {graph_path} "
-              f"({'present' if preview['graph_removed'] else 'absent'})")
-        print(f"    - manifest:     {state_root / MANIFEST_NAME} "
-              f"({'present' if preview['manifest_removed'] else 'absent'})")
-        print(f"    - alias ledger: "
-              f"{state_root / 'canonicalization' / 'aliases.json'} "
-              f"({'present' if preview['alias_ledger_removed'] else 'absent'})")
-        print("    pipelines.json (config) and state/runs/ journals are kept.")
-        try:
-            answer = input('Type "yes" to proceed: ')
-        except EOFError:
-            answer = ""
-        if answer.strip().lower() != "yes":
-            print("cold wipe declined — aborting (pass --yes to skip this "
-                  "prompt in scripts).", file=sys.stderr)
-            return 1
-
     res = run(
         pipeline_id=args.pipeline, vault_root=vault_root, state_root=state_root,
         graph_path=graph_path, provider=provider, model=model,
-        max_tokens=args.max_tokens, dry_run=args.dry_run, cold=args.cold,
+        max_tokens=args.max_tokens, dry_run=args.dry_run,
         limit=args.limit,
         log_level=_resolve_log_level(args), quiet=args.quiet,
         emit_kpis=args.emit_kpis,

@@ -216,6 +216,14 @@ Task #91's C1 deferred all LINKS_TO wiring to an end-of-run batch over `accumula
 
 ---
 
+### §8. A mode that restates a state is not an option (2026-08-07, #138)
+
+#135 shipped `--cold` — wipe + run in one flag — and within a day Joseph called it: *"the distinction of cold vs warm is merely a reflection of the state of the database… we shouldn't have the concept of cold vs warm as running options."* He was provably right: warm-out-of-nothing IS cold (no manifest ⇒ every source is new; the first-ever run, and every test, runs warm against empty state). The flag added exactly one real operation — the wipe — plus a fiction: that the run has two modes. The follow-on simplifications cascaded: `--yes` died with it (a destructive op should confirm unbypassably, and a bare `--yes` never said what it belonged to), and #137 (replay × wipe divergence) stopped being a patch on the replayer and became part of the wipe's own definition — *leave the replay tape clean for the world you're about to build*. There was even a tell in the audit story: the wipe journaled into the run it preceded, so on a clean run the `cold_wipe` warning event was the ONLY thing creating the event-log file at all — the destructive act's record was squatting in an unrelated operation's journal.
+
+**Application:** when a proposed flag's semantics reduce to "reach state S, then behave as always," split it — one command reaches S, the other behaves as always. A mode flag over composable operations is coupling, not convenience. Destructive operations stand alone, confirm unbypassably, and carry their own audit trail (a ledger they own) rather than a seat in another operation's journal.
+
+---
+
 ## What the next iteration looks like
 
 If we name it now, **Iteration #4 is "step-3 ops to V1."** Its preconditions are mostly satisfied:

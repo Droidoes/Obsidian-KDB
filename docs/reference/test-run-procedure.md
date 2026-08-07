@@ -28,15 +28,18 @@ that keeps the *production* graph out of OneDrive).
 
 ## 1. Reset (wipe KDB outputs, keep config)
 
-**Preferred (#135):** skip the manual wipe and pass `--cold` to the run itself
-(§2) — it erases derived state (the `wiki/` tree, `graph/`, `state/manifest.json`,
-and the `canonicalization/aliases.json` ledger) before the scan, records a
-`cold_wipe` event (severity warning) in the run's event log, and **preserves
-`state/runs/`** (the #132 replay-journal audit trail). `--cold` asks for
-confirmation first — it prints exactly what dies and waits for `yes` (pass
-`--yes` to skip in scripts). `--dry-run --cold`
-previews the wipe without deleting. This is also the only mechanism that
-removes cold-run-orphaned wiki files (no graph node ⇒ invisible to the
+**Preferred (#138):** `kdb-orchestrate --wipe --vault-root <vault>` — a
+dedicated wipe operation, decoupled from the run (the run has no modes). It
+erases derived state (the `wiki/` tree, `graph/`, `state/manifest.json`, and
+the `canonicalization/aliases.json` ledger), **archives `state/runs/` to
+`state/pre-wipe-runs/<ts>/` first** (the #132 replay-journal audit trail
+survives; replay/verify over the post-wipe replay root stays clean — #137),
+appends one line to the wipe ledger `state/wipes.jsonl`, and exits. The
+confirmation gate is unbypassable: it prints exactly what dies (paths, file
+counts, the archive plan) and waits for a typed `yes` — there is no skip
+flag; non-interactive stdin refuses. Then run the pipeline normally (§2) —
+against the empty world every source is new. This is also the only mechanism
+that removes cold-run-orphaned wiki files (no graph node ⇒ invisible to the
 in-loop lifecycle — the #134 measurement).
 
 The manual equivalent (also deletes `state/runs/` — use only when the journal
@@ -45,14 +48,15 @@ history should go too):
 ```bash
 cd ~/Obsidian/Vault-in-place-test-run/KDB && rm -rf \
   graph graph-view.html wiki \
-  state/runs state/manifest.json state/compile_result.json state/last_orchestrate.json
+  state/runs state/pre-wipe-runs state/wipes.jsonl \
+  state/manifest.json state/compile_result.json state/last_orchestrate.json
 ```
 
 | Wiped | Kept |
 |---|---|
 | `graph`, `graph-view.html` | `state/pipelines.json` (pipeline `vault-test` config) |
 | `wiki/` (articles/concepts/summaries) | `KDB-Compiler-System-Prompt.md` |
-| `state/{runs,manifest,compile_result,last_orchestrate}` | the source notes (`AIML/`, `Value Investing/`, …) |
+| `state/{runs,pre-wipe-runs,wipes.jsonl,manifest,compile_result,last_orchestrate}` | the source notes (`AIML/`, `Value Investing/`, …) |
 
 The source notes are **not** touched — Pass-1 re-enrich strips and replaces
 their frontmatter idempotently (enrich sends the LLM the frontmatter-stripped

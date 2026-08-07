@@ -1998,11 +1998,11 @@ def test_run_journals_rebuild_identical_graph_e2e(tmp_path, monkeypatch):
     assert src_status["AIML/c.md"] == "deleted"
 
 
-# ---------- #135: --cold first-class cold start ----------
+# ---------- #138: --wipe (decoupled from the run; absorbs #137) ----------
 
 def _seed_derived_state(vault: Path, state_root: Path, graph_path: Path) -> None:
-    """Seed the four derived-state targets --cold must erase, plus the
-    config/audit artifacts it must preserve."""
+    """Seed the four derived-state targets --wipe must erase, the config
+    artifact it must preserve, and the journal history it must archive."""
     (vault / "KDB" / "wiki" / "concepts").mkdir(parents=True, exist_ok=True)
     (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").write_text(
         "---\nstatus: active\n---\nGhost.\n", encoding="utf-8")
@@ -2017,7 +2017,7 @@ def _seed_derived_state(vault: Path, state_root: Path, graph_path: Path) -> None
     (state_root / "canonicalization").mkdir(parents=True, exist_ok=True)
     (state_root / "canonicalization" / "aliases.json").write_text(
         json.dumps({"bogus-alias": "bogus-canonical"}), encoding="utf-8")
-    # preserved: config + audit trail + per-run outputs
+    # preserved: config + per-run outputs; archived: the journal history
     _write_pipelines(state_root, vault)
     (state_root / "runs").mkdir(parents=True, exist_ok=True)
     (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").write_text(
@@ -2025,29 +2025,46 @@ def _seed_derived_state(vault: Path, state_root: Path, graph_path: Path) -> None
     (state_root / "last_orchestrate.json").write_text("{}", encoding="utf-8")
 
 
-def test_cold_wipe_removes_derived_state(tmp_path):
+def test_wipe_removes_derived_state_and_archives_journals(tmp_path):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     graph_path = tmp_path / "graph"
     _seed_derived_state(vault, state_root, graph_path)
 
-    stats = kdb_orchestrate._cold_wipe(
+    stats = kdb_orchestrate._wipe_derived_state(
         vault_root=vault, state_root=state_root, graph_path=graph_path)
 
-    assert stats == {"wiki_files_removed": 2, "graph_removed": True,
-                     "manifest_removed": True, "alias_ledger_removed": True,
-                     "dry_run": False}
+    assert stats["wiki_files_removed"] == 2
+    assert stats["graph_removed"] is True
+    assert stats["manifest_removed"] is True
+    assert stats["alias_ledger_removed"] is True
+    assert stats["run_dirs_archived"] == 1
+    assert stats["dry_run"] is False
+    # journals archived out of the replay root, not deleted (#137)
+    archive_dir = Path(stats["archive_dir"])
+    assert archive_dir.parent == state_root / "pre-wipe-runs"
+    assert (archive_dir / "2026-01-01T00-00-00_EDT.json").exists()
+    assert list((state_root / "runs").iterdir()) == []
+    # erased
     assert not (vault / "KDB" / "wiki").exists()
     assert not graph_path.exists()
     assert not (state_root / "manifest.json").exists()
     assert not (state_root / "canonicalization" / "aliases.json").exists()
     # preserved
     assert (state_root / "pipelines.json").exists()
-    assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
     assert (state_root / "last_orchestrate.json").exists()
+    # the wipe has no run to journal into — the ledger is the audit trail
+    lines = (state_root / "wipes.jsonl").read_text(
+        encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    rec = json.loads(lines[0])
+    assert rec["archive_dir"] == str(archive_dir)
+    assert rec["wiki_files_removed"] == 2
+    assert rec["run_dirs_archived"] == 1
+    assert rec["ts"]
 
 
-def test_cold_wipe_removes_single_file_graph(tmp_path):
+def test_wipe_removes_single_file_graph(tmp_path):
     """Kuzu's single-file layout: KDB/graph is a FILE, not a directory —
     the wipe must unlink it, not rmtree it (live defect 2026-08-06: the
     first real --cold run crashed NotADirectoryError mid-wipe, after the
@@ -2059,7 +2076,7 @@ def test_cold_wipe_removes_single_file_graph(tmp_path):
     shutil.rmtree(graph_path)  # replace the dir seed with a file seed
     graph_path.write_text("old graph", encoding="utf-8")
 
-    stats = kdb_orchestrate._cold_wipe(
+    stats = kdb_orchestrate._wipe_derived_state(
         vault_root=vault, state_root=state_root, graph_path=graph_path)
 
     assert stats["graph_removed"] is True
@@ -2069,13 +2086,13 @@ def test_cold_wipe_removes_single_file_graph(tmp_path):
     assert not (state_root / "canonicalization" / "aliases.json").exists()
 
 
-def test_cold_wipe_dry_run_reports_without_deleting(tmp_path):
+def test_wipe_dry_run_reports_without_touching(tmp_path):
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     graph_path = tmp_path / "graph"
     _seed_derived_state(vault, state_root, graph_path)
 
-    stats = kdb_orchestrate._cold_wipe(
+    stats = kdb_orchestrate._wipe_derived_state(
         vault_root=vault, state_root=state_root, graph_path=graph_path,
         dry_run=True)
 
@@ -2084,25 +2101,41 @@ def test_cold_wipe_dry_run_reports_without_deleting(tmp_path):
     assert stats["graph_removed"] is True
     assert stats["manifest_removed"] is True
     assert stats["alias_ledger_removed"] is True
+    # the archive plan is reported (internal preview — the confirmation
+    # gate's only consumer)...
+    assert stats["run_dirs_archived"] == 1
+    assert stats["archive_dir"] is not None
+    # ...but nothing is touched: no deletions, no archive, no ledger
     assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
     assert (graph_path / "marker").exists()
     assert (state_root / "manifest.json").exists()
     assert (state_root / "canonicalization" / "aliases.json").exists()
+    assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
+    assert not (state_root / "pre-wipe-runs").exists()
+    assert not (state_root / "wipes.jsonl").exists()
 
 
-def test_cold_wipe_idempotent_on_missing(tmp_path):
+def test_wipe_idempotent_on_missing(tmp_path):
     vault = _vault(tmp_path)
-    stats = kdb_orchestrate._cold_wipe(
-        vault_root=vault, state_root=vault / "KDB" / "state",
+    state_root = vault / "KDB" / "state"
+    stats = kdb_orchestrate._wipe_derived_state(
+        vault_root=vault, state_root=state_root,
         graph_path=tmp_path / "graph")
     assert stats == {"wiki_files_removed": 0, "graph_removed": False,
                      "manifest_removed": False, "alias_ledger_removed": False,
+                     "run_dirs_archived": 0, "archive_dir": None,
                      "dry_run": False}
+    # even a nothing-to-wipe wipe is ledgered (archive_dir null)
+    lines = (state_root / "wipes.jsonl").read_text(
+        encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["archive_dir"] is None
 
 
-def test_run_cold_wipes_stale_state_then_rebuilds(tmp_path, monkeypatch):
+def test_wipe_then_run_rebuilds_from_sources(tmp_path, monkeypatch):
     """End-to-end: a stale wiki file with no graph node (the #134-measured
-    class) is erased by --cold; the run then rebuilds from sources."""
+    class) is erased by the decoupled wipe; the plain run then rebuilds from
+    sources — the run itself knows nothing about wiping (#138)."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     graph_path = tmp_path / "graph"
@@ -2114,73 +2147,35 @@ def test_run_cold_wipes_stale_state_then_rebuilds(tmp_path, monkeypatch):
     monkeypatch.setattr("compiler.compiler.call_model_with_retry",
                         _fake_model(_compiled_response("a.md", "summary-a")))
 
+    kdb_orchestrate._wipe_derived_state(
+        vault_root=vault, state_root=state_root, graph_path=graph_path)
     res = kdb_orchestrate.run(
         pipeline_id="vt", vault_root=vault, state_root=state_root,
-        graph_path=graph_path, provider="p", model="m", max_tokens=4096,
-        cold=True)
+        graph_path=graph_path, provider="p", model="m", max_tokens=4096)
 
     assert res.ok, res.exit_reason
     assert res.counts["sources_compiled"] == 1
     assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
     assert not (graph_path / "marker").exists()
     assert list((vault / "KDB" / "wiki").rglob("summary-a.md"))
-    rows = _event_rows(res.event_log_path)
-    wipe = [r for r in rows if r.get("event_type") == "cold_wipe"]
-    assert len(wipe) == 1
-    assert wipe[0]["severity"] == "warning"
-    assert wipe[0]["context"]["wiki_files_removed"] == 2
-    assert wipe[0]["context"]["dry_run"] is False
+    # the run's event log carries no wipe event — the wipe is not the run's
+    # business anymore; its audit trail is state/wipes.jsonl. (The log file
+    # may not exist at all: nothing warning-level fires on a clean run.)
+    log = Path(res.event_log_path)
+    if log.exists():
+        rows = _event_rows(log)
+        assert [r for r in rows if r.get("event_type") == "cold_wipe"] == []
 
 
-def test_run_cold_dry_run_wipes_nothing(tmp_path, monkeypatch):
-    vault = _vault(tmp_path)
-    state_root = vault / "KDB" / "state"
-    graph_path = tmp_path / "graph"
-    (vault / "AIML").mkdir()
-    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
-                                         encoding="utf-8")
-    _seed_derived_state(vault, state_root, graph_path)
-
-    res = kdb_orchestrate.run(
-        pipeline_id="vt", vault_root=vault, state_root=state_root,
-        graph_path=graph_path, provider="p", model="m", max_tokens=4096,
-        cold=True, dry_run=True, log_level="info")
-
-    assert res.exit_reason == "dry-run"
-    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
-    assert (graph_path / "marker").exists()
-    assert (state_root / "manifest.json").exists()
-    rows = _event_rows(res.event_log_path)
-    wipe = [r for r in rows if r.get("event_type") == "cold_wipe"]
-    assert len(wipe) == 1
-    assert wipe[0]["severity"] == "info"
-    assert wipe[0]["context"]["dry_run"] is True
+def test_run_signature_has_no_cold():
+    """D-138-1: the run has no modes — `cold` is gone from run()'s contract."""
+    import inspect
+    assert "cold" not in inspect.signature(kdb_orchestrate.run).parameters
 
 
-def test_main_cold_flag_wires_through(tmp_path, monkeypatch):
-    vault = _vault(tmp_path)
-    state_root = vault / "KDB" / "state"
-    graph_path = tmp_path / "graph"
-    (vault / "AIML").mkdir()
-    (vault / "AIML" / "a.md").write_text("# A\n\nValue investing note.\n",
-                                         encoding="utf-8")
-    _seed_derived_state(vault, state_root, graph_path)
-    captured: dict = {}
-    _capture_pass_leaves(monkeypatch, captured)
+# ---------- #138: --wipe confirmation gate (unbypassable) ----------
 
-    exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--yes",
-        "--graph-path", str(graph_path), "--state-root", str(state_root),
-    ])
-
-    assert exit_code == 0
-    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
-    assert captured["pass2_req"] is not None        # compile actually ran
-
-
-# ---------- #135: --cold confirmation gate + deprecated-total stat ----------
-
-def _main_cold_vault(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _main_wipe_vault(tmp_path: Path) -> tuple[Path, Path, Path]:
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
     graph_path = tmp_path / "graph"
@@ -2191,12 +2186,12 @@ def _main_cold_vault(tmp_path: Path) -> tuple[Path, Path, Path]:
     return vault, state_root, graph_path
 
 
-def test_main_cold_prompts_and_decline_aborts(tmp_path, monkeypatch, capsys):
-    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+def test_main_wipe_prompts_and_decline_aborts(tmp_path, monkeypatch, capsys):
+    vault, state_root, graph_path = _main_wipe_vault(tmp_path)
     monkeypatch.setattr("builtins.input", lambda prompt="": "no")
 
     exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--vault-root", str(vault), "--wipe",
         "--graph-path", str(graph_path), "--state-root", str(state_root),
     ])
 
@@ -2205,77 +2200,178 @@ def test_main_cold_prompts_and_decline_aborts(tmp_path, monkeypatch, capsys):
     assert "PERMANENTLY DELETE" in out
     assert str(vault / "KDB" / "wiki") in out and "2 files" in out
     assert str(graph_path) in out
+    assert "pre-wipe-runs" in out               # the archive plan is shown
     assert "declined" in err
     assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
     assert (graph_path / "marker").exists()
     assert (state_root / "manifest.json").exists()
+    assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
+    assert not (state_root / "pre-wipe-runs").exists()
+    assert not (state_root / "wipes.jsonl").exists()
 
 
-def test_main_cold_prompts_and_yes_proceeds(tmp_path, monkeypatch):
-    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+def test_main_wipe_yes_proceeds_needs_neither_pipeline_nor_model(
+        tmp_path, monkeypatch):
+    """D-138-2: --wipe is wipe-and-exit — no pipeline run, no model
+    resolution (works with no API keys), no --pipeline required."""
+    vault, state_root, graph_path = _main_wipe_vault(tmp_path)
     monkeypatch.setattr("builtins.input", lambda prompt="": "yes")
-    captured: dict = {}
-    _capture_pass_leaves(monkeypatch, captured)
+
+    def _explode(*a, **k):
+        raise AssertionError("must not be called under --wipe")
+    monkeypatch.setattr(kdb_orchestrate, "resolve_models_json", _explode)
+    monkeypatch.setattr(kdb_orchestrate, "run", _explode)
 
     exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--vault-root", str(vault), "--wipe",
         "--graph-path", str(graph_path), "--state-root", str(state_root),
     ])
 
     assert exit_code == 0
     assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
-    assert captured["pass2_req"] is not None
+    assert not graph_path.exists()
+    # journals archived, not deleted; the wipe is ledgered
+    archive = list((state_root / "pre-wipe-runs").iterdir())
+    assert len(archive) == 1
+    assert (archive[0] / "2026-01-01T00-00-00_EDT.json").exists()
+    assert list((state_root / "runs").iterdir()) == []
+    assert len((state_root / "wipes.jsonl").read_text(
+        encoding="utf-8").strip().splitlines()) == 1
+    # ...and no run happened: the per-run summary is the stale seeded one
+    assert (state_root / "last_orchestrate.json").read_text(
+        encoding="utf-8") == "{}"
 
 
-def test_main_cold_yes_flag_skips_prompt(tmp_path, monkeypatch):
-    vault, state_root, graph_path = _main_cold_vault(tmp_path)
-    def _no_input(prompt=""):
-        raise AssertionError("input() must not fire under --yes")
-    monkeypatch.setattr("builtins.input", _no_input)
-    captured: dict = {}
-    _capture_pass_leaves(monkeypatch, captured)
-
-    exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--yes",
-        "--graph-path", str(graph_path), "--state-root", str(state_root),
-    ])
-
-    assert exit_code == 0
-    assert not (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
-
-
-def test_main_cold_dry_run_never_prompts(tmp_path, monkeypatch):
-    vault, state_root, graph_path = _main_cold_vault(tmp_path)
-    def _no_input(prompt=""):
-        raise AssertionError("input() must not fire under --dry-run")
-    monkeypatch.setattr("builtins.input", _no_input)
-
-    exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold", "--dry-run",
-        "--graph-path", str(graph_path), "--state-root", str(state_root),
-    ])
-
-    assert exit_code == 0
-    assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
-    assert (graph_path / "marker").exists()
-
-
-def test_main_cold_noninteractive_aborts_with_yes_guidance(
-        tmp_path, monkeypatch, capsys):
-    vault, state_root, graph_path = _main_cold_vault(tmp_path)
+def test_main_wipe_noninteractive_refuses(tmp_path, monkeypatch, capsys):
+    """D-138-3: confirmation is unbypassable — EOF on stdin refuses loudly,
+    and the guidance names no bypass (there is none)."""
+    vault, state_root, graph_path = _main_wipe_vault(tmp_path)
     def _eof(prompt=""):
         raise EOFError
     monkeypatch.setattr("builtins.input", _eof)
 
     exit_code = kdb_orchestrate.main([
-        "--vault-root", str(vault), "--pipeline", "vt", "--cold",
+        "--vault-root", str(vault), "--wipe",
         "--graph-path", str(graph_path), "--state-root", str(state_root),
     ])
 
     assert exit_code == 1
     _, err = capsys.readouterr()
-    assert "--yes" in err
+    assert "--yes" not in err
+    assert "interactive" in err
     assert (vault / "KDB" / "wiki" / "concepts" / "stale-ghost.md").exists()
+    assert (state_root / "runs" / "2026-01-01T00-00-00_EDT.json").exists()
+    assert not (state_root / "wipes.jsonl").exists()
+
+
+def test_retired_and_redundant_wipe_flags_rejected(tmp_path):
+    """D-138-1/3/5: --cold and --yes no longer exist; --wipe --dry-run is a
+    redundant second preview surface (the confirmation gate previews)."""
+    vault = _vault(tmp_path)
+    base = ["--vault-root", str(vault)]
+    for bad in (["--wipe", "--dry-run"], ["--cold"], ["--yes"]):
+        with pytest.raises(SystemExit):
+            kdb_orchestrate.main(base + bad)
+
+
+def test_wipe_then_rerun_replay_matches_live_137(tmp_path, monkeypatch):
+    """#137 regression: pre-wipe journals are archived out of the replay
+    root, so rebuild over state/runs/ after a wipe + fresh run matches live
+    exactly (pre-#138: 561 missing_in_live from replaying pre-wipe history
+    against the post-wipe graph)."""
+    from kdb_graph.adapters.obsidian_runs import ObsidianRunsAdapter
+    from kdb_graph.rebuilder import rebuild
+
+    def _page(slug, ptype="concept", body="Body."):
+        return {"slug": slug, "page_type": ptype, "title": slug, "body": body}
+
+    def model(req):
+        p = req.prompt
+        if "a.md" in p:
+            return _fake_model({"pages": [
+                _page("summary-a", "summary", "Overview a."),
+                _page("concept-x", body="Links [[concept-y]].")]})(req)
+        if "b.md" in p:
+            return _fake_model({"pages": [
+                _page("summary-b", "summary", "Overview b."),
+                _page("concept-y", body="Deep y.")]})(req)
+        return _fake_model({"pages": [
+            _page("summary-c", "summary", "Overview c.")]})(req)
+
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    graph_path = tmp_path / "graph"
+    (vault / "AIML").mkdir()
+    for name in ("a.md", "b.md", "c.md"):
+        (vault / "AIML" / name).write_text(f"# {name}\n\nNote.\n",
+                                           encoding="utf-8")
+    _write_pipelines(state_root, vault)
+    monkeypatch.setattr("ingestion.enrich.enrich.call_pass1", _fake_pass1)
+    monkeypatch.setattr("compiler.compiler.call_model_with_retry", model)
+    # Distinct timestamps: run ids mint from now_iso() at second precision —
+    # two runs inside one second would collide and overwrite journals.
+    from datetime import datetime, timedelta, timezone
+    base = datetime(2026, 8, 7, 12, 0, 0, tzinfo=timezone.utc).astimezone()
+    tick = {"n": 0}
+
+    def fake_now_iso():
+        tick["n"] += 1
+        return (base + timedelta(seconds=tick["n"])).replace(microsecond=0).isoformat()
+
+    monkeypatch.setattr("common.run_context.now_iso", fake_now_iso)
+    # The selector fires once per compile after the very first (which sees an
+    # empty graph): 2 per run × 2 runs = 4 honest-empty replies.
+    from kdb_search.tests import fakes
+    monkeypatch.setattr(
+        "compiler.search_adapter.call_model",
+        fakes.FakeSelector(*[
+            fakes.ScriptedReply(fakes.retained_empty_document())
+            for _ in range(4)]))
+
+    def _run():
+        res = kdb_orchestrate.run(
+            pipeline_id="vt", vault_root=vault, state_root=state_root,
+            graph_path=graph_path, provider="p", model="m", max_tokens=4096)
+        assert res.ok, res.exit_reason
+        return res
+
+    res_a = _run()                                   # run A: 3 sources
+    assert res_a.counts["sources_compiled"] == 3
+
+    stats = kdb_orchestrate._wipe_derived_state(
+        vault_root=vault, state_root=state_root, graph_path=graph_path)
+    # run A's journal + its run dir left the replay root
+    assert stats["run_dirs_archived"] == 2
+    assert stats["archive_dir"] is not None
+
+    res_b = _run()                                   # fresh world: all recompile
+    assert res_b.counts["sources_compiled"] == 3
+
+    # the replay root now holds ONLY run B's journal — no scoping needed
+    journals = list((state_root / "runs").glob("*.json"))
+    assert len(journals) == 1
+    result = rebuild(graph_dir=tmp_path / "rebuilt",
+                     adapter=ObsidianRunsAdapter(),
+                     journals_dir=state_root / "runs", confirm=False)
+    assert result.replayed == 1 and result.failed == 0
+
+    queries = [
+        ("MATCH (e:Entity) RETURN e.slug, e.page_type, e.status, "
+         "e.canonical_id, e.first_run_id, e.last_run_id ORDER BY e.slug"),
+        ("MATCH (s:Source) RETURN s.source_id, s.status, s.hash, "
+         "s.ingest_state, s.ingest_count, s.last_run_id, s.moved_to "
+         "ORDER BY s.source_id"),
+        ("MATCH (s:Source)-[r:SUPPORTS]->(e:Entity) "
+         "RETURN s.source_id, e.slug, r.role ORDER BY s.source_id, e.slug"),
+        ("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
+         "RETURN a.slug, b.slug ORDER BY a.slug, b.slug"),
+        ("MATCH (d:Domain) RETURN d.name ORDER BY d.name"),
+        ("MATCH (s:Source)-[:BELONGS_TO]->(d:Domain) "
+         "RETURN s.source_id, d.name ORDER BY s.source_id, d.name"),
+    ]
+    with GraphDB(graph_path) as live, GraphDB(tmp_path / "rebuilt") as reb:
+        for q in queries:
+            assert _rows(reb.conn, q) == _rows(live.conn, q), q
 
 
 def test_count_deprecated_wiki_files(tmp_path):
