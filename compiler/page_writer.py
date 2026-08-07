@@ -310,8 +310,9 @@ def mark_deprecated(vault_root: Path, pages: list[dict]) -> list[Path]:
     (frontmatter precedes the body). Idempotent — already-deprecated files and
     absent files are skipped untouched. Returns the paths actually flipped.
 
-    `pages` entries are {slug, page_type} as returned by
-    kdb_graph.intake.detect_deprecations().
+    `pages` entries are {slug, page_type} as returned per source by
+    `IntakeResult.deprecations_detected` (#136) or by the finalize
+    convergence pass over graph nodes still marked `deprecated`.
     """
     flipped: list[Path] = []
     for page in pages:

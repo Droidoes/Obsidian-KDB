@@ -3,18 +3,21 @@
 feeder → ingestion (Pass-1 enrich) → compiler (Pass-2 compile_source) → GraphDB,
 driven per-source over a single shared read-write GraphDB connection.
 
-Wires the four shipped foundations — compile_source (produce-don't-write),
-detect_deprecations / wire_links (deferred finalize passes), the pipeline registry,
-and scan_scope — into one loop, ending in the first live run on the test sandbox.
+Wires the shipped foundations — compile_source (produce-don't-write), per-source
+graph intake (#136 drain-as-you-go: LINKS_TO wiring + deprecation marking inside
+each commit txn, unresolved targets pended durably in the PendingLink ledger),
+the pipeline registry, and scan_scope — into one loop.
 
 Commit model (β, D-91-15 — graph-sync-first): per source the conductor applies
-the wiki pages, graph-syncs (Kuzu txn, deprecation-marking + link-wiring deferred to
-finalize), then — only on graph-sync success — writes the manifest. The manifest
-write is the commit boundary, so a graph-sync failure rolls back cleanly and the
-manifest is never written → the source self-heals on the next run (case-a).
-Finalize runs one detect_deprecations() pass, the batch wire_links() pass, the
-frontmatter convergence flip (#130 — every deprecated node gets a deprecated
-file), and writes last_orchestrate.json.
+the wiki pages, graph-syncs (Kuzu txn — wiring + deprecation land in-txn), then —
+only on graph-sync success — writes the manifest. The manifest write is the
+commit boundary, so a graph-sync failure rolls back cleanly and the manifest is
+never written → the source self-heals on the next run (case-a). Finalize no
+longer wires or deprecates (#136 — the Task #91 deferred passes are deleted);
+it keeps the frontmatter convergence fixpoint (#130 — every deprecated node gets
+a deprecated file; idempotent crash/dry-run heal), writes compile_result.json +
+last_orchestrate.json, and reports the accumulated per-commit wiring/deprecation
+totals plus the open-pending count.
 """
 from __future__ import annotations
 
@@ -28,9 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from kdb_graph.graphdb import GraphDB
-from kdb_graph.intake import (
-    apply_compile_result, detect_deprecations, wire_links,
-)
+from kdb_graph.intake import apply_compile_result
 from kdb_graph.queries import deprecated_entities
 from orchestrator import journal_writer, manifest_writer
 from compiler import page_writer
@@ -84,10 +85,16 @@ class CommitResult:
                                           re-run, but is a distinct, surfaced class.
 
     On success `next_manifest` is the advanced full v3.0 manifest dict the caller
-    threads into the next source; `cr` is accumulated for the finalize passes.
+    threads into the next source; `cr` is accumulated for the finalize archive.
     `scan_entry_used` is the post-embed scan entry handed to intake (#132: the
     replay archive records the exact intake inputs, including when the manifest
     leg failed after the graph committed).
+
+    #136 wiring/deprecation counts (from the commit's IntakeResult, zero when
+    the graph txn rolled back): `links_wired` = edges present after
+    replacement + drained pendings; `links_pended` = NEW ledger rows;
+    `links_drained` = ledger rows resolved into edges; `deprecations` = the
+    newly-deprecated [{slug, page_type}] flipped in this commit.
     """
     next_manifest: dict | None = None
     pages_written: list[str] = field(default_factory=list)
@@ -97,6 +104,10 @@ class CommitResult:
     error: str | None = None
     graph_committed: bool = False
     scan_entry_used: dict | None = None
+    links_wired: int = 0
+    links_pended: int = 0
+    links_drained: int = 0
+    deprecations: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -142,17 +153,23 @@ def _commit_source(
             failure_stage="apply", exception_type=type(e).__name__, error=str(e),
             scan_entry_used=entry)
 
-    # 2. graph-sync (Kuzu txn). detect_deprecations + wire_links deferred to finalize.
+    # 2. graph-sync (Kuzu txn; #136: LINKS_TO wiring + per-source deprecation
+    #    land IN this txn — unresolved targets pend durably in the ledger).
     #    Throws ⇒ Kuzu rolled back clean; manifest never written ⇒ case-(a) self-heal.
     try:
-        apply_compile_result(
-            cr, single_scan, ctx.run_id, conn=conn,
-            detect_deprecations=False, wire_links=False)
+        intake_res = apply_compile_result(cr, single_scan, ctx.run_id, conn=conn)
     except Exception as e:
         return CommitResult(
             pages_written=apply_res.pages_written,
             failure_stage="graph_sync", exception_type=type(e).__name__, error=str(e),
             scan_entry_used=entry)
+
+    # 2b. Frontmatter convergence at commit (#136): pages this commit just
+    #     deprecated get deprecated files immediately — finalize's fixpoint is
+    #     the backstop, not the only marker. Revivals need no file work
+    #     (re-support ⇒ re-emit ⇒ page_writer writes fresh active frontmatter).
+    if intake_res.deprecations_detected:
+        page_writer.mark_deprecated(ctx.vault_root, intake_res.deprecations_detected)
 
     # 3. manifest write = COMMIT BOUNDARY (β). Throws here ⇒ graph committed but
     #    manifest absent ⇒ manifest_failed_after_graph_commit (self-heals on re-run).
@@ -163,14 +180,22 @@ def _commit_source(
             pages_written=apply_res.pages_written, graph_committed=True,
             failure_stage="manifest_post_graph",
             exception_type=type(e).__name__, error=str(e),
-            scan_entry_used=entry)
+            scan_entry_used=entry,
+            links_wired=intake_res.edges_upserted + intake_res.links_drained,
+            links_pended=intake_res.links_pended,
+            links_drained=intake_res.links_drained,
+            deprecations=intake_res.deprecations_detected)
 
     return CommitResult(
         next_manifest=next_manifest, pages_written=apply_res.pages_written,
-        cr=cr, graph_committed=True, scan_entry_used=entry)
+        cr=cr, graph_committed=True, scan_entry_used=entry,
+        links_wired=intake_res.edges_upserted + intake_res.links_drained,
+        links_pended=intake_res.links_pended,
+        links_drained=intake_res.links_drained,
+        deprecations=intake_res.deprecations_detected)
 
 
-# ---------- finalize: merge crs → wire_links → deprecations → summary ----------
+# ---------- finalize: convergence fixpoint + archive + summary ----------
 
 def _combine_crs(crs: list[dict], run_id: str) -> dict:
     """Merge the per-source compile_results accumulated over the loop into one
@@ -205,37 +230,34 @@ def _combine_crs(crs: list[dict], run_id: str) -> dict:
 def _finalize(
     conn, accumulated_crs: list[dict], *,
     state_root: Path, ctx: RunContext, dry_run: bool = False,
-    progress: dict | None = None,
+    progress: dict | None = None, wiring: dict | None = None,
 ) -> dict:
-    """End-of-run passes over the final graph (combined commit sequence 5-8,
-    #130 shape):
+    """End-of-run tail (#136 slim shape — wiring/deprecation are per-commit now,
+    so nothing correctness-critical sits behind the end-of-run gate anymore):
 
-      5. wire_links(combined)   — batch LINKS_TO, all entities present (C1 fix).
-      6. detect_deprecations()  — single deferred deprecation-marking pass
-                                  (#130: SUPPORTS-loss flips status, NEVER deletes;
-                                  the old orphan reap + retraction.json are gone).
       7. mark_deprecated(files) — frontmatter CONVERGENCE: every deprecated graph
                                   node gets a deprecated file (idempotent — heals
                                   dry-run/crash divergence, not just this run's
                                   new flips). This is the zombie invariant,
-                                  enforced as a fixpoint every run.
+                                  enforced as a fixpoint every run. Commits
+                                  already marked their own new flips (#136 §3.4);
+                                  this is the backstop.
       8. write compile_result.json (combined replay payload).
 
     `progress` (#132): optional mutable holder; `progress["stage"]` advances to
-    "wired" after wire_links commits and "deprecated" after detect_deprecations
-    commits, so the run journal can record exactly how far finalize got if a
-    crash lands between the two (each owns its transaction).
+    "complete" once the fixpoint + archive landed (the journal's
+    finalize_progress field is parse-tolerated audit metadata post-#136 —
+    replay ignores its value).
 
-    Returns finalize counts for the run summary.
+    `wiring` (#136): the loop's accumulated per-commit totals —
+    {"links_wired", "links_pended", "links_drained", "deprecated"} — carried
+    into the summary verbatim (None ⇒ zeros, e.g. direct test calls).
+
+    Returns finalize counts for the run summary, adding `links_pended_open`
+    (the standing PendingLink ledger depth — the durable dangling-link metric).
     """
     combined = _combine_crs(accumulated_crs, ctx.run_id)
-
-    wl = wire_links(combined, conn, ctx.run_id)
-    if progress is not None:
-        progress["stage"] = "wired"
-    deprecations = detect_deprecations(conn, ctx.run_id)
-    if progress is not None:
-        progress["stage"] = "deprecated"
+    totals = dict(wiring or {})
 
     flipped: list = []
     if not dry_run:
@@ -245,10 +267,18 @@ def _finalize(
         ]
         flipped = page_writer.mark_deprecated(ctx.vault_root, all_deprecated)
         atomic_write_json(state_root / "compile_result.json", combined)
+    if progress is not None:
+        progress["stage"] = "complete"
+
+    r = conn.execute("MATCH (p:PendingLink) RETURN COUNT(p)")
+    links_pended_open = int(r.get_next()[0]) if r.has_next() else 0
 
     return {
-        "links_wired": wl.edges_upserted,
-        "deprecated": len(deprecations),
+        "links_wired": totals.get("links_wired", 0),
+        "links_pended": totals.get("links_pended", 0),
+        "links_drained": totals.get("links_drained", 0),
+        "links_pended_open": links_pended_open,
+        "deprecated": totals.get("deprecated", 0),
         "deprecated_files": len(flipped),
         "deprecated_pages_total": _count_deprecated_wiki_files(ctx.vault_root),
     }
@@ -432,8 +462,7 @@ def _commit_reconcile_op(
     files = [moved_entry.to_dict()] if (op.type == "MOVED" and moved_entry) else []
     single_scan = {"files": files, "to_compile": [], "to_reconcile": [op_dict]}
     intake_res = apply_compile_result(
-        {"compiled_sources": []}, single_scan, ctx.run_id,
-        conn=conn, detect_deprecations=False, wire_links=False)
+        {"compiled_sources": []}, single_scan, ctx.run_id, conn=conn)
     if op.type == "DELETED" and intake_res.erased_pages and not ctx.dry_run:
         deleted_files = page_writer.delete_page_files(
             ctx.vault_root, intake_res.erased_pages)
@@ -676,6 +705,10 @@ def run(
     replay_moved_files: list[dict] = []
     replay_reconcile_ops: list[dict] = []
     finalize_progress: dict = {"stage": "none"}
+    # #136: per-commit wiring/deprecation totals — wiring + deprecation happen
+    # inside each commit txn now; the run summary reports their accumulation.
+    wiring_totals = {"links_wired": 0, "links_pended": 0,
+                     "links_drained": 0, "deprecated": 0}
     counts = _empty_counts()
     finalize_stats: dict | None = None
     planned: dict | None = None
@@ -1007,6 +1040,12 @@ def run(
                         replay_files.append(commit.scan_entry_used)
                         replay_to_compile.append(source_id)
                         accumulated_crs.append(result.cr)
+                        # #136: the graph commit landed — its wiring/deprecation
+                        # effects count toward the run totals too.
+                        wiring_totals["links_wired"] += commit.links_wired
+                        wiring_totals["links_pended"] += commit.links_pended
+                        wiring_totals["links_drained"] += commit.links_drained
+                        wiring_totals["deprecated"] += len(commit.deprecations)
                     if severity == "run_fatal":
                         abort = (commit.failure_stage or "commit", source_id, commit.error)
                         break
@@ -1045,6 +1084,11 @@ def run(
                 # #132: archive the exact intake scan input for replay.
                 replay_files.append(commit.scan_entry_used)
                 replay_to_compile.append(source_id)
+                # #136: accumulate this commit's in-txn wiring/deprecation effects.
+                wiring_totals["links_wired"] += commit.links_wired
+                wiring_totals["links_pended"] += commit.links_pended
+                wiring_totals["links_drained"] += commit.links_drained
+                wiring_totals["deprecated"] += len(commit.deprecations)
                 counts["sources_compiled"] += 1
                 recorder.record(
                     stage="commit", event_type="source_commit_completed",
@@ -1087,7 +1131,8 @@ def run(
                 if accumulated_crs:
                     finalize_stats = _finalize(
                         g.conn, accumulated_crs, state_root=state_root, ctx=ctx,
-                        dry_run=dry_run, progress=finalize_progress)
+                        dry_run=dry_run, progress=finalize_progress,
+                        wiring=wiring_totals)
                     recorder.record(
                         stage="finalize", event_type="finalize_completed",
                         severity="info",

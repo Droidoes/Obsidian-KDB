@@ -29,6 +29,7 @@ from kdb_graph.graphdb import GraphDB
 # Order matters: rel tables reference node tables. Drop rels first.
 # ALIAS_OF added in #74.1 (schema v2.0). BELONGS_TO + Domain added in #76.2 (schema v2.1).
 # Claim + EVIDENCES + ABOUT + SUPERSEDES + CONTRADICTS + QUALIFIES added in #83/#84 (schema v2.2).
+# PendingLink added in #136 (schema v2.5) — a node table, drops with the nodes.
 _DROP_ORDER: tuple[str, ...] = (
     "LINKS_TO",
     "SUPPORTS",
@@ -43,6 +44,7 @@ _DROP_ORDER: tuple[str, ...] = (
     "Source",
     "Domain",
     "Claim",
+    "PendingLink",
     "_SchemaMeta",
 )
 

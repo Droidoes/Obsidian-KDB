@@ -13,8 +13,8 @@ from kdb_graph.graphdb import GraphDB
 def test_schema_constants_exist():
     """Schema module exposes SCHEMA_VERSION + DDL lists + MIGRATIONS registry."""
     assert isinstance(schema.SCHEMA_VERSION, str)
-    assert schema.SCHEMA_VERSION == "2.4"  # D1-A: BELONGS_TO derived projection (support_count)
-    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 4
+    assert schema.SCHEMA_VERSION == "2.5"  # #136: PendingLink node table (durable link ledger)
+    assert isinstance(schema.NODE_TABLE_DDL, list) and len(schema.NODE_TABLE_DDL) == 5
     assert isinstance(schema.REL_TABLE_DDL, list) and len(schema.REL_TABLE_DDL) == 9
     node_text = " ".join(schema.NODE_TABLE_DDL)
     assert "CREATE NODE TABLE Entity" in node_text
@@ -28,6 +28,10 @@ def test_schema_constants_exist():
     # #89 D-89-17: Source gains summary/author/domain columns.
     assert "summary" in node_text
     assert "author" in node_text
+    # #136: PendingLink durable ledger (link_id = source_slug + "|" + target_slug).
+    assert "CREATE NODE TABLE PendingLink" in node_text
+    assert "link_id" in node_text
+    assert "target_slug" in node_text
     rel_text = " ".join(schema.REL_TABLE_DDL)
     assert "CREATE REL TABLE LINKS_TO" in rel_text
     assert "CREATE REL TABLE SUPPORTS" in rel_text
@@ -40,15 +44,17 @@ def test_schema_constants_exist():
     # #83/#84: 5 new Claim-layer rel tables.
     for name in ("EVIDENCES", "ABOUT", "SUPERSEDES", "CONTRADICTS", "QUALIFIES"):
         assert f"CREATE REL TABLE {name}" in rel_text
-    # 4 migrations registered: 1.0→2.0, 2.0→2.1, 2.1→2.2, 2.2→2.3.
+    # 5 migrations registered: 1.0→2.0, 2.0→2.1, 2.1→2.2, 2.2→2.3, 2.4→2.5.
     assert isinstance(schema.MIGRATIONS, dict)
     assert set(schema.MIGRATIONS.keys()) == {
         ("1.0", "2.0"), ("2.0", "2.1"), ("2.1", "2.2"), ("2.2", "2.3"),
+        ("2.4", "2.5"),
     }
     assert callable(schema.MIGRATIONS[("1.0", "2.0")])
     assert callable(schema.MIGRATIONS[("2.0", "2.1")])
     assert callable(schema.MIGRATIONS[("2.1", "2.2")])
     assert callable(schema.MIGRATIONS[("2.2", "2.3")])
+    assert callable(schema.MIGRATIONS[("2.4", "2.5")])
 
 
 def test_graphdb_init_creates_schema(graph_dir):
@@ -58,7 +64,7 @@ def test_graphdb_init_creates_schema(graph_dir):
         stats = gdb.stats()
     assert graph_dir.exists()
     assert v == schema.SCHEMA_VERSION
-    assert v == "2.4"
+    assert v == "2.5"
     # #76.2: domains + belongs_to counters join the stats dict.
     assert stats == {
         "entities": 0, "sources": 0, "links_to": 0, "supports": 0,
@@ -66,6 +72,8 @@ def test_graphdb_init_creates_schema(graph_dir):
         # #83/#84 v2.2 — Claim layer counters all zero on fresh DB.
         "claims": 0, "evidences": 0, "about": 0,
         "supersedes": 0, "contradicts": 0, "qualifies": 0,
+        # #136 v2.5 — PendingLink ledger counter.
+        "pending_links": 0,
     }
 
 
@@ -83,9 +91,11 @@ def test_graphdb_init_is_idempotent(graph_dir):
         # #83/#84 v2.2 — Claim layer counters all zero on fresh DB.
         "claims": 0, "evidences": 0, "about": 0,
         "supersedes": 0, "contradicts": 0, "qualifies": 0,
+        # #136 v2.5 — PendingLink ledger counter.
+        "pending_links": 0,
     }
-    # v2.4: schema version now "2.4" (BELONGS_TO derived projection).
-    assert v1 == "2.4"
+    # v2.5: schema version now "2.5" (#136 PendingLink node table).
+    assert v1 == "2.5"
 
 
 def test_alias_of_table_exists_on_fresh_db(graph_dir):
@@ -280,11 +290,11 @@ def test_migrate_2_2_to_2_3_adds_source_columns(graph_dir):
     del db2
 
 
-def test_fresh_db_at_2_4_has_source_columns(graph_dir):
-    """Fresh DB created with current SCHEMA_VERSION (v2.4) has summary/author/domain
+def test_fresh_db_current_version_has_source_columns(graph_dir):
+    """Fresh DB created with current SCHEMA_VERSION has summary/author/domain
     on Source (no migration needed — DDL creates them directly)."""
     with GraphDB(graph_dir) as gdb:
-        assert gdb.schema_version() == "2.4"
+        assert gdb.schema_version() == schema.SCHEMA_VERSION
         # Column existence: INSERT with explicit values, then read back.
         gdb.conn.execute(
             "CREATE (:Source {source_id: 'KDB/raw/test.md', source_type: 'md', "
@@ -359,6 +369,85 @@ def test_belongs_to_ddl_has_support_count_not_sub_domain():
     assert "sub_domain" not in belongs_to_ddl
 
 
-def test_schema_version_is_2_4():
+def test_schema_version_is_2_5():
     from kdb_graph import schema
-    assert schema.SCHEMA_VERSION == "2.4"
+    assert schema.SCHEMA_VERSION == "2.5"
+
+
+def test_pending_link_table_exists_on_fresh_db(graph_dir):
+    """#136: a fresh v2.5 DB has the PendingLink node table (observable via a
+    zero-count Cypher query; first_run_id/last_run_id columns present)."""
+    with GraphDB(graph_dir) as gdb:
+        result = gdb.conn.execute(
+            "MATCH (p:PendingLink) RETURN COUNT(p)"
+        )
+        assert result.has_next()
+        assert int(result.get_next()[0]) == 0
+        # Column existence — would raise if absent.
+        assert gdb.conn.execute(
+            "MATCH (p:PendingLink) RETURN p.first_run_id, p.last_run_id LIMIT 1"
+        ) is not None
+
+
+def test_migrate_2_4_to_2_5_adds_pending_link_table(graph_dir):
+    """#136: _migrate_2_4_to_2_5 adds the PendingLink node table in place
+    (non-destructive). Mirrors the _create_v1_db pattern — manually builds a
+    v2.4 DB (current DDL minus PendingLink) so we can target the specific step."""
+    from kdb_graph.schema import _migrate_2_4_to_2_5
+    import kuzu
+
+    db = kuzu.Database(str(graph_dir))
+    conn = kuzu.Connection(db)
+    for ddl in schema.NODE_TABLE_DDL[:4]:       # v2.4 shape: no PendingLink
+        conn.execute(ddl)
+    for ddl in schema.REL_TABLE_DDL:
+        conn.execute(ddl)
+    conn.execute(schema.SCHEMA_META_DDL)
+    conn.execute("CREATE (:_SchemaMeta {key: 'schema_version', value: '2.4'})")
+    # Seed one Entity to prove the migration is non-destructive.
+    conn.execute(
+        "CREATE (:Entity {slug: 'pre-migration', title: 'Pre', page_type: 'concept', "
+        "status: 'active', created_at: '2026-08-06', updated_at: '2026-08-06', "
+        "first_run_id: 'r0', last_run_id: 'r0'})"
+    )
+    del conn
+    del db
+
+    db2 = kuzu.Database(str(graph_dir))
+    conn2 = kuzu.Connection(db2)
+    _migrate_2_4_to_2_5(conn2)
+
+    # PendingLink queryable; seeded entity intact; version bumped.
+    r = conn2.execute("MATCH (p:PendingLink) RETURN COUNT(p)")
+    assert int(r.get_next()[0]) == 0
+    r = conn2.execute("MATCH (e:Entity {slug: 'pre-migration'}) RETURN COUNT(e)")
+    assert int(r.get_next()[0]) == 1
+    mv = conn2.execute(
+        "MATCH (m:_SchemaMeta {key: 'schema_version'}) RETURN m.value"
+    )
+    assert mv.get_next()[0] == "2.5"
+    del conn2
+    del db2
+
+
+def test_open_existing_2_4_db_migrates_via_ensure_schema(graph_dir):
+    """#136 end-to-end migration path: a writable GraphDB open of a v2.4 store
+    walks the registered 2.4→2.5 step automatically (existing graphs get the
+    ledger without a rebuild)."""
+    import kuzu
+
+    db = kuzu.Database(str(graph_dir))
+    conn = kuzu.Connection(db)
+    for ddl in schema.NODE_TABLE_DDL[:4]:
+        conn.execute(ddl)
+    for ddl in schema.REL_TABLE_DDL:
+        conn.execute(ddl)
+    conn.execute(schema.SCHEMA_META_DDL)
+    conn.execute("CREATE (:_SchemaMeta {key: 'schema_version', value: '2.4'})")
+    del conn
+    del db
+
+    with GraphDB(graph_dir) as gdb:
+        assert gdb.schema_version() == "2.5"
+        r = gdb.conn.execute("MATCH (p:PendingLink) RETURN COUNT(p)")
+        assert int(r.get_next()[0]) == 0

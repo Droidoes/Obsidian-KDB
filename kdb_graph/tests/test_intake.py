@@ -55,36 +55,44 @@ def test_multi_page_upsert(graph_dir):
     assert stats["entities"] == 3
 
 
-# ---------- 1b. Task #91 C1: wire_links=False + finalize wire_links() ----------
+# ---------- 1b. Task #136: per-source wiring + PendingLink drain ----------
 
 def _count(gdb, query: str) -> int:
     r = gdb.conn.execute(query)
     return int(r.get_next()[0]) if r.has_next() else 0
 
 
-def test_apply_wire_links_false_skips_links_keeps_supports(graph_dir):
-    """wire_links=False: entities + SUPPORTS upserted, but zero LINKS_TO edges
-    (read-after-write for T1/T2 preserved; T3 deferred to finalize)."""
+def _rows(gdb, query: str) -> list[list]:
+    r = gdb.conn.execute(query)
+    out = []
+    while r.has_next():
+        out.append(list(r.get_next()))
+    return out
+
+
+_PENDING_Q = ("MATCH (p:PendingLink) RETURN p.link_id, p.source_slug, "
+              "p.target_slug, p.first_run_id, p.last_run_id ORDER BY p.link_id")
+
+
+def test_pending_created_for_unresolved_target(graph_dir):
+    """A link whose target doesn't exist yet is pended durably (not silently
+    skipped): no edge, one PendingLink row with the right shape (#136)."""
     cr = make_compile_result([
-        make_compiled_source("KDB/raw/a.md", [
-            make_page("a", outgoing_links=["b"]),
-            make_page("b"),
-        ])
-    ])
+        make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])])])
     scan = make_scan([make_scan_entry("KDB/raw/a.md")])
     with GraphDB(graph_dir) as gdb:
-        gdb.apply_compile_result(cr, scan, "run-1", wire_links=False)
-        n_links = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
-        n_supports = _count(gdb, "MATCH (:Source)-[r:SUPPORTS]->() RETURN COUNT(r)")
-        ent = gdb.get_entity("a")
-    assert n_links == 0          # LINKS_TO skipped
-    assert n_supports == 2       # SUPPORTS still wired per-source
-    assert ent is not None       # entity upserted
+        res = gdb.apply_compile_result(cr, scan, "run-1")
+        n_edges = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+        pendings = _rows(gdb, _PENDING_Q)
+    assert n_edges == 0
+    assert res.links_pended == 1
+    assert res.links_drained == 0
+    assert pendings == [["a|b", "a", "b", "run-1", "run-1"]]
 
 
-def test_finalize_wire_links_wires_cross_source_edge(graph_dir):
-    """Per-source wire_links=False skips an edge whose target is in a later
-    source; the finalize wire_links() batch pass creates it (C1 fix)."""
+def test_drain_on_target_arrival(graph_dir):
+    """A later commit that upserts the pended target drains the ledger row in
+    the same txn: edge created, pending deleted, links_drained counted."""
     cr1 = make_compile_result([
         make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])])])
     cr2 = make_compile_result([
@@ -94,18 +102,138 @@ def test_finalize_wire_links_wires_cross_source_edge(graph_dir):
     edge_q = ("MATCH (:Entity {slug: 'a'})-[r:LINKS_TO]->(:Entity {slug: 'b'}) "
               "RETURN COUNT(r)")
     with GraphDB(graph_dir) as gdb:
-        gdb.apply_compile_result(cr1, scan1, "run-1", wire_links=False)
-        gdb.apply_compile_result(cr2, scan2, "run-1", wire_links=False)
-        before = _count(gdb, edge_q)
-        batch_cr = make_compile_result([
-            make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])]),
-            make_compiled_source("KDB/raw/b.md", [make_page("b")]),
-        ])
-        res = gdb.wire_links(batch_cr, "run-1")
+        gdb.apply_compile_result(cr1, scan1, "run-1")
+        assert _count(gdb, edge_q) == 0
+        res2 = gdb.apply_compile_result(cr2, scan2, "run-2")
         after = _count(gdb, edge_q)
-    assert before == 0           # per-source sync skipped the cross-source edge
-    assert after == 1            # finalize batch-wire created it
-    assert res.edges_upserted >= 1
+        pendings = _rows(gdb, _PENDING_Q)
+    assert after == 1                # b's commit drained a|b
+    assert res2.links_drained == 1
+    assert pendings == []
+
+
+def test_pending_merge_idempotent(graph_dir):
+    """Same source re-pending the same absent target keeps ONE row (MERGE on
+    link_id): first_run_id preserved, last_run_id bumped, no re-create count."""
+    cr = make_compile_result([
+        make_compiled_source("KDB/raw/a.md", [make_page("a", outgoing_links=["b"])])])
+    scan = make_scan([make_scan_entry("KDB/raw/a.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        res2 = gdb.apply_compile_result(cr, scan, "run-2")
+        pendings = _rows(gdb, _PENDING_Q)
+    assert res2.links_pended == 0    # re-pend is a merge, not a create
+    assert pendings == [["a|b", "a", "b", "run-1", "run-2"]]
+
+
+def test_no_duplicate_edges_on_recommit(graph_dir):
+    """Re-committing an unchanged source re-runs drop+recreate: edge count
+    unchanged, no duplicate LINKS_TO, no pendings."""
+    cr = make_compile_result([
+        make_compiled_source("KDB/raw/s.md", [
+            make_page("a", outgoing_links=["b"]), make_page("b")])])
+    scan = make_scan([make_scan_entry("KDB/raw/s.md")])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr, scan, "run-1")
+        gdb.apply_compile_result(cr, scan, "run-2")
+        n_edges = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+        pendings = _rows(gdb, _PENDING_Q)
+    assert n_edges == 1
+    assert pendings == []
+
+
+def test_stale_pending_cleared_on_rewire(graph_dir):
+    """Current-state replacement covers the ledger: a recompiled page that
+    DROPS a link must not leave a stale pend that would wire it later
+    (batch-equivalence: the batch never wires a link the final body lacks)."""
+    src = "KDB/raw/a.md"
+    scan = make_scan([make_scan_entry(src)])
+    cr_link = make_compile_result([
+        make_compiled_source(src, [make_page("a", outgoing_links=["x"])])])
+    cr_nolink = make_compile_result([
+        make_compiled_source(src, [make_page("a")])])
+    cr_x = make_compile_result([
+        make_compiled_source("KDB/raw/x.md", [make_page("x")])])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr_link, scan, "run-1")
+        assert _rows(gdb, _PENDING_Q) == [["a|x", "a", "x", "run-1", "run-1"]]
+        gdb.apply_compile_result(cr_nolink, scan, "run-2")
+        assert _rows(gdb, _PENDING_Q) == []      # stale pend GC'd at rewire
+        gdb.apply_compile_result(
+            cr_x, make_scan([make_scan_entry("KDB/raw/x.md")]), "run-3")
+        n_edges = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+    assert n_edges == 0              # x's arrival must NOT wire the dropped link
+
+
+def test_pending_gc_on_source_delete(graph_dir):
+    """DELETED-source erasure GCs pendings SOURCED at the erased pages (their
+    carrier is gone); pendings keyed on an erased page as TARGET survive — a
+    later source may legitimately re-emit that slug (#136 §3.3)."""
+    s1, s2 = "KDB/raw/gone.md", "KDB/raw/keep.md"
+    cr1 = make_compile_result([
+        make_compiled_source(s1, [make_page("a", outgoing_links=["ghost"])]),
+        make_compiled_source(s2, [make_page("b", outgoing_links=["ghost2"])]),
+    ])
+    scan1 = make_scan([make_scan_entry(s1), make_scan_entry(s2)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan1, "run-1")
+        assert [r[0] for r in _rows(gdb, _PENDING_Q)] == ["a|ghost", "b|ghost2"]
+
+        # Deleting s1 erases page a → a's outgoing pend dies with it.
+        gdb.apply_compile_result(
+            make_compile_result([]),
+            make_scan([make_scan_entry(s2)],
+                      to_reconcile=[{"type": "DELETED", "source_id": s1}]),
+            "run-2")
+        assert [r[0] for r in _rows(gdb, _PENDING_Q)] == ["b|ghost2"]
+
+        # b re-pends the now-erased 'a' — target-keyed pends on erased slugs
+        # legitimately re-form and SURVIVE (the re-emit revival path).
+        gdb.apply_compile_result(
+            make_compile_result([
+                make_compiled_source(s2, [make_page("b", outgoing_links=["ghost2", "a"])])]),
+            make_scan([make_scan_entry(s2)]), "run-3")
+        assert [r[0] for r in _rows(gdb, _PENDING_Q)] == ["b|a", "b|ghost2"]
+
+        # Deleting s2 GCs b's outgoing pends (incl. the one keyed on erased
+        # 'a' — its CARRIER is now gone too).
+        gdb.apply_compile_result(
+            make_compile_result([]),
+            make_scan([], to_reconcile=[{"type": "DELETED", "source_id": s2}]),
+            "run-4")
+        assert _rows(gdb, _PENDING_Q) == []
+
+
+def test_drain_stress_pendings_at_scale(graph_dir):
+    """R1 pin: drain + selective-GC lookups are PendingLink scans (no secondary
+    index assumed) — must stay correct and cheap at scale. 2k sources pend the
+    same absent target in one commit; the target's arrival drains all 2k.
+    (Production commits are per-source, ~10 pages against a small ledger; this
+    mega-commit is the deliberately harsher shape.)"""
+    import time
+    n = 2_000
+    cr = make_compile_result([
+        make_compiled_source(
+            f"KDB/raw/s{i}.md", [make_page(f"src-{i}", outgoing_links=["hub"])])
+        for i in range(n)
+    ])
+    scan = make_scan([make_scan_entry(f"KDB/raw/s{i}.md") for i in range(n)])
+    with GraphDB(graph_dir) as gdb:
+        t0 = time.monotonic()
+        gdb.apply_compile_result(cr, scan, "run-1")
+        assert _count(gdb, "MATCH (p:PendingLink) RETURN COUNT(p)") == n
+        res = gdb.apply_compile_result(
+            make_compile_result(
+                [make_compiled_source("KDB/raw/hub.md", [make_page("hub")])]),
+            make_scan([make_scan_entry("KDB/raw/hub.md")]), "run-2")
+        elapsed = time.monotonic() - t0
+        n_edges = _count(gdb, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")
+        n_pend = _count(gdb, "MATCH (p:PendingLink) RETURN COUNT(p)")
+    assert res.links_drained == n
+    assert n_edges == n
+    assert n_pend == 0
+    # Generous smoke bound — catches asymptotic blowup, not a perf gate.
+    assert elapsed < 120, f"2k-pend commit + drain took {elapsed:.1f}s"
 
 
 # ---------- 2. outgoing edges replace (add / remove / change) ----------
@@ -532,6 +660,8 @@ def test_multiple_sources_in_one_run(graph_dir):
         # #83/#84 v2.2 — Claim layer counters all zero (no Claims written by ingestion).
         "claims": 0, "evidences": 0, "about": 0,
         "supersedes": 0, "contradicts": 0, "qualifies": 0,
+        # #136 v2.5 — PendingLink ledger counter.
+        "pending_links": 0,
     }
 
 
@@ -707,42 +837,86 @@ def test_ingest_source_meta_without_source_type_preserves_default(graph_dir):
     assert source.source_type == "obsidian-kdb-raw"
 
 
-# ---------- Task #91 Plan 2: deferred deprecation-marking (#130 vocabulary) ----------
+# ---------- Task #136: per-source deprecation diff ----------
 
-def test_apply_skips_deprecation_marking_when_disabled(graph_dir):
+def test_per_source_deprecation_diff(graph_dir):
+    """Recompile dropping a page flips it deprecated IN the commit txn (the
+    end-of-run whole-graph scan is deleted); sibling pages stay untouched."""
     src = "KDB/raw/s.md"
     scan = make_scan([make_scan_entry(src)])
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
             scan, "r1")
-        # Source drops 'b' but with detect_deprecations=False — 'b' must NOT be flagged.
         res = gdb.apply_compile_result(
             make_compile_result([make_compiled_source(src, [make_page("a")])]),
-            scan, "r2", detect_deprecations=False)
-        b = gdb.get_entity("b")
-    assert res.deprecations_detected == []
-    assert b.status == "active"  # marking deferred to finalize
+            scan, "r2")
+        a, b = gdb.get_entity("a"), gdb.get_entity("b")
+    assert res.deprecations_detected == [{"slug": "b", "page_type": "concept"}]
+    assert b.status == "deprecated"
+    assert a.status == "active"
 
 
-def test_standalone_detect_deprecations_marks_after_deferred_apply(graph_dir):
-    """Deferred model: per-source apply with detect_deprecations=False leaves the
-    page unmarked; the end-of-run detect_deprecations() pass then marks it."""
-    src = "KDB/raw/s.md"
-    scan = make_scan([make_scan_entry(src)])
+def test_revive_on_resupport_at_commit(graph_dir):
+    """Cross-source: a second source re-supporting a deprecated page revives it
+    in the re-supporter's own commit txn (the #136 R2 transient window
+    self-heals at the re-supporter's commit)."""
+    s1, s2 = "KDB/raw/one.md", "KDB/raw/two.md"
     with GraphDB(graph_dir) as gdb:
         gdb.apply_compile_result(
-            make_compile_result([make_compiled_source(src, [make_page("a"), make_page("b")])]),
-            scan, "r1")
+            make_compile_result([make_compiled_source(s1, [make_page("shared")])]),
+            make_scan([make_scan_entry(s1)]), "r1")
+        res_drop = gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(s1, [make_page("other")])]),
+            make_scan([make_scan_entry(s1)]), "r2")
+        assert res_drop.deprecations_detected == [
+            {"slug": "shared", "page_type": "concept"}]
+        assert gdb.get_entity("shared").status == "deprecated"
         gdb.apply_compile_result(
-            make_compile_result([make_compiled_source(src, [make_page("a")])]),
-            scan, "r2", detect_deprecations=False)
-        assert gdb.get_entity("b").status == "active"   # not yet marked
+            make_compile_result([make_compiled_source(s2, [make_page("shared")])]),
+            make_scan([make_scan_entry(s2)]), "r3")
+        revived = gdb.get_entity("shared")
+    assert revived.status == "active"
 
-        deprecations = gdb.detect_deprecations("r2")    # finalize pass
-        b = gdb.get_entity("b")
-    assert {"slug": "b", "page_type": "concept"} in deprecations
-    assert b.status == "deprecated"
+
+def test_shared_page_survives_single_source_drop(graph_dir):
+    """Deprecation exactness: losing ONE of two supporters leaves the page's
+    remaining SUPPORTS intact → stays active, no deprecation recorded."""
+    s1, s2 = "KDB/raw/one.md", "KDB/raw/two.md"
+    scan = make_scan([make_scan_entry(s1), make_scan_entry(s2)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(
+            make_compile_result([
+                make_compiled_source(s1, [make_page("shared")]),
+                make_compiled_source(s2, [make_page("shared")]),
+            ]), scan, "r1")
+        res = gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(s1, [make_page("other")])]),
+            make_scan([make_scan_entry(s1)]), "r2")
+        shared = gdb.get_entity("shared")
+    assert res.deprecations_detected == []
+    assert shared.status == "active"
+
+
+def test_aliases_not_deprecated(graph_dir):
+    """Alias rows (canonical_id set) never carry SUPPORTS; the per-source diff
+    must never flag them — only emitted/lost canonical pages are eligible."""
+    sid = "KDB/raw/x.md"
+    cr1 = make_compile_result(
+        [make_compiled_source(sid, [make_page("apple-inc")])],
+        canonical_meta=_canonical_meta([_alias_entry("aapl", "apple-inc")]),
+    )
+    scan = make_scan([make_scan_entry(sid)])
+    with GraphDB(graph_dir) as gdb:
+        gdb.apply_compile_result(cr1, scan, "run-1")
+        res = gdb.apply_compile_result(
+            make_compile_result([make_compiled_source(sid, [])]), scan, "run-2")
+        alias = gdb.get_entity("aapl")
+        canon = gdb.get_entity("apple-inc")
+    assert res.deprecations_detected == [
+        {"slug": "apple-inc", "page_type": "concept"}]
+    assert canon.status == "deprecated"
+    assert alias.status == "alias"       # untouched by the diff
 
 
 # ---------- 3. #115 T2.4: graph-owned edge derivation from body wikilinks ----------
@@ -801,8 +975,9 @@ class TestBodyWikilinkEdgeDerivation:
             s2 = gdb.stats()
         assert s2["links_to"] == 1         # edge survived the new-shape recompile
 
-    def test_wire_links_covers_body_only_pages(self, graph_dir):
-        """wire_links finalization derives cross-source edges from bodies too."""
+    def test_body_derived_cross_source_edge_drains_on_arrival(self, graph_dir):
+        """Body-derived links pend + drain like stored-list links: a's body
+        wikilink to not-yet-existent b pends; b's commit drains it (#136)."""
         cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
             _body_page("a", "Points at [[b]].")])])
         cr2 = make_compile_result([make_compiled_source("KDB/raw/b.md", [
@@ -812,17 +987,12 @@ class TestBodyWikilinkEdgeDerivation:
         edge_q = ("MATCH (:Entity {slug: 'a'})-[r:LINKS_TO]->(:Entity {slug: 'b'}) "
                   "RETURN COUNT(r)")
         with GraphDB(graph_dir) as gdb:
-            gdb.apply_compile_result(cr1, scan1, "run-1", wire_links=False)
-            gdb.apply_compile_result(cr2, scan2, "run-1", wire_links=False)
+            gdb.apply_compile_result(cr1, scan1, "run-1")
             before = _count(gdb, edge_q)
-            batch_cr = make_compile_result([
-                make_compiled_source("KDB/raw/a.md", [_body_page("a", "Points at [[b]].")]),
-                make_compiled_source("KDB/raw/b.md", [_body_page("b", "x")]),
-            ])
-            gdb.wire_links(batch_cr, "run-1")
+            gdb.apply_compile_result(cr2, scan2, "run-2")
             after = _count(gdb, edge_q)
-        assert before == 0
-        assert after == 1
+        assert before == 0               # pended (b absent)
+        assert after == 1                # drained at b's commit
 
 
 def test_mirrored_extractor_matches_compiler():

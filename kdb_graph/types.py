@@ -27,6 +27,8 @@ class IntakeResult:
     deprecations_detected: list[dict] = field(default_factory=list)  # newly deprecated {slug, page_type} (#130)
     erased_pages: list[dict] = field(default_factory=list)           # source-deletion erasures {slug, page_type} (#130)
     erased_dead_links: list[dict] = field(default_factory=list)      # surviving pages linking to erased slugs {from_slug, to_slug} (#130 — report-only)
+    links_pended: int = 0         # NEW PendingLink rows created this run (#136 — re-pends merge, not counted)
+    links_drained: int = 0        # PendingLink rows resolved into LINKS_TO edges this run (#136)
 
 
 @dataclass(frozen=True)

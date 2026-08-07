@@ -196,6 +196,8 @@ class GraphDB:
             "supersedes":  count("MATCH ()-[r:SUPERSEDES]->() RETURN COUNT(*)"),
             "contradicts": count("MATCH ()-[r:CONTRADICTS]->() RETURN COUNT(*)"),
             "qualifies":   count("MATCH ()-[r:QUALIFIES]->() RETURN COUNT(*)"),
+            # #136: PendingLink ledger added to schema v2.5.
+            "pending_links": count("MATCH (p:PendingLink) RETURN COUNT(*)"),
         }
 
     # ---- intake (#63.2) ----
@@ -207,43 +209,21 @@ class GraphDB:
         run_id: str,
         *,
         now: str | None = None,
-        detect_deprecations: bool = True,
-        wire_links: bool = True,
     ) -> IntakeResult:
         """Apply one compile run's deltas. Atomic per run. Delegates to intake.
 
-        Task #91: detect_deprecations=False skips Phase-4 deprecation-marking
-        (the orchestrator runs a single end-of-run detect_deprecations() pass
-        instead; #130 renamed orphan-marking → deprecation-marking);
-        wire_links=False skips per-source LINKS_TO wiring (the orchestrator runs
-        a single finalize wire_links() pass over the accumulated batch — C1)."""
+        #136: LINKS_TO wiring + deprecation marking happen inside the per-run
+        txn (drain-as-you-go via the PendingLink ledger); the Task #91
+        deferral flags and the standalone finalize passes are deleted."""
         self._require_writable()
         from kdb_graph.intake import apply_compile_result as _apply
-        return _apply(cr, scan_dict, run_id, conn=self.conn, now=now,
-                      detect_deprecations=detect_deprecations, wire_links=wire_links)
+        return _apply(cr, scan_dict, run_id, conn=self.conn, now=now)
 
     def apply_cleanup(self, retraction: dict, run_id: str) -> IntakeResult:
         """Retract entities a cleanup run removed. Delegates to intake (#68)."""
         self._require_writable()
         from kdb_graph.intake import apply_cleanup as _apply
         return _apply(retraction, run_id, conn=self.conn)
-
-    def detect_deprecations(self, run_id: str, *, now: str | None = None) -> list[dict]:
-        """End-of-run deprecation-marking pass (Task #91; #130 vocabulary).
-        Returns newly deprecated {slug, page_type} pairs. Delegates to intake."""
-        self._require_writable()
-        from kdb_graph.intake import detect_deprecations as _detect
-        return _detect(self.conn, run_id, now=now)
-
-    def wire_links(
-        self, cr: dict, run_id: str, *, now: str | None = None
-    ) -> IntakeResult:
-        """End-of-run LINKS_TO batch-wiring pass (Task #91 C1). Delegates to
-        intake. Call once at finalize over the accumulated batch cr after
-        per-source apply_compile_result(wire_links=False) calls."""
-        self._require_writable()
-        from kdb_graph.intake import wire_links as _wire
-        return _wire(cr, self.conn, run_id, now=now)
 
     # ---- minimal read API (full set lands in #63.3) ----
 

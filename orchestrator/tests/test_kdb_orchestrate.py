@@ -48,8 +48,7 @@ def _vault(tmp_path: Path) -> Path:
 def _two_page_response(source_id: str) -> dict:
     # New #115 shape: 4-field pages; the summary slug derives from the source;
     # the summary body wikilinks a concept so a LINKS_TO edge is wireable —
-    # proving _commit_source's wire_links=False genuinely skips it (T2.4
-    # derives edges from bodies).
+    # proving _commit_source's per-source wiring lands it in-txn (#136).
     from compiler.summary_slug import expected_summary_slug
     return {
         "pages": [
@@ -131,20 +130,22 @@ def test_commit_source_beta_apply_graphsync_manifest(tmp_path, monkeypatch):
     # wiki pages written (stage 8)
     assert list((vault / "KDB").rglob("summary-s.md")), "summary page not written"
     assert list((vault / "KDB").rglob("concept-b.md")), "concept page not written"
-    # graph: SUPPORTS wired per-source; LINKS_TO deferred (wire_links=False)
+    # graph (#136): SUPPORTS + LINKS_TO both wired in the commit txn
     assert n_supports == 2
-    assert n_links == 0
+    assert n_links == 1
+    assert result.links_wired == 1
+    assert result.links_pended == 0 and result.links_drained == 0
     # manifest committed with the POST-embed hash (not the scan's pre-embed hash)
     manifest = json.loads((state_root / "manifest.json").read_text(encoding="utf-8"))
     rec = manifest["sources"][source_id]
     assert rec["last_compiled_hash"] == post_embed_hash
     assert rec["hash"] == post_embed_hash
     assert rec["pipeline_id"] == "vault-test"
-    # cr accumulated for the finalize passes
+    # cr accumulated for the finalize archive
     assert result.cr is produced.cr
 
 
-# ---------- Task 4+5: finalize (merge → wire_links → orphans → cleanup → summary) ----------
+# ---------- Task 4+5: finalize (convergence fixpoint + archive + summary) ----------
 
 def _page(slug: str, *, page_type="concept", outgoing=None) -> dict:
     return {"slug": slug, "page_type": page_type, "title": slug.title(),
@@ -183,7 +184,10 @@ def test_combine_crs_unions_aliases_emitted():
     assert {e["alias_slug"] for e in emitted} == {"al-a", "al-b"}
 
 
-def test_finalize_wires_links_and_writes_compile_result(tmp_path):
+def test_finalize_has_no_wiring_role(tmp_path):
+    """#136: wiring is per-commit — the cross-source edge exists BEFORE
+    finalize (pended at crA, drained at crB's commit). Finalize only archives
+    compile_result.json and carries the loop's accumulated totals through."""
     state_root = tmp_path / "state"
     state_root.mkdir()
     ctx = RunContext.new(vault_root=tmp_path)
@@ -192,26 +196,163 @@ def test_finalize_wires_links_and_writes_compile_result(tmp_path):
     edge_q = ("MATCH (:Entity {slug: 'ent-a'})-[r:LINKS_TO]->(:Entity {slug: 'ent-b'}) "
               "RETURN COUNT(r)")
     with GraphDB(tmp_path / "graph") as g:
-        # Per-source sync with links deferred (mirrors the orchestrator loop).
-        g.apply_compile_result(crA, _scan_files("a.md"), ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
-        g.apply_compile_result(crB, _scan_files("b.md"), ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
+        resA = g.apply_compile_result(crA, _scan_files("a.md"), ctx.run_id)
+        assert _count(g, edge_q) == 0            # pended (ent-b absent)
+        assert resA.links_pended == 1
+        resB = g.apply_compile_result(crB, _scan_files("b.md"), ctx.run_id)
         before = _count(g, edge_q)
+        wiring = {
+            "links_wired": (resA.edges_upserted + resA.links_drained)
+                           + (resB.edges_upserted + resB.links_drained),
+            "links_pended": resA.links_pended + resB.links_pended,
+            "links_drained": resA.links_drained + resB.links_drained,
+            "deprecated": 0,
+        }
         stats = kdb_orchestrate._finalize(
-            g.conn, [crA, crB], state_root=state_root, ctx=ctx)
+            g.conn, [crA, crB], state_root=state_root, ctx=ctx, wiring=wiring)
         after = _count(g, edge_q)
-    assert before == 0 and after == 1          # finalize wire_links wired the edge
-    assert stats["links_wired"] >= 1
-    assert stats["deprecated"] == 0            # both entities supported → no deprecations
+    assert before == 1 and after == 1        # wired at crB's commit, not finalize
+    assert resB.links_drained == 1
+    assert stats["links_wired"] == wiring["links_wired"]   # totals carried through
+    assert stats["links_pended"] == 1 and stats["links_drained"] == 1
+    assert stats["links_pended_open"] == 0   # ledger drained
+    assert stats["deprecated"] == 0          # both entities supported
     cr_json = json.loads((state_root / "compile_result.json").read_text(encoding="utf-8"))
     assert len(cr_json["compiled_sources"]) == 2
 
 
+def _forward_response(source_id: str) -> dict:
+    # Summary links [[x-late]] — a page NO source has minted yet (#136 pend).
+    from compiler.summary_slug import expected_summary_slug
+    return {
+        "pages": [
+            {"slug": expected_summary_slug(source_id), "page_type": "summary",
+             "title": "Foo", "body": "See [[x-late]]."},
+        ],
+    }
+
+
+def _late_response(source_id: str) -> dict:
+    # Mints x-late (plus the source's summary) — drains the earlier pend.
+    from compiler.summary_slug import expected_summary_slug
+    return {
+        "pages": [
+            {"slug": expected_summary_slug(source_id), "page_type": "summary",
+             "title": "S", "body": "Sum."},
+            {"slug": "x-late", "page_type": "concept", "title": "X",
+             "body": "Late."},
+        ],
+    }
+
+
+def test_commit_accumulates_wiring_counts(tmp_path, monkeypatch):
+    """#136: _commit_source exposes its in-txn wiring effects (pend/drain) so
+    the loop's run-total accumulation can roll them up."""
+    from compiler.summary_slug import expected_summary_slug
+    vault = _vault(tmp_path)
+    state_root = vault / "KDB" / "state"
+    ctx = RunContext.new(dry_run=False, vault_root=vault)
+    h = "sha256:" + "b" * 64
+
+    def _compile(source_id, response):
+        monkeypatch.setattr(
+            "compiler.compiler.call_model_with_retry",
+            _fake_model(response))
+        produced = compiler.compile_source(
+            source_id=source_id, body="A note.",
+            frontmatter=_fm(), conn=g.conn,
+            vault_root=vault, state_root=state_root, ctx=ctx,
+            ledger=load_or_empty(state_root / "canonicalization" / "aliases.json"),
+            provider="p", model="m", max_tokens=4096,
+            selector=_selector_spec())
+        assert produced.ok, (produced.failure_stage, produced.error)
+        return produced
+
+    with GraphDB(tmp_path / "graph") as g:
+        # Source A: summary links x-late, which no source has minted → pends.
+        produced_a = _compile("AIML/a.md", _forward_response("AIML/a.md"))
+        commit_a = kdb_orchestrate._commit_source(
+            cr=produced_a.cr, source_id="AIML/a.md",
+            post_embed_hash=h, post_embed_mtime=2.0,
+            scan_entry=_scan_entry("AIML/a.md"),
+            prior_manifest={}, vault_root=vault, state_root=state_root,
+            conn=g.conn, ctx=ctx)
+        assert commit_a.ok
+        assert commit_a.links_pended == 1
+        assert commit_a.links_wired == 0 and commit_a.links_drained == 0
+        assert _count(g, "MATCH (p:PendingLink) RETURN COUNT(p)") == 1
+
+        # Source B: mints x-late → drains A's pend inside B's commit txn.
+        produced_b = _compile("AIML/b.md", _late_response("AIML/b.md"))
+        commit_b = kdb_orchestrate._commit_source(
+            cr=produced_b.cr, source_id="AIML/b.md",
+            post_embed_hash=h, post_embed_mtime=2.0,
+            scan_entry=_scan_entry("AIML/b.md"),
+            prior_manifest=commit_a.next_manifest, vault_root=vault,
+            state_root=state_root, conn=g.conn, ctx=ctx)
+        assert commit_b.ok
+        assert commit_b.links_drained == 1
+        assert commit_b.links_wired == 1      # drained edge counted in wired
+        slug_a = expected_summary_slug("AIML/a.md")
+        edge_q = (f"MATCH (:Entity {{slug: '{slug_a}'}})-[r:LINKS_TO]->"
+                  "(:Entity {slug: 'x-late'}) RETURN COUNT(r)")
+        assert _count(g, edge_q) == 1
+        assert _count(g, "MATCH (p:PendingLink) RETURN COUNT(p)") == 0
+
+    # The loop's run-total arithmetic over the two commits.
+    totals = {
+        "links_wired": commit_a.links_wired + commit_b.links_wired,
+        "links_pended": commit_a.links_pended + commit_b.links_pended,
+        "links_drained": commit_a.links_drained + commit_b.links_drained,
+    }
+    assert totals == {"links_wired": 1, "links_pended": 1, "links_drained": 1}
+
+
+def test_abort_mid_run_resume_drains(tmp_path):
+    """#136 abort story (integration): a run dying between commits loses
+    nothing — committed sources' pendings are durable across a close/reopen,
+    and the next run's commits keep draining. Final edge set == an
+    uninterrupted control. #94's strand is deleted by construction."""
+    from kdb_graph.testing import (
+        make_compile_result, make_compiled_source, make_page,
+        make_scan, make_scan_entry,
+    )
+    crA = make_compile_result([
+        make_compiled_source("a.md", [make_page("a", outgoing_links=["x"])])])
+    crB = make_compile_result([
+        make_compiled_source("b.md", [make_page("x")])])
+    scanA = make_scan([make_scan_entry("a.md")])
+    scanB = make_scan([make_scan_entry("b.md")])
+
+    def edge_set(path):
+        with GraphDB(path) as g:
+            rows = g.conn.execute(
+                "MATCH (a:Entity)-[r:LINKS_TO]->(b:Entity) RETURN a.slug, b.slug")
+            edges = set()
+            while rows.has_next():
+                edges.add(tuple(rows.get_next()))
+            pend = g.conn.execute("MATCH (p:PendingLink) RETURN COUNT(p)")
+            return edges, int(pend.get_next()[0])
+
+    aborted = tmp_path / "aborted"
+    with GraphDB(aborted) as g:              # "run 1" — dies after A's commit
+        g.apply_compile_result(crA, scanA, "r1")
+    with GraphDB(aborted) as g:              # "run 2" — resume: B's commit drains
+        g.apply_compile_result(crB, scanB, "r2")
+
+    control = tmp_path / "control"           # uninterrupted
+    with GraphDB(control) as g:
+        g.apply_compile_result(crA, scanA, "r1")
+        g.apply_compile_result(crB, scanB, "r2")
+
+    assert edge_set(aborted) == edge_set(control) == ({("a", "x")}, 0)
+
+
 def test_finalize_deprecates_dropped_pages_in_graph_and_on_disk(tmp_path):
-    """#130: a page dropped by its source's recompile is DEPRECATED — graph node
-    kept with status flip, file frontmatter flipped in lockstep, no
-    retraction.json, no cleanup journal (the old reap is gone)."""
+    """#130+#136: a page dropped by its source's recompile is DEPRECATED in the
+    commit txn — graph node flipped per-source; the file frontmatter flip is
+    the finalize convergence fixpoint's job (no retraction.json, no cleanup
+    journal — the old reap is gone)."""
     state_root = tmp_path / "state"
     state_root.mkdir()
     ctx = RunContext.new(vault_root=tmp_path)
@@ -224,13 +365,22 @@ def test_finalize_deprecates_dropped_pages_in_graph_and_on_disk(tmp_path):
         "---\ntitle: B\nslug: ent-b\npage_type: concept\nstatus: active\n---\nbody\n",
         encoding="utf-8")
     with GraphDB(tmp_path / "graph") as g:
-        g.apply_compile_result(cr1, scan, ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
-        g.apply_compile_result(cr2, scan, ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
+        g.apply_compile_result(cr1, scan, ctx.run_id)
+        res2 = g.apply_compile_result(cr2, scan, ctx.run_id)
+        ent_b_pre_finalize = g.get_entity("ent-b")
+        # Commit-txn flip already landed; the file awaits the fixpoint.
+        assert ent_b_pre_finalize.status == "deprecated"
+        assert "status: active" in f.read_text(encoding="utf-8")
+        wiring = {
+            "links_wired": res2.edges_upserted + res2.links_drained,
+            "links_pended": res2.links_pended,
+            "links_drained": res2.links_drained,
+            "deprecated": len(res2.deprecations_detected),
+        }
         stats = kdb_orchestrate._finalize(
-            g.conn, [cr2], state_root=state_root, ctx=ctx)
+            g.conn, [cr2], state_root=state_root, ctx=ctx, wiring=wiring)
         ent_b = g.get_entity("ent-b")
+    assert res2.deprecations_detected == [{"slug": "ent-b", "page_type": "concept"}]
     assert ent_b is not None and ent_b.status == "deprecated"   # node kept, flipped
     assert stats["deprecated"] == 1
     assert stats["deprecated_files"] == 1
@@ -1561,7 +1711,7 @@ def test_run_archives_replay_journal_and_sidecars(tmp_path, monkeypatch):
     assert journal["dry_run"] is False
     assert journal["success"] is True
     assert journal["replayable_payload"] is True
-    assert journal["finalize_progress"] == "deprecated"
+    assert journal["finalize_progress"] == "complete"   # #136: slim finalize ran
     assert set(journal["counts"]) == {
         "sources_scanned", "sources_compiled", "sources_noise",
         "sources_failed", "sources_moved", "sources_deleted"}
@@ -2160,11 +2310,15 @@ def test_finalize_reports_deprecated_pages_total(tmp_path):
         "---\ntitle: B\nslug: ent-b\npage_type: concept\nstatus: active\n---\nbody\n",
         encoding="utf-8")
     with GraphDB(tmp_path / "graph") as g:
-        g.apply_compile_result(cr1, scan, ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
-        g.apply_compile_result(cr2, scan, ctx.run_id,
-                               detect_deprecations=False, wire_links=False)
+        g.apply_compile_result(cr1, scan, ctx.run_id)
+        res2 = g.apply_compile_result(cr2, scan, ctx.run_id)
+        wiring = {
+            "links_wired": res2.edges_upserted + res2.links_drained,
+            "links_pended": res2.links_pended,
+            "links_drained": res2.links_drained,
+            "deprecated": len(res2.deprecations_detected),
+        }
         stats = kdb_orchestrate._finalize(
-            g.conn, [cr2], state_root=state_root, ctx=ctx)
+            g.conn, [cr2], state_root=state_root, ctx=ctx, wiring=wiring)
     assert stats["deprecated"] == 1
     assert stats["deprecated_pages_total"] == 1

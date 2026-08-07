@@ -25,11 +25,19 @@ from kdb_graph.tests.gate3_dump import (
 
 
 def _without_entity_confidence(artifact: dict) -> dict:
-    """Strip ONLY the Entity.confidence key; everything else is compared."""
+    """Strip ONLY content-neutral keys; everything else is compared.
+
+    - Entity.confidence (the Gate-3 deprecation diff under test).
+    - _SchemaMeta.schema_version (the artifact was generated at v2.4; #136's
+      v2.5 PendingLink table bump is schema metadata, not graph content).
+    """
     out = dict(artifact)
     out["entities"] = [
         {k: v for k, v in e.items() if k != "confidence"}
         for e in artifact["entities"]
+    ]
+    out["schema_meta"] = [
+        r for r in artifact["schema_meta"] if r["key"] != "schema_version"
     ]
     return out
 

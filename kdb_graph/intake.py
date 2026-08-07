@@ -5,6 +5,14 @@ Algorithm per docs/task-graphdb-kdb-blueprint.md §5. Two-phase Source mutation
 SUPPORTS replacement per source (Codex v2 C2); MOVED transfers SUPPORTS to
 destination (Codex v2 M3) and writes only Source-schema-defined fields
 (Codex v2 NEW C2 — no `updated_at` on Source; use `last_seen_at`).
+
+#136 (drain-as-you-go): LINKS_TO wiring + deprecation marking are per-run,
+in-txn — the Task #91 end-of-run batch passes (standalone `wire_links` /
+`detect_deprecations` + the deferral flags) are deleted. Unresolved link
+targets pend durably in the PendingLink ledger (schema v2.5) and drain when
+the target arrives; pages losing their last SUPPORTS flip `deprecated` via a
+per-source diff. Blueprint:
+docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
 """
 from __future__ import annotations
 
@@ -55,10 +63,19 @@ def apply_compile_result(
     *,
     conn: kuzu.Connection,
     now: str | None = None,
-    detect_deprecations: bool = True,
-    wire_links: bool = True,
 ) -> IntakeResult:
     """Apply one compile run's deltas to the Kuzu graph (atomic per run).
+
+    #136 (drain-as-you-go): LINKS_TO wiring and deprecation marking happen
+    INSIDE this per-run txn — there is no end-of-run batch pass anymore.
+    Links whose targets don't exist yet are upserted into the durable
+    PendingLink ledger (same txn ⇒ crash-safe); each newly upserted page
+    drains the pendings keyed on its slug. Pages losing their last SUPPORTS
+    in this commit flip `deprecated` via a per-source set-diff (revive
+    symmetric on re-support). The Task #91 deferral flags
+    (wire_links/detect_deprecations) and the standalone finalize passes are
+    deleted — see blueprint
+    docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
 
     Args:
         cr: compile_result dict (already validated by Stage 4).
@@ -66,19 +83,9 @@ def apply_compile_result(
         run_id: run id string.
         conn: open kuzu.Connection.
         now: ISO timestamp; defaults to datetime.now().astimezone().isoformat().
-        detect_deprecations: when False, skip Phase-4 deprecation marking
-            (Task #91 — orchestrator runs one end-of-run detect_deprecations()
-            pass; #130 renamed the marked status orphan_candidate → deprecated).
-        wire_links: when False, skip Phase-3 LINKS_TO wiring only (Task #91 C1 —
-            orchestrator defers link-wiring to a single finalize wire_links()
-            pass over the accumulated batch, so cross-source edges resolve with
-            all entities present → live≡replay by construction). SUPPORTS,
-            ingest-state, meta, domains and aliases still apply per-source for
-            read-after-write of T1/T2 context. Default True preserves the
-            batch/monolith path.
 
     Returns:
-        IntakeResult with counts + newly-orphaned page slugs.
+        IntakeResult with counts + newly-deprecated page slugs.
 
     Raises:
         Any exception from Kuzu during execution; transaction is rolled back first.
@@ -107,16 +114,18 @@ def apply_compile_result(
 
         # Phase 3: ingest compiled_sources. Two passes within the phase so that
         # cross-entity (and cross-source) references resolve correctly: pass 1
-        # upserts every Entity node across all sources first; pass 2 wires LINKS_TO,
+        # upserts every Entity node across all sources first (draining
+        # pendings keyed on each slug); pass 2 wires/pends LINKS_TO,
         # SUPPORTS, and the ingest-state update.
         for cs in cr.get("compiled_sources", []):
             for page in cs.get("pages", []):
                 _upsert_entity(conn, page, run_id, now, result)
+        pre_sets: dict[str, list[str]] = {}
         for cs in cr.get("compiled_sources", []):
-            if wire_links:
-                for page in cs.get("pages", []):
-                    _replace_outgoing_links(conn, page, run_id, now, result)
-            _replace_supports_for_source(conn, cs, run_id, now, result)
+            for page in cs.get("pages", []):
+                _replace_outgoing_links(conn, page, run_id, now, result)
+            pre_sets[cs.get("source_id") or ""] = _replace_supports_for_source(
+                conn, cs, run_id, now, result)
             _update_source_ingest_state(conn, cs, run_id, now)
             _write_source_meta(conn, cs)
 
@@ -129,14 +138,15 @@ def apply_compile_result(
         # canonical entities exist for the ALIAS_OF endpoints to MATCH.
         _upsert_alias_entities_and_edges(conn, cr, run_id, now, result)
 
-        # Phase 4: deprecation marking (#130 — mark pages that lost all SUPPORTS
-        # deprecated + revive previously-deprecated pages that have regained
-        # SUPPORTS). Task #91: skipped when detect_deprecations=False — the
-        # orchestrator runs a single end-of-run detect_deprecations() pass
-        # instead (deferred-marking decision, avoids transient-deprecation
-        # context pollution).
-        if detect_deprecations:
-            result.deprecations_detected = _detect_and_mark_deprecations(conn, run_id, now)
+        # Phase 4 (#136): per-source deprecation diff — pages that lost their
+        # last SUPPORTS in this commit flip deprecated in-txn; emitted pages
+        # still marked deprecated revive. Runs after ALL pass-2 SUPPORTS are
+        # final, so a cross-source drop+re-support inside one call never
+        # produces a transient flip.
+        for cs in cr.get("compiled_sources", []):
+            _deprecations_for_source(
+                conn, cs, pre_sets.get(cs.get("source_id") or "", []),
+                run_id, now, result)
 
         conn.execute("COMMIT")
     except Exception:
@@ -341,6 +351,14 @@ def _handle_source_deleted(
             """,
             {"slugs": slugs},
         )
+        # #136 §3.3: GC pendings SOURCED at the erased pages (their carrier is
+        # gone). Pendings keyed on the erased slugs as TARGET stay — a later
+        # source may legitimately re-emit that slug (the re-emit revival path,
+        # now for links too).
+        conn.execute(
+            "MATCH (p:PendingLink) WHERE p.source_slug IN $slugs DELETE p",
+            {"slugs": slugs},
+        )
     return erased, dead_links
 
 
@@ -396,6 +414,52 @@ def _upsert_entity(
         {"slug": slug},
     )
     result.entities_upserted += 1
+    _drain_pending_links(conn, slug, run_id, now, result)
+
+
+def _drain_pending_links(
+    conn: kuzu.Connection,
+    slug: str,
+    run_id: str,
+    now: str,
+    result: IntakeResult,
+) -> None:
+    """#136 drain-as-you-go: resolve every PendingLink keyed on `slug` — the
+    target now exists, so the pended LINKS_TO edges land in the same txn and
+    the ledger rows are deleted (a drain fires once per pending row).
+
+    Invariant (§4.3 of the blueprint): pendings on slug X exist only while no
+    Entity X exists, so for an already-existing page this is a no-op. The
+    NOT EXISTS guard keeps it duplicate-safe even if that invariant is ever
+    violated. Drain lookups are full PendingLink scans (no secondary index
+    assumed — R1); the ledger is bounded by outstanding forward references,
+    and production commits are per-source, so scans stay small.
+    """
+    r = conn.execute(
+        "MATCH (p:PendingLink {target_slug: $slug}) "
+        "RETURN p.link_id, p.source_slug",
+        {"slug": slug},
+    )
+    rows: list[tuple[str, str]] = []
+    while r.has_next():
+        row = r.get_next()
+        rows.append((row[0], row[1]))
+    for link_id, source_slug in rows:
+        conn.execute(
+            """
+            MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b})
+            WHERE NOT EXISTS { MATCH (a)-[:LINKS_TO]->(b) }
+            CREATE (a)-[:LINKS_TO {run_id: $run_id, created_at: $ts}]->(b)
+            """,
+            {"a": source_slug, "b": slug, "run_id": run_id, "ts": now},
+        )
+        # The row is resolved (or its carrier is gone — GC-by-drain): delete
+        # either way so a drain never fires twice.
+        conn.execute(
+            "MATCH (p:PendingLink {link_id: $lid}) DELETE p",
+            {"lid": link_id},
+        )
+        result.links_drained += 1
 
 
 def _replace_outgoing_links(
@@ -406,10 +470,18 @@ def _replace_outgoing_links(
     result: IntakeResult,
 ) -> None:
     """Phase 3: drop+recreate LINKS_TO edges from this page (current-state
-    replacement). If a target slug doesn't yet exist as an Entity node, the
-    CREATE is silently skipped — dangling targets are KPI-visible
-    (`dangling_link_rate`), not gate-rejected — post-#115 no upstream gate
-    checks body-target existence."""
+    replacement), extended #136-style to the pending ledger:
+
+    - Target EXISTS as an Entity → CREATE the edge (as before).
+    - Target ABSENT → MERGE a durable PendingLink row (same txn ⇒ crash-safe);
+      a later commit that upserts the target drains it into an edge. Today's
+      silent-skip dangling link becomes durable and queryable.
+
+    Current-state replacement covers the ledger too: pendings SOURCED at this
+    page whose target is no longer linked are deleted at rewire — a recompiled
+    page that dropped a link must not leave a stale pend that would wire it
+    later (batch-equivalence: the deleted batch never wired a link the final
+    body lacks)."""
     slug = page.get("slug")
     if not slug:
         return
@@ -420,22 +492,53 @@ def _replace_outgoing_links(
     )
     # 2. Recreate per link target. #115 T2.4: the legacy `outgoing_links`
     # key is preferred when present (historical payloads); new-shape pages
-    # derive the target set from body wikilinks. The delete-then-recreate
-    # contract is unchanged — only the target-set SOURCE changed, so a
-    # recompiled body-only page keeps its edges. The MATCH-with-two-patterns
-    # form silently skips when target doesn't exist.
+    # derive the target set from body wikilinks.
     targets = page.get("outgoing_links")
     if targets is None:
         body = page.get("body")
         targets = sorted(body_wikilink_slugs(body)) if isinstance(body, str) else []
+    # 3. Selective ledger GC: drop this page's pendings whose target fell out
+    # of the current target set (stale-pend removal; current targets MERGE
+    # below and keep their first_run_id).
+    conn.execute(
+        "MATCH (p:PendingLink {source_slug: $slug}) "
+        "WHERE NOT p.target_slug IN $targets DELETE p",
+        {"slug": slug, "targets": list(targets)},
+    )
+    # 4. Wire what resolves; pend what doesn't (MERGE on link_id — idempotent
+    # re-pend: first_run_id preserved, last_run_id bumped).
     for target in targets:
-        conn.execute(
-            """
-            MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b})
-            CREATE (a)-[:LINKS_TO {run_id: $run_id, created_at: $ts}]->(b)
-            """,
-            {"a": slug, "b": target, "run_id": run_id, "ts": now},
+        rb = conn.execute(
+            "MATCH (b:Entity {slug: $b}) RETURN COUNT(b)", {"b": target}
         )
+        target_exists = rb.has_next() and int(rb.get_next()[0]) > 0
+        if target_exists:
+            conn.execute(
+                """
+                MATCH (a:Entity {slug: $a}), (b:Entity {slug: $b})
+                CREATE (a)-[:LINKS_TO {run_id: $run_id, created_at: $ts}]->(b)
+                """,
+                {"a": slug, "b": target, "run_id": run_id, "ts": now},
+            )
+        else:
+            link_id = f"{slug}|{target}"
+            rp = conn.execute(
+                "MATCH (p:PendingLink {link_id: $lid}) RETURN COUNT(p)",
+                {"lid": link_id},
+            )
+            already_pended = rp.has_next() and int(rp.get_next()[0]) > 0
+            conn.execute(
+                """
+                MERGE (p:PendingLink {link_id: $lid})
+                ON CREATE SET p.source_slug=$a, p.target_slug=$b,
+                              p.first_run_id=$run_id, p.created_at=$ts
+                SET p.last_run_id=$run_id, p.updated_at=$ts
+                """,
+                {"lid": link_id, "a": slug, "b": target,
+                 "run_id": run_id, "ts": now},
+            )
+            if not already_pended:
+                result.links_pended += 1
     # Count edges actually created from this page (truth from the graph).
     r = conn.execute(
         "MATCH (a:Entity {slug: $slug})-[r:LINKS_TO]->() RETURN COUNT(r)",
@@ -451,14 +554,25 @@ def _replace_supports_for_source(
     run_id: str,
     now: str,
     result: IntakeResult,
-) -> None:
+) -> list[str]:
     """Phase 3: atomic per-source SUPPORTS replacement (Codex review CRITICAL #2).
     Symmetric to `_replace_outgoing_links` — pages the source no longer
-    supports lose their edge; if no other source supports them, Phase 4
-    flags them orphan_candidate."""
+    supports lose their edge; if no other source supports them, Phase 4's
+    per-source diff (#136 `_deprecations_for_source`) flags them deprecated.
+
+    Returns the pre-replacement SUPPORTS slug set (captured BEFORE the drop)
+    for that Phase-4 diff."""
     source_id = cs.get("source_id")
     if not source_id:
-        return
+        return []
+    # 0. Capture the current SUPPORTS slug set (the Phase-4 diff's pre_set).
+    r0 = conn.execute(
+        "MATCH (s:Source {source_id: $sid})-[:SUPPORTS]->(p:Entity) RETURN p.slug",
+        {"sid": source_id},
+    )
+    pre_slugs: list[str] = []
+    while r0.has_next():
+        pre_slugs.append(r0.get_next()[0])
     # 1. Drop all existing SUPPORTS edges from this source.
     conn.execute(
         "MATCH (s:Source {source_id: $sid})-[r:SUPPORTS]->() DELETE r",
@@ -492,6 +606,66 @@ def _replace_supports_for_source(
     )
     if r.has_next():
         result.supports_upserted += int(r.get_next()[0])
+    return pre_slugs
+
+
+def _deprecations_for_source(
+    conn: kuzu.Connection,
+    cs: dict,
+    pre_slugs: list[str],
+    run_id: str,
+    now: str,
+    result: IntakeResult,
+) -> None:
+    """Phase 4 (#136): per-source deprecation diff — replaces the deleted
+    whole-graph end-of-run scan (`_detect_and_mark_deprecations`).
+
+    lost = pre_set − emitted: pages this source supported before the drop and
+    no longer emits. Each lost slug that is canonical AND now has zero
+    SUPPORTS (checked against the graph AFTER all of this call's pass-2
+    SUPPORTS are final — a cross-source drop+re-support within one call never
+    flips) transitions to 'deprecated' (#130 vocabulary; node stays,
+    revivable). Emitted slugs still marked 'deprecated' revive (symmetric:
+    the re-supporter's commit heals the transient window).
+
+    Alias entities are never eligible: they carry no SUPPORTS by design, so
+    they can never appear in either set.
+    """
+    emitted = {p.get("slug") for p in cs.get("pages", []) if p.get("slug")}
+    for slug in pre_slugs:
+        if slug in emitted:
+            continue
+        r = conn.execute(
+            """
+            MATCH (p:Entity {slug: $slug})
+            WHERE p.canonical_id IS NULL
+              AND NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
+              AND p.status <> 'deprecated'
+            RETURN p.slug, p.page_type
+            """,
+            {"slug": slug},
+        )
+        if not r.has_next():
+            continue
+        row = r.get_next()
+        conn.execute(
+            """
+            MATCH (p:Entity {slug: $slug})
+            SET p.status='deprecated', p.last_run_id=$run_id, p.updated_at=$ts
+            """,
+            {"slug": slug, "run_id": run_id, "ts": now},
+        )
+        result.deprecations_detected.append(
+            {"slug": row[0], "page_type": row[1]})
+    for slug in emitted:
+        conn.execute(
+            """
+            MATCH (p:Entity {slug: $slug})
+            WHERE p.status = 'deprecated'
+            SET p.status='active', p.last_run_id=$run_id, p.updated_at=$ts
+            """,
+            {"slug": slug, "run_id": run_id, "ts": now},
+        )
 
 
 def _update_source_ingest_state(
@@ -739,125 +913,6 @@ def _upsert_alias_entities_and_edges(
         )
         if r.has_next():
             result.alias_of_upserted += int(r.get_next()[0])
-
-
-# ---------- Phase 4: orphan detection + revival ----------
-
-def _detect_and_mark_deprecations(
-    conn: kuzu.Connection,
-    run_id: str,
-    now: str,
-) -> list[dict]:
-    """Phase 4: mark Entities with zero SUPPORTS as deprecated (#130); revive
-    previously-deprecated entities that have regained SUPPORTS. Returns the
-    NEWLY deprecated [{slug, page_type}] (not revivals).
-
-    #74.5 scope: only canonical entities (`canonical_id IS NULL`) are
-    eligible for deprecation flagging. Aliases (OQ-E direct-to-canonical) never
-    receive SUPPORTS by design — flagging them would mass-deprecate every
-    alias on first compile. Aliases are graph-level identity assertions,
-    not support-bearing pages.
-    """
-    # Find newly-deprecated pages (no SUPPORTS, not already marked, canonical only).
-    r = conn.execute(
-        """
-        MATCH (p:Entity)
-        WHERE p.canonical_id IS NULL
-          AND NOT EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
-          AND p.status <> 'deprecated'
-        RETURN p.slug, p.page_type
-        """
-    )
-    new_deprecations: list[dict] = []
-    while r.has_next():
-        row = r.get_next()
-        new_deprecations.append({"slug": row[0], "page_type": row[1]})
-    for d in new_deprecations:
-        conn.execute(
-            """
-            MATCH (p:Entity {slug: $slug})
-            SET p.status='deprecated', p.last_run_id=$run_id, p.updated_at=$ts
-            """,
-            {"slug": d["slug"], "run_id": run_id, "ts": now},
-        )
-
-    # Revive previously-deprecated pages that now have SUPPORTS.
-    r2 = conn.execute(
-        """
-        MATCH (p:Entity)
-        WHERE p.status = 'deprecated'
-          AND EXISTS { MATCH (:Source)-[:SUPPORTS]->(p) }
-        RETURN p.slug
-        """
-    )
-    revivals: list[str] = []
-    while r2.has_next():
-        revivals.append(r2.get_next()[0])
-    for slug in revivals:
-        conn.execute(
-            """
-            MATCH (p:Entity {slug: $slug})
-            SET p.status='active', p.last_run_id=$run_id, p.updated_at=$ts
-            """,
-            {"slug": slug, "run_id": run_id, "ts": now},
-        )
-
-    return new_deprecations
-
-
-def detect_deprecations(
-    conn: kuzu.Connection, run_id: str, *, now: str | None = None
-) -> list[dict]:
-    """Task #91: standalone end-of-run deprecation-marking pass (#130 vocabulary).
-    The orchestrator calls this ONCE at finalize — after all per-source
-    apply_compile_result calls (which run with detect_deprecations=False) — so
-    deprecation status is computed once over the final graph, not per-source
-    (avoids transient-deprecation context pollution / variant creation). Owns its
-    own transaction. Returns the newly deprecated [{slug, page_type}]."""
-    if now is None:
-        now = datetime.now().astimezone().isoformat()
-    conn.execute("BEGIN TRANSACTION")
-    try:
-        deprecations = _detect_and_mark_deprecations(conn, run_id, now)
-        conn.execute("COMMIT")
-    except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
-    return deprecations
-
-
-def wire_links(
-    cr: dict, conn: kuzu.Connection, run_id: str, *, now: str | None = None
-) -> IntakeResult:
-    """Task #91 (C1): standalone end-of-run LINKS_TO batch-wiring pass.
-
-    The orchestrator calls this ONCE at finalize over the accumulated batch
-    `cr` (all sources' compiled pages), after every per-source
-    apply_compile_result ran with wire_links=False. By the time this runs every
-    Entity that any page links to has been upserted, so the cross-source edges
-    that per-source wiring silently skipped (target not yet present) are now
-    created — restoring the monolith's complete LINKS_TO set → live≡replay by
-    construction. Idempotent (drop+recreate per page). Owns its own transaction,
-    mirroring detect_orphans. Returns the IntakeResult (edges_upserted populated)."""
-    if now is None:
-        now = datetime.now().astimezone().isoformat()
-    result = IntakeResult(run_id=run_id)
-    conn.execute("BEGIN TRANSACTION")
-    try:
-        for cs in cr.get("compiled_sources", []):
-            for page in cs.get("pages", []):
-                _replace_outgoing_links(conn, page, run_id, now, result)
-        conn.execute("COMMIT")
-    except Exception:
-        try:
-            conn.execute("ROLLBACK")
-        except Exception:
-            pass
-        raise
-    return result
 
 
 # ---------- Cleanup retraction (#68) ----------

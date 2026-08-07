@@ -43,7 +43,7 @@ def test_read_only_blocks_write_methods(graph_dir):
     _init_current_db(graph_dir)
     with GraphDB(graph_dir, read_only=True) as gdb:
         with pytest.raises(GraphDBReadOnlyError):
-            gdb.detect_deprecations(run_id="r")
+            gdb.apply_compile_result({}, {}, run_id="r")
         with pytest.raises(GraphDBReadOnlyError):
             gdb.apply_cleanup({"retracted_slugs": []}, run_id="r")
 

@@ -925,7 +925,7 @@ def test_live_vs_rebuild_links_to_equality_new_shape(graph_dir, tmp_path):
     """#115 Phase 4, PARSER-LEVEL equality (D-115-10), lifecycle-neutral
     NEW/CHANGED batch: page-body wikilinks == live LINKS_TO == rebuilt
     LINKS_TO for the new body-only payload, using direct intake. The
-    production-boundary system test (page_writer + deferred wire_links) is
+    production-boundary system test (page_writer + per-source wiring, #136) is
     `test_system_wiki_body_equals_live_and_rebuilt_links` below."""
     from kdb_graph.intake import body_wikilink_slugs
 
@@ -1082,18 +1082,15 @@ def test_d115_14_identical_sidecars_through_validate_and_rebuild(graph_dir, tmp_
 
 
 def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
-    """#115 Phase 4 system test (D-115-10) at the PRODUCTION boundary
-    (Codex Gate-4 F2): pages persist through `page_writer.apply`; each source
-    applies to the graph with DEFERRED wiring (`wire_links=False`); the batch
-    `wire_links` finalizer runs over `_combine_crs`'d output; the combined
-    journal replays through the adapter. A FORWARD cross-source link
-    (concept-a → concept-b, introduced by the SECOND source) makes the
-    deferred finalizer load-bearing. Asserts: persisted wiki-body wikilinks
-    == live graph LINKS_TO == rebuilt graph LINKS_TO."""
+    """#115 Phase 4 system test (D-115-10) at the PRODUCTION boundary, #136
+    shape: pages persist through `page_writer.apply`; each source applies to
+    the graph with per-source wiring (defaults); a FORWARD cross-source link
+    (concept-a → concept-b, introduced by the SECOND source) pends at cr1 and
+    drains at cr2's commit. Asserts: persisted wiki-body wikilinks == live
+    graph LINKS_TO == rebuilt graph LINKS_TO."""
     from common.run_context import SCHEMA_VERSION, RunContext
     from common import wiki_io
     from compiler import page_writer
-    from orchestrator.kdb_orchestrate import _combine_crs
 
     vault = tmp_path / "vault"
     (vault / "KDB" / "state").mkdir(parents=True)
@@ -1131,7 +1128,7 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
 
     expected_edges = {
         ("summary-one", "concept-a"),
-        ("concept-a", "concept-b"),     # FORWARD cross-source link
+        ("concept-a", "concept-b"),     # FORWARD cross-source link (pend→drain)
         ("summary-b", "concept-a"),
         ("concept-b", "concept-a"),     # display form counts
         # concept-a -/-> summary-b (inline code), concept-b -/-> concept-b (escaped)
@@ -1139,22 +1136,19 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
 
     with GraphDB(graph_dir) as gdb:
         # Production commit sequence per source: page_writer FIRST, then
-        # graph apply with deferred wiring.
+        # graph apply (per-source wiring + deprecation, #136 defaults).
         page_writer.apply(vault, compile_result=cr1, last_scan=scan1,
                           run_ctx=ctx, write=True)
-        gdb.apply_compile_result(cr1, scan1, "r-batch",
-                                 detect_deprecations=False, wire_links=False)
+        gdb.apply_compile_result(cr1, scan1, "r-batch")
+        # Per-source wiring is load-bearing NOW: only the intra-source edge
+        # exists; concept-a→concept-b sits in the PendingLink ledger.
+        assert _rows(gdb.conn, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")[0][0] == 1
+        assert _rows(gdb.conn, "MATCH (p:PendingLink) RETURN p.link_id")[0] == [
+            "concept-a|concept-b"]
+
         page_writer.apply(vault, compile_result=cr2, last_scan=scan2,
                           run_ctx=ctx, write=True)
-        gdb.apply_compile_result(cr2, scan2, "r-batch",
-                                 detect_deprecations=False, wire_links=False)
-
-        # Deferred finalizer is load-bearing: NO edges exist before it runs
-        # (and concept-b's target didn't exist during cr1's apply anyway).
-        assert _rows(gdb.conn, "MATCH ()-[r:LINKS_TO]->() RETURN COUNT(r)")[0][0] == 0
-
-        combined = _combine_crs([cr1, cr2], "r-batch")
-        gdb.wire_links(combined, "r-batch")
+        gdb.apply_compile_result(cr2, scan2, "r-batch")
 
         live_edges = {
             (r[0], r[1])
@@ -1162,7 +1156,9 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
                            "MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
                            "RETURN a.slug, b.slug")
         }
-    assert live_edges == expected_edges
+        pendings = _rows(gdb.conn, "MATCH (p:PendingLink) RETURN COUNT(p)")
+    assert live_edges == expected_edges      # drain wired the forward link
+    assert pendings[0][0] == 0               # ledger fully drained
 
     # PERSISTED wiki bodies (frontmatter stripped from the .md files
     # page_writer wrote) == live LINKS_TO.
@@ -1177,6 +1173,10 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
 
     # The combined journal (the production finalize payload) replays to the
     # same LINKS_TO set.
+    combined = make_compile_result([
+        {"source_id": "KDB/raw/one.md", "pages": one_pages},
+        {"source_id": "KDB/raw/two.md", "pages": two_pages},
+    ], run_id="r-batch")
     combined_scan = make_scan([
         make_scan_entry("KDB/raw/one.md"),
         make_scan_entry("KDB/raw/two.md"),
@@ -1199,14 +1199,13 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
 
 
 # ============================================================================
-# 8. Orchestrator-era 2.3 journals (#132) — two-phase live-order replay
-#    with a finalize_progress-gated derive
+# 8. Orchestrator-era 2.3 journals (#132 → #136) — two-phase live-order replay;
+#    finalize_progress is parse-tolerated but IGNORED (per-source commits wire
+#    + deprecate in-txn; no end-of-run derive exists to gate)
 # ============================================================================
 
 from kdb_graph.intake import (  # noqa: E402 — section-local imports
     apply_compile_result,
-    detect_deprecations,
-    wire_links,
 )
 
 
@@ -1254,8 +1253,9 @@ _EDGE_Q = ("MATCH (a:Entity)-[:LINKS_TO]->(b:Entity) "
 
 
 def test_replay_23_finalize_deprecated_matches_live(graph_dir, tmp_path):
-    """#132: a 2.3 journal pair replays EXACTLY the deferred-commit live
-    sequence (per-source apply with wire/deprecate off + finalize derive)."""
+    """#136: a 2.3 journal pair replays EXACTLY the per-source live sequence —
+    wiring + deprecation now happen inside each commit, so the live side runs
+    plain apply_compile_result and the replay side ignores finalize_progress."""
     live_dir = tmp_path / "live"
     journals = tmp_path / "runs"
     cr1 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
@@ -1268,16 +1268,10 @@ def test_replay_23_finalize_deprecated_matches_live(graph_dir, tmp_path):
     ])], run_id="r2")
     scan2 = make_scan([make_scan_entry("KDB/raw/a.md")])
 
-    # LIVE sequence: deferred per-source applies + finalize derive per run.
+    # LIVE sequence (#136): per-source applies with defaults — no derive passes.
     with GraphDB(live_dir) as g:
-        apply_compile_result(cr1, scan1, "r1", conn=g.conn,
-                             detect_deprecations=False, wire_links=False)
-        wire_links(cr1, g.conn, "r1")
-        detect_deprecations(g.conn, "r1")
-        apply_compile_result(cr2, scan2, "r2", conn=g.conn,
-                             detect_deprecations=False, wire_links=False)
-        wire_links(cr2, g.conn, "r2")
-        detect_deprecations(g.conn, "r2")
+        apply_compile_result(cr1, scan1, "r1", conn=g.conn)
+        apply_compile_result(cr2, scan2, "r2", conn=g.conn)
         live_entities = _rows(g.conn, _ENTITY_DIFF_Q)
         live_sources = _rows(g.conn, _SOURCE_DIFF_Q)
         live_edges = _rows(g.conn, _EDGE_Q)
@@ -1296,9 +1290,11 @@ def test_replay_23_finalize_deprecated_matches_live(graph_dir, tmp_path):
         "keep": "active", "drop-me": "deprecated"}
 
 
-def test_replay_23_finalize_none_skips_derive(graph_dir, tmp_path):
-    """#132: finalize_progress='none' ⇒ neither wire_links nor deprecations
-    run for that run (mirrors an aborted run live)."""
+def test_replay_23_finalize_progress_none_still_fully_derives(graph_dir, tmp_path):
+    """#136: finalize_progress='none' (an aborted run's journal) no longer
+    strands the replay underived — per-source commits wire + deprecate in-txn,
+    so replay produces the COMPLETED graph the live abort denied (#94's strand
+    repaired even in replay)."""
     journals = tmp_path / "runs"
     cr0 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
         make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
@@ -1325,16 +1321,17 @@ def test_replay_23_finalize_none_skips_derive(graph_dir, tmp_path):
             g.conn, "MATCH (s:Source)-[:SUPPORTS]->(e:Entity) "
                     "RETURN s.source_id, e.slug")
         edges = {tuple(r) for r in _rows(g.conn, _EDGE_Q)}
-    # Zero SUPPORTS but NOT marked — the deprecation derive never ran.
-    assert statuses["drop-me"] == "active"
+    # Per-source deprecation diff fired at r1's commit despite progress='none'.
+    assert statuses["drop-me"] == "deprecated"
     assert supports == [["KDB/raw/a.md", "keep"], ["KDB/raw/a.md", "fresh"]]
-    # keep→fresh was never wired (deferred wiring skipped); r0's edge persists.
-    assert edges == {("keep", "drop-me")}
+    # Both links wired at r1's commit (drop-me still exists as an entity).
+    assert edges == {("keep", "drop-me"), ("keep", "fresh")}
 
 
-def test_replay_23_finalize_wired_wires_without_deprecating(graph_dir, tmp_path):
-    """#132: finalize_progress='wired' (crash between the two finalize stages)
-    ⇒ links wired, deprecation pass NOT run."""
+def test_replay_23_finalize_wired_also_fully_derives(graph_dir, tmp_path):
+    """#136: finalize_progress='wired' (crash between the two old finalize
+    stages) replays identically — the value is parse-tolerated but ignored;
+    deprecation fires per-source at commit like any other run."""
     journals = tmp_path / "runs"
     cr0 = make_compile_result([make_compiled_source("KDB/raw/a.md", [
         make_page("keep", outgoing_links=["drop-me"], body="Links [[drop-me]]."),
@@ -1359,8 +1356,7 @@ def test_replay_23_finalize_wired_wires_without_deprecating(graph_dir, tmp_path)
             g.conn, "MATCH (e:Entity) RETURN e.slug, e.status")}
         edges = {tuple(r) for r in _rows(g.conn, _EDGE_Q)}
     assert edges == {("keep", "drop-me"), ("keep", "fresh")}
-    # SUPPORTS for drop-me is gone, yet no deprecation pass ran.
-    assert statuses["drop-me"] == "active"
+    assert statuses["drop-me"] == "deprecated"
 
 
 def test_replay_23_commits_before_reconcile_preserves_reemitted_page(

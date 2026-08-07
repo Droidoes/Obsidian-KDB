@@ -9,8 +9,10 @@ Bridges run-journal artifacts to GraphDB-KDB mutations:
 Journal producers by `schema_version`: legacy `kdb-compile` (2.0/2.2, deleted
 in the 0.5.1 realignment) and `kdb-clean` cleanup journals (2.1) replay with
 monolith defaults; orchestrator-era journals (2.3, #132 — archived per run by
-`orchestrator/journal_writer.py`) replay two-phase live-order with a
-`finalize_progress`-gated derive (see `apply`).
+`orchestrator/journal_writer.py`) replay two-phase live-order (commits phase,
+then applied reconcile ops). #136: `finalize_progress` is parse-tolerated but
+its value is ignored — per-source commits wire + deprecate in-txn, so no
+end-of-run derive exists to gate (see `apply`).
 
 Critical: no imports from `compiler`, `ingestion`, or `orchestrator` anywhere
 in this module. The adapter reads producer JSON by documented field names
@@ -185,10 +187,13 @@ class ObsidianRunsAdapter:
             mutation = json.load(f)
         with (sidecar_dir / "last_scan.json").open() as f:
             scan = json.load(f)
-        # #132: 2.3 journals carry `finalize_progress` — the replay-derive
-        # gate. Channel it to apply() via a reserved in-memory key; the
-        # on-disk sidecar stays pristine (apply pops before routing). Legacy
-        # journals lack the field ⇒ no key ⇒ monolith-default replay.
+        # #132/#136: 2.3 journals carry `finalize_progress` — once the
+        # replay-derive gate, now just the 2.3 marker (its VALUE is ignored:
+        # per-source commits wire + deprecate in-txn). Its PRESENCE is
+        # channeled to apply() via a reserved in-memory key to select the
+        # two-phase live-order replay; the on-disk sidecar stays pristine
+        # (apply pops before routing). Legacy journals lack the field ⇒ no
+        # key ⇒ monolith-default replay.
         if "finalize_progress" in journal:
             mutation["_finalize_progress"] = journal["finalize_progress"]
         return mutation, scan, descriptor.run_id
@@ -210,46 +215,40 @@ class ObsidianRunsAdapter:
 
         #132: a 2.3 payload carries the reserved in-memory key
         `_finalize_progress` (stuffed by load_payload; popped here before the
-        payload reaches intake). Its presence selects the orchestrator-era
-        replay: two-phase live-order apply with the derive gated on the flag —
-        exactly the calls the live conductor made:
-          1. commits phase   — apply_compile_result(deferred wiring/deprecation)
-          2. reconcile phase — applied ops only (moved_files + to_reconcile)
-          3. finalize derive — wire_links iff progress ∈ {wired, deprecated},
-                               detect_deprecations iff progress = deprecated
+        payload reaches intake). Its PRESENCE still selects the
+        orchestrator-era two-phase live-order replay (commits first, applied
+        reconcile ops second — #132 §2 ordering), but its VALUE is ignored
+        (#136): per-source commits wire LINKS_TO and mark deprecations in-txn
+        now, so there is no end-of-run derive left to gate. Replaying an old
+        2.3 journal yields the same final graph the batch path produced —
+        batch wiring and incremental wiring compute the same complete edge
+        set once all entities exist; end-state deprecation is a function of
+        final SUPPORTS. Aborted-run journals ('none'/'wired') replay to the
+        COMPLETED graph — #94's strand repaired even in replay.
         Absent (legacy 2.0–2.2 journals + baton descriptors): the monolith
-        single call with defaults — the shape those runs were ingested with.
-        Unknown progress values derive nothing (same as 'none') — under-derive
-        is the safe direction for a hand-corrupted journal."""
+        single call — the shape those runs were ingested with."""
         from kdb_graph.intake import (
             apply_cleanup,
             apply_compile_result,
-            detect_deprecations,
-            wire_links,
         )
-        finalize_progress = mutation.pop("_finalize_progress", None)
+        _MISSING = object()
+        finalize_progress = mutation.pop("_finalize_progress", _MISSING)
         event_type = mutation.get("event_type", "compile")
         if event_type == "cleanup":
             return apply_cleanup(mutation, run_id, conn=conn)
         if event_type != "compile":
             raise ValueError(f"unsupported event_type: {event_type!r}")
-        if finalize_progress is None:
+        if finalize_progress is _MISSING:
             return apply_compile_result(mutation, scan, run_id, conn=conn)
         result = apply_compile_result(
-            mutation, {**scan, "to_reconcile": []}, run_id, conn=conn,
-            detect_deprecations=False, wire_links=False)
+            mutation, {**scan, "to_reconcile": []}, run_id, conn=conn)
         reconcile_files = scan.get("moved_files", [])
         reconcile_ops = scan.get("to_reconcile", [])
         if reconcile_files or reconcile_ops:
             apply_compile_result(
                 {"compiled_sources": []},
                 {"files": reconcile_files, "to_reconcile": reconcile_ops},
-                run_id, conn=conn,
-                detect_deprecations=False, wire_links=False)
-        if finalize_progress in ("wired", "deprecated"):
-            wire_links(mutation, conn, run_id)
-        if finalize_progress == "deprecated":
-            detect_deprecations(conn, run_id)
+                run_id, conn=conn)
         return result
 
     # ── live-sync path (#68 cleanup; D-S0 superseded by Task #91) ────────────

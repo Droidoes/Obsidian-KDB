@@ -208,6 +208,12 @@ A parallel miss the same session: asked to name the MCP's "Gate" query, I offere
 
 **Application:** on any placement/boundary/value call, before settling ask *"what premise am I treating as fixed, and should it be?"* and run the producer/consumer/durable-asset lens. The second concrete consumer is the natural extract-the-shared-core trigger — catch it proactively, not after three prompts. Reach for what the asset *uniquely* makes possible, not the first plausible thing. Memory: `feedback_interrogate_anchored_premise`.
 
+### §7. Deferral is a bet that the end always arrives (2026-08-07, #136)
+
+Task #91's C1 deferred all LINKS_TO wiring to an end-of-run batch over `accumulated_crs` held in RAM. It read as efficiency; it was actually an unstated bet — *finalize always runs, over the full batch, and the run always survives to reach it*. #94 filed the first crack (abort strands committed sources, link-less and unrecoverable); Joseph's 2M-source question exposed the second (memory = O(run's edge set), nothing wired until everything survives). Both cracks had the same root: the per-source commit boundary did not carry its own completion. The fix wasn't a safer batch — it was deleting the batch: each commit wires what it can, *remembers* what it can't (durable `PendingLink`, crash-safe in the same txn), and later commits drain it. "Wait" became "remember." The verification surfaced a bonus pattern: the strongest crash test isn't replay-equality — it's reconstructing the frozen pre-crash set from *what the crash survivor actually wrote* (wiki frontmatter `source_refs` when the journal dies with the process) and proving zero loss against it.
+
+**Application:** when a design defers work to "the end" (of the run, the batch, the session), name the bet explicitly and ask what breaks if the end never comes. Per-unit self-completion with a durable pending-ledger scales and survives crashes; batch completion does neither. And when you verify crash-safety, assert against producer-side evidence that outlives the crash, not just against the system's own journals.
+
 ---
 
 ## What the next iteration looks like

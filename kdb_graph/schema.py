@@ -10,7 +10,9 @@ Claim layer delta), and docs/superpowers/archive/plans/2026-05-26-task89-pass1-i
 Tables:
 - Node: Entity (slug-keyed; v2.0 adds canonical_id), Source (source_id-keyed;
         v2.3 adds summary/author/domain), Domain (name-keyed; v2.1),
-        Claim (claim_id-keyed; v2.2)
+        Claim (claim_id-keyed; v2.2),
+        PendingLink (link_id-keyed; v2.5 — durable ledger for links whose
+        target doesn't exist yet; drained when the target arrives)
 - Rel:  LINKS_TO (Entity->Entity), SUPPORTS (Source->Entity),
         ALIAS_OF (Entity->Entity, v2.0), BELONGS_TO (Entity->Domain, v2.1),
         EVIDENCES (Source->Claim, v2.2), ABOUT (Claim->Entity, v2.2),
@@ -49,12 +51,17 @@ Schema version history:
         support_count (distinct supporting sources in that domain). Destructive
         REL change — Kuzu cannot ALTER a REL table, so 2.3->2.4 requires
         `graphdb-kdb rebuild` (no in-place migration).
+- 2.5 — #136: new PendingLink node table (link_id-keyed: source_slug + "|" +
+        target_slug). Durable ledger for LINKS_TO whose target doesn't exist
+        at the source's commit — per-source iterative wiring (drain-as-you-go)
+        replaces the end-of-run batch wire_links pass. Non-destructive ADD:
+        2.4->2.5 migrates in place.
 """
 from __future__ import annotations
 
 from typing import Callable
 
-SCHEMA_VERSION = "2.4"
+SCHEMA_VERSION = "2.5"
 
 # Node tables — one CREATE per element (Kuzu requires one statement per execute).
 NODE_TABLE_DDL: list[str] = [
@@ -119,6 +126,23 @@ NODE_TABLE_DDL: list[str] = [
         version                    INT64,
         created_at                 STRING,
         last_revised_at            STRING
+    )
+    """,
+    # #136 (v2.5): durable ledger for links whose target doesn't exist yet.
+    # A node table (not a rel) because Kuzu rel tables require both endpoints
+    # to exist — the target doesn't, that's the point. link_id =
+    # source_slug + "|" + target_slug (slugs exclude "|" by charset). APPENDED
+    # LAST: earlier migrations index into this list positionally — never
+    # reorder or insert above.
+    """
+    CREATE NODE TABLE PendingLink (
+        link_id      STRING PRIMARY KEY,
+        source_slug  STRING,
+        target_slug  STRING,
+        first_run_id STRING,
+        last_run_id  STRING,
+        created_at   STRING,
+        updated_at   STRING
     )
     """,
 ]
@@ -336,10 +360,34 @@ def _migrate_2_2_to_2_3(conn) -> None:
     )
 
 
+def _migrate_2_4_to_2_5(conn) -> None:
+    """Bring a v2.4 DB up to v2.5 in place (non-destructive).
+
+    Changes:
+      - New node table PendingLink (link_id-keyed; #136 durable link ledger)
+        — empty at migration time. Existing graphs have no unresolved-target
+        record (the old batch path silently skipped dangling targets), so an
+        empty ledger is the correct migrated state; unresolved links re-pend
+        on the next per-source commit.
+      - `_SchemaMeta.schema_version` updated to "2.5".
+
+    Anchor: docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md
+    §3.1 (#136 schema delta).
+    """
+    # 1. Create the PendingLink node table (index 4 of NODE_TABLE_DDL).
+    conn.execute(NODE_TABLE_DDL[4])
+
+    # 2. Bump _SchemaMeta to "2.5".
+    conn.execute(
+        "MATCH (m:_SchemaMeta {key: 'schema_version'}) SET m.value = '2.5'"
+    )
+
+
 # Migration registry keyed by (from_version, to_version).
 MIGRATIONS: dict[tuple[str, str], Callable] = {
     ("1.0", "2.0"): _migrate_1_0_to_2_0,
     ("2.0", "2.1"): _migrate_2_0_to_2_1,
     ("2.1", "2.2"): _migrate_2_1_to_2_2,
     ("2.2", "2.3"): _migrate_2_2_to_2_3,
+    ("2.4", "2.5"): _migrate_2_4_to_2_5,
 }
