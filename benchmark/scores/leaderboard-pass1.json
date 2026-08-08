@@ -17,7 +17,8 @@
     "alibaba/qwen3.6-flash@v0.5.7-70-g7dd5f8a": "qwen3.6-flash-2026-07-24T17-52-02_EDT",
     "deepseek/deepseek-v4-flash@v0.5.7-84-gee37407": "deepseek-v4-flash-2026-07-25T09-25-10_EDT",
     "openai/gpt-5.4-mini@v0.5.7-84-gee37407": "gpt-5.4-mini-2026-07-25T09-34-38_EDT",
-    "gemini/gemini-3.6-flash@v0.5.7-84-gee37407": "gemini-3.6-flash-2026-07-25T09-41-46_EDT"
+    "gemini/gemini-3.6-flash@v0.5.7-84-gee37407": "gemini-3.6-flash-2026-07-25T09-41-46_EDT",
+    "alibaba-sgp/qwen3.7-flash@v0.5.7-155-g9cbf95c": "qwen3.7-flash-2026-08-03T22-52-44_EDT"
   },
   "board_scope": "pass1",
   "effective_top_weights": {
@@ -29,14 +30,14 @@
   "ranking": [
     {
       "model": "gemini/gemini-3.6-flash@v0.5.7-84-gee37407",
-      "composite": 67.64705882352942,
-      "composite_pre_penalty": 67.64705882352942,
+      "composite": 68.98148148148148,
+      "composite_pre_penalty": 68.98148148148148,
       "penalty": 0.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
         "latency": 1.0
       },
       "rank": 1,
@@ -48,6 +49,14 @@
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.6125865,
         "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null,
         "context_record_coverage": 1.0,
         "context_integrity_ok": true,
         "context_missing_record_count": 0,
@@ -75,15 +84,15 @@
     },
     {
       "model": "gemini/gemini-3.6-flash@v0.5.7-67-g9156033-dirty",
-      "composite": 65.68627450980394,
-      "composite_pre_penalty": 65.68627450980394,
+      "composite": 67.12962962962963,
+      "composite_pre_penalty": 67.12962962962963,
       "penalty": 0.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.8823529411764706
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.8888888888888888
       },
       "rank": 2,
       "measurement_source": "run_state_recomputed",
@@ -93,20 +102,28 @@
         "latency_pass1": 192322.9381547547,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.6127515,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-25-ge9ca323",
-      "composite": 63.72549019607844,
-      "composite_pre_penalty": 63.72549019607844,
+      "composite": 65.27777777777779,
+      "composite_pre_penalty": 65.27777777777779,
       "penalty": 0.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.7647058823529411
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.7777777777777778
       },
       "rank": 3,
       "measurement_source": "run_state_recomputed",
@@ -116,20 +133,28 @@
         "latency_pass1": 253326.63892458295,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.05043542,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-2-g718e75d-dirty",
-      "composite": 61.76470588235294,
-      "composite_pre_penalty": 61.76470588235294,
+      "composite": 63.42592592592593,
+      "composite_pre_penalty": 63.42592592592593,
       "penalty": 0.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.6470588235294118
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.6666666666666666
       },
       "rank": 4,
       "measurement_source": "run_state_recomputed",
@@ -139,20 +164,28 @@
         "latency_pass1": 258687.2365932585,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.30597525,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-58-g0690e8b",
-      "composite": 60.7843137254902,
-      "composite_pre_penalty": 60.7843137254902,
+      "composite": 62.5,
+      "composite_pre_penalty": 62.5,
       "penalty": 0.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.5882352941176471
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.6111111111111112
       },
       "rank": 5,
       "measurement_source": "run_state_recomputed",
@@ -162,20 +195,28 @@
         "latency_pass1": 264532.28656435333,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.050447740000000005,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-28-g782120b-dirty",
-      "composite": 59.80392156862746,
-      "composite_pre_penalty": 59.80392156862746,
+      "composite": 61.57407407407408,
+      "composite_pre_penalty": 61.57407407407408,
       "penalty": 0.0,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.5294117647058824
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.5555555555555556
       },
       "rank": 6,
       "measurement_source": "run_state_recomputed",
@@ -185,20 +226,28 @@
         "latency_pass1": 267413.6835175811,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.0504049,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-29-gf4233f7",
-      "composite": 58.235294117647065,
-      "composite_pre_penalty": 58.82352941176471,
-      "penalty": 0.5882352941176472,
+      "composite": 60.64814814814815,
+      "composite_pre_penalty": 60.64814814814815,
+      "penalty": 0.0,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.47058823529411764
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.5
       },
       "rank": 7,
       "measurement_source": "run_state_recomputed",
@@ -208,20 +257,28 @@
         "latency_pass1": 279696.849279431,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.30726225,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-66-gb597a21",
-      "composite": 56.07843137254902,
-      "composite_pre_penalty": 57.84313725490197,
-      "penalty": 1.7647058823529416,
+      "composite": 58.611111111111114,
+      "composite_pre_penalty": 59.72222222222222,
+      "penalty": 1.1111111111111116,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.4117647058823529
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.4444444444444444
       },
       "rank": 8,
       "measurement_source": "run_state_recomputed",
@@ -231,20 +288,28 @@
         "latency_pass1": 292411.89874207944,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.05040014,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-84-gee37407",
-      "composite": 53.92156862745099,
-      "composite_pre_penalty": 56.86274509803923,
-      "penalty": 2.941176470588235,
+      "composite": 56.57407407407406,
+      "composite_pre_penalty": 58.79629629629629,
+      "penalty": 2.2222222222222223,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.35294117647058826
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.3888888888888889
       },
       "rank": 9,
       "measurement_source": "run_state_recomputed",
@@ -255,6 +320,14 @@
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.05041246,
         "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null,
         "context_record_coverage": 1.0,
         "context_integrity_ok": true,
         "context_missing_record_count": 0,
@@ -282,15 +355,15 @@
     },
     {
       "model": "deepseek/deepseek-v4-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 51.764705882352956,
-      "composite_pre_penalty": 55.882352941176485,
-      "penalty": 4.117647058823529,
+      "composite": 54.53703703703704,
+      "composite_pre_penalty": 57.870370370370374,
+      "penalty": 3.333333333333334,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.29411764705882354
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.3333333333333333
       },
       "rank": 10,
       "measurement_source": "run_state_recomputed",
@@ -300,20 +373,28 @@
         "latency_pass1": 300596.73286627565,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.050403500000000004,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-25-ge9ca323",
-      "composite": 49.60784313725492,
-      "composite_pre_penalty": 54.901960784313744,
-      "penalty": 5.294117647058824,
+      "composite": 52.500000000000014,
+      "composite_pre_penalty": 56.94444444444445,
+      "penalty": 4.444444444444445,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.23529411764705882
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.2777777777777778
       },
       "rank": 11,
       "measurement_source": "run_state_recomputed",
@@ -323,20 +404,28 @@
         "latency_pass1": 306125.0761665279,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.30622725,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-66-gb597a21-dirty",
-      "composite": 47.45098039215687,
-      "composite_pre_penalty": 53.92156862745099,
-      "penalty": 6.470588235294117,
+      "composite": 50.462962962962955,
+      "composite_pre_penalty": 56.01851851851851,
+      "penalty": 5.555555555555556,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.17647058823529413
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.2222222222222222
       },
       "rank": 12,
       "measurement_source": "run_state_recomputed",
@@ -346,20 +435,28 @@
         "latency_pass1": 306358.1163600085,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.30285675,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-58-g0690e8b-dirty",
-      "composite": 34.31372549019607,
-      "composite_pre_penalty": 43.13725490196078,
-      "penalty": 8.823529411764707,
+      "composite": 35.55555555555554,
+      "composite_pre_penalty": 44.444444444444436,
+      "penalty": 8.88888888888889,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.058823529411764705,
-        "latency": 0.058823529411764705
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.05555555555555555,
+        "latency": 0.05555555555555555
       },
       "rank": 13,
       "measurement_source": "run_state_recomputed",
@@ -369,19 +466,27 @@
         "latency_pass1": 510150.6239814131,
         "retry_load_pass1": 0.027777777777777776,
         "cost_usd_pass1": 0.309681,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "zai/glm-5-turbo@v0.5.7-2-g718e75d-dirty",
-      "composite": 33.13725490196079,
-      "composite_pre_penalty": 43.137254901960794,
+      "composite": 34.44444444444444,
+      "composite_pre_penalty": 44.44444444444445,
       "penalty": 10.0,
       "weakest_kpi": "latency",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.6176470588235294,
-        "recovery_rate": 0.11764705882352941,
+        "quarantine_rate": 0.6388888888888888,
+        "recovery_rate": 0.1111111111111111,
         "latency": 0.0
       },
       "rank": 14,
@@ -392,20 +497,28 @@
         "latency_pass1": 1391510.1546461915,
         "retry_load_pass1": 0.027777777777777776,
         "cost_usd_pass1": 0.4571684,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "openai/gpt-5.4-mini@v0.5.7-84-gee37407",
-      "composite": 21.764705882352946,
-      "composite_pre_penalty": 29.41176470588236,
-      "penalty": 7.647058823529412,
+      "composite": 26.203703703703706,
+      "composite_pre_penalty": 32.87037037037038,
+      "penalty": 6.666666666666668,
       "weakest_kpi": "quarantine_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.11764705882352941,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.7058823529411765
+        "quarantine_rate": 0.16666666666666666,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.7222222222222222
       },
       "rank": 15,
       "measurement_source": "run_state_recomputed",
@@ -416,6 +529,14 @@
         "retry_load_pass1": 0.027777777777777776,
         "cost_usd_pass1": 0.2988405,
         "cost_unknown_calls_pass1": 1,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null,
         "context_record_coverage": 1.0,
         "context_integrity_ok": true,
         "context_missing_record_count": 0,
@@ -443,15 +564,15 @@
     },
     {
       "model": "alibaba/qwen3.6-flash-us@v0.5.7-2-g718e75d-dirty",
-      "composite": 20.588235294117645,
-      "composite_pre_penalty": 29.411764705882355,
-      "penalty": 8.823529411764707,
+      "composite": 20.27777777777778,
+      "composite_pre_penalty": 29.166666666666668,
+      "penalty": 8.88888888888889,
       "weakest_kpi": "quarantine_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.058823529411764705,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.9411764705882353
+        "quarantine_rate": 0.05555555555555555,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.9444444444444444
       },
       "rank": 16,
       "measurement_source": "run_state_recomputed",
@@ -461,20 +582,28 @@
         "latency_pass1": 177397.42018327204,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.09716,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     },
     {
       "model": "gemini/gemini-3.5-flash@v0.5.7-2-g718e75d-dirty",
-      "composite": 15.490196078431376,
-      "composite_pre_penalty": 25.490196078431378,
+      "composite": 18.703703703703702,
+      "composite_pre_penalty": 28.703703703703702,
       "penalty": 10.0,
       "weakest_kpi": "recovery_rate",
       "graph_score": null,
       "per_kpi_borda": {
-        "quarantine_rate": 0.17647058823529413,
+        "quarantine_rate": 0.2222222222222222,
         "recovery_rate": 0.0,
-        "latency": 0.8235294117647058
+        "latency": 0.8333333333333334
       },
       "rank": 17,
       "measurement_source": "run_state_recomputed",
@@ -484,22 +613,83 @@
         "latency_pass1": 222467.58865281945,
         "retry_load_pass1": 0.2222222222222222,
         "cost_usd_pass1": 0.711969,
-        "cost_unknown_calls_pass1": 1
+        "cost_unknown_calls_pass1": 1,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
+      }
+    },
+    {
+      "model": "alibaba-sgp/qwen3.7-flash@v0.5.7-155-g9cbf95c",
+      "composite": 11.203703703703708,
+      "composite_pre_penalty": 18.981481481481485,
+      "penalty": 7.777777777777778,
+      "weakest_kpi": "quarantine_rate",
+      "graph_score": null,
+      "per_kpi_borda": {
+        "quarantine_rate": 0.1111111111111111,
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.1111111111111111
+      },
+      "rank": 18,
+      "measurement_source": "run_state_recomputed",
+      "raw_values": {
+        "quarantine_rate_pass1": 2.878451623302793,
+        "recovery_rate_pass1": 0.0,
+        "latency_pass1": 455566.78151688643,
+        "retry_load_pass1": 0.0,
+        "cost_usd_pass1": 0.01127427,
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": 27,
+        "attempts_pass1_5": 28,
+        "retries_pass1_5": 1,
+        "cost_usd_pass1_5": 0.00179058,
+        "cost_unknown_calls_pass1_5": 0,
+        "input_tokens_pass1_5": 49208,
+        "input_token_unknown_attempts_pass1_5": 0,
+        "latency_pass1_5": 2045.962962962963,
+        "context_record_coverage": 1.0,
+        "context_integrity_ok": true,
+        "context_missing_record_count": 0,
+        "context_malformed_record_count": 0,
+        "context_duplicate_record_count": 0,
+        "context_unexpected_record_count": 0,
+        "context_wrong_run_record_count": 0,
+        "context_expected_count_mismatch": false,
+        "search_expression_matched_rate": 0.08333333333333333,
+        "search_expression_unresolved_rate": 0.9166666666666666,
+        "search_hit_recency_pre_run_rate": 0.0,
+        "search_hit_recency_cohort_rate": 1.0,
+        "search_hit_recency_age_unknown_rate": 0.0,
+        "search_stage2_budget_bound_rate": 0.0,
+        "context_build_success_rate": 1.0,
+        "context_explicit_empty_count": 0,
+        "context_t1_candidates_mean": 0.0,
+        "context_t1_delivered_mean": 0.0,
+        "context_t2_candidates_mean": 1.5555555555555556,
+        "context_t2_delivered_mean": 1.5555555555555556,
+        "context_t3_candidates_mean": 0.0,
+        "context_t3_delivered_mean": 0.0
       }
     },
     {
       "model": "alibaba/qwen3.6-flash@v0.5.7-70-g7dd5f8a",
-      "composite": 1.7647058823529405,
-      "composite_pre_penalty": 11.76470588235294,
+      "composite": 2.500000000000002,
+      "composite_pre_penalty": 12.500000000000004,
       "penalty": 10.0,
       "weakest_kpi": "quarantine_rate",
       "graph_score": null,
       "per_kpi_borda": {
         "quarantine_rate": 0.0,
-        "recovery_rate": 0.5882352941176471,
-        "latency": 0.11764705882352941
+        "recovery_rate": 0.5833333333333334,
+        "latency": 0.16666666666666666
       },
-      "rank": 18,
+      "rank": 19,
       "measurement_source": "run_state_recomputed",
       "raw_values": {
         "quarantine_rate_pass1": 2.9204072215829777,
@@ -507,7 +697,15 @@
         "latency_pass1": 311379.65877962025,
         "retry_load_pass1": 0.0,
         "cost_usd_pass1": 0.096797,
-        "cost_unknown_calls_pass1": 0
+        "cost_unknown_calls_pass1": 0,
+        "calls_pass1_5": null,
+        "attempts_pass1_5": null,
+        "retries_pass1_5": null,
+        "cost_usd_pass1_5": null,
+        "cost_unknown_calls_pass1_5": null,
+        "input_tokens_pass1_5": null,
+        "input_token_unknown_attempts_pass1_5": null,
+        "latency_pass1_5": null
       }
     }
   ],
@@ -528,5 +726,5 @@
     "threshold": 0.5,
     "cap": 0.1
   },
-  "updated_at": "2026-07-25T09:48:39-04:00"
+  "updated_at": "2026-08-03T23:02:42-04:00"
 }

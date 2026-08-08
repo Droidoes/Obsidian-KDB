@@ -136,9 +136,9 @@ Two completely separate filesystems:
 | Concern | Path | VCS / Backup |
 |---|---|---|
 | **Code** (this repo) | `~/Droidoes/Obsidian-KDB/` (WSL Linux) | git + GitHub |
-| **Data** (vault) | `~/Obsidian/KDB/` (Windows local drive, OneDrive-synced) | OneDrive (30-day version history) |
+| **Data** (vault) | `~/Obsidian/KDB/` (Windows local drive, Google-Drive-synced) | Google Drive (version history) |
 
-The code reads from and writes to the vault via absolute paths. No nested git repos. No symlinks. OneDrive is the backup — we do **not** run a separate git repo inside the vault (earlier proposal dropped; OneDrive version history is sufficient for v1).
+The code reads from and writes to the vault via absolute paths. No nested git repos. No symlinks. Google Drive sync is the backup — we do **not** run a separate git repo inside the vault (earlier proposal dropped; cloud-sync version history is sufficient for v1). (The vault was OneDrive-synced until 2026-08; Google Drive since — the sync-pause runbook rule is provider-agnostic.)
 
 ---
 
@@ -516,7 +516,7 @@ Two architectural properties of the wiring:
 - **Canonicalization replay** (Task #74): rebuild reads `canonical_meta.aliases_emitted` from each post-#74 sidecar and reproduces the exact `Entity.canonical_id` + `ALIAS_OF` edges the original compile produced. No re-execution of the canonicalization algorithm during rebuild — output is replayed from the journal, preserving D-R5-4 purity under replay. Pre-#74 journals (no `canonical_meta`) leave `canonical_id IS NULL` for all entities (matches their original state).
 - **Baton-backfill** (one-shot, opt-in via `--backfill-baton`): synthesizes a `RunDescriptor` pointing at `state/{compile_result,last_scan}.json` baton files using `manifest.runs.last_successful_run_id` as the synthetic run_id; sorts before all real runs (`sort_key="0000-pre-63-backfill"`); idempotent — silently skipped if a sidecar already exists at `state/runs/<run_id>/`. The one-time migration entry for the latest pre-#63 run, per #63.0 outcome (d) — the other 9 pre-#63 runs are unrecoverable.
 
-Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap (Layer 1 source-state preflight + Layer 2 replay structural diff + Layer 3 C1–C4 canonicalization invariants); `graphdb-kdb rebuild` regenerates either store from the post-#63 run history. `graphdb-kdb snapshot` (#63.9) writes a JSONL+manifest+schema export under `state/graph-snapshots/<run_id>/` — Task #74 bumped `snapshot_format_version` to `2` to include per-Entity `canonical_id` and an `alias_of.jsonl` file with full ALIAS_OF provenance, so Tier-2 OneDrive recovery preserves alias state.
+Independence claim: **delete `manifest.json` → GraphDB still queryable; delete `~/Droidoes/GraphDB-KDB/` → manifest still works**. Both are derived from `compile_result`. `graphdb-kdb verify` audits overlap (Layer 1 source-state preflight + Layer 2 replay structural diff + Layer 3 C1–C4 canonicalization invariants); `graphdb-kdb rebuild` regenerates either store from the post-#63 run history. `graphdb-kdb snapshot` (#63.9) writes a JSONL+manifest+schema export under `state/graph-snapshots/<run_id>/` — Task #74 bumped `snapshot_format_version` to `2` to include per-Entity `canonical_id` and an `alias_of.jsonl` file with full ALIAS_OF provenance, so Tier-2 cloud-sync (Google Drive) recovery preserves alias state.
 
 **Maintenance — `kdb-clean orphans` is RETIRED (#130):** the command prints a
 retirement notice and exits 0 — the `orphan_candidate` status no longer exists

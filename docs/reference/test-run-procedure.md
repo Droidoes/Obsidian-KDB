@@ -6,7 +6,7 @@ disposable in-place test vault. Pipeline `vault-test`, root
 
 > Running a **multi-model benchmark cohort** (per-model `--emit-kpis` runs →
 > `kdb-benchmark score` leaderboard)? See
-> **`docs/reference/benchmark-cohort-procedure.md`** — it reuses the §0 OneDrive
+> **`docs/reference/benchmark-cohort-procedure.md`** — it reuses the §0 Google Drive
 > pause and §1 reset below.
 
 > **These are API-cost steps — Joseph fires them himself** (see
@@ -14,16 +14,16 @@ disposable in-place test vault. Pipeline `vault-test`, root
 
 ---
 
-## 0. Pause OneDrive sync (REQUIRED — do this first)
+## 0. Pause Google Drive sync (REQUIRED — do this first)
 
-`~/Obsidian` is a symlink to `…/OneDrive/Documents/Obsidian Vault/` — the test
-vault **and its Kuzu graph (`KDB/graph`) live inside a OneDrive-synced folder.**
-A run writes binary Kuzu files and embeds frontmatter in-place; if OneDrive syncs
-mid-write it can **corrupt the graph or notes** (the D35 binary-corruption hazard
-that keeps the *production* graph out of OneDrive).
+`~/Obsidian` is a symlink to `…/Google Drive/Documents/Obsidian Vault/` — the test
+vault **and its Kuzu graph (`KDB/graph`) live inside a Google-Drive-synced folder.**
+A run writes binary Kuzu files and embeds frontmatter in-place; if Google Drive syncs
+mid-write it can **corrupt the graph or notes** (the D35 binary-corruption hazard —
+provider-agnostic; it was OneDrive until 2026-08, Google Drive since).
 
-- **Pause it** via the Windows OneDrive tray icon → *Pause syncing* (2/8/24 h), or
-  quit OneDrive entirely, before the reset/run.
+- **Pause it** via the Windows Google Drive tray icon → *Pause syncing*, or
+  quit Google Drive entirely, before the reset/run.
 - **Resume** only after the run completes and you've inspected the output.
 
 ## 1. Reset (wipe KDB outputs, keep config)
@@ -99,9 +99,9 @@ kdb-orchestrate \
   `python3 tools/viewer/kdb_graph_viewer.py --graph-path ~/Obsidian/Vault-in-place-test-run/KDB/graph`
   — and open the HTML.
 
-## 4. Resume OneDrive sync
+## 4. Resume Google Drive sync
 
-Re-enable OneDrive syncing once the run is done and inspected.
+Re-enable Google Drive syncing once the run is done and inspected.
 
 ---
 

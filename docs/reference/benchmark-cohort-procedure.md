@@ -11,7 +11,7 @@ answers is **"among these models, which builds the best graph?"** — model
 > and may be run by anyone.
 
 This builds on the plain-run runbook — see **`docs/reference/test-run-procedure.md`**
-for the shared **OneDrive pause** (§0) and **reset** (§1) steps, which are identical
+for the shared **Google Drive pause** (§0) and **reset** (§1) steps, which are identical
 here and are **not** repeated below.
 
 ---
@@ -20,7 +20,7 @@ here and are **not** repeated below.
 
 For **each** model in the cohort, in its own clean run:
 
-1. **Pause OneDrive** (test-run runbook §0) + **reset** the sandbox — preferred:
+1. **Pause Google Drive** (test-run runbook §0) + **reset** the sandbox — preferred:
    `kdb-orchestrate --wipe --vault-root <vault>` (test-run runbook §1; archives
    `state/runs/` journals to `pre-wipe-runs/<ts>/` first, then run step 2
    normally — against the empty world every source is new). The
