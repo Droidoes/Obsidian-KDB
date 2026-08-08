@@ -2,6 +2,16 @@
 
 > Richest single catch-up artifact for the next session. Top-level so `session-catchup` finds it by mtime.
 
+## ✅ POSTSCRIPT (2026-08-08, 15:45 EDT) — RUN COMPLETE; this handoff is now HISTORICAL
+
+- **The maiden run completed 15:26 EDT** (`2026-08-08T14-39-10_EDT`, exit `completed_with_quarantines`) after 5 attempts / 4 VM crashes. Final: **1,149 sources in graph (== manifest, verified), 6,197 entities, 12,843 LINKS_TO, 450 noise, 2 quarantined** (auto-requeue next run).
+- **§1a attempt-3 remediation: DECLINED by Joseph 2026-08-08 — mixed-model vault RATIFIED.** *"I wouldn't call deepseek process the files contaminated… we'll keep them as-is… there is no issue with future runs, it's unlikely we'll do another cold run again… there is no mandate that 'a run' has to be on one model."* The 103 deepseek-compiled `in_graph_db` sources (+ 91 noise classifications) are **treated as normal** — no remediation arises. Rationale on record: (1) deepseek output is not contamination; (2) no future-run issue — a full cold run is unlikely to recur, so mixed provenance never re-opens; (3) no single-model mandate for a run — per-source model provenance lives in the manifest (`last_run_id`) and is queryable, which is sufficient. **Supersedes the #118-era "mixed-model vault not acceptable" precedent** — that ruling scoped to benchmark-cohort comparability, not production-vault correctness. Also recorded in daily note 2026-08-08 → Decisions. The §1a procedure below is retained as reference only — **do not fire it**.
+- **§2 WSL stabilization: EXECUTED 2026-08-08 ~15:42** — `.wslconfig` reverted (`networkingMode=mirrored` + `autoMemoryReclaim=Gradual` commented out → NAT + disabled defaults), `wsl --shutdown` fired. Now in the **observation period** (§2 step 3): watch `last -xF | head -30` for crash-reboot cycles over the next several days. If crashes recur, suspect is WSL 2.7.11-or-deeper (§2 step 4).
+- **Open dispositions for the next run:** (a) `Sample-Prompt-Pass-1.md` quarantine → candidate for `force_noise` (synthetic project artifact, not knowledge content); (b) `Buffett_on_Stock_Ownership.md` quarantine → Pass-1 deterministically emits `source_type: 'quotes'`, not in the controlled vocabulary — vocab decision needed (`other` vs new type vs prompt guidance). Both auto-requeue.
+- Everything below the line is the pre-completion record — kept for forensics, resume procedure no longer needed.
+
+---
+
 ## ⏩ MAIDEN VAULT RUN IN FLIGHT — resumed 09:48 EDT after two WSL VM crash kills; expected to crash at least once more before completing. Resume procedure below — do NOT wipe, do NOT restart from zero.
 
 The first full-vault `kdb-orchestrate` run (1,600 in-scope sources, pipeline `vault-in-place`)
@@ -37,7 +47,7 @@ may kill it again. **Recovery is always the same: re-run the same command. Never
 - **Repo state**: `main` is clean of code changes; uncommitted benchmark leaderboard + docs
   modifications predate this session (score/docs residue — owner's call, unrelated to the run).
 
-### 1a. ATTEMPT-3 WRONG-MODEL INCIDENT + REMEDIATION (open)
+### 1a. ATTEMPT-3 WRONG-MODEL INCIDENT + REMEDIATION (**DECLINED 2026-08-08 — see POSTSCRIPT; kept as-is, procedure below is reference only**)
 
 Attempt 3 (09:43–11:58) was launched with CLI defaults — **deepseek-v4-flash** for Pass-1,
 pass-1.5 selector, and Pass-2 — instead of gpt-5.4-mini. Caught by the owner at ~184 sources in;
