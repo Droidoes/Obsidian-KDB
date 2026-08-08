@@ -35,12 +35,12 @@ now pins. Silent is the problem, so it is made loud at resolution.
 
 **The two-stage order and its two enforced guarantees** (§2.2, R4 as amended):
 
-  * **Thin always runs**, even where its answer cannot bind. At `N <= M` stage 2
-    is **every** eligible identity regardless of what thin returned (codex #3) —
-    a recall-oriented selector can omit an identity by judgment, and validation
-    cannot distinguish omission from judgment, so retain-all is enforced
-    controller-side rather than asked for in a prompt. That is also what makes
-    the F1 path work with no thin output at all.
+  * **Thin always runs**, even where its answer cannot bind — and stage-2
+    membership is always thin's validated retention, at every N. The old
+    `N <= M` retain-all branch and its F1 rescue path were removed by D-123-G
+    (2026-08-02): a recall-oriented selector can omit an identity by judgment,
+    and a thin that fails twice is a signal — routing around it would hide a
+    recall failure behind returned results.
   * **Stage 2 is presented in MANIFEST order, never thin's ranked order**, so
     fat's judgment stays unanchored to thin's.
 
@@ -53,16 +53,12 @@ order. That also gives thin's `BEST FIRST` a second consumer beyond the
 concordance metric: it now decides who survives a binding budget.
 
 **The audit payload is built on every terminal, including the zero-call ones**
-(§6 — their emptiness is the finding, not a reason to skip the record). How the
-full payload reaches the CALLER is still open and deliberately not answered here:
-ratified §1.1 fixes `GraphSearchResult` at seven fields and `audit` is not among
-them, so the blueprint §2.1 gloss "audit (always, §6)" describes an obligation
-rather than a field. This module discharges the obligation to *build* it on every
-path and surfaces the part with a ratified home
-(`telemetry.search_snapshot_hash`). The adapter needs the whole payload to write
-its envelope, so a delivery surface has to be decided — it changes this function's
-public signature, which wants a ratification rather than an inference. Nothing
-here is shaped in a way that presupposes the answer.
+(§6 — their emptiness is the finding, not a reason to skip the record) and rides
+back on the result as its 8th field, `audit` (D-123-H, 2026-08-02 — the
+delivery-surface question this module once deliberately left open). The caller
+takes the receipt and writes what it likes; search does no I/O.
+`telemetry.search_snapshot_hash` stays as well: it is ratified there and is what
+the KPI series reads.
 """
 
 from __future__ import annotations
@@ -353,9 +349,10 @@ def graph_search(
         )
         return SearchTelemetry(**{**base, **overrides})
 
-    # 5. Thin's own post-call budget terminals (D9.3 / D7). Terminal at thin:
-    #    F1's proceed-to-fat applies only to retry exhaustion, never to a budget
-    #    side (codex P1 — that removes a branch rather than adding one).
+    # 5. Thin's own post-call budget terminals (D9.3 / D7). A budget side is
+    #    always terminal at thin — never a proceed-to-fat (codex P1; the F1
+    #    retry-exhaustion rescue it once constrained was itself removed by
+    #    D-123-G).
     if thin.outcome == "output_truncation":
         return finish(
             "thin_output_truncation",
@@ -373,15 +370,11 @@ def graph_search(
             stages=thin.records,
         )
 
-    # 6. Stage-2 membership. `N <= M` is retain-all **regardless of the thin
-    #    response** (codex #3): a recall-oriented selector can omit an identity by
-    #    judgment, and validation cannot distinguish omission from judgment, so
-    #    the guarantee is enforced controller-side rather than requested in a
-    #    prompt. It is also what makes the F1 path work without thin's output.
-    #
-    #    **D-123-B qualifies it:** retain-all means every eligible identity is
-    #    OFFERED to the fill, not that every one is sent. The budget can still
-    #    decline the tail — step 7.
+    # 6. Stage-2 membership is thin's validated retention, at every N — one code
+    #    path (D-123-G, 2026-08-02): the `N <= M` retain-all branch and the F1
+    #    rescue path are gone, so a thin that exhausted its retries ends the
+    #    search here. A thin that fails twice is a signal; routing around it
+    #    would return results while hiding that the recall stage is broken.
     if thin.outcome == "exhausted":
         return finish(
             "thin_exhausted",
@@ -632,10 +625,10 @@ def _concordance(thin: StageOutcome, fat: ValidatedResponse) -> float | None:
 
     Three null cases, and the third is the one worth stating: **no fat stage ran**
     and **fat produced no validated hits** are the ratified two (codex #12), and
-    **thin produced no validated retention at all** is the F1 path — thin
-    exhausted its attempts, so there is no ranked list to compare against and a
-    computed 0.0 would report "fat and thin agreed on nothing" about a comparison
-    that never happened.
+    **thin produced no validated retention at all** leaves no ranked list to
+    compare against — a computed 0.0 would report "fat and thin agreed on
+    nothing" about a comparison that never happened. (Reached only defensively
+    today: thin exhaustion terminates the search before any fat stage — D-123-G.)
 
     A thin stage that *ran* and honestly retained nothing is NOT that case: the
     ranked list exists and is empty, so 0.0 is a real measurement — fat found
