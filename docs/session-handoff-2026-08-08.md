@@ -165,3 +165,28 @@ nohup kdb-orchestrate --vault-root "/mnt/c/Users/fangq/Documents/Obsidian Vault"
   re-derivable — read-only `Get-WinEvent` queries).
 - Pipeline definition: `<vault>/KDB/state/pipelines.json` (`vault-in-place`, root = vault,
   excludes `KDB/`, `Vault-in-place-test-run/`, `__pycache__/`; `force_noise: Daily Notes/*`).
+
+---
+
+## 6. POSTSCRIPT — RUN COMPLETE + #123 CLOSE-OUT (2026-08-08, evening)
+
+- Maiden run COMPLETE: 1,149 in_graph_db + 451 noise + 0 errors; graph verified
+  consistent (active sources `WHERE status='active'` == manifest; raw `stats`
+  counts include `status: deleted` tombstones). Commits `658f111`…`36bff15`.
+- Search-envelope aggregation (1,159 envelopes, 7 run dirs): 1,111 completed /
+  23 abstain_empty_space / 25 budget_exceeded (all deepseek attempt-3, all
+  output-side `length` truncations; gpt-5.4-mini zero in 1,055). Zero
+  selector_failure; thin_retained_zero 106 (9.1%); 6,260 hits; selector spend
+  $16.81; 18.6M input tokens.
+- RATIFIED (Joseph, 2026-08-08): **D5 FINAL** — `ESTIMATOR_BYTES_PER_TOKEN = 4`
+  unchanged (thin p95 4.096 / max 4.351 ⇒ ≤11.4% tail underestimate, inside the
+  0.8 headroom; fat min 4.167 — never underestimates; zero `*_ESTIMATION_MISS`
+  fired; per-model watch on new selector admissions); **P3a.5 CLOSED on
+  production evidence** (sandbox full-chain redundant).
+- SHIPPED: spec v0.17 + blueprint v0.18 — normative-body sync to D-123-G
+  (docs-only; eight spec sites + the blueprint flow/enums/watched-classes/branch
+  table/test bullets/P2 carry-outs/title; verified against `kdb_search/`).
+  TASKS.md #123 row + close-out narrative updated. Residual flagged: spec §7.2
+  R2's body still asserts D7's static guarantee (superseded by D-123-A…F).
+- Next per Joseph's sequencing: #139 graph analytics (communities / pagerank /
+  structural-holes over the maiden graph); then #140 (pass-1.5 console stage).
