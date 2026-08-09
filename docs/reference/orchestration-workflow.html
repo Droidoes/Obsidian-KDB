@@ -172,23 +172,24 @@
 
 <nav>
   <h1>KDB Orchestration Workflow</h1>
-  <div class="sub">Visual reference · v0.5.7 era<br>Obsidian-KDB</div>
+  <div class="sub">Visual reference · v0.5.7 era<br>Obsidian-KDB · true-up 2026-08-09</div>
   <div class="grp">The loop</div>
   <ol>
     <li><a href="#big-picture"><span class="n">1</span>The big picture</a></li>
     <li><a href="#pipelines"><span class="n">2</span>Pipelines &amp; scan scope</a></li>
     <li><a href="#hashes"><span class="n">3</span>Hashes &amp; the manifest</a></li>
     <li><a href="#pass1"><span class="n">4</span>Pass-1 — Enrich</a></li>
-    <li><a href="#pass2"><span class="n">5</span>Pass-2 — Compile</a></li>
-    <li><a href="#gauntlet"><span class="n">6</span>Validate, repair, canonicalize</a></li>
-    <li><a href="#commit"><span class="n">7</span>The commit sequence (β)</a></li>
-    <li><a href="#intake"><span class="n">8</span>Graph intake phases</a></li>
-    <li><a href="#finalize"><span class="n">9</span>Finalize pass</a></li>
+    <li><a href="#pass15"><span class="n">5</span>Pass-1.5 — Graph search</a></li>
+    <li><a href="#pass2"><span class="n">6</span>Pass-2 — Compile</a></li>
+    <li><a href="#gauntlet"><span class="n">7</span>Validate, bridge, canonicalize</a></li>
+    <li><a href="#commit"><span class="n">8</span>The commit sequence (β)</a></li>
+    <li><a href="#intake"><span class="n">9</span>Graph intake phases</a></li>
+    <li><a href="#finalize"><span class="n">10</span>Finalize pass</a></li>
   </ol>
   <div class="grp">Operating the system</div>
   <ol>
-    <li><a href="#state"><span class="n">10</span>State model &amp; rebuild</a></li>
-    <li><a href="#failures"><span class="n">11</span>Failure semantics &amp; ops</a></li>
+    <li><a href="#state"><span class="n">11</span>State model &amp; rebuild</a></li>
+    <li><a href="#failures"><span class="n">12</span>Failure semantics &amp; ops</a></li>
   </ol>
   <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
 </nav>
@@ -208,68 +209,74 @@
       <!-- Row 1: per-source loop -->
       <text x="20" y="24" class="s-title">Per-source loop</text>
 
-      <rect x="20" y="40" width="120" height="54" rx="9" class="box-gray"></rect>
-      <text x="80" y="62" text-anchor="middle" class="s-title">1 · Scan</text>
-      <text x="80" y="79" text-anchor="middle" class="s-body">hash + diff, no LLM</text>
+      <rect x="20" y="40" width="110" height="54" rx="9" class="box-gray"></rect>
+      <text x="75" y="62" text-anchor="middle" class="s-title">1 · Scan</text>
+      <text x="75" y="79" text-anchor="middle" class="s-body">hash + diff, no LLM</text>
 
-      <rect x="176" y="40" width="150" height="54" rx="9" class="box-teal"></rect>
-      <text x="251" y="62" text-anchor="middle" class="s-title">2 · Pass-1 Enrich</text>
-      <text x="251" y="79" text-anchor="middle" class="s-body">cheap LLM: classify</text>
+      <rect x="162" y="40" width="138" height="54" rx="9" class="box-teal"></rect>
+      <text x="231" y="62" text-anchor="middle" class="s-title">2 · Pass-1 Enrich</text>
+      <text x="231" y="79" text-anchor="middle" class="s-body">cheap LLM: classify</text>
 
-      <rect x="362" y="40" width="150" height="54" rx="9" class="box-violet"></rect>
-      <text x="437" y="62" text-anchor="middle" class="s-title">3 · Pass-2 Compile</text>
-      <text x="437" y="79" text-anchor="middle" class="s-body">frontier LLM: extract</text>
+      <rect x="332" y="40" width="148" height="54" rx="9" class="box-green"></rect>
+      <text x="406" y="62" text-anchor="middle" class="s-title">3 · Pass-1.5 Search</text>
+      <text x="406" y="79" text-anchor="middle" class="s-body">selector LLM: pick T2</text>
 
-      <rect x="548" y="40" width="170" height="54" rx="9" class="box-amber"></rect>
-      <text x="633" y="62" text-anchor="middle" class="s-title">4–6 · Gauntlet</text>
-      <text x="633" y="79" text-anchor="middle" class="s-body">validate · repair · canonicalize</text>
+      <rect x="512" y="40" width="138" height="54" rx="9" class="box-violet"></rect>
+      <text x="581" y="62" text-anchor="middle" class="s-title">4 · Pass-2 Compile</text>
+      <text x="581" y="79" text-anchor="middle" class="s-body">frontier LLM: extract</text>
 
-      <rect x="754" y="40" width="206" height="54" rx="9" class="box-blue"></rect>
-      <text x="857" y="62" text-anchor="middle" class="s-title">7–9 · Commit (β order)</text>
-      <text x="857" y="79" text-anchor="middle" class="s-body">pages → graph → manifest LAST</text>
+      <rect x="682" y="40" width="128" height="54" rx="9" class="box-amber"></rect>
+      <text x="746" y="62" text-anchor="middle" class="s-title">5–7 · Gauntlet</text>
+      <text x="746" y="79" text-anchor="middle" class="s-body">gates · bridge · canon</text>
 
-      <path class="arr" d="M140 67 H172"></path>
-      <path class="arr" d="M326 67 H358"></path>
-      <path class="arr" d="M512 67 H544"></path>
-      <path class="arr" d="M718 67 H750"></path>
+      <rect x="842" y="40" width="118" height="54" rx="9" class="box-blue"></rect>
+      <text x="901" y="62" text-anchor="middle" class="s-title">8–10 · Commit</text>
+      <text x="901" y="79" text-anchor="middle" class="s-body">β: manifest LAST</text>
+
+      <path class="arr" d="M130 67 H158"></path>
+      <path class="arr" d="M300 67 H328"></path>
+      <path class="arr" d="M480 67 H508"></path>
+      <path class="arr" d="M650 67 H678"></path>
+      <path class="arr" d="M810 67 H838"></path>
 
       <!-- noise exit -->
-      <path class="arr-dash" d="M251 94 V128"></path>
-      <rect x="156" y="130" width="190" height="40" rx="8" class="box-gray"></rect>
-      <text x="251" y="147" text-anchor="middle" class="s-body">noise → frontmatter only</text>
-      <text x="251" y="161" text-anchor="middle" class="s-small">no Pass-2 · no entities · no pages</text>
+      <path class="arr-dash" d="M231 94 V128"></path>
+      <rect x="141" y="130" width="180" height="40" rx="8" class="box-gray"></rect>
+      <text x="231" y="147" text-anchor="middle" class="s-body">noise → frontmatter only</text>
+      <text x="231" y="161" text-anchor="middle" class="s-small">no search · no Pass-2 · no pages</text>
 
       <!-- loop-back arrow: commit → Pass-1 (the per-source loop) -->
-      <path class="arr-dash" d="M857 94 V 190 H 148 V 67 H 172"></path>
+      <path class="arr-dash" d="M901 94 V 190 H 108 V 67 H 154"></path>
       <text x="500" y="184" class="lbl">next source</text>
 
       <!-- Row 2: once per run -->
       <text x="20" y="216" class="s-title">Once per run</text>
 
       <rect x="20" y="232" width="180" height="54" rx="9" class="box-blue"></rect>
-      <text x="110" y="254" text-anchor="middle" class="s-title">Finalize</text>
-      <text x="110" y="271" text-anchor="middle" class="s-body">wire links · orphans · clean</text>
+      <text x="110" y="254" text-anchor="middle" class="s-title">Finalize (slim tail)</text>
+      <text x="110" y="271" text-anchor="middle" class="s-body">convergence · combined payload</text>
 
       <rect x="236" y="232" width="200" height="54" rx="9" class="box-green"></rect>
       <text x="336" y="254" text-anchor="middle" class="s-title">Replay payload + journals</text>
       <text x="336" y="271" text-anchor="middle" class="s-body">compile_result.json · state/runs/</text>
 
-      <rect x="472" y="232" width="220" height="54" rx="9" class="box-gray"></rect>
-      <text x="582" y="254" text-anchor="middle" class="s-title">Durable outputs</text>
-      <text x="582" y="271" text-anchor="middle" class="s-body">KDB/wiki/ · Kuzu graph · manifest.json</text>
+      <rect x="472" y="232" width="240" height="54" rx="9" class="box-gray"></rect>
+      <text x="592" y="254" text-anchor="middle" class="s-title">Durable outputs</text>
+      <text x="592" y="271" text-anchor="middle" class="s-body">KDB/wiki/ · Kuzu graph · manifest.json</text>
 
       <path class="arr" d="M200 259 H232"></path>
       <path class="arr" d="M436 259 H468"></path>
     </svg>
-    <div class="cap">The whole loop: per-source stages 1–9, then a single finalize pass per run.</div>
+    <div class="cap">The whole loop: per-source stages 1–10 (scan → enrich → <strong>search</strong> → compile → gauntlet → commit), then a slim finalize tail per run — the heavy end-of-run passes no longer exist (#136).</div>
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">The LLM call contract (both passes)</h3>
+    <h3 style="margin-top:0">The LLM call contract (all three passes)</h3>
     <table>
       <tr><th>Layer</th><th>Attempts</th><th>On exhaustion</th></tr>
       <tr><td><strong>Transport</strong> — per API call (<code>call_model_retry.py</code>)</td><td><strong>3</strong> — exponential backoff (1s → 30s cap, jittered, honors <code>Retry-After</code>); transient network / rate-limit / 5xx only</td><td>error surfaces to the content layer</td></tr>
-      <tr><td><strong>Content</strong> — per source, per pass</td><td><strong>2</strong> — deterministic repairs are <em>free</em> (no API call, don't consume attempts): stray-backslash escape; slug coercion</td><td><strong>failure declared → quarantined</strong>: manifest error row (<code>RUN_STATE_ERROR_INGEST</code> for Pass-1, <code>RUN_STATE_ERROR_COMPILE</code> for Pass-2), event recorded, <strong>the loop continues</strong> — one bad source never kills the batch (D-96-1). Auto-retried next run: its hash never became <code>last_compiled_hash</code>.</td></tr>
+      <tr><td><strong>Content</strong> — per source, Pass-1 and Pass-2</td><td><strong>2</strong> — deterministic repairs are <em>free</em> (no API call, don't consume attempts): stray-backslash escape; slug coercion</td><td><strong>failure declared → quarantined</strong>: manifest error row (<code>RUN_STATE_ERROR_INGEST</code> for Pass-1, <code>RUN_STATE_ERROR_COMPILE</code> for Pass-2), event recorded, <strong>the loop continues</strong> — one bad source never kills the batch (D-96-1). Auto-retried next run: its hash never became <code>last_compiled_hash</code>.</td></tr>
+      <tr><td><strong>Content</strong> — per source, <strong>Pass-1.5 selector</strong></td><td><strong>2</strong> — bounded retry, model-correctable classes only</td><td><strong>honest empty T2 + typed telemetry — never quarantined.</strong> Outcomes: <code>budget_exceeded</code> (pre-flight estimate over 80% of window → zero API spend), <code>abstain_empty_space</code> (domain space empty, correct-by-design), <code>selector_failure</code> (after the retry budget). The compile proceeds with T1+T3 only; the per-source search envelope records the outcome.</td></tr>
       <tr><td><strong>Run level</strong></td><td>—</td><td>only run-fatal / invariant failures abort (fail-fast, D-91-8); <code>last_orchestrate.json</code> is written success, abort, or crash</td></tr>
     </table>
   </div>
@@ -279,9 +286,9 @@
       <h3 style="margin-top:0">Who owns what</h3>
       <table>
         <tr><th>Layer</th><th>Owns</th></tr>
-        <tr><td><strong>LLM</strong></td><td>Judgment + prose. Structured JSON only: slugs, bodies, links. No paths, no timestamps, no frontmatter.</td></tr>
-        <tr><td><strong>Python</strong></td><td>All state + I/O: scanning, hashing, validation, repair, page writes, graph transactions, ledger.</td></tr>
-        <tr><td><strong>Kuzu graph</strong></td><td>The live ontology authority: Entity, Source, Domain, LINKS_TO, SUPPORTS, ALIAS_OF, BELONGS_TO.</td></tr>
+        <tr><td><strong>LLM</strong></td><td>Judgment + prose. Structured JSON only: page types, titles, bodies with [[wikilinks]], concept/article slugs. No paths, no timestamps, no frontmatter, no summary slug, no link lists, no status — Python derives all of it.</td></tr>
+        <tr><td><strong>Python</strong></td><td>All state + I/O: scanning, hashing, validation, the normalization bridge, page writes, graph transactions, ledger.</td></tr>
+        <tr><td><strong>Kuzu graph</strong></td><td>The live ontology authority: Entity, Source, Domain, PendingLink; LINKS_TO, SUPPORTS, ALIAS_OF, BELONGS_TO.</td></tr>
         <tr><td><strong>Markdown vault</strong></td><td>Persistent state humans read: sources (with Pass-1 frontmatter) + rendered wiki pages.</td></tr>
       </table>
     </div>
@@ -295,8 +302,8 @@
       </ul>
     </div>
   </div>
-  <div class="callout co-amber"><span class="t">Run size is a design variable (vault-in-place note)</span>
-  <code>finalize</code> runs <strong>once per invocation</strong>, and its cost scales with the batch and the graph: batch <code>wire_links</code> over all accumulated pages, PageRank recompute, orphan sweep. For a full-vault ingest (~2k sources, 6–12h), prefer <strong>chunked runs</strong> (<code>--limit N</code>, repeated) over one monolith: each chunk finalizes over its own batch — bounding finalize cost and memory, producing per-chunk checkpoints and journals, and capping the #94 blast radius if a fail-fast fires mid-run. The open trade-off for the rollout design: per-chunk finalize overhead vs. monolith efficiency.</div>
+  <div class="callout co-amber"><span class="t">Run size is a pacing choice, not a correctness one (post-#136)</span>
+  The old reasons to chunk a big ingest are gone: there is <strong>no end-of-run batch work</strong> — LINKS_TO wiring and deprecation live inside each source's commit transaction (drain-as-you-go), so finalize is a slim convergence/stat tail, and a mid-run abort strands nothing (#94's lost-links class is closed by construction; committed sources are always fully wired). <code>--limit N</code> is still useful to pace wall-clock and API spend — each invocation is a checkpoint with its own journals — but never required for correctness. The maiden full-vault run (2026-08-07/08, ~1,150 sources) ran as a series of resumed invocations exactly this way.</div>
   <p class="ref">Conductor: <code>orchestrator/kdb_orchestrate.py</code> · architecture: <code>docs/CODEBASE_OVERVIEW.md</code> §5</p>
 </section>
 
@@ -356,7 +363,7 @@
       <h3 style="margin-top:0">Configuration rules</h3>
       <ul class="tight">
         <li><strong>Scopes must be disjoint.</strong> The manifest is keyed by <code>source_id</code>; two overlapping roots would double-ingest the same file under one key. (Enforcement = candidate validation work.)</li>
-        <li><code>excludes</code> = walk-time prune — never hashed, never tracked. <code>force_noise</code> = still scanned and hashed, recorded as sources, but skipped by the LLM.</li>
+        <li><code>excludes</code> = walk-time prune — never hashed, never tracked. <code>force_noise</code>/<code>force_signal</code> = the LLM still runs on every in-scope source (D-89-15); the overrides apply <em>after</em> the answer, <code>force_noise</code> wins ties. Only empty-body sources skip the LLM entirely.</li>
         <li>Feeder automation (RSS, podcasts, …) is the empty <code>ingestion/feeder/</code> package — the registry's <code>feeder</code> slot is the reserved hook.</li>
       </ul>
     </div>
@@ -431,7 +438,7 @@
       <text x="36" y="76" class="s-body">kdb_signal — signal | noise  (uncertain → prefer signal)</text>
       <text x="36" y="94" class="s-body">domain — 1 of 23 ids · source_type — 1 of 21 ids</text>
       <text x="36" y="112" class="s-body">author · summary (1–3 sentences) · key_themes (2–5)</text>
-      <text x="36" y="130" class="s-body">entity_search_keys (≤10 kebab slugs → feeds Pass-2 T2)</text>
+      <text x="36" y="130" class="s-body">entity_search_keys (≤10 kebab slugs → feeds Pass-1.5 search)</text>
       <text x="36" y="148" class="s-body">confidence · uncertainty_reason · reject_reason · other_reason</text>
       <text x="36" y="176" class="s-small">Enums come from config (domains.json / source_types.json), not code.</text>
       <text x="36" y="191" class="s-small">Boundary-disambiguation rules are injected into the prompt.</text>
@@ -476,7 +483,7 @@
 
   <h3>4.1 What the model actually sees — sample rendered prompt</h3>
   <details class="prompt-sample">
-    <summary>Sample rendered Pass-1 prompt (v1.2.0) — click to expand</summary>
+    <summary>Sample rendered Pass-1 prompt (v1.3.0) — click to expand</summary>
     <pre>You are given ONE markdown document from a personal knowledge base. Your job:
 decide whether it holds substantive knowledge worth keeping, and if so, tag
 what it is about and what form it takes. Return your judgment as a single JSON
@@ -505,6 +512,7 @@ explanatory text before or after it, and do not echo the source body.
   source's primary substantive subject. If genuinely uncategorizable, pick
   `undecided` (last resort).
 
+
   - `ai-ml` — AI &amp; Machine Learning: LLMs, prompt engineering, RAG, models, MLOps, AI tools, knowledge graphs / GraphDB as AI harness, ontology engineering for AI/LLM systems. Technical and foundational content about how AI/ML systems work.
   - `software` — Software: Programming languages, CS algorithms, operating systems (Linux / WSL), Git, dev tools, cloud infrastructure, software architecture.
   - `hardware` — Hardware: Computer architecture, chips, semiconductors as engineering, electronics, devices, silicon design.
@@ -532,6 +540,7 @@ explanatory text before or after it, and do not echo the source body.
 - `source_type`: one of the following IDs. Pick the publication form of the
   source. If genuinely uncategorizable, pick `other` (last resort,
   with `other_reason` filled in).
+
 
   - `blog` — Blog Post: Personal blog post, technical blog, Substack newsletter, Medium piece, individual-authored writing on a personal or branded publication. Typically short to medium length (500-3000 words).
   - `post` — Online Post: Newsletter post, forum post, community-platform post (Reddit-style threaded discussion, HN-style comment), or generic online text published on a community / forum / aggregator venue.
@@ -585,7 +594,7 @@ relationships.)
 - letter vs email: letter = curated public-facing addressed correspondence; email = informal individual/small-group.
 - speech vs transcript-lecture: speech = prepared text form of address; transcript-lecture = transcribed-from-delivery.
 - wiki vs article: wiki = encyclopedic register (third-person, neutral, multi-source citations); article = editorial (author voice, argument).
-- social-thread vs post: social-thread = platform-native substantive authored content (multi-tweet thread, LinkedIn long-form post, substantive single-post platform-native essay); post = community comment or short casual share.
+- social-thread vs post: social-thread = platform-native substantive authored content (multi-tweet thread, LinkedIn long-form post, substantive single-post platform essay); post = community comment or short casual share.
 - interview vs meeting-notes: interview = verbatim Q&amp;A (transcribed or text-native); meeting-notes = user-summarized.
 - daily-note vs meeting-notes: daily-note = date-stamped omnibus log; meeting-notes = single-meeting dedicated artifact.
 - documentation vs wiki: documentation = product/instructional reference (READMEs, runbooks, tutorials — reader does); wiki = descriptive encyclopedic entry (reader learns about).
@@ -593,51 +602,57 @@ relationships.)
 
 ### Content-description fields
 
-- `author`: string or null. Extract the source's primary author from the
-  content if attributable; null otherwise.
+- `author`: the source's primary author, extracted from the content when it is
+  attributable. When no author is attributable, emit the JSON value `null` —
+  the bare literal, NOT the four-character string `"null"`, which is a different
+  value and would read downstream as an author of that name.
 - `summary`: 1-3 sentences of plain prose distilling the substantive content.
   Neutral, descriptive register — no marketing or promotional phrasing.
 - `key_themes`: list of 2-5 strings naming finer-grained sub-topics than
   `domain`. Format: lowercase kebab-case slugs (e.g. "value-investing",
   "attention-mechanism", "breathing-exercises") — not natural-language
   phrases with spaces.
-- `entity_search_keys`: list of lowercase kebab-case slugs for the notable
+- `entity_search_keys`: list of lowercase kebab-case slugs naming the notable
   people, organizations, concepts, frameworks, and named ideas this source
-  substantively engages. These seed a later entity lookup, so emit the
-  canonical form a reader would search by. Guidance:
-  1. Include each `key_themes` slug.
-  2. Add slugs for entities named substantively in the source — people,
-     organizations, named frameworks. Prefer the full-name form
-     ("warren-buffett") over surname-only ("buffett"); emit only one form
-     per entity.
-  3. Add closely-related concepts the source actually engages as distinct
-     ideas (e.g. a framework's foundational principle). Do NOT include
-     speculative or weak co-occurrences.
-  
-  Emit only the most relevant keys — those that genuinely identify what this
-  source is about. Prefer a few high-precision slugs over a long list; do not
-  pad. Hard cap: 10. Format: lowercase, hyphens between words, no spaces, no
+  substantively engages. **These are the search's query terms.** Each one names
+  a distinct thing to look for in the knowledge graph, and the search reports
+  back key by key what it found for each — so a key that restates another
+  spends a query term and reports nothing new. Guidance:
+    1. **Do NOT repeat `key_themes`.** The search is shown that list separately,
+       as its own field, so a theme slug here tells it nothing it does not
+       already have. These keys are for what the themes do NOT already say.
+    2. Add slugs for entities named substantively in the source — people,
+       organizations, named frameworks. Prefer the full-name form
+       ("warren-buffett") over surname-only ("buffett"); emit only one form
+       per entity.
+    3. Add closely-related concepts the source actually engages as distinct
+       ideas (e.g. a framework's foundational principle). Do NOT include
+       speculative or weak co-occurrences.
+  Emit only keys that genuinely identify what this source is about, and prefer
+  a few high-precision slugs to a long list. If the source engages nothing
+  beyond what `key_themes` already names, emit fewer — or none: an empty list
+  is a valid answer, and padding is a defect. Hard cap: 10. Format: lowercase, hyphens between words, no spaces, no
   punctuation other than hyphens (conjunctions/prepositions inside slugs are
   fine: "graham-and-doddsville", "theory-of-mind"). Prefer specificity:
   "value-investing" beats "investing".
 
-  Examples (domain-diverse):
+  Examples (domain-diverse). Note that **no example repeats a `key_themes`
+  slug** — every key earns its place by naming something the themes do not:
 
   - Finance: a source about Warren Buffett and Charlie Munger's value-investing
     approach (key_themes ["value-investing", "margin-of-safety", "compounding"])
-    → `["value-investing", "margin-of-safety", "compounding",
-       "warren-buffett", "charlie-munger", "intrinsic-value",
-       "circle-of-competence"]`.
+    → `["warren-buffett", "charlie-munger", "berkshire-hathaway",
+         "intrinsic-value", "circle-of-competence"]`.
 
   - AI/ML: a source about transformer architectures in NLP
     (key_themes ["attention-mechanism", "self-attention", "transformers"])
-    → `["attention-mechanism", "self-attention", "transformers",
-       "multi-head-attention", "positional-encoding", "bert"]`.
+    → `["multi-head-attention", "positional-encoding", "bert",
+         "encoder-decoder-architecture"]`.
 
   - Philosophy: a source about Rawls' veil of ignorance
     (key_themes ["veil-of-ignorance", "distributive-justice", "original-position"])
-    → `["veil-of-ignorance", "distributive-justice", "original-position",
-       "john-rawls", "theory-of-justice", "social-contract"]`.
+    → `["john-rawls", "theory-of-justice", "social-contract",
+         "reflective-equilibrium"]`.
 
 ### Confidence fields
 
@@ -656,6 +671,7 @@ relationships.)
 
 Return exactly this structure (fill in the values; keep these keys, no others):
 
+```
 {
   "kdb_signal": "signal" | "noise",
   "domain": "&lt;one domain id from the list&gt;",
@@ -669,16 +685,17 @@ Return exactly this structure (fill in the values; keep these keys, no others):
   "reject_reason": "&lt;reason&gt;" | null,
   "other_reason": "&lt;reason&gt;" | null
 }
+```
 
 ## Source content to classify
 
-{{ source_text }}
+```
    — the source document body is inserted here at render time (omitted in this sample) —
+```
 
-Return the JSON object now.
-</pre>
+Return the JSON object now.</pre>
   </details>
-  <p class="ref" style="margin-top:-6px">Rendered from <code>ingestion/enrich/pass1_prompt.j2</code> with the live <code>domains.json</code> / <code>source_types.json</code> vocabularies injected at render time; source body omitted. Compiled sample courtesy of <code>~/Obsidian/Projects/Obsidian-KDB/Sample-Prompt-Pass-1.md</code>.</p>
+  <p class="ref" style="margin-top:-6px">Rendered offline by the real renderer from <code>ingestion/enrich/pass1_prompt.j2</code> with the live <code>domains.json</code> / <code>source_types.json</code> vocabularies injected at render time (PASS1_PROMPT_VERSION 1.3.0); source body omitted.</p>
 
   <div class="cols">
     <div class="card">
@@ -702,103 +719,207 @@ Return the JSON object now.
   </div>
 
   <div class="callout co-blue"><span class="t">What Pass-1 output feeds downstream</span>
-  <code>domain</code> scopes Pass-2's context retrieval (same-domain gate) and becomes the graph's Domain/BELONGS_TO projection ·
-  <code>source_type</code>, <code>author</code>, <code>summary</code> land on the graph Source node (the future search substrate) ·
-  <code>entity_search_keys</code> seed Pass-2's T2 tier — the model never sees them, so it can't parrot them (D-89-20).</div>
+  <code>domain</code> scopes Pass-1.5's materialized search space (same-domain gate) and becomes the graph's Domain/BELONGS_TO projection ·
+  <code>source_type</code>, <code>author</code>, <code>summary</code> land on the graph Source node (the search substrate) ·
+  <code>entity_search_keys</code> + <code>summary</code> + <code>key_themes</code> become the Pass-1.5 query package — the search reports back key-by-key, and the selector's validated hits seed Pass-2's T2 tier (the old PK/regex T2 seeding is deleted — #123 P3a). The compile model still never sees the keys, so it can't parrot them (D-89-20).</div>
   <p class="ref"><code>ingestion/enrich/</code> — pass1_prompt.j2 · pass1_schema.py · pass1_caller.py · overrides.py · frontmatter_embedder.py</p>
 </section>
 
 <!-- ============================================================ -->
+<section id="pass15">
+  <h2><span class="n">5</span>Pass-1.5 — Semantic graph search</h2>
+  <p class="lede">Between enrich and compile, one bounded selector call per source picks the wiki pages
+  the compile model should meet as T2 context. Pass-1's frontmatter becomes the query; the live graph
+  becomes the search space. (#123 P3a — the deterministic PK/regex T2 seeding it replaced is deleted.)</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 300" width="980" height="300">
+      <rect x="10" y="30" width="140" height="70" rx="9" class="box-teal"></rect>
+      <text x="80" y="54" text-anchor="middle" class="s-title">Pass-1</text>
+      <text x="80" y="70" text-anchor="middle" class="s-body">frontmatter</text>
+      <text x="80" y="88" text-anchor="middle" class="s-small">domain · summary · keys</text>
+
+      <path class="arr" d="M150 65 H170"></path>
+
+      <rect x="174" y="30" width="140" height="70" rx="9" class="box-gray"></rect>
+      <text x="244" y="54" text-anchor="middle" class="s-title">Query package</text>
+      <text x="244" y="70" text-anchor="middle" class="s-body">projection.py</text>
+      <text x="244" y="88" text-anchor="middle" class="s-small">summary + themes + keys</text>
+
+      <path class="arr" d="M314 65 H334"></path>
+
+      <rect x="338" y="30" width="140" height="70" rx="9" class="box-blue"></rect>
+      <text x="408" y="54" text-anchor="middle" class="s-title">Search space</text>
+      <text x="408" y="70" text-anchor="middle" class="s-body">materialized domain</text>
+      <text x="408" y="88" text-anchor="middle" class="s-small">subtree · domain-gated</text>
+
+      <path class="arr" d="M478 65 H498"></path>
+
+      <rect x="502" y="30" width="140" height="70" rx="9" class="box-violet"></rect>
+      <text x="572" y="54" text-anchor="middle" class="s-title">Selector LLM</text>
+      <text x="572" y="70" text-anchor="middle" class="s-body">one batched call</text>
+      <text x="572" y="88" text-anchor="middle" class="s-small">thin → fat at scale</text>
+
+      <path class="arr" d="M642 65 H662"></path>
+
+      <rect x="666" y="30" width="140" height="70" rx="9" class="box-amber"></rect>
+      <text x="736" y="46" text-anchor="middle" class="s-title">Closed-world</text>
+      <text x="736" y="62" text-anchor="middle" class="s-title">validation</text>
+      <text x="736" y="82" text-anchor="middle" class="s-small">membership + live-graph</text>
+      <text x="736" y="94" text-anchor="middle" class="s-small">re-verify</text>
+
+      <path class="arr" d="M806 65 H826"></path>
+
+      <rect x="830" y="30" width="140" height="70" rx="9" class="box-green"></rect>
+      <text x="900" y="54" text-anchor="middle" class="s-title">Validated T2 hits</text>
+      <text x="900" y="70" text-anchor="middle" class="s-body">order preserved</text>
+      <text x="900" y="88" text-anchor="middle" class="s-small">→ context snapshot T2</text>
+
+      <!-- envelope output -->
+      <path class="arr" d="M408 100 V 146"></path>
+      <rect x="174" y="150" width="632" height="76" rx="9" class="box-gray"></rect>
+      <text x="190" y="174" class="s-title">Search envelope — one per source, persisted even on failure</text>
+      <text x="190" y="194" class="s-code">state/runs/&lt;run_id&gt;/search/&lt;safe_source_id&gt;.json · schema_version 1 · receipt_kind full | compact</text>
+      <text x="190" y="213" class="s-body">status: <strong>completed</strong> · <strong>abstain_empty_space</strong> · <strong>budget_exceeded</strong> · <strong>selector_failure</strong> (+ measurement telemetry)</text>
+
+      <text x="20" y="262" class="s-body">Pre-flight budget rule: if the estimated selector prompt exceeds 80% of the token budget, the search is skipped as <em>budget_exceeded</em> — zero spend, recorded in the envelope.</text>
+      <text x="20" y="282" class="s-small">kdb_search/graph_search.py · projection.py · prompts.py · artifact.py · contracts.py · budget.py — I/O-free core; compiler/search_adapter.py is the pass-1.5 boundary (one search per source).</text>
+    </svg>
+    <div class="cap">Pass-1.5 (#123 P3a): the pass-1 frontmatter is the query, the materialized domain subtree is the search space, and only validated hits may seed T2.</div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">How a search runs</h3>
+      <ul class="tight">
+        <li>Runs <strong>inside <code>compile_source</code></strong>, right before the context snapshot is built — after the <code>pass2_compile_started</code> event fires.</li>
+        <li>Search space = the source's Pass-1 <strong>domain subtree materialized from the live graph</strong>; nothing outside the domain is eligible.</li>
+        <li>Small spaces are answered directly; large spaces go <strong>two-stage thin → fat</strong> (slim candidate list first, full records for the shortlist).</li>
+        <li><strong>Closed-world validation</strong>: every selected slug must exist in the materialized space <em>and</em> re-verify against the live graph; surviving hits keep the selector's order.</li>
+        <li>Selector seat = <code>--selector-model</code>, defaulting to <code>--model</code> (#129) — the search can run on a cheaper model than the compile.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Failure posture — compile never stops for search</h3>
+      <ul class="tight">
+        <li><strong>2 bounded selector attempts</strong>; exhausted → <code>selector_failure</code>: honest empty T2 + typed telemetry, compile proceeds with T1 + T3.</li>
+        <li><code>abstain_empty_space</code> = correct-by-design on a young graph (cold start) — an empty space is a valid answer, not an error.</li>
+        <li><code>budget_exceeded</code> skips the call before any tokens are spent.</li>
+        <li><strong>No outcome quarantines the source.</strong> Search is context enrichment, not a gate — Pass-2 always runs.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout co-amber"><span class="t">Why you don't see it in the run log</span>
+  Pass-1.5 emits no console line of its own: it runs inside the compile stage, after the <code>pass2_compile_started</code> event fires, so the console only narrates the pass-1 / pass-2 boundaries. Its evidence lives in the per-source search envelopes under <code>state/runs/&lt;run_id&gt;/search/</code>. Task <strong>#140</strong> is filed to surface search status in the run log.</div>
+
+  <p class="ref"><code>kdb_search/</code> — graph_search.py · projection.py · prompts.py · artifact.py · contracts.py · budget.py · <code>compiler/search_adapter.py</code> · Task #123 (P3a) · #129</p>
+</section>
+
+<!-- ============================================================ -->
 <section id="pass2">
-  <h2><span class="n">5</span>Pass-2 — Compile</h2>
+  <h2><span class="n">6</span>Pass-2 — Compile</h2>
   <p class="lede">The expensive knowledge-extraction call. It reads the whole source plus a
   <strong>graph-derived context snapshot</strong> — the anti-entropy mechanism that makes the model reuse existing
   entities instead of minting near-duplicates — and returns semantic intent only: pages and links.</p>
 
-  <h3>5.1 The context snapshot — retrieval tiers</h3>
+  <h3>6.1 The context snapshot — retrieval tiers</h3>
   <div class="diagram">
-    <svg viewBox="0 0 980 260" width="980" height="260">
+    <svg viewBox="0 0 980 270" width="980" height="270">
       <rect x="20" y="30" width="300" height="88" rx="9" class="box-green"></rect>
-      <text x="36" y="54" class="s-title">T1 · Provenance <tspan class="pill pill-green">score 3</tspan></text>
-      <text x="36" y="74" class="s-body">Entities this source already SUPPORTS</text>
+      <text x="36" y="54" class="s-title">T1 · Provenance</text>
+      <text x="36" y="74" class="s-body">Pages this source already SUPPORTS</text>
       <text x="36" y="91" class="s-body">(recompile continuity — strongest signal)</text>
+      <text x="36" y="108" class="s-small">∩ active pages only</text>
 
       <rect x="340" y="30" width="300" height="88" rx="9" class="box-blue"></rect>
-      <text x="356" y="54" class="s-title">T2 · Lexical seeds <tspan class="pill pill-blue">score 2</tspan></text>
-      <text x="356" y="74" class="s-body">entity_search_keys resolved to Entity.slug</text>
-      <text x="356" y="91" class="s-body">cold-start: + title-in-text (with guardrails)</text>
+      <text x="356" y="54" class="s-title">T2 · Pass-1.5 selector hits</text>
+      <text x="356" y="74" class="s-body">validated search hits, order preserved</text>
+      <text x="356" y="91" class="s-body">old PK/regex seeding deleted (#123 P3a)</text>
+      <text x="356" y="108" class="s-small">∩ (domain pool − T1)</text>
 
       <rect x="660" y="30" width="300" height="88" rx="9" class="box-violet"></rect>
-      <text x="676" y="54" class="s-title">T3 · Neighborhood <tspan class="pill pill-violet">score 1</tspan></text>
-      <text x="676" y="74" class="s-body">1-hop LINKS_TO neighbors of T1 ∪ T2</text>
-      <text x="676" y="91" class="s-body">2-hop only if cold-start AND seeds &lt; 5</text>
+      <text x="676" y="54" class="s-title">T3 · Neighborhood</text>
+      <text x="676" y="74" class="s-body">1-hop in+out neighbors of T1 ∪ T2</text>
+      <text x="676" y="91" class="s-body">within the domain pool · max_hops = 1</text>
+      <text x="676" y="108" class="s-small">no more 2-hop cold-start · no title-in-text</text>
 
       <path class="arr" d="M170 118 V 168 H 480 V 196"></path>
       <path class="arr" d="M490 118 V 168 H 500 V 196"></path>
       <path class="arr" d="M810 118 V 168 H 520 V 196"></path>
 
-      <rect x="240" y="196" width="520" height="46" rx="9" class="box-gray"></rect>
-      <text x="500" y="216" text-anchor="middle" class="s-body">rank: tier desc → PageRank desc → slug asc · capped snapshot</text>
-      <text x="500" y="232" text-anchor="middle" class="s-small">same-domain gate (D3): T2/T3 candidates only from the source's Pass-1 domain</text>
+      <rect x="180" y="196" width="640" height="56" rx="9" class="box-gray"></rect>
+      <text x="500" y="216" text-anchor="middle" class="s-body">snapshot (#129) = { source_id, t1, t2, t3 } — lists of { slug, title, page_type, outgoing_links }</text>
+      <text x="500" y="234" text-anchor="middle" class="s-small">t1 FULL (uncapped) · t2 ∪ t3 capped at 50 (#131) · same-domain gate on every pool</text>
     </svg>
-    <div class="cap">T1/T2 choose seeds (what to look for); T3 expands from seeds (how far to walk). Tier scores never change — only the candidate pools widen on cold-start.</div>
+    <div class="cap">T1 anchors continuity; T2 is the semantic search's validated answer; T3 widens one hop around both. The old cold-start 2-hop walk and title-in-text seeding are gone.</div>
   </div>
 
-  <h3>5.2 The compile contract</h3>
+  <h3>6.2 The compile contract</h3>
   <div class="card">
     <table>
       <tr><th>Field</th><th>Meaning</th></tr>
-      <tr><td><code>summary_slug</code></td><td>Reserved <code>summary-&lt;filename-stem&gt;</code> form — one summary page per source.</td></tr>
-      <tr><td><code>pages[]</code></td><td><code>slug</code> · <code>page_type</code> (summary | concept | article) · <code>title</code> · <code>body</code> (full markdown, no frontmatter) · <code>outgoing_links</code> · <code>confidence</code> · <code>status</code></td></tr>
-      <tr><td><code>log_entries[]</code></td><td>The model's self-flagged contradictions, ambiguities, low-confidence calls → run journal for human review.</td></tr>
-      <tr><td>never emitted</td><td>paths · timestamps · source_ids · frontmatter — Python injects all of it (Task #41 source-id-space split).</td></tr>
+      <tr><td><code>pages[]</code></td><td><code>page_type</code> (summary | concept | article) · <code>title</code> · <code>body</code> (full markdown, no frontmatter) · <code>slug</code> — required on concept | article; <strong>the summary page carries no slug</strong> — Python assigns its identity in the normalization bridge (#119).</td></tr>
+      <tr><td><code>compilation_notes</code></td><td>Optional free-text self-flags (contradictions, ambiguities, judgment calls) → run journal for human review.</td></tr>
+      <tr><td>never emitted</td><td>paths · timestamps · source_ids · frontmatter · <code>status</code> · <code>outgoing_links</code> · <code>confidence</code> · <code>summary_slug</code> — Python derives all of it: wikilinks are extracted from bodies Python-side (#115), slugs/status are bridge- and schema-owned (Task #41 source-id-space split).</td></tr>
     </table>
+    <p style="margin-bottom:0">The schema embedded in the prompt is <code>compiler/schemas/proposal_response.schema.json</code> — a deliberately smaller <em>proposal</em> surface; the bridge (§7) widens it into the canonical <code>compiled_source_response.schema.json</code>.</p>
   </div>
 
-  <h3>5.3 The gauntlet, per attempt</h3>
+  <h3>6.3 The gauntlet, per attempt</h3>
   <div class="diagram">
-    <svg viewBox="0 0 980 216" width="980" height="216">
-      <rect x="20" y="30" width="170" height="54" rx="9" class="box-blue"></rect>
-      <text x="105" y="52" text-anchor="middle" class="s-title">Ctx guard (#110)</text>
-      <text x="105" y="69" text-anchor="middle" class="s-body">est. tokens; skip w/ $0 spend</text>
-      <path class="arr" d="M190 57 H216"></path>
+    <svg viewBox="0 0 980 226" width="980" height="226">
+      <rect x="20" y="30" width="160" height="54" rx="9" class="box-blue"></rect>
+      <text x="100" y="52" text-anchor="middle" class="s-title">Ctx guard (#110)</text>
+      <text x="100" y="69" text-anchor="middle" class="s-body">est. tokens; skip w/ $0 spend</text>
+      <path class="arr" d="M180 57 H196"></path>
 
-      <rect x="220" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
-      <text x="295" y="52" text-anchor="middle" class="s-title">Parse · rung-1</text>
-      <text x="295" y="69" text-anchor="middle" class="s-body">escape stray backslashes</text>
-      <path class="arr" d="M370 57 H396"></path>
+      <rect x="200" y="30" width="140" height="54" rx="9" class="box-amber"></rect>
+      <text x="270" y="52" text-anchor="middle" class="s-title">Parse</text>
+      <text x="270" y="69" text-anchor="middle" class="s-body">recover_json_response</text>
+      <path class="arr" d="M340 57 H352"></path>
 
-      <rect x="400" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
-      <text x="475" y="52" text-anchor="middle" class="s-title">Schema · rung-2</text>
-      <text x="475" y="69" text-anchor="middle" class="s-body">slug coercion</text>
-      <path class="arr" d="M550 57 H576"></path>
+      <rect x="356" y="30" width="140" height="54" rx="9" class="box-amber"></rect>
+      <text x="426" y="52" text-anchor="middle" class="s-title">Truncation guard</text>
+      <text x="426" y="69" text-anchor="middle" class="s-body">incomplete → re-call</text>
+      <path class="arr" d="M496 57 H508"></path>
 
-      <rect x="580" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
-      <text x="655" y="52" text-anchor="middle" class="s-title">Semantic gates</text>
-      <text x="655" y="69" text-anchor="middle" class="s-body">e.g. source_name echo</text>
-      <path class="arr" d="M730 57 H756"></path>
+      <rect x="512" y="30" width="150" height="54" rx="9" class="box-amber"></rect>
+      <text x="587" y="52" text-anchor="middle" class="s-title">Proposal schema</text>
+      <text x="587" y="69" text-anchor="middle" class="s-body">validate_proposal_response</text>
+      <path class="arr" d="M662 57 H674"></path>
 
-      <rect x="760" y="30" width="200" height="54" rx="9" class="box-green"></rect>
-      <text x="860" y="52" text-anchor="middle" class="s-title">Reconcile (deterministic)</text>
-      <text x="860" y="69" text-anchor="middle" class="s-body">body wins · pages win</text>
+      <rect x="678" y="30" width="140" height="54" rx="9" class="box-amber"></rect>
+      <text x="748" y="52" text-anchor="middle" class="s-title">Bridge (#119)</text>
+      <text x="748" y="69" text-anchor="middle" class="s-body">normalize_proposal</text>
+      <path class="arr" d="M818 57 H830"></path>
 
-      <path class="arr-red" d="M295 84 V 120 H 60 V 90"></path>
-      <text x="120" y="114" class="lbl-red">fail → full re-call once (2 attempts total) → quarantine</text>
+      <rect x="834" y="30" width="126" height="54" rx="9" class="box-green"></rect>
+      <text x="897" y="52" text-anchor="middle" class="s-title">CompiledSource</text>
+      <text x="897" y="69" text-anchor="middle" class="s-body">→ canonical gate §7</text>
 
-      <rect x="20" y="140" width="940" height="62" rx="9" class="box-gray"></rect>
-      <text x="40" y="159" class="s-body">Quarantine is declared after the 2nd content attempt fails (repair rungs are free — no API call) and is source-local (D-96-1):</text>
-      <text x="40" y="175" class="s-body">one bad source never kills the batch. Transport retries (3 attempts, backoff) sit below this layer. One RespStatsRecord per</text>
-      <text x="40" y="191" class="s-body">source regardless of outcome, discarded-retry tokens aggregated into cost KPIs. Pass-2 ≈ 3× Pass-1 latency — full bodies in and out.</text>
+      <path class="arr-red" d="M270 84 V 120 H 60 V 90"></path>
+      <text x="120" y="114" class="lbl-red">any gate fails → full re-call once (2 attempts total) → quarantine</text>
+
+      <rect x="20" y="140" width="940" height="72" rx="9" class="box-gray"></rect>
+      <text x="40" y="159" class="s-body">Quarantine is declared after the 2nd content attempt fails and is source-local (D-96-1): one bad source never kills the batch.</text>
+      <text x="40" y="177" class="s-body">Transport retries (3 attempts, backoff) sit below this layer. One RespStatsRecord per source regardless of outcome, discarded-retry</text>
+      <text x="40" y="195" class="s-body">tokens aggregated into cost KPIs. Pass-2 ≈ 3× Pass-1 latency — full bodies in and out.</text>
     </svg>
   </div>
 
-  <h3>5.4 What the model sees — rendered sample (offline, zero API cost)</h3>
-  <p>Rendered by the real <code>compiler/prompt_builder.build_prompt</code> against the sandbox graph (read-only) for the same
-  Buddy source as 4.1 — a <em>warm</em> snapshot: the source was already compiled, so T1 finds its own 9 entities
-  (<code>fnv-1a</code>, <code>bones-and-soul</code>, …). Full untruncated render:
-  <code>~/Obsidian/Projects/Obsidian-KDB/Sample-Prompt-Pass-2.md</code>.</p>
+  <div class="callout co-blue"><span class="t">Cold-start behavior</span>
+  On a young graph, Pass-1.5 answers <code>abstain_empty_space</code> and T2 is honestly empty — the earliest compiles seed the namespace from T1 + T3 alone, and later sources inherit the pages they created. The selector never invents hits to fill the tier.</div>
+
+  <h3>6.4 What the model sees — rendered sample (offline, zero API cost)</h3>
+  <p>Rendered offline by the real prompt builders against the <strong>production graph (read-only)</strong>, replaying a real
+  context record from the maiden run (<code>2026-08-08T14-39-10_EDT</code>). The demo source is
+  <code>OneNote/Knowledge Base/General Knowledge/Music/Ifi Pro iDSD Can I re-roll the tube.md</code> — a <em>warm</em>
+  snapshot: T1 finds the source's own 5 pages (<code>tube-rolling</code>, <code>nos-5670-variants</code>, …), the Pass-1.5
+  search contributed T2 (<code>summary-ifi-pro-idsd-ican</code>), and T3 adds 5 one-hop neighbors. Source body omitted;
+  everything else is byte-for-byte what the model is sent.</p>
   <details class="prompt-sample">
-    <summary>System prompt — vault-owned invariants doc + locked RESPONSE_CONTRACT (20,245 chars) — click to expand</summary>
+    <summary>System prompt — repo-packaged 4.1.0 + locked RESPONSE_CONTRACT (16,305 chars) — click to expand</summary>
     <pre># KDB Compiler — System Prompt
 
 You are a semantic compiler for a personal Obsidian knowledge base. You read one source document and return one JSON object describing the wiki pages that source should produce. Ground everything in the source text — never invent facts, citations, URLs, dates, or author names. If the source does not support a claim, omit it.
@@ -807,105 +928,66 @@ You are a semantic compiler for a personal Obsidian knowledge base. You read one
 
 ## 1. Input
 
-You will be given one source document from a markdown knowledge base. The full text of the source appears in the user message under `## SOURCE CONTENT`, preceded by `source_name:`. Treat that `source_name` as the canonical identifier for this source — echo it verbatim in your response. The source text itself is the only substrate for the claims you make about it.
+You will be given one source document from a markdown knowledge base. The full text of the source appears in the user message under `## SOURCE CONTENT`, preceded by `source_name:`. The source text itself is the only substrate for the claims you make about it.
 
 Two more blocks appear in the user message:
 
-- `## EXISTING CONTEXT (manifest snapshot)` — pages already in the knowledge base from sources compiled before this one, rendered without bodies (slug + title + page_type + outgoing_links). This is how you see what the knowledge base already contains, so that your response can connect to existing pages instead of creating duplicates. It may be empty.
-- `## RESPONSE SCHEMA` — the JSON schema your output must conform to. If you are unsure about a field, re-read the schema rather than guessing.
+- `## EXISTING CONTEXT (graph snapshot)` — pages already in the knowledge base, rendered without bodies, grouped into three tiers:
+  - `t1` — pages this same source produced on previous compiles. They are yours: re-emit or extend them (§4).
+  - `t2` — pages from other sources, selected as relevant to this one. Link to them; do not duplicate them.
+  - `t3` — pages one step away from t1/t2 in the link graph. Weak context; usually ignore.
 
-You output **slug-space** data only — slugs, titles, bodies, wikilinks, and one `source_name` field that echoes the file you were given. **Source-id-space fields** (full path-prefixed `source_id`, per-page `supports_page_existence`, per-log_entry `related_source_ids`) are the runner's responsibility and are added to your output after the runner parses it. Do not invent path-prefixed source_ids; if the schema doesn't ask for one, don't emit one.
+  Any tier may be empty. All three empty means the knowledge base has nothing relevant yet.
+- `## RESPONSE SCHEMA` — the JSON schema your output must conform to. If you are unsure about a field, re-read the schema rather than guessing.
 
 ---
 
 ## 2. Example of what you return
 
-The example below is the canonical shape. Every rule in the sections that follow refers back to it.
+The example below is the proposal response shape. Every rule in the sections that follow refers back to it.
 
-Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
+Imagine the user message carries a source named `attention-is-all-you-need.md` (the 2017 Transformer paper). Assume EXISTING CONTEXT contains two prior pages in `t2` — pages from other sources, selected as relevant: `softmax` (concept, contributed by a general ML source) and `attention-mechanism` (concept, contributed by an earlier Bahdanau 2014 paper). Your response would be the JSON object below.
 
 &gt; **Annotations after `//` are teaching aids only — they MUST NOT appear in your output.** Your output is one JSON object with no comments.
 
 ```json
 {
-  "source_name": "attention-is-all-you-need.md",        // echo verbatim whatever you receive in the `source_name:` line; filename only, no path prefix
-  "summary_slug": "summary-attention-is-all-you-need",  // mandatory `summary-&lt;stem&gt;` form (see §3)
-  "concept_slugs": [                                    // mirrors `concept` entries in `pages[]` exactly — same slugs, same count
-    "attention-mechanism",
-    "self-attention",
-    "positional-encoding"
-  ],
-  "article_slugs": [                                    // mirrors `article` entries in `pages[]` exactly
-    "transformer-attention-only-architecture"
-  ],
   "pages": [
     {
-      "slug": "summary-attention-is-all-you-need",      // &lt;kebab-case-lowercase&gt; only — never sentence-case, PascalCase, or language type names like `String`
       "title": "Attention Is All You Need (summary)",
-      "page_type": "summary",                           // one of: summary | concept | article
-      "status": "active",
-      "confidence": "high",
-      "outgoing_links": [                               // EXACTLY the slugs that appear as [[slug]] in body — bidirectional, no orphans either way
-        "attention-mechanism",
-        "self-attention",
-        "positional-encoding",
-        "transformer-attention-only-architecture"
-      ],
+      "page_type": "summary",                           // one of: summary | concept | article — the summary page carries NO slug: Python assigns its identity after you return
       "body": "Vaswani et al. propose a sequence model built entirely from [[attention-mechanism|attention]]. They introduce [[self-attention]] as its core operation and [[positional-encoding]] to recover token order lost by dropping recurrence. The paper's unifying argument is synthesized in [[transformer-attention-only-architecture]]."  // wikilink slugs inside [[…]] are &lt;kebab-case-lowercase&gt; — `[[Attention-mechanism]]` does not match `attention-mechanism`
     },
     {
-      "slug": "attention-mechanism",
+      "slug": "attention-mechanism",                    // &lt;kebab-case-lowercase&gt; only — never sentence-case, PascalCase, or language type names like `String`
       "title": "Attention Mechanism",
       "page_type": "concept",
-      "status": "active",
-      "confidence": "high",
-      "outgoing_links": ["softmax", "self-attention"],
       "body": "An attention mechanism computes a weighted sum over a set of value vectors, where the weights come from a compatibility score between a query and a set of keys, normalized by [[softmax]]. Originally introduced for neural machine translation to align source and target sequences, it has since generalized beyond alignment — see [[self-attention]] for the variant that drops recurrence entirely."
     },
     {
       "slug": "self-attention",
       "title": "Self-Attention",
       "page_type": "concept",
-      "status": "active",
-      "confidence": "high",
-      "outgoing_links": ["attention-mechanism"],
       "body": "Self-attention is the variant of [[attention-mechanism]] in which queries, keys, and values all come from the same sequence. Every position attends to every other position in a single step, giving constant path length between any two tokens."
     },
     {
       "slug": "positional-encoding",
       "title": "Positional Encoding",
       "page_type": "concept",
-      "status": "active",
-      "confidence": "medium",
-      "outgoing_links": ["self-attention"],
       "body": "Positional encodings are fixed or learned vectors added to token embeddings so a model built on [[self-attention]] can distinguish token order. Without them, self-attention is permutation-invariant and would treat a sentence as a bag of words."
     },
     {
       "slug": "transformer-attention-only-architecture",
       "title": "The Transformer as an Attention-Only Architecture",
       "page_type": "article",
-      "status": "active",
-      "confidence": "high",
-      "outgoing_links": [
-        "attention-mechanism",
-        "self-attention",
-        "positional-encoding"
-      ],
       "body": "Before 2017, sequence modelling relied on recurrence or convolution to carry information across positions. [[attention-mechanism|Attention]] was an auxiliary alignment tool on top of those primitives. The Transformer's novelty is not any single component but the claim that these primitives are unnecessary: [[self-attention]] paired with [[positional-encoding]] is sufficient on its own. Three consequences follow from that single commitment — parallel training across positions, constant-length gradient paths between any two tokens, and higher translation quality than recurrent baselines."
     }
   ],
-  "log_entries": [
-    {
-      "level": "info",                                  // one of: info | notice | contradiction | warning (see §6 for semantics)
-      "message": "Extended existing `attention-mechanism` (from bahdanau-2014) with self-attention as the paper's named variant; kept the Bahdanau-era framing in the existing page's body and cross-linked.",
-      "related_slugs": ["attention-mechanism", "self-attention"]
-    }
-  ],
-  "warnings": []
+  "compilation_notes": [                                // optional — prose for the operator; nothing parses this
+    "Extended existing `attention-mechanism` (from bahdanau-2014) with self-attention as the paper's named variant; kept the Bahdanau-era framing in the existing page's body and cross-linked."
+  ]
 }
 ```
-
-Note the pairing in the example: `pages[]` contains three `concept` entries → `concept_slugs` lists those same three slugs. One `article` entry → `article_slugs` has one slug. This mirror is mandatory — each concept/article page contributes exactly one slug to its matching list, and each slug in those lists corresponds to exactly one page of the matching type in `pages[]`. A slug without a matching page, or a page without a matching slug, is a hard failure.
 
 Treat the example above as the behavioral model. Treat the schema in the user message as the final contract — when the two seem to disagree, the schema wins.
 
@@ -915,7 +997,7 @@ Treat the example above as the behavioral model. Treat the schema in the user me
 
 Identify the wiki pages this source should produce. A "wiki page" is one of three kinds:
 
-- **`summary`** — one per source. A short overview of what this source is about and what concepts it introduces or reinforces. **The summary's slug is always `summary-&lt;stem&gt;` where `&lt;stem&gt;` is the source file's stem in kebab-case, copied verbatim — preserve every character of the stem, including numeric or identifier prefixes.** Examples: `KDB/raw/attention-is-all-you-need.md` → `summary-attention-is-all-you-need`; `KDB/raw/EP1 - The Journey of China.md` → `summary-ep1-the-journey-of-china`; `KDB/raw/04-research-debt.md` → `summary-04-research-debt`. The `summary-` prefix is reserved — it MUST appear on every summary slug and MUST NOT appear on concept or article slugs. Every compile returns exactly one summary page.
+- **`summary`** — one per source. A short overview of what this source is about and what concepts it introduces or reinforces. **Do NOT emit a `slug` for the summary page — Python assigns its identity after you return (always `summary-&lt;stem&gt;`, derived from the source file's stem). If you emit one anyway, it is ignored.** The `summary-` prefix is reserved — it MUST NOT appear on concept or article slugs. Every compile returns exactly one summary page.
 - **`concept`** — one per atomic idea. A concept is a reusable building block of the ontology; it may be supported by many sources over time. Prefer many small concept pages (one idea, one page) over few large ones. Use short, semantic, kebab-case slugs **that do not start with the reserved `summary-` prefix**. In the example: `attention-mechanism`, `self-attention`, `positional-encoding`.
 - **`article`** — a narrative that ties several concepts together into a cohesive whole. An article is 1+1=3: its meaning is more than the sum of the concept pages it references — it captures something about how the source *uses those concepts together* that no single concept page, and no addition of concept pages, would carry on its own. In the example, `transformer-attention-only-architecture` is an article because the paper's claim is the combination — self-attention paired with positional encoding, as a standalone sequence model — and that claim is not on any of the individual concept pages.
 
@@ -923,36 +1005,37 @@ Identify the wiki pages this source should produce. A "wiki page" is one of thre
 
 Include an article only when the source itself is doing this kind of synthesis — tying concepts together in a way that changes what they mean collectively, not just mentioning them in succession. Most sources don't: focused technical papers, interviews on a single topic, and how-to guides typically produce one summary and a handful of concepts, with no article. When you are on the fence, skip the article and let the concept pages stand on their own.
 
-### Per-page metadata
-
-For each page you include, commit to:
-
-- **`confidence`** — an honest bucket:
-  - **`high`** — the source states the material explicitly; no interpretation required. In the example, `self-attention` is `high` because the paper defines it directly.
-  - **`medium`** — the source implies or assembles the material across passages; you synthesized rather than quoted. In the example, `positional-encoding` is `medium` because the paper gives the sinusoidal formula without a theoretical treatment — the page's framing ("self-attention is permutation-invariant, so without order signals a sentence would be a bag of words") is pieced together from surrounding context, not stated in the text.
-  - **`low`** — the source gestures at the idea but doesn't develop it; you are reaching a little. When you land here, consider whether the page should exist at all, or whether a mention inside another page would do instead.
-  - Three buckets are enough — there is no `0.72`. Pick the honest one. Do not stretch to `high` to seem decisive.
-- **`status`** — always `active` for pages you are creating or updating in this compile.
-
 ---
 
-## 4. Reuse slugs from EXISTING CONTEXT
+## 4. Work the tiers of EXISTING CONTEXT
 
-Read each EXISTING CONTEXT entry by its *meaning*, not its spelling. For each existing page, ask: does this source discuss the same underlying idea? If yes, reuse the existing slug verbatim — in body wikilinks, in `outgoing_links`, and (if the page is being extended) in `concept_slugs` / `article_slugs`.
+Read each EXISTING CONTEXT entry by its *meaning*, not its spelling. A slug appears in at most one tier; each tier carries a different obligation.
 
-In the example, `attention-mechanism` is reused from EXISTING CONTEXT rather than minted as `attention-mech` or `self-attention-mechanism`. The Transformer paper's treatment of attention is the *same underlying concept* that Bahdanau 2014 introduced, even though the paper's phrasing and level of generality differ. That semantic sameness is what licenses reuse.
+### t1 — your own pages: re-emit or extend, never silently drop
 
-### When to reuse vs. mint a new slug
+`t1` pages came from this source's own previous compile. For each one:
 
-- **Reuse** when the existing page is about the same underlying concept, even if the source uses a different word, a different tense or number, or a different level of abstraction. If the ideas would live comfortably on the same page without one overwriting the other, they belong on the same slug.
+- **Re-emit it under the same slug.** Extend the body with whatever this reading of the source adds, or re-emit it substantially as-is when the source adds nothing new to that idea. Same slug is identity — re-emitting under the same slug is how the page stays alive.
+- **The summary page in `t1` is re-emitted as your one summary page** — still with NO slug (§3); Python re-derives the same identity.
+- **Drop a `t1` page only when the source genuinely no longer supports it.** A `t1` page you do not re-emit is removed from the active knowledge base (unless another source also supports it). Every drop earns a `compilation_notes` entry naming the slug and the reason. Silent drops are the failure mode this tier exists to prevent.
+
+### t2 — relevant pages from other sources: link, don't duplicate
+
+`t2` pages belong to other sources. For each one, ask: does this source discuss the same underlying idea? If yes, reuse the existing slug verbatim — in body wikilinks, and as the slug of any page you are extending (an extension accrues this source as a second supporter of that page — that is wanted). Reference t2 pages with `[[slug]]` wikilinks; never mint a near-duplicate of a t2 idea.
+
+- **Reuse** when the existing page is about the same underlying concept, even if the source uses a different word, a different tense or number, or a different level of abstraction. If the ideas would live comfortably on the same page without one overwriting the other, they belong on the same slug. In the example, `attention-mechanism` is reused rather than minted as `attention-mech` or `self-attention-mechanism` — the Transformer paper's treatment of attention is the *same underlying concept* that Bahdanau 2014 introduced, and that semantic sameness is what licenses reuse.
 - **Mint a new slug** when the source is discussing a genuinely distinct idea — a related cousin, a specific variant that deserves its own page, or a same-named concept from a different domain that shares the word but not the mechanism. When you mint a sibling to an existing slug, link to the existing slug explicitly in the new page's body so the relationship is legible. In the example, `self-attention` is minted as a sibling to `attention-mechanism` — close family, but a distinct enough idea to deserve its own page, and its body links back to `[[attention-mechanism]]`.
 - **Genuinely on the fence** — when you cannot confidently tell whether the current source's idea is the same as or different from an existing slug, lean toward reuse. A missed reuse fragments the graph irreversibly; a shared slug that accumulates slightly broader meaning over time is self-correcting as more sources compile onto it.
 
-Record non-obvious reuse or sibling decisions in `log_entries` (see the example's entry about extending `attention-mechanism`).
+Non-obvious reuse or sibling decisions are worth a line in `compilation_notes` (see the example).
 
-### Cold start (empty EXISTING CONTEXT)
+### t3 — weak context
 
-Sometimes the block is empty — the source is the first in its domain, or nothing prior overlaps semantically. That is expected. When EXISTING CONTEXT is empty, you are building the ontology from scratch: mint slugs using the same conventions (short, semantic, kebab-case), and link concepts to each other inside this compile. Subsequent sources in the same domain will see what this compile returns and compound onto it.
+`t3` pages sit one link away from t1/t2. They are background, not assignments: link to one only when the source genuinely engages it; otherwise ignore the tier.
+
+### Cold start (empty tiers)
+
+When `t1` is empty, this source has not been compiled before — every page you mint is new. When all three tiers are empty, you are building the ontology from scratch: mint slugs using the same conventions (short, semantic, kebab-case), and link concepts to each other inside this compile. Subsequent sources in the same domain will see what this compile returns and compound onto it.
 
 ---
 
@@ -961,7 +1044,7 @@ Sometimes the block is empty — the source is the first in its domain, or nothi
 Write page bodies in Obsidian-flavored markdown. Keep bodies focused, readable, and proportional to the page type:
 
 - **Summary bodies** are short — a paragraph or two of overview, followed by `[[concept-slug]]` links to the concepts and articles this source contributed. Not a reproduction of the source; not a line-by-line rehash. A reader should skim the summary and know whether to open the source itself. The example summary models this.
-- **Concept bodies** are atomic — explain the one idea as the current source presents it (treating any extension of an EXISTING CONTEXT page as adding to that page's accumulated treatment, not overwriting it). Link to related concepts via `[[slug]]`. If the source contradicts a prior source's treatment of the same concept, record that in `log_entries` rather than picking a winner in the body.
+- **Concept bodies** are atomic — explain the one idea as the current source presents it (treating any extension of an EXISTING CONTEXT page as adding to that page's accumulated treatment, not overwriting it). Link to related concepts via `[[slug]]`. If the source contradicts a prior source's treatment of the same concept, note it in `compilation_notes` rather than picking a winner in the body.
 - **Article bodies** are narrative — weave the referenced concepts into a unified argument. Heavy linking is expected. Articles read like essays, not lists of bullets. The example article models this.
 
 ### Wikilink syntax
@@ -974,11 +1057,9 @@ Use Obsidian-flavored wikilink syntax only:
 
 No HTML. No markdown-style `[text](url)` for internal slugs. No bare URLs for internal references.
 
-### `outgoing_links` must match the body
+### Links live in bodies — there is no separate link list
 
-For every slug in a page's `outgoing_links`, that slug must appear as `[[slug]]` somewhere in that page's body. And the reverse: every `[[slug]]` in the body must appear in `outgoing_links`. The two lists must agree exactly.
-
-Every slug you use in `outgoing_links` must exist — either as a page you are returning in this response, or as an entry in EXISTING CONTEXT. Do not link to slugs that do not exist anywhere.
+Reference any page by writing `[[slug]]` inline in a body. The knowledge graph's edges are derived from these body wikilinks after you return — you never emit a links field. Every slug you link to must exist — either as a page you are returning in this response, or as an entry in EXISTING CONTEXT. Do not link to slugs that do not exist anywhere.
 
 ### Tone and length
 
@@ -994,33 +1075,26 @@ Every slug you use in `outgoing_links` must exist — either as a page you are r
 
 Return one JSON object matching the schema in the user message. Nothing before it, nothing after it, no markdown fences around it, no prose explaining it.
 
-The top-level object has these fields (see §2 for the canonical shape):
+The top-level object has these fields (see §2 for the proposal response shape):
 
-- `source_name` — echo the `source_name` you were given, verbatim. Filename only, no path prefix.
-- `summary_slug` — the slug of the single summary page.
-- `concept_slugs`, `article_slugs` — flat slug lists that mirror `pages[]`. Build each by walking `pages[]` and collecting every `concept` (resp. `article`) page's slug — every such page contributes exactly one entry. Equivalently, every entry in these lists must correspond to exactly one page of the matching type in `pages[]`. Three concept pages in `pages[]` → three entries in `concept_slugs` with the same slugs; no more, no fewer.
-- `pages[]` — one entry per page you are returning, with the full set of fields shown in the example.
-- `log_entries[]` — structured notes about this compile, each `{level, message, related_slugs}` (see §2). Use for notable decisions that deserve traceability: non-obvious slug reuse, choosing a sibling rather than reusing an existing slug, article-vs-concept boundary calls, contradictions between sources, concepts that almost-but-not-quite matched an existing slug. Empty array is fine. Levels: `info` for routine decisions, `notice` for something worth a second look, `contradiction` for conflicting claims between this source and a page's prior support, `warning` for anything the compile run should surface.
-- `warnings[]` — free-text observations about the source itself (ambiguous terms, unresolved references, uncertain categorization). Empty array is fine.
+- `pages[]` — one entry per page you are returning, each with the fields shown in the example (`page_type`, `title`, `body`, plus `slug` for concept and article pages — never for the summary page).
+- `compilation_notes[]` — **optional**. Free-text notes about this compile: notable slug-reuse or sibling decisions, contradictions between sources, anything the operator should see. Pure prose — nothing parses or acts on these. Omit the field entirely when you have nothing to say.
 
 ### Thin or trivial sources
 
-If the source genuinely contains nothing knowledge-worthy, return a single summary page whose body honestly says so, leave `concept_slugs` and `article_slugs` empty, and add a `warning` explaining why. Do not fabricate pages to fill a schema.
+If the source genuinely contains nothing knowledge-worthy, return a single summary page whose body honestly says so, and add a `compilation_notes` entry explaining why. Do not fabricate pages to fill a schema.
 
-Malformed output aborts the run before any file is written.
+Malformed output gets the source quarantined and the run continues with the next source.
 
 ---
 
 ## Self-check before returning
 
-- [ ] `source_name` echoed verbatim (filename only, no path prefix).
-- [ ] Exactly one `summary` page; its slug matches `summary_slug`.
-- [ ] Count the `concept` pages in `pages[]` — `concept_slugs` has the same count and the same slugs. Count the `article` pages in `pages[]` — `article_slugs` has the same count and the same slugs. One missing or extra entry is a hard failure.
-- [ ] Every `outgoing_links` slug appears as `[[slug]]` in the same page's body; every `[[slug]]` in the body is in `outgoing_links`.
-- [ ] Every slug used in `outgoing_links` exists in this response's `pages[]` or in EXISTING CONTEXT.
+- [ ] Exactly one `summary` page, carrying NO `slug` (Python assigns its identity); no concept or article slug uses the reserved `summary-` prefix.
+- [ ] Every `t1` page is either re-emitted under its slug or its drop is justified in `compilation_notes`.
+- [ ] Every `[[slug]]` in every body exists in this response's `pages[]` or in EXISTING CONTEXT.
 - [ ] No invented citations, URLs, dates, or author names.
 - [ ] No YAML frontmatter inside any `body` field.
-- [ ] No source-id-space fields (`source_id`, `supports_page_existence`, `related_source_ids`) — those are runner-injected, not part of your contract.
 - [ ] Output is one JSON object — no prose, no fences, no `//` comments (the annotations in §2 are teaching aids only, never appear in your output).
 
 
@@ -1030,104 +1104,128 @@ RESPONSE CONTRACT (non-negotiable):
 - No markdown code fences around the object.
 - No prose before or after the object.
 - The object MUST satisfy the schema provided in the user message exactly.
-- The "source_name" field MUST echo the provided source_name verbatim.
-- Use the "warnings" array for non-fatal observations about the source
-  (ambiguous terms, unresolved references, uncertain categorization). DO NOT
-  fabricate pages to satisfy the schema. If the source genuinely contains
-  nothing knowledge-worthy, emit a single summary page whose body explains
-  that — with honest content — and leave concept/article lists empty.</pre>
+- Every response contains exactly one page with page_type "summary".
+  Do NOT emit a "slug" for the summary page — Python assigns its identity.
+  Concept and article pages REQUIRE a "slug".
+- The optional "compilation_notes" array carries non-fatal observations
+  (notable reuse decisions, thin sources). DO NOT fabricate pages to
+  satisfy the schema. If the source genuinely contains nothing
+  knowledge-worthy, emit a single summary page whose body explains that —
+  with honest content — and note it in compilation_notes.</pre>
   </details>
   <details class="prompt-sample">
-    <summary>User prompt — Pass-1 metadata block + context snapshot + schema + exemplar (source body omitted) — click to expand</summary>
-    <pre>source_name: Claude Code Buddy System.md
+    <summary>User prompt — Pass-1 metadata + tiered t1/t2/t3 snapshot + proposal schema + exemplar (source body omitted) — click to expand</summary>
+    <pre>source_name: Ifi Pro iDSD Can I re-roll the tube.md
 
 ## PASS-1 SOURCE METADATA
 The following fields were derived by the Pass-1 enrichment step and are
 TRUSTED values — do NOT re-derive them from the source body.
 
-- domain: ai-ml
-- source_type: blog
+- domain: hardware
+- source_type: post
 - author: (unknown)
 
 ### Source summary (Pass-1 verbatim + appended themes per D-89-19)
-The note explains how Claude Code’s buddy companion is deterministically generated from an identity string using FNV-1a and Mulberry32, with separate "bones" and "soul" components. It also describes a reroll strategy, command usage, and community tools for forcing preferred pet traits by manipulating the identity seed or patching the binary. Themes: deterministic-generation, fnv-1a, mulberry32, identity-seed, reroll-strategy.
+The source discusses tube rolling for iFi audio devices, especially the GE 5670/2C51 family and its compatibility constraints with 6922-style sockets. It explains why certain military or NOS variants such as Western Electric 396A, Bendix, and GE 5670 are preferred, and warns about warranty, wiring differences, and potential damage when swapping tubes. Themes: vacuum-tubes, tube-rolling, audio-amplifiers, compatibility, nos-parts.
 
 **Instructions:**
 - USE `domain`, `source_type`, and `author` directly. Do NOT re-derive them.
 - The summary above is authoritative; you do not need to rewrite or merge it.
 
 ## SOURCE CONTENT
-{{ source_text }}
-   — the verbatim source body goes here (omitted in this sample; 1,097 words in the real render) —
+   — the verbatim source body goes here (omitted in this sample) —
 
 ## EXISTING CONTEXT (graph snapshot)
+Tiers: t1 = this source's own prior pages (re-emit or extend; justify drops); t2 = relevant pages from other sources (link, don't duplicate); t3 = weak neighborhood context.
 {
-  "source_id": "AIML/Claude/Claude Code Buddy System.md",
-  "pages": [
+  "source_id": "OneNote/Knowledge Base/General Knowledge/Music/Ifi Pro iDSD Can I re-roll the tube.md",
+  "t1": [
     {
-      "slug": "fnv-1a",
-      "title": "FNV-1a",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "bones-and-soul",
-      "title": "Bones and Soul",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "buddy-commands",
-      "title": "Buddy Commands",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "community-buddy-tools",
-      "title": "Community Buddy Tools",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "deterministic-generation",
-      "title": "Deterministic Generation",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "identity-seed",
-      "title": "Identity Seed",
-      "page_type": "concept",
-      "outgoing_links": []
-    },
-    {
-      "slug": "mulberry32",
-      "title": "Mulberry32",
+      "slug": "tube-rolling",
+      "title": "Tube Rolling",
       "page_type": "concept",
       "outgoing_links": [
-        "fnv-1a"
+        "tube-compatibility",
+        "warranty-voiding-risk"
       ]
     },
     {
-      "slug": "reroll-strategy",
-      "title": "Reroll Strategy",
+      "slug": "nos-5670-variants",
+      "title": "NOS 5670 Variants",
       "page_type": "concept",
       "outgoing_links": []
     },
     {
-      "slug": "summary-claude-code-buddy-system",
-      "title": "Claude Code Buddy System (summary)",
+      "slug": "summary-ifi-pro-idsd-can-i-re-roll-the-tube",
+      "title": "Ifi Pro iDSD Can I re-roll the tube",
       "page_type": "summary",
       "outgoing_links": [
-        "bones-and-soul",
-        "buddy-commands",
-        "community-buddy-tools",
-        "deterministic-generation",
-        "fnv-1a",
-        "identity-seed",
-        "mulberry32",
-        "reroll-strategy"
+        "nos-5670-variants",
+        "tube-compatibility",
+        "tube-rolling",
+        "warranty-voiding-risk"
       ]
+    },
+    {
+      "slug": "tube-compatibility",
+      "title": "Tube Compatibility",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "warranty-voiding-risk",
+      "title": "Warranty Voiding Risk",
+      "page_type": "concept",
+      "outgoing_links": [
+        "tube-rolling"
+      ]
+    }
+  ],
+  "t2": [
+    {
+      "slug": "summary-ifi-pro-idsd-ican",
+      "title": "iFi Pro iDSD and Pro iCAN (forum discussion)",
+      "page_type": "summary",
+      "outgoing_links": [
+        "balanced-vs-single-ended",
+        "firmware-update",
+        "gto-digital-filter",
+        "iematch",
+        "pro-idsd-pro-ican-amplification",
+        "tube-rolling"
+      ]
+    }
+  ],
+  "t3": [
+    {
+      "slug": "balanced-vs-single-ended",
+      "title": "Balanced vs Single-Ended Design",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "firmware-update",
+      "title": "Firmware Update",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "gto-digital-filter",
+      "title": "GTO Digital Filter",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "iematch",
+      "title": "ieMatch",
+      "page_type": "concept",
+      "outgoing_links": []
+    },
+    {
+      "slug": "pro-idsd-pro-ican-amplification",
+      "title": "Pro iDSD and Pro iCAN as Amplifiers",
+      "page_type": "article",
+      "outgoing_links": []
     }
   ]
 }
@@ -1135,122 +1233,47 @@ The note explains how Claude Code’s buddy companion is deterministically gener
 ## RESPONSE SCHEMA
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://obsidian-kdb.local/schemas/compiled_source_response.schema.json",
-  "title": "KDB Compiled Source Response (per-call model output)",
-  "description": "Exactly one source -&gt; exactly one response object. The LLM emits this shape per compile call. Source-id-space fields (top-level source_id, per-page supports_page_existence, per-log_entry related_source_ids) are NOT in this contract — the runner injects them after parse from runtime knowledge + manifest lookup. This separation is structural: the LLM owns slug-space, the runner owns source_id-space. Run-level fields (run_id, success, aggregate errors) are also Python-owned; see compile_result.schema.json. This contract is stricter than compile_result.schema.json's pageIntent (all 7 LLM-emitted page fields required) so the model must commit to status, links, and confidence on every page rather than relying on Python backfill.",
+  "$id": "https://obsidian-kdb.local/schemas/proposal_response.schema.json",
+  "title": "KDB Pass-2 Proposal Response (per-call model output, pre-normalization)",
+  "description": "The PROPOSAL contract (prompt 4.0.0+): structural sufficiency only. Python's normalization bridge converts a proposal to the canonical contract (compiled_source_response.schema.json). Summary pages carry no slug — Python owns summary identity; a stray slug is tolerated and dropped with telemetry. Concept/article pages require slug; slug FORM is the bridge's job, not this schema's. The contract is wiki-native: pages carry prose bodies with [[wikilinks]] to other pages.",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "source_name",
-    "summary_slug",
-    "pages",
-    "log_entries",
-    "warnings"
+    "pages"
   ],
   "properties": {
-    "source_name": {
-      "$ref": "#/$defs/sourceName"
-    },
-    "summary_slug": {
-      "$ref": "#/$defs/summarySlug"
-    },
-    "concept_slugs": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/slug"
-      }
-    },
-    "article_slugs": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/slug"
-      }
-    },
     "pages": {
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/pageIntent"
+        "$ref": "#/$defs/pageProposal"
       }
     },
-    "log_entries": {
+    "compilation_notes": {
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/logEntry"
-      }
-    },
-    "warnings": {
-      "type": "array",
+      "description": "Optional free-text notes about this compile. Pure prose for the operator's eye; Python never acts on these.",
       "items": {
         "type": "string"
       }
     }
   },
   "$defs": {
-    "slug": {
-      "type": "string",
-      "description": "Lowercase ASCII kebab-case identifier. No paths, no .md suffixes, no directory separators. The 'summary-' prefix is reserved (see summarySlug).",
-      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "minLength": 1,
-      "maxLength": 120
-    },
-    "summarySlug": {
-      "type": "string",
-      "description": "Slug for the per-source summary page. MUST start with the reserved 'summary-' prefix followed by the kebab-cased source filename stem. Concept and article slugs do NOT use this prefix. Reserving the prefix structurally prevents within-source slug collision between the summary and a concept whose name matches the source's main topic.",
-      "pattern": "^summary-[a-z0-9]+(?:-[a-z0-9]+)*$",
-      "minLength": 9,
-      "maxLength": 120
-    },
-    "sourceName": {
-      "type": "string",
-      "description": "The source filename the LLM was given, echoed verbatim. No path separators — the runner constructs the full source_id from runtime knowledge after parse.",
-      "pattern": "^[^/\\\\]+\\.md$",
-      "minLength": 4,
-      "maxLength": 200
-    },
-    "pageType": {
-      "type": "string",
-      "enum": [
-        "summary",
-        "concept",
-        "article"
-      ]
-    },
-    "pageStatus": {
-      "type": "string",
-      "enum": [
-        "active",
-        "stale",
-        "archived"
-      ]
-    },
-    "confidence": {
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high"
-      ]
-    },
-    "pageIntent": {
+    "pageProposal": {
       "type": "object",
-      "description": "One page the LLM wants to create or replace (full-body model, D18). Stricter than compile_result.schema.json: all 7 LLM-emitted fields required. Source-id-space field supports_page_existence is runner-injected post-parse.",
       "additionalProperties": false,
       "required": [
-        "slug",
         "page_type",
         "title",
-        "body",
-        "status",
-        "outgoing_links",
-        "confidence"
+        "body"
       ],
       "properties": {
-        "slug": {
-          "$ref": "#/$defs/slug"
-        },
         "page_type": {
-          "$ref": "#/$defs/pageType"
+          "type": "string",
+          "enum": [
+            "summary",
+            "concept",
+            "article"
+          ]
         },
         "title": {
           "type": "string",
@@ -1260,114 +1283,80 @@ The note explains how Claude Code’s buddy companion is deterministically gener
         "body": {
           "type": "string",
           "minLength": 1,
-          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax `[[slug]]` inline whenever you reference another page in this response or in EXISTING CONTEXT — concepts, articles, and the summary all link to each other via `[[slug]]` in body prose, not as separate metadata. Every `[[slug]]` you write here MUST also appear in this page's `outgoing_links`, and conversely every entry in `outgoing_links` MUST appear as `[[slug]]` somewhere in this body. Building outgoing_links without writing the matching `[[slug]]` in the body is a contract violation."
+          "description": "Full markdown body, no frontmatter (Python prepends frontmatter during apply). Use Obsidian wikilink syntax [[slug]] inline whenever you reference another page in this response or in EXISTING CONTEXT. Whenever you mention a concept, technology, person, organization, or work that already has a page in this response or in EXISTING CONTEXT, make that mention a wikilink to that page. Do not invent a target, self-link, or link to the current source's summary merely to satisfy this instruction."
         },
-        "status": {
-          "$ref": "#/$defs/pageStatus"
-        },
-        "outgoing_links": {
-          "type": "array",
-          "description": "Slugs this page's body links to. Bidirectional with body: every entry MUST appear as `[[slug]]` somewhere in this page's body, and every `[[slug]]` in the body MUST appear here. Build this list by collecting the distinct slugs you wrote in `[[…]]` tokens in the body — not as a separate list of related concepts. Python reconciles incoming_links_known from these.",
-          "items": {
-            "$ref": "#/$defs/slug"
-          }
-        },
-        "confidence": {
-          "$ref": "#/$defs/confidence"
+        "slug": {
+          "description": "concept/article: REQUIRED string (1-512, defensive raw cap — canonical 120 enforced post-coercion). summary: IGNORED — any value tolerated, dropped by the bridge with telemetry."
         }
-      }
-    },
-    "logEntry": {
-      "type": "object",
-      "description": "One structured note about this compile. Source-id-space field related_source_ids is runner-derived post-parse from related_slugs via manifest lookup.",
-      "additionalProperties": false,
-      "required": [
-        "level",
-        "message",
-        "related_slugs"
-      ],
-      "properties": {
-        "level": {
-          "type": "string",
-          "enum": [
-            "info",
-            "notice",
-            "contradiction",
-            "warning"
-          ]
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "related_slugs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/slug"
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "page_type": {
+                "const": "summary"
+              }
+            },
+            "required": [
+              "page_type"
+            ]
+          },
+          "then": true,
+          "else": {
+            "required": [
+              "slug"
+            ],
+            "properties": {
+              "slug": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
           }
         }
-      }
+      ]
     }
   }
 }
 
 ## EXAMPLE RESPONSE
 {
-  "source_name": "Claude Code Buddy System.md",
-  "summary_slug": "summary-example",
-  "concept_slugs": [
-    "example-concept"
-  ],
-  "article_slugs": [],
   "pages": [
     {
-      "slug": "summary-example",
       "page_type": "summary",
       "title": "Example Summary",
-      "body": "A short summary of what this source is about, introducing [[example-concept]] as the central idea.",
-      "status": "active",
-      "outgoing_links": [
-        "example-concept"
-      ],
-      "confidence": "medium"
+      "body": "A short summary of what this source is about, introducing [[example-concept]] as the central idea."
     },
     {
       "slug": "example-concept",
       "page_type": "concept",
       "title": "Example Concept",
-      "body": "Definition and treatment of the concept as the source presents it.",
-      "status": "active",
-      "outgoing_links": [],
-      "confidence": "medium"
+      "body": "Definition and treatment of the concept as the source presents it."
     }
-  ],
-  "log_entries": [],
-  "warnings": []
+  ]
 }</pre>
   </details>
-
-  <div class="callout co-amber"><span class="t">Cold-start is the normal case for a fresh vault</span>
-  Every source in a first full run has no SUPPORTS edges → T1 empty → widened T2 (title-in-text) and possibly 2-hop T3 fire constantly.
-  The earliest compiles seed the graph's entity namespace — commit order (alphabetical by path) decides which directories shape it first.</div>
-  <p class="ref"><code>compiler/compiler.py</code> · <code>compiler/context_loader.py</code> · <code>compiler/prompt_builder.py</code> · system prompt: <code>&lt;vault&gt;/KDB/KDB-Compiler-System-Prompt.md</code></p>
+  <p class="ref"><code>compiler/compiler.py</code> · <code>compiler/context_loader.py</code> · <code>compiler/prompt_builder.py</code> · system prompt (repo-packaged): <code>compiler/prompts/KDB-Compiler-System-Prompt.md</code> (PASS2_PROMPT_VERSION 4.1.0)</p>
 </section>
 
 <!-- ============================================================ -->
 <section id="gauntlet">
-  <h2><span class="n">6</span>Validate, repair, canonicalize</h2>
+  <h2><span class="n">7</span>Validate, bridge, canonicalize</h2>
   <p class="lede">Between the LLM's JSON and any durable write sit three deterministic stages.
   Their job: make whole defect classes structurally impossible before state is touched.</p>
 
-  <div class="callout co-blue"><span class="t">No LLM calls happen in stages 4–6</span>
-  Every retry already happened <em>inside</em> the Pass-2 call (3 transport attempts; 2 content attempts wrapping parse/schema/semantic checks).
-  Downstream of <code>compile_one</code> the model is done for that source — these stages only decide <strong>how</strong> to fail, never whether to retry:
-  validate → <strong>quarantine</strong> (source-local) · repair → <strong>run-fatal invariant abort</strong> (code's own guarantee broke) · canonicalize → <strong>fatal halt</strong> before any write (D-R5-9; the fix is human — repair the alias ledger, no LLM sample can fix a circular alias).</div>
+  <div class="callout co-blue"><span class="t">No LLM calls happen in stages 5–7</span>
+  Every retry already happened <em>inside</em> the Pass-2 call (3 transport attempts; 2 content attempts wrapping parse/truncation/proposal-schema checks).
+  Downstream of the model these stages only decide <strong>how</strong> to fail, never whether to retry:
+  proposal validation → <strong>quarantine</strong> (source-local, retried next run) · bridge/canonical invariants → <strong>run-fatal invariant abort</strong> (code's own guarantee broke) · canonicalize → <strong>fatal halt</strong> before any write (D-R5-9; the fix is human — repair the alias ledger, no LLM sample can fix a circular alias).</div>
 
   <table>
     <tr><th>Stage</th><th>Module</th><th>What it guarantees</th></tr>
-    <tr><td><strong>4 · Validate</strong></td><td><code>validate_compile_result.py</code> + per-source response schema</td><td>Malformed payloads never reach state. Per-source failure → quarantine; the batch survives (D-96-1).</td></tr>
-    <tr><td><strong>5 · Repair</strong></td><td><code>repair.py</code></td><td><code>reconcile_slug_lists</code> rebuilds concept/article lists from <code>pages[]</code> (pages win); <code>reconcile_body_links</code> reconciles declared links against body wikilinks (body wins). Pairing inconsistency becomes unrepresentable.</td></tr>
-    <tr><td><strong>6 · Canonicalize</strong></td><td><code>canonicalize.py</code> (Task #74)</td><td>Alias surface forms resolve to canonical slugs via the human-maintained <code>state/canonicalization/aliases.json</code> ledger — wiki ≡ graph at the naming layer.</td></tr>
+    <tr><td><strong>5 · Validate proposal</strong></td><td><code>validate_proposal_response.py</code> + <code>proposal_response.schema.json</code></td><td>Malformed payloads never reach state. Runs inside <code>compile_one</code>'s attempt loop — per-source failure → quarantine; the batch survives (D-96-1).</td></tr>
+    <tr><td><strong>6 · Normalization bridge (#119)</strong></td><td><code>proposal_bridge.py</code></td><td>Widens the small proposal surface into a canonical <code>CompiledSource</code>: assigns the summary page's identity (the model emits no <code>summary_slug</code>), coerces slugs, stamps code-owned fields. <code>BridgeReject</code> / <code>CanonicalInvariantError</code> = code broke its own contract → run-fatal abort.</td></tr>
+    <tr><td><strong>7 · Canonical gate</strong></td><td><code>validate_compile_result.py</code> + <code>compiled_source_response.schema.json</code></td><td>The bridged result must satisfy the canonical schema post-bridge, before anything touches state. The <code>kdb-validate-response</code> CLI enforces the same schema standalone.</td></tr>
+    <tr><td><strong>7 · Canonicalize</strong></td><td><code>canonicalize.py</code> (Task #74)</td><td>Alias surface forms resolve to canonical slugs via the human-maintained <code>state/canonicalization/aliases.json</code> ledger — wiki ≡ graph at the naming layer.</td></tr>
   </table>
 
   <div class="card">
@@ -1379,12 +1368,14 @@ The note explains how Claude Code’s buddy companion is deterministically gener
       <li><strong>Algorithmic failures are fatal</strong> (circular aliases, malformed ledger, sha mismatch): the pipeline halts <em>before</em> page_writer (D-R5-9). Better no write than an inconsistent write.</li>
     </ul>
   </div>
-  <p class="ref"><code>compiler/validate_compile_result.py</code> · <code>compiler/repair.py</code> · <code>compiler/canonicalize.py</code> · schemas in <code>compiler/schemas/</code></p>
+  <div class="callout co-amber"><span class="t">Where did repair.py go?</span>
+  Deleted. Its reconcile jobs became unrepresentable instead of fixable: wikilinks are extracted from bodies Python-side (#115 — the model no longer declares <code>outgoing_links</code>), and the slug lists it used to rebuild are no longer part of the proposal surface. The bridge + canonical schema now carry those invariants by construction.</div>
+  <p class="ref"><code>compiler/validate_proposal_response.py</code> · <code>compiler/proposal_bridge.py</code> · <code>compiler/validate_compile_result.py</code> · <code>compiler/canonicalize.py</code> · schemas in <code>compiler/schemas/</code></p>
 </section>
 
 <!-- ============================================================ -->
 <section id="commit">
-  <h2><span class="n">7</span>The commit sequence (β order)</h2>
+  <h2><span class="n">8</span>The commit sequence (β order)</h2>
   <p class="lede">All durable state changes for one source happen in a strict order, with the
   <strong>manifest written LAST</strong> — that write is the commit boundary. Anything that fails before it
   leaves the source looking un-compiled, so it simply re-runs next time.</p>
@@ -1393,21 +1384,21 @@ The note explains how Claude Code’s buddy companion is deterministically gener
     <svg viewBox="0 0 980 250" width="980" height="250">
 
       <rect x="20" y="34" width="270" height="66" rx="9" class="box-blue"></rect>
-      <text x="155" y="58" text-anchor="middle" class="s-title">7 · page_writer</text>
+      <text x="155" y="58" text-anchor="middle" class="s-title">8 · page_writer</text>
       <text x="155" y="75" text-anchor="middle" class="s-body">wiki .md under KDB/wiki/&lt;type&gt;/</text>
       <text x="155" y="91" text-anchor="middle" class="s-small">whole-page rewrite · atomic (D14/D18)</text>
 
       <path class="arr" d="M290 67 H326"></path>
 
       <rect x="330" y="34" width="270" height="66" rx="9" class="box-violet"></rect>
-      <text x="465" y="58" text-anchor="middle" class="s-title">8 · graph intake</text>
+      <text x="465" y="58" text-anchor="middle" class="s-title">9 · graph intake</text>
       <text x="465" y="75" text-anchor="middle" class="s-body">per-source Kuzu transaction</text>
-      <text x="465" y="91" text-anchor="middle" class="s-small">rollback on any failure</text>
+      <text x="465" y="91" text-anchor="middle" class="s-small">#136 drain-as-you-go · rollback on failure</text>
 
       <path class="arr" d="M600 67 H636"></path>
 
       <rect x="640" y="34" width="320" height="66" rx="9" class="box-green"></rect>
-      <text x="800" y="58" text-anchor="middle" class="s-title">9 · manifest write — COMMIT BOUNDARY</text>
+      <text x="800" y="58" text-anchor="middle" class="s-title">10 · manifest write — COMMIT BOUNDARY</text>
       <text x="800" y="75" text-anchor="middle" class="s-body">content prepared in memory first, written LAST</text>
       <text x="800" y="91" text-anchor="middle" class="s-small">stores H₁ → marks the source as compiled</text>
 
@@ -1426,6 +1417,9 @@ The note explains how Claude Code’s buddy companion is deterministically gener
     </svg>
     <div class="cap">β ordering (D-91-15): pages → graph → manifest. The order is chosen so every failure is recoverable without human intervention.</div>
   </div>
+
+  <div class="callout co-green"><span class="t">What rides inside the commit now (#136, #130)</span>
+  The graph transaction is no longer just entity/edge upserts — <strong>drain-as-you-go</strong>: resolvable LINKS_TO targets are wired immediately, unresolved targets are upserted to the durable <strong>PendingLink</strong> ledger (and drained the moment the target page arrives), and the SUPPORTS-diff flips model-dropped pages to <code>deprecated</code> right in the same txn (revivable on re-emit). <code>page_writer.mark_deprecated</code> then flips the affected wiki files, and only then does the manifest land. There is no end-of-run wiring or orphan batch left to lose (#94 closed by construction).</div>
 
   <div class="card">
     <h3 style="margin-top:0">Terms used here (and across sections)</h3>
@@ -1456,115 +1450,116 @@ The note explains how Claude Code’s buddy companion is deterministically gener
 
 <!-- ============================================================ -->
 <section id="intake">
-  <h2><span class="n">8</span>Graph intake phases</h2>
-  <p class="lede">Inside the per-source Kuzu transaction, six ordered phases mutate the graph.
+  <h2><span class="n">9</span>Graph intake phases</h2>
+  <p class="lede">Inside the per-source Kuzu transaction, ordered phases mutate the graph.
   The ordering exists so references always resolve and projections derive from fresh state.</p>
 
   <div class="diagram">
-    <svg viewBox="0 0 980 270" width="980" height="270">
+    <svg viewBox="0 0 980 280" width="980" height="280">
       <rect x="20" y="30" width="300" height="62" rx="9" class="box-gray"></rect>
       <text x="36" y="52" class="s-title">Phase 1 — Sources</text>
       <text x="36" y="70" class="s-body">upsert Source nodes from the scan entry</text>
 
       <rect x="340" y="30" width="300" height="62" rx="9" class="box-gray"></rect>
       <text x="356" y="52" class="s-title">Phase 2 — Reconcile</text>
-      <text x="356" y="70" class="s-body">MOVED → path update · DELETED → retract</text>
+      <text x="356" y="70" class="s-body">MOVED → path update · DELETED → erase (#130)</text>
 
       <rect x="660" y="30" width="300" height="62" rx="9" class="box-blue"></rect>
-      <text x="676" y="52" class="s-title">Phase 3 — Entities, two passes</text>
-      <text x="676" y="70" class="s-body">pass 1: upsert ALL Entity nodes batch-wide</text>
+      <text x="676" y="52" class="s-title">Phase 3 — Entities, pass 1</text>
+      <text x="676" y="70" class="s-body">upsert ALL Entity nodes batch-wide</text>
 
       <path class="arr" d="M810 92 V 124"></path>
       <rect x="660" y="128" width="300" height="62" rx="9" class="box-blue"></rect>
       <text x="676" y="150" class="s-title">Phase 3 (pass 2)</text>
-      <text x="676" y="168" class="s-body">SUPPORTS + ingest-state + source meta</text>
+      <text x="676" y="168" class="s-body">LINKS_TO + PendingLink · SUPPORTS · meta</text>
 
-      <path class="arr" d="M660 159 H 500 V 124"></path>
-      <rect x="340" y="128" width="160" height="62" rx="9" class="box-teal"></rect>
+      <path class="arr" d="M660 159 H 644"></path>
+      <rect x="340" y="128" width="300" height="62" rx="9" class="box-teal"></rect>
       <text x="356" y="150" class="s-title">Phase 3.6 — Domains</text>
-      <text x="356" y="168" class="s-body">Domain + BELONGS_TO projection</text>
+      <text x="356" y="168" class="s-body">Domain + BELONGS_TO re-derive</text>
 
-      <path class="arr" d="M340 159 H 180 V 124"></path>
-      <rect x="20" y="128" width="160" height="62" rx="9" class="box-teal"></rect>
+      <path class="arr" d="M340 159 H 324"></path>
+      <rect x="20" y="128" width="300" height="62" rx="9" class="box-teal"></rect>
       <text x="36" y="150" class="s-title">Phase 3.5 — Aliases</text>
       <text x="36" y="168" class="s-body">alias Entities + ALIAS_OF</text>
 
-      <rect x="20" y="216" width="940" height="40" rx="9" class="box-gray"></rect>
-      <text x="40" y="241" class="s-body">Phase 4 (orphan marking) and LINKS_TO wiring are <tspan font-weight="650">skipped here in orchestrator mode</tspan> — both are deferred to the finalize pass by design.</text>
+      <rect x="20" y="216" width="940" height="50" rx="9" class="box-gray"></rect>
+      <text x="40" y="236" class="s-body"><tspan font-weight="650">Phase 4 — per-source deprecations (#130):</tspan> the SUPPORTS-diff flips model-dropped pages to <tspan font-weight="650">deprecated</tspan> in this same txn (revivable on re-emit).</text>
+      <text x="40" y="255" class="s-body">Drain-as-you-go (#136): pass-2 wires resolvable LINKS_TO immediately, MERGEs the rest into PendingLink — drained the moment the target page arrives.</text>
     </svg>
     <div class="cap">Two-pass entity ingest: all nodes exist before any edge is wired, so cross-entity (and cross-source) references always resolve. Any exception → ROLLBACK.</div>
   </div>
 
   <div class="callout co-blue"><span class="t">Why domains and aliases are phases, not afterthoughts</span>
-  <code>BELONGS_TO</code> is a <em>derived projection</em> of <code>Source.domain × SUPPORTS</code> (schema v2.4) — it must run after both exist in the txn.
+  <code>BELONGS_TO</code> is a <em>derived projection</em> of <code>Source.domain × SUPPORTS</code> (schema v2.5) — it must run after both exist in the txn.
   Alias Entities + <code>ALIAS_OF</code> edges come only from <code>canonical_meta.aliases_emitted</code> — the one per-source graph effect that lives outside <code>compiled_sources[]</code>, which is why the finalize merge treats its union as load-bearing for replay fidelity.</div>
-  <p class="ref"><code>kdb_graph/intake.py::apply_compile_result</code> · schema: <code>kdb_graph/schema.py</code> (v2.4)</p>
+  <p class="ref"><code>kdb_graph/intake.py::apply_compile_result</code> · schema: <code>kdb_graph/schema.py</code> (v2.5)</p>
 </section>
 
 <!-- ============================================================ -->
 <section id="finalize">
-  <h2><span class="n">9</span>Finalize pass</h2>
-  <p class="lede">Once per run, after the last source commits. This is where the deliberately-deferred work lands —
-  and the ordering is what makes <strong>live ≡ replay</strong> hold by construction.</p>
+  <h2><span class="n">10</span>Finalize pass</h2>
+  <p class="lede">Once per run, after the last source commits. Post-#136 this is a <strong>slim convergence/stat tail</strong> —
+  the heavy end-of-run passes moved into the per-source commit transaction. What remains still runs in an order that
+  makes <strong>live ≡ replay</strong> hold by construction.</p>
 
   <div class="diagram">
-    <svg viewBox="0 0 980 230" width="980" height="230">
-      <rect x="20" y="30" width="180" height="60" rx="9" class="box-gray"></rect>
-      <text x="110" y="52" text-anchor="middle" class="s-title">1 · combine crs</text>
-      <text x="110" y="69" text-anchor="middle" class="s-body">+ aliases_emitted union</text>
-      <path class="arr" d="M200 60 H224"></path>
+    <svg viewBox="0 0 980 250" width="980" height="250">
+      <rect x="20" y="30" width="210" height="60" rx="9" class="box-gray"></rect>
+      <text x="125" y="52" text-anchor="middle" class="s-title">1 · combine crs</text>
+      <text x="125" y="69" text-anchor="middle" class="s-body">+ aliases_emitted union</text>
+      <path class="arr" d="M230 60 H250"></path>
 
-      <rect x="228" y="30" width="180" height="60" rx="9" class="box-blue"></rect>
-      <text x="318" y="52" text-anchor="middle" class="s-title">2 · wire_links</text>
-      <text x="318" y="69" text-anchor="middle" class="s-body">batch LINKS_TO (C1)</text>
-      <path class="arr" d="M408 60 H432"></path>
+      <rect x="254" y="30" width="210" height="60" rx="9" class="box-violet"></rect>
+      <text x="359" y="45" text-anchor="middle" class="s-title">2 · convergence fixpoint</text>
+      <text x="359" y="62" text-anchor="middle" class="s-body">deprecated flips settle</text>
+      <text x="359" y="79" text-anchor="middle" class="s-small">+ mark_deprecated file flips</text>
+      <path class="arr" d="M464 60 H484"></path>
 
-      <rect x="436" y="30" width="180" height="60" rx="9" class="box-violet"></rect>
-      <text x="526" y="52" text-anchor="middle" class="s-title">3 · detect_orphans</text>
-      <text x="526" y="69" text-anchor="middle" class="s-body">single deferred pass</text>
-      <path class="arr" d="M616 60 H640"></path>
+      <rect x="488" y="30" width="210" height="60" rx="9" class="box-blue"></rect>
+      <text x="593" y="52" text-anchor="middle" class="s-title">3 · write replay payload</text>
+      <text x="593" y="69" text-anchor="middle" class="s-body">state/compile_result.json</text>
+      <path class="arr" d="M698 60 H718"></path>
 
-      <rect x="644" y="30" width="150" height="60" rx="9" class="box-amber"></rect>
-      <text x="719" y="52" text-anchor="middle" class="s-title">4 · kdb-clean</text>
-      <text x="719" y="69" text-anchor="middle" class="s-body">reap + retraction.json</text>
-      <path class="arr" d="M794 60 H818"></path>
+      <rect x="722" y="30" width="210" height="60" rx="9" class="box-green"></rect>
+      <text x="827" y="52" text-anchor="middle" class="s-title">4 · report</text>
+      <text x="827" y="69" text-anchor="middle" class="s-body">counts · PendingLink open</text>
 
-      <rect x="822" y="30" width="138" height="60" rx="9" class="box-green"></rect>
-      <text x="891" y="52" text-anchor="middle" class="s-title">5 · persist</text>
-      <text x="891" y="69" text-anchor="middle" class="s-body">replay payload</text>
-
-      <rect x="20" y="120" width="940" height="90" rx="9" class="box-gray"></rect>
-      <text x="40" y="144" class="s-title">Why wire_links waits (the C1 fix)</text>
-      <text x="40" y="164" class="s-body">Per-source wiring meant a link pointing at an entity owned by a LATER source in the batch would dangle. Wiring once at the end — with every entity</text>
-      <text x="40" y="180" class="s-body">present — resolves cross-source edges by construction, and a replay of the combined compile_result reproduces the live graph exactly (live ≡ replay).</text>
-      <text x="40" y="200" class="s-small">Orphan detection is likewise deferred so transiently-unsupported entities mid-run are never marked (and never pollute later sources' T1/T2 context).</text>
+      <rect x="20" y="120" width="940" height="110" rx="9" class="box-gray"></rect>
+      <text x="40" y="144" class="s-title">What's gone — the heavy tail was deleted, not moved</text>
+      <text x="40" y="164" class="s-body">· <strong>wire_links</strong> batch → drain-as-you-go inside each commit txn (#136): resolvable targets wired immediately, the rest MERGEd into PendingLink and drained on arrival.</text>
+      <text x="40" y="182" class="s-body">· <strong>detect_orphans / apply_cleanup / kdb-clean / retraction.json</strong> → retired (#130): deprecation is the per-source SUPPORTS-diff flip; source deletion erases its sole-supported pages in reconcile (node + file, no archive).</text>
+      <text x="40" y="200" class="s-body">· <strong>end-of-run wire_links / detect_deprecations entry points</strong> → deleted from <code>kdb_graph/intake.py</code> — there is no batch left to call.</text>
+      <text x="40" y="220" class="s-small">The tail stays ordering-sensitive only for replay fidelity: the combined payload is written after the last commit, so rebuild replays exactly what live produced.</text>
     </svg>
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">What finalize persists</h3>
+    <h3 style="margin-top:0">What a run persists</h3>
     <ul class="tight">
       <li><code>state/compile_result.json</code> — the combined replay payload (input to <code>graphdb-kdb rebuild</code>).</li>
-      <li><code>state/runs/&lt;run_id&gt;/</code> — per-run sidecars + journals (audit log; also the rebuild material, D39).</li>
-      <li><code>state/last_orchestrate.json</code> — slim run summary: counts, failures, manifest delta (D-91-10).</li>
-      <li>Cleanup journal + <code>retraction.json</code> when orphans were reaped.</li>
+      <li><code>state/runs/&lt;run_id&gt;.json</code> — the run journal (schema 2.3, archived per #132) + sidecars (<code>compile_result.json</code>, <code>last_scan.json</code>).</li>
+      <li><code>state/runs/&lt;run_id&gt;/search/*.json</code> — the Pass-1.5 search envelopes, one per searched source (#123).</li>
+      <li><code>state/runs/&lt;run_id&gt;/pass1/ · pass2/</code> — per-call telemetry dirs.</li>
+      <li><code>state/last_orchestrate.json</code> — slim run summary: counts, failures, manifest delta (D-91-10) — written from <code>run()</code>'s <code>finally</code>: success, abort, or crash.</li>
+      <li><code>state/measurement_header.json</code> — the run's measurement header.</li>
     </ul>
   </div>
-  <p class="ref"><code>orchestrator/kdb_orchestrate.py::_finalize</code> · <code>kdb_graph/intake.py::{wire_links, detect_orphans, apply_cleanup}</code> · <code>tools/cleanup.py</code></p>
+  <p class="ref"><code>orchestrator/kdb_orchestrate.py::_finalize</code> · journal archive: <code>orchestrator/journal_writer.py</code> (#132)</p>
 </section>
 
 <!-- ============================================================ -->
 <section id="state">
-  <h2><span class="n">10</span>State model &amp; rebuild</h2>
+  <h2><span class="n">11</span>State model &amp; rebuild</h2>
   <p class="lede">Six layers, each with one job (D51). The graph is the authority, but it is
   <em>derivable</em> — the journals are the real treasure.</p>
 
   <table>
     <tr><th>Layer</th><th>Path</th><th>Role</th></tr>
     <tr><td>Source corpus</td><td>vault (in-place) or <code>KDB/raw/</code></td><td>Human-authored input. Pass-1 frontmatter is the only system mutation allowed here.</td></tr>
-    <tr><td><strong>Live ontology authority</strong></td><td>Kuzu graph dir</td><td>Primary. Entity, Source, Domain, all edges. Updated per source inside the commit sequence.</td></tr>
-    <tr><td>Reconstruction material</td><td><code>KDB/state/runs/&lt;run_id&gt;/</code> sidecars + <code>compile_result.json</code></td><td>Replay input for <code>graphdb-kdb rebuild</code> if the graph is lost or corrupted (D39).</td></tr>
-    <tr><td>Audit log</td><td><code>KDB/state/runs/&lt;run_id&gt;.json</code></td><td>What happened, when, with which model, what failed.</td></tr>
+    <tr><td><strong>Live ontology authority</strong></td><td>Kuzu graph dir</td><td>Primary. Entity, Source, Domain, PendingLink, all edges. Updated per source inside the commit sequence.</td></tr>
+    <tr><td>Reconstruction material</td><td><code>KDB/state/runs/&lt;run_id&gt;/</code> sidecars + <code>search/</code> envelopes + <code>compile_result.json</code></td><td>Replay input for <code>graphdb-kdb rebuild</code> if the graph is lost or corrupted (D39).</td></tr>
+    <tr><td>Audit log</td><td><code>KDB/state/runs/&lt;run_id&gt;.json</code> · <code>wipes.jsonl</code> · <code>pre-wipe-runs/</code></td><td>What happened, when, with which model, what failed — plus the wipe ledger and archived pre-wipe journals (#138).</td></tr>
     <tr><td>Source-file lifecycle</td><td><code>KDB/state/manifest.json</code></td><td>Hashes, run_state, timestamps per source, stamped with <code>pipeline_id</code>. A metadata ledger — not an ontology index (D50).</td></tr>
     <tr><td>Rendered view</td><td><code>KDB/wiki/</code></td><td>Markdown output for Obsidian consumption; per-page provenance in frontmatter.</td></tr>
   </table>
@@ -1577,7 +1572,7 @@ The note explains how Claude Code’s buddy companion is deterministically gener
 
 <!-- ============================================================ -->
 <section id="failures">
-  <h2><span class="n">11</span>Failure semantics &amp; operations</h2>
+  <h2><span class="n">12</span>Failure semantics &amp; operations</h2>
   <p class="lede">The system is designed so that failures are boring: each one has exactly one defined outcome,
   and almost all of them self-heal on the next run.</p>
 
@@ -1585,6 +1580,9 @@ The note explains how Claude Code’s buddy companion is deterministically gener
     <tr><th>Failure</th><th>Outcome</th><th>Recovery</th></tr>
     <tr><td>Bad LLM output after <strong>2 content attempts</strong> (parse/schema/semantic; free repair rungs in between; transport adds 3 backoff attempts per call)</td><td>Source <strong>quarantined</strong>; batch continues (D-96-1)</td><td>Recorded in journal + RespStatsRecord; re-runs next time automatically</td></tr>
     <tr><td>Prompt would exceed ctx_window</td><td>Skip-and-quarantine <strong>with zero API spend</strong> (#110)</td><td>Same as above</td></tr>
+    <tr><td>Pass-1.5 <code>budget_exceeded</code></td><td>Search skipped pre-flight, <strong>zero spend</strong></td><td>None needed — compile proceeds with T1+T3; envelope records it</td></tr>
+    <tr><td>Pass-1.5 <code>abstain_empty_space</code></td><td><strong>Correct-by-design</strong> (young graph / empty domain space)</td><td>None — T2 honestly empty; later runs search a richer space</td></tr>
+    <tr><td>Pass-1.5 <code>selector_failure</code> (2 bounded attempts exhausted)</td><td>Honest empty T2 + typed telemetry — <strong>never quarantined</strong></td><td>Compile proceeds with T1+T3; next run searches again</td></tr>
     <tr><td>page_writer fails</td><td>Graph untouched (case-a)</td><td>Re-run recompiles the source</td></tr>
     <tr><td>Graph txn fails</td><td>Rollback; manifest never written (case-a)</td><td>Re-run recompiles the source</td></tr>
     <tr><td>Manifest write fails after graph commit</td><td><code>manifest_post_graph</code> residual</td><td>Idempotent re-run self-heals</td></tr>
@@ -1592,12 +1590,10 @@ The note explains how Claude Code’s buddy companion is deterministically gener
     <tr><td>Operator kill / crash mid-run</td><td>Committed sources are hash-current</td><td>Next run resumes from the first uncommitted source</td></tr>
   </table>
 
-  <div class="callout co-red"><span class="t">Known pre-production blocker — Task #94 (fail-fast strands LINKS_TO)</span>
-  <code>_finalize</code> runs only when the run completes normally. A mid-run <strong>fail-fast abort</strong> (D-91-8) leaves already-committed sources with
-  entities + SUPPORTS but <strong>zero LINKS_TO</strong>, and no <code>compile_result.json</code>. The next run sees those sources as hash-current → skips them →
-  finalize wires only the new batch → <strong>the earlier sources' cross-source links are permanently lost.</strong><br><br>
-  Today's rule: on abort, delete graph + manifest and re-run clean — acceptable for a throwaway sandbox, unacceptable for a real vault.
-  Fixing #94 (finalize-on-abort, per-source sidecars, or prefix-rewire) gates the first official run.</div>
+  <div class="callout co-green"><span class="t">Resolved — #94 closed by #136 (drain-as-you-go)</span>
+  The old blocker is gone structurally: LINKS_TO wiring and deprecation live <em>inside each source's commit transaction</em>, so a mid-run fail-fast abort (D-91-8) strands nothing —
+  every committed source is fully wired, and unresolved targets sit in the durable PendingLink ledger until their page arrives. The old "delete graph + manifest and re-run clean"
+  recovery is replaced by <code>kdb-orchestrate --wipe</code> (#138): journals archived to <code>state/pre-wipe-runs/&lt;ts&gt;/</code>, always typed-confirmed, logged to <code>wipes.jsonl</code> — and it never runs a pipeline.</div>
 
   <div class="card">
     <h3 style="margin-top:0">Operator surface</h3>
@@ -1605,15 +1601,17 @@ The note explains how Claude Code’s buddy companion is deterministically gener
       <li><code>kdb-orchestrate --vault-root &lt;vault&gt; --pipeline &lt;id&gt;</code> — run one pipeline. Omit <code>--pipeline</code> to list what's registered.</li>
       <li><code>--dry-run</code> — scan + print the plan; no LLM calls, no writes.</li>
       <li><code>--limit N</code> — stop after N compiled sources (noise is free); the remainder resumes next run. Finalize still runs over the compiled batch.</li>
-      <li><code>--model &lt;pool-id&gt;</code> — model from <code>common/models.json</code>; <code>--emit-kpis</code> writes benchmark measurements for the run.</li>
-      <li><code>graphdb-kdb stats | verify | rebuild | snapshot</code> — inspect, prove, reconstruct, or export the graph.</li>
+      <li><code>--model &lt;pool-id&gt;</code> / <code>--selector-model &lt;pool-id&gt;</code> — compile model from <code>common/models.json</code> (default <code>deepseek-v4-flash</code>); the selector seat defaults to the same model (#129). <code>--emit-kpis</code> writes benchmark measurements for the run.</li>
+      <li><code>--wipe</code> — erase derived state (wiki tree, graph, manifest, alias ledger) and exit; journals archived to <code>pre-wipe-runs/&lt;ts&gt;/</code> first; always requires typed confirmation (#138).</li>
+      <li><code>graphdb-kdb init | stats | neighbors | incoming | path | cypher | pagerank | communities | structural-holes | deprecated | subgraph-by-source | verify | rebuild | domains | snapshot</code> — inspect, prove, reconstruct, or export the graph.</li>
+      <li><code>kdb-mcp-server</code> — read-only MCP stdio server over the live graph (7 tools).</li>
     </ul>
   </div>
-  <p class="ref"><code>orchestrator/kdb_orchestrate.py</code> CLI · Task #94 in <code>docs/TASKS.md</code></p>
+  <p class="ref"><code>orchestrator/kdb_orchestrate.py</code> CLI · <code>docs/TASKS.md</code> #130 · #136 · #138</p>
 </section>
 
 <footer style="color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); padding-top:18px;">
-  Generated as a session reference for the vault-in-place initiative · Sources: <code>docs/CODEBASE_OVERVIEW.md</code>, package docstrings, and live code walkthroughs (2026-07-19).
+  Session reference for the KDB pipeline · Sources: <code>docs/CODEBASE_OVERVIEW.md</code>, package docstrings, and live code walkthroughs (2026-07-19) · True-up to the post-#123/#130/#136 implementation on 2026-08-09, after the maiden full-vault run.
 </footer>
 
 </main>

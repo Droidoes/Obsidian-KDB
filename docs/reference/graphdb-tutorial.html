@@ -437,6 +437,7 @@
         <a href="#capabilities">Capabilities</a>
         <a href="#build">Build and populate</a>
         <a href="#query">Query examples</a>
+        <a href="#mcp">MCP tool surface</a>
         <a href="#use-cases">Practical use cases</a>
         <a href="#current-state">Current state</a>
       </nav>
@@ -446,20 +447,23 @@
           <h2>1. Mental Model</h2>
           <p>
             The project is best understood as a <strong>raw-text to knowledge-graph compiler</strong>.
-            The compiler reads sources from <code>KDB/raw/</code>, asks the model to emit structured page
-            intents, validates and canonicalizes them, writes Markdown for Obsidian, then syncs the
-            same structured result into GraphDB-KDB.
+            One conductor — <code>kdb-orchestrate</code> — walks each source through Pass-1 enrichment,
+            Pass-1.5 semantic graph search, and Pass-2 compile; the model emits structured page intents,
+            Python validates and canonicalizes them, writes Markdown for Obsidian, and syncs the same
+            structured result into GraphDB-KDB — all inside one per-source commit transaction.
           </p>
           <p>
-            Longer term, there can be multiple source-preparation pipelines upstream of this compiler.
-            Most of those pipelines will produce enriched raw text and place it into <code>KDB/raw/</code>.
-            The Obsidian vault is a special case: because the vault itself hosts <code>KDB/raw/</code>,
-            vault-native sources can stay in place and be enriched in place, while <code>KDB/raw/</code>
-            remains the compiler's source boundary.
+            The system is <strong>multi-pipeline by design</strong>: a hand-authored registry,
+            <code>KDB/state/pipelines.json</code>, declares which ingestion pipelines exist and what
+            each one scans (root + excludes + globs). The standing production pipeline scans the
+            Obsidian vault in place — sources are enriched where they live. What used to be the
+            <code>KDB/raw/</code> boundary is now just a convention for pipeline roots, not a special
+            mode; new pipelines (a prompt archive, a filtered Substack email flow) are registry
+            entries, not code.
           </p>
           <div class="diagram" aria-label="Pipeline diagram">
-            <div>Raw sources</div>
-            <div>LLM compiler</div>
+            <div>Pipeline sources</div>
+            <div>LLM pipeline (enrich → search → compile)</div>
             <div>Validated JSON</div>
             <div>Markdown wiki</div>
             <div>Kuzu GraphDB</div>
@@ -488,13 +492,17 @@
               </tr>
               <tr>
                 <td>Kuzu graph store</td>
-                <td><code>~/Droidoes/GraphDB-KDB</code></td>
-                <td>Live Kuzu database file used by the CLI and compiler sync.</td>
+                <td><code>&lt;vault&gt;/KDB/graph</code></td>
+                <td>Live Kuzu database used by the CLI, the MCP server, and the orchestrator's
+                  graph-sync. Located via <code>OBSIDIAN_VAULT_PATH</code> (default
+                  <code>~/Obsidian</code>); <code>KDB_GRAPH_PATH</code> overrides the graph alone.</td>
               </tr>
               <tr>
                 <td>Vault data</td>
-                <td><code>~/Obsidian/KDB/</code></td>
-                <td>Raw sources, generated wiki, run journals, sidecars, snapshots, and state files.</td>
+                <td><code>&lt;vault&gt;/KDB/</code></td>
+                <td>Generated <code>wiki/</code>, <code>state/</code> (manifest, run journals + sidecars,
+                  per-source search envelopes, graph snapshots, wipes ledger), and
+                  <code>state/pipelines.json</code>.</td>
               </tr>
               <tr>
                 <td>North Star docs</td>
@@ -510,35 +518,38 @@
           <div class="grid">
             <div class="card">
               <h3>Schema</h3>
-              <p><code>schema.py</code> defines Kuzu node and relationship tables plus migrations.</p>
+              <p><code>schema.py</code> defines Kuzu node and relationship tables plus migrations —
+                currently <strong>v2.5</strong> (Entity, Source, Domain, PendingLink, Claim; nine edge tables).</p>
             </div>
             <div class="card">
               <h3>Connection manager</h3>
-              <p><code>graphdb.py</code> opens Kuzu, bootstraps schema, and exposes the public API.</p>
+              <p><code>graphdb.py</code> opens Kuzu read-write (bootstraps + migrates schema) or
+                read-only (<code>read_only=True</code>, never migrates, writes raise
+                <code>GraphDBReadOnlyError</code>).</p>
             </div>
             <div class="card">
               <h3>Graph write engine</h3>
               <p>
-                <code>intake.py</code> applies one compiler result into Kuzu. This is the graph
-                write engine — different from the upstream ingestion pipelines that prepare enriched
-                raw text before the compiler sees it.
+                <code>intake.py</code> applies one compile result into Kuzu inside the per-source
+                commit transaction — entity upserts, SUPPORTS replace, drain-as-you-go LINKS_TO with
+                the durable <code>PendingLink</code> ledger (#136), per-source SUPPORTS-diff
+                deprecation (#130), domain re-derive, alias materialization.
               </p>
             </div>
             <div class="card">
               <h3>Adapter</h3>
               <p>
-                <code>adapters/obsidian_runs.py</code> translates Obsidian-KDB's run files into graph
-                writes. A run file says "these pages and links were produced"; the adapter turns
-                that into the specific <code>Entity</code>, <code>LINKS_TO</code>, and
-                <code>SUPPORTS</code> operations GraphDB-KDB understands.
+                <code>adapters/obsidian_runs.py</code> is the replay path: it translates run journals +
+                sidecars from <code>state/runs/</code> back into the same intake calls during
+                <code>graphdb-kdb rebuild</code>. (Live compile-sync has gone straight to intake since #91.)
               </p>
             </div>
             <div class="card">
               <h3>Queries</h3>
               <p>
                 <code>queries.py</code> answers graph questions: what is near this entity, what links
-                into it, what route connects two entities, which sources support it, and what custom
-                Cypher query should Kuzu run.
+                into it, what route connects two entities, which sources support it, alias-aware
+                canonical resolution, KPI primitives, and a custom Cypher escape hatch.
               </p>
             </div>
             <div class="card">
@@ -552,14 +563,32 @@
             <div class="card">
               <h3>Verifier and rebuilder</h3>
               <p>
-                <code>verifier.py</code> and <code>rebuilder.py</code> are the recovery proof. The
-                intended recovery path is replaying saved run sidecars into a clean Kuzu graph, then
-                checking that replayed graph against the live graph.
+                <code>verifier.py</code> and <code>rebuilder.py</code> are the recovery proof: replay
+                eligible run journals into a clean Kuzu graph, then diff replay vs live across three
+                layers (source-state preflight, canonicalization invariants, full structural diff).
               </p>
             </div>
             <div class="card">
               <h3>CLI</h3>
-              <p><code>cli.py</code> powers the <code>graphdb-kdb</code> command-line interface.</p>
+              <p><code>cli.py</code> powers the <code>graphdb-kdb</code> command-line interface —
+                15 subcommands (see §9).</p>
+            </div>
+            <div class="card">
+              <h3>MCP server</h3>
+              <p><code>kdb_mcp/</code> — read-only FastMCP stdio server (<code>kdb-mcp-server</code>):
+                7 tools over the live graph, each call reopening the graph read-only. This is the
+                surface LLM clients (and the future FTS tool, #142) plug into.</p>
+            </div>
+            <div class="card">
+              <h3>Snapshot</h3>
+              <p><code>snapshot.py</code> — atomic, write-only JSONL export (format v7) with a
+                checksummed manifest, under <code>state/graph-snapshots/</code>.</p>
+            </div>
+            <div class="card">
+              <h3>Parked 2.0 tier</h3>
+              <p><code>ops/op_1_promote.py</code> + <code>core/belief_classifier.py</code> — the O1
+                hypothesis-promotion pipeline and belief classifier. Built, tested, and deliberately
+                unwired (#139 tracks the wire-up decision).</p>
             </div>
           </div>
         </section>
@@ -648,8 +677,9 @@
           <h3>Node</h3>
           <p>
             A node is one stored object in the graph. Node types are the graph equivalent of classes
-            in the schema: <code>Entity</code>, <code>Source</code>, <code>Domain</code>, and
-            <code>Claim</code>. Each type has its own allowed properties.
+            in the schema: <code>Entity</code>, <code>Source</code>, <code>Domain</code>, and the
+            edge-less <code>PendingLink</code> ledger (plus the parked <code>Claim</code> table).
+            Each type has its own allowed properties.
           </p>
           <h3>Connection</h3>
           <p>
@@ -684,14 +714,14 @@
             <li><code>depth</code>: number of hops to traverse.</li>
             <li><code>subgraph</code>: selected nodes plus the selected edges among those nodes.</li>
             <li><code>provenance</code>: standard data/knowledge-graph term for origin or evidence trail. In this tutorial, it means source-to-entity support metadata: "which source produced or supports this entity?"</li>
-            <li><code>orphan</code>: an entity with no current source support.</li>
+            <li><code>deprecated</code>: an entity whose last SUPPORTS edge was dropped by the model — invisible to all readers, revivable on re-emit (#130; supersedes the old "orphan" concept, which no longer exists: a deleted source's sole-supported pages are erased outright).</li>
             <li><code>community</code>: an algorithmically detected cluster with denser internal links than external links.</li>
             <li><code>structural hole</code>: a weak bridge between communities.</li>
           </ul>
         </section>
 
         <section id="schema">
-          <h2>5. Current Schema (v1.0)</h2>
+          <h2>5. Current Schema (v2.5)</h2>
           <p>
             Obsidian's graph view can feel like one kind of node connected by one kind of line.
             Kuzu is a typed graph: nodes have different types, and only schema-declared edge types
@@ -703,11 +733,24 @@
             that distinguishes its role. Each raw source is one <code>Source</code> node. A source
             connects to every page it produced through <code>SUPPORTS</code> edges. Pages connect to
             each other through <code>LINKS_TO</code> edges — the graph form of Markdown wikilinks.
+            One ledger table, <code>PendingLink</code>, records links whose target slug does not
+            exist yet (#136); it has no edges of its own.
           </p>
-          <pre><code>-- 1.0 schema (current) --
+          <pre><code>-- 2.5 schema (current) --
 Source  --SUPPORTS-->  Entity  --LINKS_TO-->  Entity
 Entity  --BELONGS_TO-->  Domain
-Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
+Entity  --ALIAS_OF-->  Entity   (alias → canonical)
+PendingLink            (edge-less durable ledger: source_slug → target_slug)
+
+-- parked 2.0 claim layer (tables exist, unwired, always empty) --
+Source  --EVIDENCES-->  Claim  --ABOUT-->  Entity
+Claim   --SUPERSEDES / CONTRADICTS / QUALIFIES-->  Claim</code></pre>
+          <p style="color:var(--muted);font-size:0.9rem">
+            Version arc (<code>schema.py</code> module docstring): 1.0 baseline → 2.0 canonical_id +
+            ALIAS_OF → 2.1 Domain + BELONGS_TO → 2.2 Claim layer → 2.3 Source summary/author/domain →
+            2.4 derived BELONGS_TO (destructive — rebuild required, no 2.3→2.4 migration) →
+            <strong>2.5 PendingLink</strong> (non-destructive ADD, #136).
+          </p>
 
           <h3>Node types</h3>
           <table>
@@ -718,32 +761,47 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
               <tr>
                 <td><code>Entity:summary</code></td>
                 <td><code>summary</code></td>
-                <td>LLM + ingestor</td>
+                <td>LLM + intake</td>
                 <td>One per source — top-level distillation of the source content.</td>
               </tr>
               <tr>
                 <td><code>Entity:concept</code></td>
                 <td><code>concept</code></td>
-                <td>LLM + ingestor</td>
+                <td>LLM + intake</td>
                 <td>Individual idea or concept extracted from the source.</td>
               </tr>
               <tr>
                 <td><code>Entity:article</code></td>
                 <td><code>article</code></td>
-                <td>LLM + ingestor</td>
+                <td>LLM + intake</td>
                 <td>Synthesized long-form piece that references multiple concepts.</td>
               </tr>
               <tr>
                 <td><code>Source</code></td>
                 <td>—</td>
-                <td>Ingestor (code)</td>
-                <td>Raw input file: path, hash, domain, author, status.</td>
+                <td>Intake (code)</td>
+                <td>Raw input file: path, hash, source_type, summary, author, domain, ingest lifecycle.</td>
               </tr>
               <tr>
                 <td><code>Domain</code></td>
                 <td>—</td>
-                <td>Ingestor (code)</td>
+                <td>Intake (code)</td>
                 <td>Classification bucket derived from the source's Pass-1 domain field.</td>
+              </tr>
+              <tr>
+                <td><code>PendingLink</code> <span style="color:var(--muted)">(#136)</span></td>
+                <td>—</td>
+                <td>Intake (code)</td>
+                <td>Durable ledger row for a <code>LINKS_TO</code> edge whose target slug does not exist
+                  yet — drained into a real edge the moment the target entity arrives, in whichever
+                  source emits it. Has no edges of its own.</td>
+              </tr>
+              <tr>
+                <td><code>Claim</code> <span style="color:var(--muted)">(2.0, parked)</span></td>
+                <td>—</td>
+                <td>—</td>
+                <td>Propositional-knowledge layer. Table exists in DDL since v2.2; the O1 promotion
+                  pipeline is unwired, so production graphs always have zero Claim rows.</td>
               </tr>
             </tbody>
           </table>
@@ -757,26 +815,38 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
               <tr>
                 <td><code>LINKS_TO</code></td>
                 <td>Entity → Entity</td>
-                <td>Ingestor (code)</td>
-                <td>LLM writes <code>[[slug]]</code> in page body; code materializes each wikilink as an edge.</td>
+                <td>Intake (code)</td>
+                <td>LLM writes <code>[[slug]]</code> in page body; code materializes each wikilink as an
+                  edge <em>inside the same per-source commit transaction</em> (#136 drain-as-you-go).
+                  Targets that don't exist yet go to <code>PendingLink</code> instead.</td>
               </tr>
               <tr>
                 <td><code>SUPPORTS</code></td>
                 <td>Source → Entity</td>
-                <td>Ingestor (code)</td>
-                <td>Every entity in a source's compile result gets a <code>SUPPORTS</code> edge from that source.</td>
+                <td>Intake (code)</td>
+                <td>Every entity in a source's compile result gets a <code>SUPPORTS</code> edge from that
+                  source (atomic drop + recreate per compile).</td>
               </tr>
               <tr>
                 <td><code>BELONGS_TO</code></td>
                 <td>Entity → Domain</td>
-                <td>Ingestor (code)</td>
-                <td>Derived: Entity belongs to Domain D if any Source with <code>domain=D</code> supports it.</td>
+                <td>Intake (code)</td>
+                <td>Derived projection, fully re-derived per commit: Entity belongs to Domain D if any
+                  active Source with <code>domain=D</code> supports it. Canonical slugs only;
+                  <code>support_count</code> = distinct supporting sources.</td>
               </tr>
               <tr>
                 <td><code>ALIAS_OF</code></td>
                 <td>alias Entity → canonical Entity</td>
                 <td>Canonicalization stage</td>
-                <td>Code reads <code>aliases.json</code>; alias slug points to canonical slug.</td>
+                <td>Code reads <code>aliases.json</code>; alias slug points to canonical slug. Alias
+                  entities carry <code>status='alias'</code> and <code>canonical_id</code>.</td>
+              </tr>
+              <tr>
+                <td><code>EVIDENCES</code> · <code>ABOUT</code> · <code>SUPERSEDES</code> · <code>CONTRADICTS</code> · <code>QUALIFIES</code></td>
+                <td>Claim layer</td>
+                <td>—</td>
+                <td>2.0 tier — declared in DDL, never written in production (parked, unwired).</td>
               </tr>
             </tbody>
           </table>
@@ -832,7 +902,7 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
               </tr>
             </tbody>
           </table>
-          <p style="color:var(--muted);font-size:0.9rem">† Allowed by schema; rarely observed — the LLM seldom links concept→article or article→article/summary. Source never receives incoming edges. Domain never has outgoing edges.</p>
+          <p style="color:var(--muted);font-size:0.9rem">† Allowed by schema; rarely observed — the LLM seldom links concept→article or article→article/summary. Source never receives incoming edges. Domain never has outgoing edges. <code>PendingLink</code> never appears in this matrix — it is an edge-less ledger table, not a graph participant. Parked <code>Claim</code> nodes/edges are likewise omitted (always empty).</p>
 
           <div class="callout">
             The important shift: an edge is not a property of a node. It is its own typed record.
@@ -848,8 +918,8 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
           </p>
           <ul>
             <li><code>KDB/wiki/</code> — rendered Markdown pages (human-readable)</li>
-            <li><code>KDB/state/compile_result.json</code> — full page output: <code>body</code>,
-              <code>outgoing_links</code>, <code>title</code>, <code>confidence</code> (machine-readable)</li>
+            <li><code>KDB/state/compile_result.json</code> + per-run sidecars — full page output:
+              <code>body</code>, <code>outgoing_links</code>, <code>title</code>, <code>confidence</code> (machine-readable)</li>
           </ul>
           <table>
             <thead>
@@ -858,18 +928,30 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
             <tbody>
               <tr>
                 <td><code>Entity</code></td>
-                <td><code>slug</code>, <code>title</code>, <code>page_type</code>, <code>status</code>, <code>confidence</code>, run-tracking timestamps</td>
+                <td><code>slug</code>, <code>title</code>, <code>page_type</code>, <code>status</code>
+                  (<code>active</code> | <code>deprecated</code> | <code>alias</code>),
+                  <code>canonical_id</code>, run-tracking timestamps. (<code>confidence</code> still
+                  exists in DDL but is a <em>dead column</em> — never written since #115.)</td>
                 <td><code>body</code> (→ wiki / compile_result); <code>outgoing_links</code> (→ <code>LINKS_TO</code> edges)</td>
               </tr>
               <tr>
                 <td><code>Source</code></td>
-                <td><code>source_id</code>, <code>hash</code>, <code>source_type</code>, <code>summary</code>, <code>author</code>, <code>domain</code>, lifecycle fields</td>
+                <td><code>source_id</code>, <code>canonical_path</code>, <code>hash</code>,
+                  <code>source_type</code>, <code>summary</code>, <code>author</code>, <code>domain</code>,
+                  ingest lifecycle (<code>ingest_state</code>, <code>ingest_count</code>,
+                  <code>first/last_seen_at</code>, <code>moved_to</code>, …)</td>
                 <td>—</td>
               </tr>
               <tr>
                 <td><code>Domain</code></td>
-                <td><code>name</code>, <code>created_at</code></td>
+                <td><code>name</code>, <code>created_at</code>, <code>first_run_id</code></td>
                 <td>—</td>
+              </tr>
+              <tr>
+                <td><code>PendingLink</code></td>
+                <td><code>link_id</code> (<code>source_slug|target_slug</code>), <code>source_slug</code>,
+                  <code>target_slug</code>, <code>first/last_run_id</code>, timestamps</td>
+                <td>— (no edges — it is a ledger row)</td>
               </tr>
             </tbody>
           </table>
@@ -882,37 +964,52 @@ Entity  --ALIAS_OF-->  Entity   (alias → canonical)</code></pre>
             full rationale and the per-node property lists.
           </div>
 
-          <h3>2.0 Claim layer (not yet implemented)</h3>
+          <h3>2.0 Claim layer (schema present, pipeline parked)</h3>
           <p>
             The 1.0 graph records structural topology: entities exist, sources reference them, concepts
             link to concepts. It does not record <em>what</em> a source asserts about an entity — only
-            that the entity appears in it. The 2.0 Claim layer adds propositional knowledge:
+            that the entity appears in it. The 2.0 Claim layer adds propositional knowledge, and its
+            tables have existed in the DDL since schema v2.2:
           </p>
-          <pre><code>-- 2.0 schema (future) --
-Source  --EVIDENCED_BY--  Claim  --ABOUT-->  Entity
-Claim  --CONTRADICTS-->  Claim</code></pre>
-          <p>Prompt design, Claim schema (granularity, confidence, claim type), and pipeline wiring are TBD. See <code>docs/reference/graph-nodes-edges-logic.md</code>.</p>
+          <pre><code>-- 2.0 claim layer (in DDL, production-empty) --
+Source  --EVIDENCES-->  Claim  --ABOUT-->  Entity
+Claim  --SUPERSEDES / CONTRADICTS / QUALIFIES-->  Claim</code></pre>
+          <p>
+            The machinery is built but <strong>parked, unwired</strong>:
+            <code>kdb_graph/ops/op_1_promote.py</code> (O1 hypothesis-promotion pipeline, #83/#84) and
+            <code>kdb_graph/core/belief_classifier.py</code> (stateless deterministic classifier) are
+            imported only by tests — no production path writes a Claim row, so production graphs always
+            report <code>claims: 0</code>. Wiring it is a deliberate future decision (tracked under #139's
+            use-case pick); the 2026-08-08 analytics gate on the maiden graph (737 cross-community
+            bridges, 562 interpretable communities) says the structural layer is healthy enough to
+            support it. See <code>docs/2026-08-07-graphdb-utilization-and-kuzu-landscape.md</code>.
+          </p>
         </section>
 
         <section id="pipeline">
           <h2>6. How GraphDB Is Populated</h2>
+          <p>
+            The conductor is <code>kdb-orchestrate</code>. Per source, in one continuous loop:
+          </p>
           <ol>
-            <li><code>kdb-scan</code> identifies changed raw sources.</li>
-            <li>The compiler produces structured JSON page intents.</li>
-            <li>Validation rejects malformed compile output before writes.</li>
-            <li>Reconciliation and canonicalization normalize slugs and links.</li>
-            <li>Python writes Markdown pages and state journals.</li>
-            <li>Stage 10 archives sidecars and syncs the canonical compile result into GraphDB.</li>
+            <li><strong>Scan</strong> — walk the pipeline root from <code>pipelines.json</code>, hash each file, diff against the manifest (no LLM).</li>
+            <li><strong>Pass-1 enrich</strong> — cheap LLM call classifies the source (signal/noise, domain, source_type, summary, entity keys) → embedded as YAML frontmatter. Noise sources stop here (frontmatter + manifest row only).</li>
+            <li><strong>Pass-1.5 semantic graph search</strong> (#123, <code>kdb_search</code>) — a selector LLM picks the existing entities relevant to this source from the graph-materialized domain space; a search envelope is archived per source.</li>
+            <li><strong>Pass-2 compile</strong> — the extraction LLM reads the source plus a graph-derived context snapshot (T1/T2/T3 tiers; T2 = the pass-1.5 selector's hits) and returns structured JSON page intents.</li>
+            <li><strong>Gauntlet</strong> — proposal-schema gate → normalization bridge (#119) → canonical-schema gate → canonicalize (alias ledger).</li>
+            <li><strong>Commit (β order)</strong> — page_writer writes the wiki pages → the graph intake runs <em>in the same per-source Kuzu transaction</em> (entity upserts, SUPPORTS replace, drain-as-you-go LINKS_TO with PendingLink upserts, per-source SUPPORTS-diff deprecation, domain re-derive, alias materialization) → manifest write LAST (the commit boundary).</li>
+            <li><strong>End of run</strong> — reconcile MOVED/DELETED (a deleted source's sole-supported pages are erased: node + file), a slim finalize (deprecation convergence + combined <code>compile_result.json</code>), then replay journals + sidecars archived under <code>state/runs/</code>.</li>
           </ol>
           <div class="callout">
-            Plain version of the adapter boundary: the compiler produces run data; the adapter
-            translates that run data; the GraphDB core writes Kuzu records. The compiler does not
-            open Kuzu and hand-write tables itself because that would mix producer-specific logic
-            with graph-storage logic.
+            Plain version of the adapter boundary: the live path writes through
+            <code>kdb_graph.intake.apply_compile_result</code> directly inside the orchestrator's commit
+            transaction (since #91 — no adapter involved). The <code>ObsidianRunsAdapter</code> exists for
+            the <em>replay</em> path: <code>graphdb-kdb rebuild</code> walks <code>state/runs/</code>
+            journals and the adapter translates each producer-shaped journal back into the same intake
+            calls. Producer logic never mixes with graph-storage logic in either direction.
           </div>
-          <pre><code>compile_result pages/outgoing_links
-  -> ObsidianRunsAdapter translates producer-shaped JSON
-  -> graph write engine creates Entity, LINKS_TO, SUPPORTS records</code></pre>
+          <pre><code>live:    page intents ──> intake.apply_compile_result (per-source txn) ──> Kuzu records
+rebuild: state/runs/&lt;run_id&gt;.json + sidecars ──> ObsidianRunsAdapter ──> same intake calls</code></pre>
         </section>
 
         <section id="capabilities">
@@ -922,14 +1019,18 @@ Claim  --CONTRADICTS-->  Claim</code></pre>
             <li>Traverse nearby concepts with directed or bidirectional neighbors. A neighbor is reached by following edges from a starting node.</li>
             <li>Find incoming references to a concept. An incoming reference is another entity with a <code>LINKS_TO</code> edge pointing into the current entity.</li>
             <li>Find shortest paths between entities. A shortest path is the minimum number of edge hops between two nodes, subject to direction and max-hop settings.</li>
-            <li>Extract all entities created from a source through <code>SUPPORTS</code> provenance edges.</li>
+            <li>Extract all entities created from a source through <code>SUPPORTS</code> provenance edges — and the reverse: which sources currently support an entity.</li>
             <li>Inspect a source-specific subgraph: the selected source's supported nodes plus links among those nodes.</li>
-            <li>Detect orphan candidates.</li>
+            <li>List <strong>deprecated</strong> entities (#130 lifecycle): pages the model dropped, which lose their last SUPPORTS — revivable on re-emit, erased only when their source is deleted. (The old "orphan candidate" class is gone; zombies are structurally impossible.)</li>
+            <li>Browse domains and their entity counts (<code>graphdb-kdb domains</code>).</li>
+            <li>Inspect the <code>PendingLink</code> ledger (#136): forward links waiting for their target slug to arrive — drained automatically when it does.</li>
             <li>Detect topic communities with Louvain clustering: groups of entities that link more densely to each other than to the rest of the graph.</li>
             <li>Detect structural holes between communities: sparse bridges where a missing concept or source might improve the knowledge structure.</li>
-            <li>Rebuild from run history.</li>
-            <li>Verify live graph against replayed graph.</li>
-            <li>Snapshot graph state into diffable JSONL backup.</li>
+            <li><strong>Semantic graph search</strong> (<code>kdb_search</code>, #123): two-stage LLM selection over the graph-materialized space — the pass-1.5 consumer already seeds every compile's T2 context; a CLI/MCP human query surface is a planned later track.</li>
+            <li>Serve the graph to LLM clients over MCP: <code>kdb-mcp-server</code> exposes 7 read-only tools (<code>get_entity</code>, <code>graph_neighborhood</code>, <code>find_path</code>, <code>sources_for_entity</code>, <code>entities_for_source</code>, <code>resolve_search_keys</code>, <code>get_body</code>), each reopening the graph read-only per call — full treatment in §10.</li>
+            <li>Rebuild from run history (journals are the source of truth; the graph is derivable).</li>
+            <li>Verify live graph against replayed graph (three layers: source-state preflight, canonicalization invariants, full replay diff).</li>
+            <li>Snapshot graph state into diffable JSONL backup (format v7, write-only).</li>
           </ul>
         </section>
 
@@ -939,25 +1040,38 @@ Claim  --CONTRADICTS-->  Claim</code></pre>
           <pre><code>cd ~/Droidoes/Obsidian-KDB
 pip install -e ".[dev]"</code></pre>
 
-          <p>Initialize the graph schema:</p>
+          <p>
+            The graph lives at <code>&lt;vault&gt;/KDB/graph</code> — <code>OBSIDIAN_VAULT_PATH</code>
+            (default <code>~/Obsidian</code>) drives both content and graph location;
+            <code>KDB_GRAPH_PATH</code> overrides the graph alone. Schema auto-creates on first
+            write-open, so explicit init is rarely needed:
+          </p>
           <pre><code>graphdb-kdb init</code></pre>
 
-          <p>Populate through the normal compile pipeline:</p>
-          <pre><code>kdb-compile</code></pre>
+          <p>Populate through the normal orchestrated pipeline (one pipeline per invocation):</p>
+          <pre><code>kdb-orchestrate --vault-root &lt;vault&gt; --pipeline &lt;id&gt;
+# standing production model: deepseek-v4-flash; override with --model / --selector-model</code></pre>
 
-          <p>Rebuild the graph from historical sidecars:</p>
-          <pre><code>graphdb-kdb rebuild --vault-root ~/Obsidian --yes</code></pre>
+          <p>Erase all derived state (wiki tree, graph, manifest, alias ledger) — wipe-only, always requires typed confirmation, journals archived to <code>state/pre-wipe-runs/</code> first:</p>
+          <pre><code>kdb-orchestrate --vault-root &lt;vault&gt; --wipe</code></pre>
 
-          <p>Verify the live graph:</p>
-          <pre><code>graphdb-kdb verify --vault-root ~/Obsidian</code></pre>
+          <p>Rebuild the graph from historical run journals:</p>
+          <pre><code>graphdb-kdb rebuild --vault-root &lt;vault&gt; --yes</code></pre>
+
+          <p>Verify the live graph (replay-to-temp structural equality):</p>
+          <pre><code>graphdb-kdb verify --vault-root &lt;vault&gt;</code></pre>
 
           <p>Snapshot the graph:</p>
-          <pre><code>graphdb-kdb snapshot --vault-root ~/Obsidian</code></pre>
+          <pre><code>graphdb-kdb snapshot --vault-root &lt;vault&gt;</code></pre>
+
+          <p>Serve the read-only MCP stdio server (7 tools) to an LLM client:</p>
+          <pre><code>kdb-mcp-server</code></pre>
 
           <div class="callout warning">
             <strong>Operational note:</strong> avoid running multiple <code>graphdb-kdb</code>
             commands in parallel against the same Kuzu file. Kuzu can reject concurrent opens
-            with a file-lock error.
+            with a file-lock error. (Read-only opens — stats, neighbors, the MCP server — are
+            safe to mix; keep writers single-file.)
           </div>
         </section>
 
@@ -966,14 +1080,14 @@ pip install -e ".[dev]"</code></pre>
           <p>Basic counts:</p>
           <pre><code>graphdb-kdb stats</code></pre>
 
-          <p>Bidirectional depth-1 neighborhood around <code>rationality</code>:</p>
-          <pre><code>graphdb-kdb neighbors rationality --direction both --depth 1</code></pre>
+          <p>Bidirectional depth-1 neighborhood around <code>bitcoin</code>:</p>
+          <pre><code>graphdb-kdb neighbors bitcoin --direction both --depth 1</code></pre>
 
-          <p>Incoming links to <code>corruption-in-governance</code>:</p>
-          <pre><code>graphdb-kdb incoming corruption-in-governance</code></pre>
+          <p>Incoming links to <code>value-investing</code>:</p>
+          <pre><code>graphdb-kdb incoming value-investing</code></pre>
 
           <p>Shortest directed path:</p>
-          <pre><code>graphdb-kdb path rationality value-investing --max-hops 5</code></pre>
+          <pre><code>graphdb-kdb path bitcoin gold-prices --max-hops 5</code></pre>
 
           <p>Top PageRank entities:</p>
           <pre><code>graphdb-kdb pagerank --top 10</code></pre>
@@ -984,19 +1098,98 @@ pip install -e ".[dev]"</code></pre>
           <p>Structural holes:</p>
           <pre><code>graphdb-kdb structural-holes</code></pre>
 
+          <p>Domains by entity count:</p>
+          <pre><code>graphdb-kdb domains</code></pre>
+
+          <p>Deprecated entities (#130 lifecycle):</p>
+          <pre><code>graphdb-kdb deprecated</code></pre>
+
           <p>Source-specific subgraph:</p>
-          <pre><code>graphdb-kdb subgraph-by-source "KDB/raw/Li_Lu_Munger_College_Dec_2024.md"</code></pre>
+          <pre><code>graphdb-kdb subgraph-by-source "Value Investing/Buffett Munger/Buffett_on_Stock_Ownership.md"</code></pre>
 
           <p>Ad-hoc Cypher:</p>
           <pre><code>graphdb-kdb cypher "MATCH (e:Entity) RETURN e.slug, e.page_type ORDER BY e.slug LIMIT 10"</code></pre>
+
+          <p>Open forward-links waiting for their targets (#136 ledger):</p>
+          <pre><code>graphdb-kdb cypher "MATCH (p:PendingLink) RETURN p.source_slug, p.target_slug LIMIT 10"</code></pre>
+        </section>
+
+        <section id="mcp">
+          <h2>10. MCP — the Graph as an Agent Tool Surface</h2>
+          <p>
+            The graph is not only a pipeline artifact and a CLI surface — it is a <strong>tool surface
+            for LLM clients</strong>. <code>kdb_mcp/</code> is a read-only Model Context Protocol (MCP)
+            server (FastMCP, stdio transport): the client spawns it as a child process, and from then on
+            the agent asks the knowledge base structural questions as native tool calls instead of
+            shelling out to <code>graphdb-kdb</code>:
+          </p>
+          <pre><code>kdb-mcp-server          # stdio; also: python -m kdb_mcp.server</code></pre>
+
+          <h3>Design rules</h3>
+          <ul>
+            <li><strong>Read-only by construction.</strong> Every tool opens the graph with
+              <code>read_only=True</code> (writes raise <code>GraphDBReadOnlyError</code>) and re-opens
+              per call, so a long-lived server always sees fresh state after a pipeline run. Read-only
+              opens are safe to mix with a running pipeline — the single-writer rule applies to writers,
+              not readers.</li>
+            <li><strong>Same paths as everything else.</strong> The graph resolves via
+              <code>KDB_GRAPH_PATH</code>, else <code>&lt;vault&gt;/KDB/graph</code>; page bodies resolve
+              via <code>OBSIDIAN_VAULT_PATH</code> — one env var points the server at the production
+              vault or the sandbox.</li>
+            <li><strong>Stable response shapes.</strong> Tools return Pydantic models from
+              <code>kdb_mcp/models.py</code> — public cards, not internal <code>kdb_graph</code>
+              dataclasses — so the wire contract survives internal refactors.</li>
+            <li><strong>Structure first, text on demand.</strong> Six tools answer graph questions; only
+              <code>get_body</code> reaches into the vault for page prose (frontmatter stripped). Clients
+              walk structure cheaply and pay for text only when they need it.</li>
+          </ul>
+
+          <h3>The 7 tools</h3>
+          <table>
+            <tr><th>Tool</th><th>Question it answers</th><th>Returns</th></tr>
+            <tr><td><code>get_entity(slug)</code></td><td>What is this node?</td><td>EntityCard — slug, title, page_type, status, canonical_id (non-null ⇒ alias)</td></tr>
+            <tr><td><code>graph_neighborhood(slug, direction, depth)</code></td><td>What sits near this concept?</td><td>Neighborhood — EntityCards within N LINKS_TO hops (out | in | both)</td></tr>
+            <tr><td><code>find_path(from_slug, to_slug, max_hops)</code></td><td>How do two ideas connect?</td><td>PathResult — shortest directed LINKS_TO path + hop count</td></tr>
+            <tr><td><code>sources_for_entity(slug)</code></td><td>Where did I learn this from?</td><td>EntityProvenance — SourceCards (source_id, source_type, domain, status) currently SUPPORTS-ing it</td></tr>
+            <tr><td><code>entities_for_source(source_id)</code></td><td>What did this source contribute?</td><td>SourceProvenance — EntityCards the source currently supports</td></tr>
+            <tr><td><code>resolve_search_keys(keys)</code></td><td>"Warren Buffett" → which slug?</td><td>SearchKeyResolution — alias-aware resolved map + unresolved list</td></tr>
+            <tr><td><code>get_body(slug, page_type)</code></td><td>Read the page itself</td><td>BodyResult — wiki page prose, frontmatter stripped; page_type ∈ summary | concept | article</td></tr>
+          </table>
+
+          <p>A typical agent session:
+            <code>resolve_search_keys(["margin of safety"])</code> →
+            <code>graph_neighborhood("margin-of-safety", depth=2)</code> →
+            <code>get_body(...)</code> on the two or three most promising hits — the same retrieval
+            pattern a human follows with the §9 commands, but expressed as tool calls the client can
+            chain autonomously.</p>
+
+          <h3>Client configuration (example)</h3>
+          <pre><code>{
+  "mcpServers": {
+    "kdb-graph": {
+      "command": "kdb-mcp-server",
+      "env": { "OBSIDIAN_VAULT_PATH": "&lt;path-to-vault&gt;" }
+    }
+  }
+}</code></pre>
+
+          <div class="callout">
+            <strong>Where this goes next:</strong> the semantic graph search (#123) currently serves only
+            the pipeline (pass-1.5); a human/agent query surface over MCP is its planned later track, and
+            the FTS work (#142) would land here as an additional tool — full-text over page bodies,
+            joined with the structural tools above.
+          </div>
         </section>
 
         <section id="use-cases">
-          <h2>10. Practical Use Cases</h2>
+          <h2>11. Practical Use Cases</h2>
           <div class="grid">
             <div class="card">
               <h3>Compile context</h3>
-              <p>Query relevant existing entities before compiling a new source instead of relying on static top-50 lists.</p>
+              <p><strong>Live since #123:</strong> pass-1.5 semantic graph search picks the relevant
+                existing entities for every source before Pass-2 — two-stage LLM selection over the
+                domain subtree, archived per source under <code>state/runs/&lt;run_id&gt;/search/</code>.
+                This card used to be the aspiration; it is now the pipeline.</p>
             </div>
             <div class="card">
               <h3>Knowledge-hole detection</h3>
@@ -1016,7 +1209,11 @@ pip install -e ".[dev]"</code></pre>
             </div>
             <div class="card">
               <h3>Belief revision</h3>
-              <p>Use the claim layer to track when new information reinforces, qualifies, contradicts, or supersedes prior beliefs.</p>
+              <p>Use the claim layer to track when new information reinforces, qualifies, contradicts, or supersedes prior beliefs.
+                <em>Parked:</em> the O1 promotion pipeline + belief classifier exist under
+                <code>kdb_graph/ops/</code> + <code>kdb_graph/core/</code> but are unwired — the maiden
+                graph's analytics gate (2026-08-08) says the structural layer is ready when we choose
+                to wire them (#139).</p>
             </div>
             <div class="card">
               <h3>Model evaluation</h3>
@@ -1030,38 +1227,46 @@ pip install -e ".[dev]"</code></pre>
         </section>
 
         <section id="current-state">
-          <h2>11. Current Live Graph Snapshot</h2>
-          <p class="kicker">Observed from <code>graphdb-kdb stats --json</code> during tutorial preparation.</p>
+          <h2>12. Live Graph Snapshot — the maiden full-vault run</h2>
+          <p class="kicker">Observed from <code>graphdb-kdb stats --json</code> on the production vault
+            graph, 2026-08-09, after the maiden full-vault ingestion (2026-08-07/08, ~1,150 sources).</p>
           <pre><code>{
-  "entities": 83,
-  "sources": 8,
-  "links_to": 126,
-  "supports": 80,
+  "entities": 6189,
+  "sources": 1150,
+  "links_to": 12826,
+  "supports": 7788,
   "alias_of": 0,
-  "domains": 0,
-  "belongs_to": 0,
+  "domains": 23,
+  "belongs_to": 6352,
   "claims": 0,
   "evidences": 0,
   "about": 0,
   "supersedes": 0,
   "contradicts": 0,
-  "qualifies": 0
+  "qualifies": 0,
+  "pending_links": 722
 }</code></pre>
 
-          <p>Top PageRank examples from the current graph:</p>
-          <pre><code>corruption-in-governance
-dynastic-cycle
-confucianism
-ruling-by-rights-versus-law
-rationality
-mungers-four-levels-of-rationality
-distressed-investing
-market-psychology</code></pre>
+          <p>Top PageRank entities from the maiden graph:</p>
+          <pre><code>bitcoin
+ollama
+llama-cpp
+bull-market
+gold-prices
+bear-market-rally
+porgera-gold-mine-reopening
+sp-500
+money-supply-growth
+margin-of-safety</code></pre>
 
           <div class="callout">
-            The current live graph has the core entity, source, link, and support layers populated.
-            The schema already supports aliases, domains, and claims; those layers are available as the
-            upstream compile/enrichment flow begins populating them.
+            Reading the numbers: 23 domains are populated and BELONGS_TO is fully derived; the claim
+            rows are all zero because the 2.0 tier is parked by decision, not by failure. The 722
+            <code>pending_links</code> are forward links whose target slug no source has emitted yet —
+            they drain automatically as the corpus grows. The bitcoin-at-#1 surprise is recorded and
+            explained in <code>docs/2026-08-07-graphdb-utilization-and-kuzu-landscape.md</code>
+            (argumentative centrality inherited from the gold cluster, not source count), along with
+            the full community / structural-holes analytics pass.
           </div>
         </section>
 
@@ -1073,7 +1278,10 @@ market-psychology</code></pre>
             surface. The value is not the graph visualization; the value is queryable structure,
             provenance, verification, and adaptive learning workflows on top of that structure.
           </p>
-          <p class="footer">Moved to <code>docs/reference/</code> 2026-06-09. Schema section reflects v1.0; Claim layer (§5 bottom) is 2.0/TBD.</p>
+          <p class="footer">Moved to <code>docs/reference/</code> 2026-06-09. True-up 2026-08-09:
+            schema v2.5 (<code>PendingLink</code> #136, <code>deprecated</code> lifecycle #130), MCP
+            server + <code>kdb_search</code> capabilities, orchestrated population flow, and the
+            maiden full-vault snapshot. Claim layer (§5 bottom) remains parked 2.0.</p>
         </section>
       </main>
     </div>
