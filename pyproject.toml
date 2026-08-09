@@ -18,6 +18,7 @@ dependencies = [
     "mcp>=1.12,<2",
     "networkx>=3.0",
     "python-louvain>=0.16",
+    "markdownify>=0.13",
 ]
 
 [project.optional-dependencies]
