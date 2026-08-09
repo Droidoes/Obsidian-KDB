@@ -183,10 +183,15 @@ nohup kdb-orchestrate --vault-root "/mnt/c/Users/fangq/Documents/Obsidian Vault"
   0.8 headroom; fat min 4.167 — never underestimates; zero `*_ESTIMATION_MISS`
   fired; per-model watch on new selector admissions); **P3a.5 CLOSED on
   production evidence** (sandbox full-chain redundant).
-- SHIPPED: spec v0.17 + blueprint v0.18 — normative-body sync to D-123-G
-  (docs-only; eight spec sites + the blueprint flow/enums/watched-classes/branch
-  table/test bullets/P2 carry-outs/title; verified against `kdb_search/`).
-  TASKS.md #123 row + close-out narrative updated. Residual flagged: spec §7.2
-  R2's body still asserts D7's static guarantee (superseded by D-123-A…F).
+- SHIPPED: spec v0.18 + blueprint v0.19 — two docs-only normative-body syncs:
+  D-123-G (spec §9/§10/§12 bodies + blueprint flow/enums/watched-classes/branch
+  table/test bullets/P2 carry-outs), then A…F/D11 markers-only (spec sizing
+  header, vault row, SD-4 cell, R2 body head-marker, §9 clauses, decision rows;
+  blueprint production-cap row, P1/B3 bullets, thin max_tokens 29,000→36,000,
+  B5 ceiling struck). No recomputation; verified against `kdb_search/`.
+  TASKS.md #123 row + close-out narrative updated; the previously flagged
+  residual (spec §7.2 R2 body asserting D7's static guarantee) is covered by
+  the R2 head-marker — rationale tails deliberately left as history (Joseph's
+  call, recorded in both changelogs).
 - Next per Joseph's sequencing: #139 graph analytics (communities / pagerank /
   structural-holes over the maiden graph); then #140 (pass-1.5 console stage).
