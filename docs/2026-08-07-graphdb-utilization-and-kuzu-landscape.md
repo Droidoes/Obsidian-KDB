@@ -139,3 +139,61 @@ version wheel decay, on-disk format obsolescence), not performance.
    hitting a Kuzu limitation or LadybugDB reaching clear maturity.
 4. Temporal dimension ("how did my sources' views evolve") — no machinery exists;
    scope only if it survives the first three.
+
+## Part 5 — Maiden-graph analytics, thread 2 CLOSED (2026-08-08)
+
+Run against `<vault>/KDB/graph` (6,189 entities / 1,150 sources / 12,826
+LINKS_TO / 7,788 SUPPORTS / 23 domains). Regenerate any time:
+`graphdb-kdb --graph-dir "<vault>/KDB/graph" pagerank|communities|structural-holes`.
+Louvain + bridges are computed over LINKS_TO only; a "bridge" is one
+cross-community LINKS_TO edge.
+
+**Gate verdict: structure is real — the belief layer is worth building.** The
+2026-07-07 sandbox was degenerate (2/486 cross-community edges, 0.4%); the
+maiden graph has **737/12,826 (5.7%) cross-community edges across 104 connected
+community pairs**, and the communities are human-interpretable. This is the
+condition Part 2's "recommended first step" asked for.
+
+**PageRank — the vault's link gravity is not its folder gravity.** Top: bitcoin,
+ollama, llama-cpp, bull-market, gold-prices, bear-market-rally, then the
+Porgera/PNG gold-mining cluster (porgera-gold-mine-reopening, reko-diq,
+barrick-gold, kumul-minerals, balochistan-mining). `warren-buffett` is not in
+the top 40 despite value-investing being the largest filed domain — the most
+*referenced* ideas are crypto/local-LLM/gold-macro, not the biggest shelf.
+Verified nuance (2026-08-09, Joseph's surprise): `bitcoin` has only **5
+supporting sources, all filed under `OneNote/Financial/Gold/`** — its #1 rank
+is inherited from 24 inbound links out of the dense gold/macro cluster
+(PageRank measures argumentative centrality, not source count).
+
+**Communities (562; top 14 hold ~2,800 entities):** value-investing concepts
+(434) · macro/rates/Fed (338) · single-stock theses, AbbVie-heavy (327) ·
+gold + bitcoin + anti-bubble skeptics (232) · mining economics (226) ·
+PNG/Porgera politics (212) · KDB-project meta (211) · COVID-era macro (201) ·
+China capital flows (175) · dev tooling (130) · telecom/5G + agentic ops (122) ·
+Balochistan/Reko Diq legal (108) · Antigravity IDE (93) · auto/EV + tax (92).
+They cross the OneNote folder taxonomy exactly as predicted — communities are
+how the vault *relates*, not how it was *filed*.
+
+**Structural holes — 35 community pairs are connected by exactly one edge**, and
+the lone bridge is nearly always a `summary-*` node: one article is the sole
+connection between two theme clusters. Examples: `summary-pabrai-interview-
+august-2025-3 → rule-of-72` is the ONLY edge between the two largest investing
+communities; `summary-bristol-myers-squibb → capital-allocation`;
+`summary-warren-buffett-university-of-nebraska → reputation-and-integrity`;
+the KDB-meta community touches the rest of the vault through exactly one edge
+each to `sqlite`, `interactive-visualization`, `too-hard-pile`. These lone-bridge
+summaries are the highest-leverage nodes in the graph — break one and two
+clusters disconnect; read one and two clusters inform each other.
+
+**Bridge-entity leaderboard (synthesis candidates):** `gold-prices` (38 cross
+edges / 5 communities), `interest-rates` (19/9), `sp-500` (17/3),
+`market-volatility` (16/9), `safe-haven-demand`, `central-bank-policy`,
+`barrick-gold`, `gold-market`. The densest seam is macro↔gold (81 edges),
+carried by `safe-haven-demand`, `central-bank-policy`, `fed-rate-hikes`,
+`bitcoin`, `gold-market`.
+
+**What this feeds:** threads 1 and 4 now decide on evidence, not projection —
+the structure is rich enough that contradiction mapping (parked 2.0 tier) and
+query-time traversal have something to walk on. The sparsest-hole list doubles
+as a reading-list-gap signal; the bridge leaderboard doubles as the seed set
+for any synthesis experiment.
