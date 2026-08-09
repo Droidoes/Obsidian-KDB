@@ -1,13 +1,10 @@
-"""pipeline_registry — per-vault ingestion-pipeline registry (Task #91).
+"""pipeline_registry — per-vault ingestion-pipeline registry (Tasks #91, #143).
 
-`<state_root>/pipelines.json` is hand-authored config defining which
-ingestion pipelines exist and how each is scoped. Unifies the v0.2
-blueprint's scan_roots.json + feeders.json. The orchestrator reads this at
-startup to present the pipeline-selection list and to scope the scan.
-
-Per-vault (roots are vault-specific), so state_root-parameterized like the
-orchestrator's scan setup. Does NOT replace the global load_scope_config() —
-per-pipeline scope migration is the orchestrator-integration step.
+#143: config moved from a single `<state_root>/pipelines.json` to one file
+per pipeline under `<state_root>/pipelines.d/<id>.json` — pipelines become
+plugins: a new feeder ships its own file, nothing else changes. The filename
+stem must equal the entry's `id`. The orchestrator reads this at startup to
+present the pipeline-selection list and to scope the scan.
 """
 from __future__ import annotations
 
@@ -58,21 +55,45 @@ def _parse_entry(raw: dict) -> Pipeline:
     )
 
 
-def load_pipelines(state_root: Path | str) -> list[Pipeline]:
-    """Load + validate <state_root>/pipelines.json. Validates: unique ids,
-    roots exist. Raises PipelineRegistryError on any failure."""
-    path = Path(state_root) / "pipelines.json"
-    if not path.exists():
-        raise PipelineRegistryError(f"pipeline registry not found at {path}")
+def _load_entry_file(path: Path) -> Pipeline:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        raise PipelineRegistryError(f"malformed pipelines.json at {path}: {e}") from e
-    if not isinstance(payload, dict) or not isinstance(payload.get("pipelines"), list):
         raise PipelineRegistryError(
-            f"pipelines.json at {path} must be {{'pipelines': [...]}}")
+            f"malformed pipeline file at {path}: {e}") from e
+    if not isinstance(payload, dict) or "pipelines" in payload:
+        raise PipelineRegistryError(
+            f"{path} must be a single pipeline object, "
+            f"not a {{'pipelines': [...]}} bundle")
+    entry = _parse_entry(payload)
+    if entry.id != path.stem:
+        raise PipelineRegistryError(
+            f"pipeline id {entry.id!r} does not match filename {path.name!r} "
+            f"(expected pipelines.d/{entry.id}.json)")
+    return entry
 
-    pipelines = [_parse_entry(e) for e in payload["pipelines"]]
+
+def load_pipelines(state_root: Path | str) -> list[Pipeline]:
+    """Load + validate `<state_root>/pipelines.d/*.json` (#143). Validates:
+    single-object files, filename==id, unique ids, roots exist.
+    Raises PipelineRegistryError on any failure."""
+    state_root = Path(state_root)
+    ddir = state_root / "pipelines.d"
+    legacy = state_root / "pipelines.json"
+    if ddir.is_dir() and legacy.exists():
+        raise PipelineRegistryError(
+            f"both {ddir} and legacy {legacy} exist — remove pipelines.json "
+            f"after migrating to pipelines.d/<id>.json (#143)")
+    if legacy.exists():
+        raise PipelineRegistryError(
+            f"legacy {legacy} found — migrate to one file per pipeline under "
+            f"{ddir}/<id>.json, then delete pipelines.json (#143)")
+    if not ddir.is_dir():
+        raise PipelineRegistryError(f"pipeline registry not found at {ddir}")
+
+    pipelines = [_load_entry_file(p) for p in sorted(ddir.glob("*.json"))]
+    if not pipelines:
+        raise PipelineRegistryError(f"no pipeline files under {ddir}")
 
     seen: set[str] = set()
     for p in pipelines:

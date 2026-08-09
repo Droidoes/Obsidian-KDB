@@ -31,11 +31,12 @@ def _vault(tmp_path: Path, source_ids: list[str]) -> Path:
 
 
 def _write_pipelines(state_root: Path, vault_root: Path) -> None:
-    state_root.mkdir(parents=True, exist_ok=True)
-    (state_root / "pipelines.json").write_text(json.dumps({"pipelines": [
+    ddir = state_root / "pipelines.d"           # #143: one file per pipeline
+    ddir.mkdir(parents=True, exist_ok=True)
+    (ddir / "vt.json").write_text(json.dumps(
         {"id": "vt", "type": "in-place", "root": str(vault_root),
          "excludes": ["KDB/"], "force_noise": ["noise/*"], "file_types": [".md"]}
-    ]}), encoding="utf-8")
+    ), encoding="utf-8")
 
 
 def _fake_pass1(**kwargs):

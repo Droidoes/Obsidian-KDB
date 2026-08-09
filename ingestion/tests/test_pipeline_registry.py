@@ -1,4 +1,4 @@
-"""Task #91 Plan 3 — pipeline registry tests."""
+"""Task #91 Plan 3 — pipeline registry tests; #143 pipelines.d layout."""
 import json
 from pathlib import Path
 
@@ -8,9 +8,12 @@ from ingestion.config import pipeline_registry as pr
 
 
 def _write(state_root: Path, pipelines: list[dict]) -> None:
-    state_root.mkdir(parents=True, exist_ok=True)
-    (state_root / "pipelines.json").write_text(
-        json.dumps({"pipelines": pipelines}), encoding="utf-8")
+    """One file per pipeline under pipelines.d/<id>.json (#143)."""
+    ddir = state_root / "pipelines.d"
+    ddir.mkdir(parents=True, exist_ok=True)
+    for entry in pipelines:
+        (ddir / f"{entry['id']}.json").write_text(
+            json.dumps(entry), encoding="utf-8")
 
 
 def _entry(tmp_path: Path, pid: str, sub: str = "src") -> dict:
@@ -20,7 +23,7 @@ def _entry(tmp_path: Path, pid: str, sub: str = "src") -> dict:
             "force_noise": ["Daily Notes/"]}
 
 
-# ---------- Task 1: load_pipelines ----------
+# ---------- load_pipelines (#143 pipelines.d) ----------
 
 def test_load_pipelines_parses_entry(tmp_path):
     state = tmp_path / "state"
@@ -35,10 +38,20 @@ def test_load_pipelines_parses_entry(tmp_path):
     assert p.excludes == [] and p.force_signal == [] and p.feeder is None
 
 
-def test_load_pipelines_rejects_duplicate_id(tmp_path):
+def test_load_pipelines_aggregates_sorted(tmp_path):
     state = tmp_path / "state"
-    _write(state, [_entry(tmp_path, "dup", "a"), _entry(tmp_path, "dup", "b")])
-    with pytest.raises(pr.PipelineRegistryError, match="duplicate"):
+    _write(state, [_entry(tmp_path, "vault-in-place", "a"),
+                   _entry(tmp_path, "gmail-substack", "b")])
+    assert [p.id for p in pr.load_pipelines(state)] == [
+        "gmail-substack", "vault-in-place"]     # sorted by filename
+
+
+def test_load_pipelines_rejects_filename_id_mismatch(tmp_path):
+    state = tmp_path / "state"
+    _write(state, [_entry(tmp_path, "real-id")])
+    bad = state / "pipelines.d" / "real-id.json"
+    bad.rename(state / "pipelines.d" / "other-name.json")
+    with pytest.raises(pr.PipelineRegistryError, match="does not match filename"):
         pr.load_pipelines(state)
 
 
@@ -49,12 +62,42 @@ def test_load_pipelines_rejects_missing_root(tmp_path):
         pr.load_pipelines(state)
 
 
-def test_load_pipelines_missing_file_raises(tmp_path):
+def test_load_pipelines_missing_dir_raises(tmp_path):
     with pytest.raises(pr.PipelineRegistryError, match="not found"):
         pr.load_pipelines(tmp_path / "state")
 
 
-# ---------- Task 2: list_pipelines + get_pipeline ----------
+def test_load_pipelines_legacy_only_raises_migration_error(tmp_path):
+    state = tmp_path / "state"
+    state.mkdir(parents=True)
+    (state / "pipelines.json").write_text(
+        json.dumps({"pipelines": [_entry(tmp_path, "vault-in-place")]}),
+        encoding="utf-8")
+    with pytest.raises(pr.PipelineRegistryError, match="migrate"):
+        pr.load_pipelines(state)
+
+
+def test_load_pipelines_both_layouts_fail_closed(tmp_path):
+    state = tmp_path / "state"
+    _write(state, [_entry(tmp_path, "vault-in-place")])
+    (state / "pipelines.json").write_text(
+        json.dumps({"pipelines": [_entry(tmp_path, "vault-in-place")]}),
+        encoding="utf-8")
+    with pytest.raises(pr.PipelineRegistryError, match="remove pipelines.json"):
+        pr.load_pipelines(state)
+
+
+def test_load_pipelines_rejects_bundle_shape(tmp_path):
+    state = tmp_path / "state"
+    ddir = state / "pipelines.d"
+    ddir.mkdir(parents=True)
+    (ddir / "x.json").write_text(
+        json.dumps({"pipelines": [_entry(tmp_path, "x")]}), encoding="utf-8")
+    with pytest.raises(pr.PipelineRegistryError, match="single pipeline object"):
+        pr.load_pipelines(state)
+
+
+# ---------- list_pipelines + get_pipeline ----------
 
 def test_list_pipelines_returns_ids(tmp_path):
     state = tmp_path / "state"

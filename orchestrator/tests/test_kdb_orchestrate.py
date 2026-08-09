@@ -480,11 +480,12 @@ def _fake_pass1(**kwargs):
 
 
 def _write_pipelines(state_root: Path, vault_root: Path) -> None:
-    state_root.mkdir(parents=True, exist_ok=True)
-    (state_root / "pipelines.json").write_text(json.dumps({"pipelines": [
+    ddir = state_root / "pipelines.d"           # #143: one file per pipeline
+    ddir.mkdir(parents=True, exist_ok=True)
+    (ddir / "vt.json").write_text(json.dumps(
         {"id": "vt", "type": "in-place", "root": str(vault_root),
          "excludes": ["KDB/"], "force_noise": ["noise/*"], "file_types": [".md"]}
-    ]}), encoding="utf-8")
+    ), encoding="utf-8")
 
 
 def _capture_pass_leaves(monkeypatch, captured: dict) -> None:
@@ -2051,7 +2052,7 @@ def test_wipe_removes_derived_state_and_archives_journals(tmp_path):
     assert not (state_root / "manifest.json").exists()
     assert not (state_root / "canonicalization" / "aliases.json").exists()
     # preserved
-    assert (state_root / "pipelines.json").exists()
+    assert (state_root / "pipelines.d" / "vt.json").exists()
     assert (state_root / "last_orchestrate.json").exists()
     # the wipe has no run to journal into — the ledger is the audit trail
     lines = (state_root / "wipes.jsonl").read_text(
