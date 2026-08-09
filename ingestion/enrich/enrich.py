@@ -61,9 +61,9 @@ def enrich_one(
     route: ModelRoute | None = None,
 ) -> EnrichResult:
     # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
-    # globs (from pipelines.json) so per-pipeline routing (e.g. Daily Notes/* →
-    # noise) takes effect; falling back to the global scope-config.yaml when a
-    # caller (legacy / standalone enrich) supplies neither.
+    # globs (from pipelines.d/<id>.json) so per-pipeline routing (e.g. Daily
+    # Notes/* → noise) takes effect; falling back to the global scope-config.yaml
+    # when a caller (legacy / standalone enrich) supplies neither.
     scope = load_scope_config()
     eff_force_signal = scope.force_signal if force_signal is None else force_signal
     eff_force_noise = scope.force_noise if force_noise is None else force_noise

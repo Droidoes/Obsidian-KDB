@@ -64,7 +64,7 @@ echo ""
 echo "  Wiping: graph  graph-view.html  wiki  state/runs"
 echo "          state/manifest.json  state/compile_result.json"
 echo "          state/last_orchestrate.json"
-echo "  Keeping: state/pipelines.json  KDB-Compiler-System-Prompt.md"
+echo "  Keeping: state/pipelines.d  KDB-Compiler-System-Prompt.md"
 echo ""
 (
     cd "$KDB_DIR"

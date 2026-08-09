@@ -592,7 +592,7 @@ def _wipe_derived_state(
     database (single file or directory, depending on the Kuzu layout),
     manifest.json, and the canonicalization alias ledger (whose
     entries reference graph entities that no longer exist post-wipe).
-    Preserved: pipelines.json (config, not derived) and per-run outputs
+    Preserved: pipelines.d/ (config, not derived) and per-run outputs
     (last_orchestrate.json / compile_result.json — overwritten by the run).
     Archived: a non-empty state/runs/ moves to state/pre-wipe-runs/<ts>/ so
     replay/verify over the post-wipe replay root matches live by
@@ -1291,8 +1291,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "End-to-end KDB conductor: scan one pipeline → per-source "
             "Pass-1 enrich → Pass-2 compile → GraphDB sync → finalize."))
-    p.add_argument("--pipeline", help="pipeline id from <state-root>/pipelines.json "
-                                      "(omit to list available pipelines)")
+    p.add_argument("--pipeline", help="pipeline id from <state-root>/pipelines.d/"
+                                      "<id>.json (omit to list available pipelines)")
     p.add_argument("--vault-root", required=True, help="absolute vault root path")
     p.add_argument("--state-root", help="defaults to <vault-root>/KDB/state")
     p.add_argument("--graph-path", help="defaults to <vault-root>/KDB/graph "
@@ -1314,7 +1314,7 @@ def _build_parser() -> argparse.ArgumentParser:
                         "manifest, alias ledger — and exit; never runs the "
                         "pipeline and needs no pipeline/model. state/runs/ "
                         "journals are archived to pre-wipe-runs/<ts>/ first; "
-                        "pipelines.json (config) is kept. Always prompts for "
+                        "pipelines.d/ (config) is kept. Always prompts for "
                         "typed confirmation — there is no bypass.")
     p.add_argument("--limit", type=int, default=None, metavar="N",
                    help="stop after N signal sources have been compiled; "
@@ -1379,7 +1379,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"/<wipe timestamp> (replay-clean archive).")
         else:
             print("    no state/runs/ journals to archive.")
-        print("    pipelines.json (config) is kept.")
+        print("    pipelines.d/ (config) is kept.")
         try:
             answer = input('Type "yes" to proceed: ')
         except EOFError:

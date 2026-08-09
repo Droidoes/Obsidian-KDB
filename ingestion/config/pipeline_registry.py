@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 
 class PipelineRegistryError(RuntimeError):
-    """Raised when pipelines.json is missing, malformed, or fails validation."""
+    """Raised when pipelines.d/ is missing, malformed, or fails validation."""
 
 
 @dataclass(frozen=True)
