@@ -88,6 +88,45 @@ def test_dedup_by_canonical_url_no_second_file_but_labels_move(tmp_path):
     assert sorted(m[0] for m in c.moved) == ["m1", "m2"]
 
 
+def test_dedup_journal_record_shape(tmp_path):
+    from ingestion.feeder.journal import load_journal
+    payloads = {"m1": _payload("m1", "https://a.substack.com/p/x"),
+                "m2": _payload("m2", "https://a.substack.com/p/x")}
+    _run(FakeClient(payloads), tmp_path)
+    records = load_journal(tmp_path / "state" / "feeders" / "gmail.jsonl")
+    assert [r["outcome"] for r in records] == ["converted", "dedup"]
+    dedup = records[1]
+    assert dedup["filename"] is None
+    assert dedup["dedup_of"] == records[0]["filename"]
+    assert dedup["source_url"] == "https://a.substack.com/p/x"
+
+
+def test_dedup_by_canonical_url_across_batches(tmp_path):
+    """Dedup state comes from the journal: a LATER run with a fresh client
+    still dedups against a prior run's converted record."""
+    first = {"m1": _payload("m1", "https://a.substack.com/p/x")}
+    s1 = _run(FakeClient(first), tmp_path)
+    assert s1.converted == 1
+    second = {"m2": _payload("m2", "https://a.substack.com/p/x",
+                             subject="Same Post Reposted")}
+    c2 = FakeClient(second)
+    s2 = _run(c2, tmp_path)
+    assert (s2.converted, s2.dedup, s2.skipped) == (0, 1, 0)
+    assert len(list((tmp_path / "raw").glob("*.md"))) == 1
+    assert c2.moved == [("m2", ["LP"], ["LR"])]  # dedup still leaves the queue
+
+
+def test_target_path_slug_collision_gets_message_id_suffix(tmp_path):
+    payloads = {"maaaaaaaa1": _payload("maaaaaaaa1", "https://a.substack.com/p/x",
+                                       subject="Same Title"),
+                "mbbbbbbbb2": _payload("mbbbbbbbb2", "https://a.substack.com/p/y",
+                                       subject="Same Title")}
+    s = _run(FakeClient(payloads), tmp_path)
+    assert s.converted == 2
+    names = sorted(p.name for p in (tmp_path / "raw").glob("*.md"))
+    assert names == ["same-title-mbbbbbbb.md", "same-title.md"]
+
+
 def test_per_message_failure_isolated_and_stays_unlabeled(tmp_path):
     payloads = {"m1": _payload("m1", "https://a.substack.com/p/x"),
                 "m2": _payload("m2", "https://a.substack.com/p/y")}
