@@ -160,7 +160,7 @@ In-place enhancer for the Human Side. Scans user-authored notes and injects `[[w
 
 ```
 common/          ← leaf: shared types, atomic I/O, call_model, paths, source_io
-ingestion/       ← Pass-1 pipeline: kdb_scan, enrich/ (signal/noise + entity_search_keys)
+ingestion/       ← Pass-1 pipeline: kdb_scan, enrich/ (signal/noise + entity_search_keys), feeder/ (Gmail/Substack #143: gmail_client gws seam / gmail_extract / journal / gmail flow)
 compiler/        ← Pass-2 pipeline: compiler, canonicalize, page_writer, context_loader, prompts/
 kdb_graph/       ← producer-agnostic graph layer: schema, intake, queries, adapters
 kdb_mcp/         ← read-only MCP stdio server over kdb_graph (#113 Phase 3a)
@@ -168,6 +168,8 @@ kdb_search/      ← consumer-neutral semantic graph search: projection, budget,
 orchestrator/    ← conductor: kdb_orchestrate, manifest_writer, event recorder
 tools/           ← operational tools: replay, cleanup, benchmark, viewer, diagnostics
 ```
+
+Pipeline registry: one file per pipeline under `<vault>/KDB/state/pipelines.d/<id>.json` (#143; legacy pipelines.json removed).
 
 **Dependency contract (B.3):**
 - `common` → nothing (true leaf; guard-tested)
