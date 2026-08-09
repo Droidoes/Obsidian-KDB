@@ -24,6 +24,16 @@ evidence that it outperforms (or complements) what the graph already does?
   relevance *without* an embedding index anywhere in the system.
 - **FTS** — ratified as CLI/MCP-surface infrastructure (spec §7.2, D4),
   explicitly *not* the relevance mechanism; currently unwired.
+  **Split 2026-08-09 (Joseph):** FTS is now tracked as two distinct things —
+  (a) the specific **Kuzu FTS extension** (BM25 over in-graph identity
+  strings such as `Entity.slug/title`; bodies are externalized, so
+  structurally out of its reach) — Joseph decided to implement it, surfaced
+  through the GraphDB MCP, filed as implementation task **#142**; and
+  (b) the general **FTS capability** goal — fuzzy lexical search over
+  *body content*, which Kuzu FTS cannot serve and which would need an
+  external derived index (the SQLite FTS5 candidate in
+  `docs/reference/kdb-storage-architecture.md`). Track (b) remains part of
+  this evaluation.
 
 So the honest baseline: we already have semantic retrieval (LLM-scored, with
 provenance) and structural retrieval (edges), but **no fuzzy "find things like
@@ -69,6 +79,8 @@ receipts — an embedding seed would be a *regression* in auditability there).
   *and* receipt quality. Small money, real evidence.
 - **FTS-first option** — D4's full-text track may be the 80% answer for the
   fuzzy front door before any embedding infrastructure exists at all.
+  (2026-08-09: the Kuzu-extension leg is now implementation task #142; the
+  body-content leg stays open here.)
 - **Maintenance** — embedding-model churn (re-embed on model change), index
   lifecycle vs. the graph's rebuildable-from-journals discipline; new
   pipelines (#139's prompt archive + Substack flow) make this a growing
@@ -82,6 +94,10 @@ receipts — an embedding seed would be a *regression* in auditability there).
 1. Enumerate the real query classes and their right engine (the deciding
    artifact).
 2. FTS-before-vectors: does the ratified D4 track close the gap cheaper?
+   Split 2026-08-09 — the Kuzu-extension leg moved to #142 (implementation,
+   MCP surface); what remains open here is the general body-content FTS
+   capability (external derived index) and whether either lexical track
+   closes the fuzzy-front-door gap before vectors are warranted.
 3. If a spike is warranted: minimal local-embedding experiment, three-way
    scored (vector / graph / hybrid) on real questions.
 4. Record the decision back here and in `docs/CODEBASE_OVERVIEW.md` if a
