@@ -119,3 +119,26 @@ def test_missing_label_raises(tmp_path):
             return {}
     with pytest.raises(GmailClientError, match="label not found"):
         _run(NoLabels({}), tmp_path)
+
+
+def test_cli_dry_run_smoke(tmp_path, capsys, monkeypatch):
+    from ingestion.feeder import gmail as feeder
+
+    class StubClient:
+        def resolve_label_ids(self):
+            return {DEFAULT_LABEL: "LR", "Substack_ai_processed": "LP"}
+
+        def list_message_ids(self, label, *, max_messages=None):
+            return []
+
+        def get_message(self, mid):
+            raise AssertionError("no messages expected")
+
+        def modify_labels(self, mid, *, add, remove):
+            raise AssertionError("no writes expected")
+
+    monkeypatch.setattr(feeder, "GmailClient", lambda: StubClient())
+    rc = feeder.main(["--dry-run", "--raw-dir", str(tmp_path / "raw"),
+                      "--journal", str(tmp_path / "j" / "gmail.jsonl")])
+    assert rc == 0
+    assert "converted 0" in capsys.readouterr().out

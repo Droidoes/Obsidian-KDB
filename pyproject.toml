@@ -26,6 +26,7 @@ dev = ["pytest>=7", "pytest-cov>=4"]
 
 [project.scripts]
 kdb-enrich            = "ingestion.enrich.kdb_enrich:main"
+kdb-gmail-fetch       = "ingestion.feeder.gmail:main"
 kdb-scan              = "ingestion.kdb_scan:main"
 kdb-validate          = "compiler.validate_compile_result:main"
 kdb-validate-response = "compiler.validate_source_response:main"
