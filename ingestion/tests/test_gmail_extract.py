@@ -69,6 +69,24 @@ STYLE_CHROME_HTML = (
     "<script>var player = 'video-player';</script></head>"
     "<body><p>Plain text article body.</p></body></html>")
 
+# (iv) real Substack emails wrap the whole post in nested LAYOUT tables —
+# subscribe widget, header block, article, and footer each sit in their own
+# <td>; markdownified verbatim the article lands inside one giant markdown-
+# table cell and Obsidian renders an empty grid (Task 9 live-gate finding)
+LAYOUT_TABLE_HTML = (
+    "<html><body><center><table><tr><td>"
+    '<table><tr><td><p>Forwarded this email? '
+    '<a href="https://substack.com/redirect/2/abc">Subscribe here</a>'
+    " for more</p></td></tr></table>"
+    '<table><tr><td><h1><a href="https://janedoe.substack.com/p/tabled-post">'
+    "The Tabled Thesis</a></h1><p>Jane Doe · Aug 9</p></td></tr></table>"
+    "<table><tr><td><p>" + LONG_LINE_SENTENCE * 40 + "</p>"
+    "<p>A second paragraph of the thesis, plainly laid out.</p>"
+    "</td></tr></table>"
+    '<table><tr><td><p><a href="https://janedoe.substack.com/unsubscribe">'
+    "Unsubscribe</a></p><p>123 Sender St, City legalese.</p></td></tr></table>"
+    "</td></tr></table></center></body></html>")
+
 
 def test_headers_of_lowercases_names():
     h = headers_of(_payload(ARTICLE_HTML))
@@ -179,6 +197,41 @@ def test_extract_plain_text_fallback():
     assert parts.source_url == "https://janedoe.substack.com/p/plain-post"
     assert "Body text" in parts.body_markdown
     assert "unsubscribe" not in parts.body_markdown.lower()
+
+
+def test_extract_detables_layout_tables():
+    """Real shape (iv): nested layout tables must not become markdown tables —
+    the article converts as ordinary paragraphs (Task 9 live-gate finding)."""
+    parts = extract(_payload(LAYOUT_TABLE_HTML))
+    body = parts.body_markdown
+    assert LONG_LINE_SENTENCE.strip() in body
+    assert "A second paragraph of the thesis" in body
+    assert "| ---" not in body
+    assert not any(ln.lstrip().startswith("|") for ln in body.splitlines())
+    assert "unsubscribe" not in body.lower()
+    assert "legalese" not in body
+
+
+def test_extract_canonical_url_custom_domain_publication():
+    """Real shape (v): custom-domain Substack publications (The Bulwark at
+    www.thebulwark.com) carry their post link on their own domain — the
+    any-host /p/ candidate catches it (Task 9 live-gate finding)."""
+    html = ('<div><h1><a href="https://www.newsletter-example.com/p/'
+            'custom-domain-post?utm_source=substack&utm_medium=email">'
+            "A Custom Domain Post</a></h1><p>Body text.</p>"
+            '<p><a href="https://www.newsletter-example.com/unsubscribe">'
+            "Unsubscribe</a></p></div>")
+    parts = extract(_payload(html, plain="A Custom Domain Post\n"))
+    assert parts.source_url == (
+        "https://www.newsletter-example.com/p/custom-domain-post")
+
+
+def test_extract_canonical_url_substack_beats_any_host():
+    """Candidate ordering: precise substack.com matches win over the generic
+    any-host /p/ fallback."""
+    html = ('<div><a href="https://www.other-example.com/p/cross-post">x</a>'
+            '<a href="https://janedoe.substack.com/p/own-post">y</a></div>')
+    assert canonical_url(html) == "https://janedoe.substack.com/p/own-post"
 
 
 def test_extract_walks_nested_multipart():

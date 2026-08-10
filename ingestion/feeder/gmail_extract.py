@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from bs4 import BeautifulSoup
 from markdownify import markdownify
 
 
@@ -31,6 +32,11 @@ _SUBSTACK_POST_RE = re.compile(
 _SUBSTACK_OPEN_RE = re.compile(
     r"https://open\.substack\.com/pub/[a-z0-9][a-z0-9-]*"
     r"/p/[a-z0-9][a-z0-9-]*", re.I)
+# Custom-domain Substack publications (e.g. www.thebulwark.com/p/...): any
+# dotted host carrying a /p/<slug> post link. Substack chrome URLs never match
+# (they live under /redirect/, /app-link/, /users/).
+_SUBSTACK_ANY_POST_RE = re.compile(
+    r"https://[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/p/[a-z0-9][a-z0-9-]*", re.I)
 # Template chrome: real Substack emails hide podcast/video CSS+JS markers in
 # <style>/<script> blocks — strip them before marker scans and markdownify.
 _CHROME_BLOCK_RE = re.compile(
@@ -44,10 +50,24 @@ _VIDEO_MARKERS = ("substack.com/api/video", "/api/v1/video",
 _PODCAST_MARKERS = ("substack podcast", "audio-player",
                     "listen on substack", "podcast.apple.com",
                     "open.spotify.com/episode")
+# Substack wraps posts in nested LAYOUT tables (header/subscribe widget/body/
+# footer each in their own cells); renamed to divs before markdownify.
+_LAYOUT_TABLE_TAGS = ("table", "thead", "tbody", "tfoot", "tr", "td", "th")
 
 
 def _dechrome(html: str) -> str:
     return _CHROME_BLOCK_RE.sub("", html)
+
+
+def _detable(html: str) -> str:
+    """Rename layout-table elements to divs. Left as-is, markdownify emits the
+    whole article inside one giant markdown-table cell, which Obsidian renders
+    as an unreadable empty grid (live-gate finding); as divs the body converts
+    to ordinary paragraphs."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all(_LAYOUT_TABLE_TAGS):
+        tag.name = "div"
+    return str(soup)
 
 
 def headers_of(payload: dict) -> dict[str, str]:
@@ -93,11 +113,16 @@ def canonical_url(html: str, plain: str = "") -> str | None:
     <pub>.substack.com/p/ link in the HTML; (b) old-format in the text/plain
     part (real newsletters carry the direct URL on the plain part's first
     line); (c) modern open.substack.com/pub/<pub>/p/<slug> redirect in the
-    HTML."""
+    HTML; (d) custom-domain publication (www.thebulwark.com/p/...) — any-host
+    /p/ link in the HTML, then the plain part. First-hit-wins assumes the
+    post's own link precedes cross-post/recommendation links in the body."""
     m = _SUBSTACK_POST_RE.search(html) or _SUBSTACK_POST_RE.search(plain)
     if m:
         return m.group(0)
     m = _SUBSTACK_OPEN_RE.search(html)
+    if m:
+        return m.group(0)
+    m = _SUBSTACK_ANY_POST_RE.search(html) or _SUBSTACK_ANY_POST_RE.search(plain)
     return m.group(0) if m else None
 
 
@@ -111,15 +136,15 @@ def content_kind(html: str) -> str:
 
 
 def html_to_markdown(html: str) -> str:
-    """De-chrome, markdownify, drop images (tracking pixels/button chrome),
-    cut footer chrome, collapse blank runs.
+    """De-chrome, de-table layout tables, markdownify, drop images (tracking
+    pixels/button chrome), cut footer chrome, collapse blank runs.
 
     Real Substack bodies markdownify to a handful of very long lines whose
     final line carries the footer links — so instead of dropping whole
     marker lines (which guts the article), truncate at the FIRST footer
     marker: keep everything before it, drop the tail and all following
     lines (footer chrome is terminal)."""
-    md = markdownify(_dechrome(html), strip=["img"])
+    md = markdownify(_detable(_dechrome(html)), strip=["img"])
     kept: list[str] = []
     for ln in md.splitlines():
         low = ln.lower()
