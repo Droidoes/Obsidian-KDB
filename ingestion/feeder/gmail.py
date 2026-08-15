@@ -1,9 +1,11 @@
 """gmail — the gmail-substack feeder: Gmail label -> KDB raw sources (#143).
 
-Flow (spec §3.2): list -> journal-skip -> get -> extract -> dedup -> write
--> label move -> journal append. Deterministic (D1): no LLM anywhere.
-Per-message failures are isolated: the message stays in the raw label and
-lands in the summary, the batch continues.
+Flow (spec §3.2): list -> journal-skip -> get -> extract -> promo-filter ->
+dedup -> write -> label move -> journal append. Deterministic (D1): no LLM
+anywhere. Promo/teaser messages (paywalled or truncated — see
+`promo_filter`) are journaled `promo` and label-moved WITHOUT writing an md
+source. Per-message failures are isolated: the message stays in the raw
+label and lands in the summary, the batch continues.
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ from common.paths import kdb_root, slugify
 from ingestion.feeder import journal as jrnl
 from ingestion.feeder.gmail_client import GmailClient, GmailClientError
 from ingestion.feeder.gmail_extract import extract
+from ingestion.feeder.promo_filter import promo_markers
 
 DEFAULT_LABEL = "Substack_raw"
 PROCESSED_LABEL = "Substack_ai_processed"
@@ -34,6 +37,7 @@ class FetchSummary:
     converted: int = 0
     skipped: int = 0
     dedup: int = 0
+    promo: int = 0
     failed: int = 0
     failures: list[tuple[str, str]] = field(default_factory=list)
 
@@ -82,14 +86,25 @@ def fetch(*, client: GmailClient, raw_dir: Path, journal_path: Path,
         try:
             parts = extract(client.get_message(mid))
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            dedup_of = (seen_urls.get(parts.source_url)
-                        if parts.source_url else None)
+            markers = promo_markers(parts.body_markdown)
+            # promo wins over dedup (more informative outcome) and never
+            # populates seen_urls — a teaser must not block a later clean
+            # email carrying the same canonical URL.
+            dedup_of = (None if markers else
+                        (seen_urls.get(parts.source_url)
+                         if parts.source_url else None))
             if dry_run:
-                tag = "dedup" if dedup_of else "convert"
+                tag = ("promo" if markers
+                       else "dedup" if dedup_of else "convert")
                 print(f"[dry-run] {tag}: {parts.title!r} "
                       f"<{parts.source_url}> ({parts.content_kind})", file=out)
                 continue
-            if dedup_of:
+            if markers:
+                record = {"message_id": mid, "source_url": parts.source_url,
+                          "filename": None, "markers": markers,
+                          "ingested_at": now, "outcome": "promo"}
+                summary.promo += 1
+            elif dedup_of:
                 record = {"message_id": mid, "source_url": parts.source_url,
                           "filename": None, "dedup_of": dedup_of,
                           "ingested_at": now, "outcome": "dedup"}
@@ -138,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"kdb-gmail-fetch: {e}", file=sys.stderr)
         return 2
     print(f"converted {summary.converted} · dedup {summary.dedup} · "
-          f"skipped {summary.skipped} · failed {summary.failed}")
+          f"promo {summary.promo} · skipped {summary.skipped} · "
+          f"failed {summary.failed}")
     return 0
 
 
