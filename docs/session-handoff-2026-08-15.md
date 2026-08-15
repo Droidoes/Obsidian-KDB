@@ -55,7 +55,9 @@ Joseph's request; graphDB is text-based. Folder holds 2,567 files (1,683 png / 8
   - Key tuning findings: `Upgrade to paid` alone over-matches (header funding pitch on full free articles — stays a watch item); Substack digest/recommendation emails were already caught by strong markers; 15 residuals (11 AI-news roundups + 4 "X recommended Y") left for pass-1.
 - **Pass-1 prompt broadened** (`ingestion/enrich/pass1_prompt.j2`): promotional teasers + truncated emails (paywalled or jump-linked) explicitly named `noise` — catches residuals the battery can't see. Ingestion suite 188 green.
 
-**Parked on Joseph (remaining):** (1) compile decision — `kdb-orchestrate --pipeline gmail-substack` over **2,659** articles (real LLM cost conversation now) vs leave raw for the equity-research repo; (2) feeder promo-skip patch — port the tuned battery into `kdb-gmail-fetch` so future promo mails are journaled `promo` + label-moved without writing md (agreed as its own task); (3) closure — Milestone Changelog + TASKS.md #143 → Closed on his word.
+- **Feeder promo-skip patch (landed 2026-08-15):** the tuned battery now lives in `ingestion/feeder/promo_filter.py` (`promo_markers()`), wired into `fetch()` between extract and dedup: promo messages journal `outcome: "promo"` (markers recorded, `filename: null`) and label-move to processed WITHOUT writing md. Promo wins over dedup; promo records never populate `seen_urls`, so a teaser can't block a later clean email with the same canonical URL. CLI summary gains `promo N`. 19 new tests; ingestion suite 207 green.
+
+**Parked on Joseph (remaining):** (1) compile decision — `kdb-orchestrate --pipeline gmail-substack` over **2,659** articles (real LLM cost conversation now) vs leave raw for the equity-research repo; (2) closure — Milestone Changelog + TASKS.md #143 → Closed on his word.
 
 ## 4. Carried forward from 2026-08-09 (still open, unchanged)
 
