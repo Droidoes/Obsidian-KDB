@@ -760,3 +760,44 @@ Reference implementations surveyed:
 
 Karpathy source:
 - X post: https://x.com/karpathy/status/2039805659525644595
+
+---
+
+## 13. kdb_fts — the parallel extraction system (#145, architecture ratified 2026-08-16)
+
+The repo hosts **two competing extraction architectures** over vault sources.
+The incumbent is the classify-and-connect knowledge pipeline (§5/§8: scan →
+pass-1 → pass-1.5 → pass-2 → graph). The challenger is **kdb_fts**: a
+rank-and-learn extraction ledger over the gmail-substack corpus (2,625 rankable
+articles + weekly inflow), built for **information, not knowledge** — it ranks
+investment ideas and authors and distills lessons, calibrated to Joseph's
+judgment; it never builds graph structure. The experiment is deliberate: a
+head-to-head against the GraphDB approach is planned, via versioned exports as
+the only coupling.
+
+**Decisions on record (Joseph, 2026-08-16; full record in `docs/TASKS.md` #145):**
+
+- **Family** (round-1 panel 5/5): extraction ledger — extract once into
+  structured SQLite records, rank deterministically many times; retrieval is a
+  read surface, never the core. Ranking objective = expected value of Joseph's
+  next research hour, never predicted return.
+- **Coverage**: gate-then-extract — a cheap relevance/topic gate over every
+  file, deep idea/lesson extraction only for relevant buckets; **per-topic
+  decay** (geopolitics decays faster than finance/econ/investment).
+- **Placement**: top-level `kdb_fts/` package in this repo (monorepo), imports
+  `common` **only** (AST boundary guard extended); a new mechanical
+  write-boundary guard pins its writes to its own state root.
+- **State**: `<vault>/KDB/fts/` (SQLite ledger + journals + exports) — parallel
+  to `<vault>/KDB/graph`; clean to delete if the experiment dies.
+- **Boundaries**: raw sources are read-only to both extraction systems (feeders
+  are the sole writers); kdb_fts never writes the wiki, manifest, graph, or
+  pipeline configs; no cross-imports either direction; versioned JSONL/CSV
+  exports are the only sanctioned coupling.
+- **NOT** part of 10x-Learning-Engine (equity research only; it may consume
+  kdb_fts exports later).
+
+Briefs: `docs/superpowers/specs/2026-08-16-gmail-info-search-rank-problem-statement.md`
+and `…-repo-placement-problem-statement.md` (both options-free, panel-reviewed).
+Extraction path stays open per the `graphdb-kdb-extraction-roadmap.md` Stage-0
+precedent: the `common/` infra/domain seam is documented; a split triggers only
+when a real second repo needs it.
