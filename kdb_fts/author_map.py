@@ -60,12 +60,16 @@ def resolve(conn: sqlite3.Connection, raw: str, mapping: dict[str, dict[str, str
 
 
 def unmapped(conn: sqlite3.Connection) -> list[str]:
-    """Raw strings with no yaml override (canonical == normalized raw)."""
+    """Raw strings with no yaml override (canonical == normalized raw).
+
+    Post-filtered in Python (not SQL): SQLite TRIM strips only leading/trailing
+    whitespace, while _normalize also collapses internal runs — a SQL-only
+    comparison would silently drop exactly the messy strings this list exists
+    to surface.
+    """
     rows = conn.execute(
-        """SELECT al.raw_string FROM author_aliases al
+        """SELECT al.raw_string, a.canonical_name FROM author_aliases al
            JOIN authors a ON a.author_id = al.author_id
-           WHERE a.canonical_name = al.raw_string
-              OR a.canonical_name = TRIM(al.raw_string)
            ORDER BY al.raw_string"""
     ).fetchall()
-    return [r[0] for r in rows]
+    return [raw for raw, canonical in rows if canonical == _normalize(raw)]

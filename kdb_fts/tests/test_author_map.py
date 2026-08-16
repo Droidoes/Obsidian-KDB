@@ -48,3 +48,9 @@ def test_unmapped_lists_only_non_overridden(tmp_path):
     author_map.resolve(conn, "Damodaran", {"Damodaran": {"canonical": "Aswath Damodaran"}})
     author_map.resolve(conn, "Mystery Writer", {})
     assert author_map.unmapped(conn) == ["Mystery Writer"]
+
+
+def test_unmapped_includes_internal_whitespace_variant(tmp_path):
+    conn = ledger.connect(tmp_path / "fts")
+    author_map.resolve(conn, "Aswath  Damodaran", {})  # double internal space
+    assert author_map.unmapped(conn) == ["Aswath  Damodaran"]
