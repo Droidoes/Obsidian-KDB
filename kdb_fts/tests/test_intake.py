@@ -54,3 +54,14 @@ def test_identity_survives_move(tmp_path, monkeypatch):
         "SELECT path FROM articles WHERE article_id = 'g-fixture-001'"
     ).fetchone()
     assert row[0].endswith("renamed-article.md")
+
+
+def test_run_intake_resolves_authors(tmp_path):
+    conn = ledger.connect(tmp_path / "fts")
+    intake.run_intake(conn, FIXTURE, "run1", state_root=tmp_path / "fts")
+    rows = conn.execute(
+        "SELECT DISTINCT a.canonical_name FROM articles ar "
+        "JOIN authors a ON a.author_id = ar.author_id ORDER BY 1"
+    ).fetchall()
+    names = [r[0] for r in rows]
+    assert "Damodaran" in names and "Substack" in names

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from common.source_io import parse_existing_frontmatter
 
-from kdb_fts import ledger
+from kdb_fts import author_map, ledger
 
 DIGEST_TITLE_RE = re.compile(r"\band\s+\d+\s+more\b", re.IGNORECASE)
 SHORT_WORD_FLOOR = 50
@@ -78,7 +78,7 @@ def scan_tree(raw_root: Path) -> list[ledger.ArticleRecord]:
                 content_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 title=title if isinstance(title, str) else None,
                 raw_author=fm.get("author") if isinstance(fm.get("author"), str) else None,
-                author_id=None,  # Task 5 wires the author map
+                author_id=None,  # resolved in run_intake via the author map
                 published_date=(
                     str(fm["published_date"]) if fm.get("published_date") else None
                 ),
@@ -92,10 +92,16 @@ def scan_tree(raw_root: Path) -> list[ledger.ArticleRecord]:
     return records
 
 
-def run_intake(conn, raw_root: Path, run_id: str) -> dict:
-    """Scan + upsert + prune + FTS rebuild. Idempotent on an unchanged tree."""
+def run_intake(conn, raw_root: Path, run_id: str, state_root: Path | None = None) -> dict:
+    """Scan + upsert + prune + FTS rebuild. Idempotent on an unchanged tree.
+
+    state_root: where author_map.yaml lives (None → no overrides applied).
+    """
     records = scan_tree(raw_root)
+    mapping = author_map.load_map(state_root) if state_root else {}
     for rec in records:
+        if rec.raw_author:
+            rec.author_id = author_map.resolve(conn, rec.raw_author, mapping)
         ledger.upsert_article(conn, rec, run_id)
     deleted = ledger.delete_absent(conn, {r.article_id for r in records})
     ledger.rebuild_fts(conn)
