@@ -56,6 +56,8 @@ def scan_tree(raw_root: Path) -> list[ledger.ArticleRecord]:
             continue
         text = path.read_text(encoding="utf-8")
         fm, body = parse_existing_frontmatter(text)
+        if not isinstance(fm, dict):
+            fm = {}  # valid-YAML-but-non-mapping frontmatter: treat as unparseable (→ bleed)
         is_bleed = text.lstrip().startswith("---") and not fm
         view = _repair_bleed(text) if is_bleed else body
         title = fm.get("title")
@@ -82,7 +84,7 @@ def scan_tree(raw_root: Path) -> list[ledger.ArticleRecord]:
                 published_date=(
                     str(fm["published_date"]) if fm.get("published_date") else None
                 ),
-                source_url=fm.get("source_url"),
+                source_url=fm.get("source_url") if isinstance(fm.get("source_url"), str) else None,
                 content_kind=kind if isinstance(kind, str) else None,
                 word_count=words,
                 cleanliness=cleanliness,

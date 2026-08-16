@@ -30,6 +30,31 @@ def test_bleed_file_gets_repaired_view():
     assert bleeds[0].paragraphs == ["Actual body text lives after the broken fence."]
 
 
+def test_nonmapping_frontmatter_is_bleed_not_crash(tmp_path):
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "scalar-fm.md").write_text(
+        "---\njust some text\n---\n\nBody survives the broken fence.\n"
+    )
+    recs = intake.scan_tree(tree)
+    assert len(recs) == 1
+    assert recs[0].cleanliness == "bleed"
+    assert recs[0].paragraphs == ["Body survives the broken fence."]
+
+
+def test_non_string_source_url_becomes_none(tmp_path):
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "list-url.md").write_text(
+        "---\ntitle: 'X'\nsource_url:\n  - a\n  - b\ngmail_message_id: g-list\n"
+        "content_kind: article\n---\n\n"
+        + "word " * 60
+    )
+    recs = intake.scan_tree(tree)
+    assert recs[0].source_url is None
+    assert recs[0].cleanliness == "ok"
+
+
 def test_run_intake_is_idempotent(tmp_path):
     conn = ledger.connect(tmp_path / "fts")
     stats1 = intake.run_intake(conn, FIXTURE, "run1")

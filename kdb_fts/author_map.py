@@ -21,20 +21,24 @@ def load_map(root: Path) -> dict[str, dict[str, str]]:
     path = Path(root) / "author_map.yaml"
     if not path.exists():
         return {}
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {str(k): dict(v) for k, v in data.items()}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(f"author_map.yaml is not valid YAML: {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"author_map.yaml must be a mapping of raw string → entry: {path}")
+    return {str(k): dict(v or {}) for k, v in data.items()}
 
 
 def resolve(conn: sqlite3.Connection, raw: str, mapping: dict[str, dict[str, str]]) -> int:
-    """Get-or-create canonical author + alias for one raw string."""
+    """Get-or-create canonical author + alias for one raw string.
+
+    yaml overrides win even after an alias exists (Joseph edits the map between
+    runs): the alias row is upserted to the override's canonical author.
+    """
     entry = mapping.get(raw, {})
     canonical = entry.get("canonical") or _normalize(raw)
     publication = entry.get("publication")
-    row = conn.execute(
-        "SELECT author_id FROM author_aliases WHERE raw_string = ?", (raw,)
-    ).fetchone()
-    if row:
-        return row[0]
     row = conn.execute(
         "SELECT author_id FROM authors WHERE canonical_name = ?", (canonical,)
     ).fetchone()
@@ -52,7 +56,8 @@ def resolve(conn: sqlite3.Connection, raw: str, mapping: dict[str, dict[str, str
         )
         author_id = cur.lastrowid
     conn.execute(
-        "INSERT INTO author_aliases(raw_string, author_id) VALUES (?,?)",
+        """INSERT INTO author_aliases(raw_string, author_id) VALUES (?,?)
+           ON CONFLICT(raw_string) DO UPDATE SET author_id = excluded.author_id""",
         (raw, author_id),
     )
     conn.commit()
