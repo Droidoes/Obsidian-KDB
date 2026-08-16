@@ -2,7 +2,7 @@
 
 **Reviewer:** Kimi (external pass-1.5 review)
 **Date:** 2026-08-02
-**Subject:** `docs/superpowers/specs/2026-07-28-task123-selector-prompt-prose-review.md`
+**Subject:** `docs/superpowers/archive/specs/2026-07-28-task123-selector-prompt-prose-review.md`
 (CLOSED 2026-08-02 — three prose findings absorbed into `_v2`, D5 calibration FIRED)
 
 Method note: the doc's load-bearing claims were checked against the code rather

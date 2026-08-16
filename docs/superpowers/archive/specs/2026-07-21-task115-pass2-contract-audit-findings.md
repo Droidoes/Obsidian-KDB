@@ -204,4 +204,4 @@ executable summary-slug rule, body↔page consistency.
   collision/reservation. Accepted temporary behavior: normalized
   derived-slug collisions keep today's last-writer-wins (wiki) /
   co-ownership (graph) until #116. v1.7 blueprint archived as #116's CANDIDATE design seed at
-  `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.
+  `docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.

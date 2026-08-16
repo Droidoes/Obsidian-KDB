@@ -20,8 +20,8 @@ A strategy session, not a build session. Opened as "continue #113 Phase 3b (the 
 - [ ] Open questions the brainstorm must answer: (1) selection — does mechanical exclusion actually filter daily/personal/admin notes? (2) at-scale robustness — 1,586 two-pass compiles is hours; resume-after-failure untested at scale (#94 dissolved but unproven big). (3) target data-dir — `~/Obsidian/KDB` is in a stale partial state (`raw=8/wiki=83/no graph`); reset/reconcile + confirm OneDrive-synced Kuzu location. (4) `#93 kdb-audit` cross-store gate is proposed-not-built.
 
 ## Housekeeping / open loops
-- [ ] **Commit gate (OPEN):** wrap-up artifacts uncommitted — **`docs/session-handoff-2026-07-07.md`** (this file) + **`docs/CODEBASE_OVERVIEW.md`** Milestone Changelog entry (added this wrap-up). Awaiting Joseph's call. (Daily note + memory live outside the repo.)
-- [ ] Pre-existing untracked, unrelated to this session: `docs/session-handoff-2026-06-10.md`, `docs/session-handoff-2026-06-11.md`, `docs/reference/Karpathy-llm-wiki.md` — Joseph's call whether to commit.
+- [ ] **Commit gate (OPEN):** wrap-up artifacts uncommitted — **`docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-07.md`** (this file) + **`docs/CODEBASE_OVERVIEW.md`** Milestone Changelog entry (added this wrap-up). Awaiting Joseph's call. (Daily note + memory live outside the repo.)
+- [ ] Pre-existing untracked, unrelated to this session: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-10.md`, `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-11.md`, `docs/reference/Karpathy-llm-wiki.md` — Joseph's call whether to commit.
 - [ ] **Version debt:** the MCP work (#112/#113) is untagged on `main` — tag it or fold into the ingestion release when the arc opens.
 - [ ] Dead-code candidate: `knowledge_graph/` (legacy single-file, packaging-excluded — deletable).
 
@@ -30,4 +30,4 @@ A strategy session, not a build session. Opened as "continue #113 Phase 3b (the 
 - **Ledger:** `docs/TASKS.md` — #113 closed; #83–#87 parked; ingestion arc = #88 (system) / #91 (orchestrate) / #93 (audit, proposed) / #94 (resume, dissolved-untested).
 - **North Star:** `docs/CODEBASE_OVERVIEW.md` (new 2026-07-07 changelog entry).
 - Memory: [[project_scale_hedge_pivot_ingest_vault]] · [[project_113_graph_access_mcp]] · [[project_ontology_purpose_kernel_question]] · [[feedback_data_before_principle]] · [[feedback_think_before_speaking_no_option_spray]].
-- Prior handoff: `docs/session-handoff-2026-06-11.md` (the #113 Phase 2/3a build session).
+- Prior handoff: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-11.md` (the #113 Phase 2/3a build session).

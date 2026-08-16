@@ -183,7 +183,7 @@ decisions.
 3. Implement + test
 4. ~~Fat `_v3` prose review~~ — **DONE 2026-08-02**: Joseph read `selector_fat_v3.txt` and approved it.
 5. Panel concurrence (codex + kimi) — brief at
-   `docs/superpowers/specs/2026-08-02-task123-v016-concurrence-brief.md`. Informational in posture: the
+   `docs/superpowers/archive/specs/2026-08-02-task123-v016-concurrence-brief.md`. Informational in posture: the
    ratified decisions are not re-opened, and the bar for reopening is new evidence, not restated caution.
 
 Landing as three commits (owner-confirmed 2026-08-02):

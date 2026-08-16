@@ -19,13 +19,13 @@ A warmup + catch-up + project-review session, not a build session. First session
 - [ ] **Unresolved fork I posed at EOD (Joseph hasn't answered):** start the ingestion brainstorm, or triage version debt first (MCP work untagged + the 3 pre-existing untracked files)? **My lean:** the ingestion brainstorm is the real work; the version debt is low-cost housekeeping that can ride along — don't let either block the other.
 
 ## Housekeeping / open loops
-- [ ] **Commit gate (clean for this session — nothing to commit):** no repo changes this session (the daily note lives in `~/Obsidian`, outside the repo; the Google Task is in Google). The 3 pre-existing untracked files remain Joseph's long-standing call: `docs/session-handoff-2026-06-10.md`, `docs/session-handoff-2026-06-11.md`, `docs/reference/Karpathy-llm-wiki.md`.
+- [ ] **Commit gate (clean for this session — nothing to commit):** no repo changes this session (the daily note lives in `~/Obsidian`, outside the repo; the Google Task is in Google). The 3 pre-existing untracked files remain Joseph's long-standing call: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-10.md`, `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-11.md`, `docs/reference/Karpathy-llm-wiki.md`.
 - [ ] **Version debt (carried):** #112/#113 MCP work untagged on `main`. Tag or fold into the ingestion release.
 - [ ] **Memory refreshed:** `project_release_versioning_scheme` — body + its `MEMORY.md` pointer brought current (was stale at "v0.5.4" / "NEXT=#111 baselines"); now v0.5.6 + the untagged-MCP debt + the 07-07 "0.6 = arc name, not a tag" reframe.
 
 ## Pointers
 - **Resume artifact:** `docs/2026-07-07-state-of-the-system.md` §7 (ingestion-readiness) — the launchpad for the brainstorm.
-- **Prior handoff:** `docs/session-handoff-2026-07-07.md` (the pivot session — richer; read if you need the full pivot context).
+- **Prior handoff:** `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-07.md` (the pivot session — richer; read if you need the full pivot context).
 - **Ledger:** `docs/TASKS.md` — #113 closed (Ph 3a); #83–#87 parked; ingestion arc = #88 / #91 / #93 (proposed) / #94 (dissolved-untested).
 - **North Star:** `docs/CODEBASE_OVERVIEW.md` (2026-07-07 changelog entry = the pivot).
 - Memory: [[project_scale_hedge_pivot_ingest_vault]] · [[project_113_graph_access_mcp]] · [[project_release_versioning_scheme]].

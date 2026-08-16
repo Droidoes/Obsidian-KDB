@@ -56,4 +56,4 @@ A design + documentation session (Kimi Code), continuing the 2026-07-17 "TOMORRO
 - **This session's design substance:** all in this handoff; the HTML doc has the workflow mechanics.
 - **Ledger:** `docs/TASKS.md` — #94 blocker (pre-production), #93 proposed (kdb-audit — Joseph lean: minimal pre/post-run check yes, full auditor no), #92 hypothesis (domain-scoped T2 — the big run's context_snapshots.jsonl is its evidence source).
 - **Runbook:** `docs/reference/benchmark-cohort-procedure.md`.
-- **Prior handoffs:** `docs/session-handoff-2026-07-17.md` (project review + v0.5.7), `docs/2026-07-07-state-of-the-system.md` §7 (ingestion readiness).
+- **Prior handoffs:** `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-17.md` (project review + v0.5.7), `docs/2026-07-07-state-of-the-system.md` §7 (ingestion readiness).

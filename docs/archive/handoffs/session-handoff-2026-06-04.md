@@ -46,7 +46,7 @@ Design-only session (no code). We resumed the benchmark-redesign brainstorm and 
 - [ ] **Formal `-design.md`** held until the KPI list lands.
 
 ## Housekeeping / open loops
-- [ ] **COMMIT GATE OPEN.** Uncommitted: today's directions-doc edits, `session-handoff-2026-06-03.md`, `2026-06-03` + `2026-06-04` daily notes, this handoff. Joseph did not request commit today.
+- [ ] **COMMIT GATE OPEN.** Uncommitted: today's directions-doc edits, `archive/handoffs/session-handoff-2026-06-03.md`, `2026-06-03` + `2026-06-04` daily notes, this handoff. Joseph did not request commit today.
 - [ ] **File a Task #N** in `docs/TASKS.md` for the benchmark redesign (still not assigned).
 - [ ] Carry-over (untouched today): **#108**, **#107**, the 0.6→1.0 ingestion arc.
 

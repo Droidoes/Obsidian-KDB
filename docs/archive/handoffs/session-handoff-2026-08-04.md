@@ -22,7 +22,7 @@ e6056a8  feat   P3a.3 — dispatching loader + KPI consumers on V2
 128631b  feat   P3a.4 — pass-1.5 SearchPassMeasurement + board columns
 ```
 
-Blueprint: `docs/superpowers/specs/2026-08-03-task123-p3a-blueprint-v0.3.md` (ratified). Every
+Blueprint: `docs/superpowers/archive/specs/2026-08-03-task123-p3a-blueprint-v0.3.md` (ratified). Every
 phase TDD-gated: tests written RED first, production to green, full suite at each phase boundary.
 
 ---
@@ -32,7 +32,7 @@ phase TDD-gated: tests written RED first, production to green, full suite at eac
 - **P3a.0 — foundations.** The 64K output-token envelope on the pool entries (down from 128K
   max_output — the P3a seat ruling), `entity_first_run_ids` on the graph (the key-outcome
   recency read), and the pre-run cost projection
-  (`docs/superpowers/specs/2026-08-03-task123-p3a-cost-projection.md`) that sized the arc at
+  (`docs/superpowers/archive/specs/2026-08-03-task123-p3a-cost-projection.md`) that sized the arc at
   $2–$40 vault-scale and settled the selector seat on **qwen3.7-flash**.
 - **P3a.1 — the adapter.** `compiler/search_adapter.py`: gates pre-Pass-1 sources, builds the
   `GraphSearchRequest` from Pass-1 frontmatter, runs `graph_search` with the run-level selector

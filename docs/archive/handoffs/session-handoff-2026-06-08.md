@@ -70,9 +70,9 @@ Evening session. No code merged — all changes uncommitted (see commit gate bel
 - `M tools/viewer/kdb_graph_viewer.py` — entity subtype split
 - `M tools/viewer/kdb_graph_viewer_template.html` — color scheme + getNodeColor()
 - `?? docs/reference/graph-nodes-edges-logic.md` — new stub
-- `?? docs/session-handoff-2026-06-07-night.md` — from last night (carried over)
+- `?? docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-07-night.md` — from last night (carried over)
 - `?? scripts/sandbox-run.sh` — new automation script
-- `?? docs/session-handoff-2026-06-08.md` — this file
+- `?? docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-08.md` — this file
 
 Also: `main` @ `853a66d`, still 1 ahead of origin from last night's #109 closure.
 

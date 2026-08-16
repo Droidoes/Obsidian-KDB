@@ -255,7 +255,7 @@ to shadow the module.
 
 ### P2.1a — codex review absorbed (verdict **REVISE**, 2026-07-27)
 
-Review: `docs/superpowers/specs/2026-07-27-task123-p2.1a-review-codex.md`. Prompt:
+Review: `docs/superpowers/archive/specs/2026-07-27-task123-p2.1a-review-codex.md`. Prompt:
 `…-p2.1a-selector-prompts-review-prompt.md`. He reproduced the byte arithmetic independently and
 confirmed the loader mechanics; four of five findings absorbed, the fifth filed.
 
@@ -330,7 +330,7 @@ argument to record, because it survives the objection ours does not.
 
 ### P2.1a — codex round 3 CLOSED (verdict **APPROVE-WITH-ITEMS**, 2026-07-27)
 
-Response: `docs/superpowers/specs/2026-07-27-task123-p2.1a-round3-codex.md`, against `37be899`.
+Response: `docs/superpowers/archive/specs/2026-07-27-task123-p2.1a-round3-codex.md`, against `37be899`.
 **R1–R4 all confirmed closed; P2.1f released; no further behavioral or prompt-prose change required.**
 
 He re-derived rather than took our word for it: 3 fields × 11 boundaries = **33/33** one-line cases
@@ -353,7 +353,7 @@ number — `kdb_search/tests` alone is 31.
 
 ### P2.1a — codex re-review absorbed (round 2, verdict **REVISE**, 2026-07-27)
 
-Review: `docs/superpowers/specs/2026-07-27-task123-p2.1a-rereview-codex.md`, against `568313c`. He
+Review: `docs/superpowers/archive/specs/2026-07-27-task123-p2.1a-rereview-codex.md`, against `568313c`. He
 ran the suite this round (the guardrail was loosened to permit `-p no:cacheprovider`), reproduced
 every figure, and confirmed F1/F3/F4 substantively resolved. Four new findings, all absorbed.
 
@@ -803,7 +803,7 @@ manifest untouched). P2.1f's pins are frozen, which was its precondition.
       times; the artifact is rewritten after every candidate so a late failure cannot lose an
       earlier paid measurement; the checksummed fixture is fingerprinted before and after and
       asserted unchanged.
-- [x] **Prose review published for the owner** — `docs/superpowers/specs/2026-07-28-task123-selector-prompt-prose-review.md`,
+- [x] **Prose review published for the owner** — `docs/superpowers/archive/specs/2026-07-28-task123-selector-prompt-prose-review.md`,
       both fully-rendered templates plus the one input decision calibration needs (the query slot).
 - [x] **Prose review LANDED 2026-08-02 (Joseph).** Three findings absorbed; both templates
       re-versioned `_v1` → `_v2`; `GOLDEN_DIGESTS` moved; blueprint **v0.15** raised

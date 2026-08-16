@@ -10,7 +10,7 @@
 
 | R13 item | Status | Evidence / assessment |
 |---|---|---|
-| F1 — durable v1.7 seed | Resolved in the working tree | The 556-line v1.7 blueprint is archived at `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`; its banner explicitly says candidate/not ratified and preserves WAL, the five-state table, lifecycle channel, and journal 2.3 as design-seed content. The #116 ledger now points directly to it. Include this currently-untracked file in the approved docs commit so the preservation becomes durable. |
+| F1 — durable v1.7 seed | Resolved in the working tree | The 556-line v1.7 blueprint is archived at `docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`; its banner explicitly says candidate/not ratified and preserves WAL, the five-state table, lifecycle channel, and journal 2.3 as design-seed content. The #116 ledger now points directly to it. Include this currently-untracked file in the approved docs commit so the preservation becomes durable. |
 | F2 — D-115-11 split | Resolved substantively | The spec addendum assigns deterministic per-source exactness to #115 and cross-source collision/reservation to #116; the validation matrix makes the same split, and the ledger cites it. Only version metadata remains stale (R14 F2 below). |
 | F3 — cohort collision guard | Resolved | Task 0.3 runs before Gate 0, groups by the fully normalized/truncated derived key, reports underivable stems, persists corpus/tool evidence, and repeats against the same corpus before Phase 5. |
 | F4 — zero-call failure route | Mostly resolved | Placement, inner/outer intended stages, no-call telemetry, retry behavior, and tests are pinned. One concrete propagation detail remains (R14 F1 below). |

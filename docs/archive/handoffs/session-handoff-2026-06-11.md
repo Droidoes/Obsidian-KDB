@@ -20,7 +20,7 @@ Long build session. Shipped **two** #113 phases end-to-end (design → plan → 
 - [ ] **Smaller carry-overs:** `graph_neighborhood` missing-center asymmetry (returns `[]` while `get_entity` raises — track for 3b); a `[project.scripts]` `kdb-mcp-server` entry point exists now; viewer-as-`get_body`-consumer not yet wired.
 
 ## Housekeeping / open loops
-- [ ] **Commit gate:** `main` is clean + pushed (`a9ffb12`). **This handoff doc + today's daily note are the only new uncommitted items**, plus the stale untracked `docs/session-handoff-2026-06-10.md` (yesterday's, never committed). Joseph's call whether to commit the handoffs.
+- [ ] **Commit gate:** `main` is clean + pushed (`a9ffb12`). **This handoff doc + today's daily note are the only new uncommitted items**, plus the stale untracked `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-10.md` (yesterday's, never committed). Joseph's call whether to commit the handoffs.
 - [ ] **Deletable stray:** `~/Droidoes/GraphDB-KDB` (2.3 file) is unreferenced by code — safe to `rm` (Joseph's call; it's outside the repo).
 - [ ] Parked: 2.0 Claim layer before/after 0.6→1.0 ingestion (lean: 1.0 first).
 

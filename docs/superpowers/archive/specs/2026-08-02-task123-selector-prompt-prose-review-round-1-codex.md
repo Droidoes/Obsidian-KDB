@@ -1,6 +1,6 @@
 # #123 — selector prompt prose review: round 1
 
-Review target: `docs/superpowers/specs/2026-07-28-task123-selector-prompt-prose-review.md`
+Review target: `docs/superpowers/archive/specs/2026-07-28-task123-selector-prompt-prose-review.md`
 
 Scope: Pass-1.5 selector prose and its consistency with the Task #123 contracts,
 implementation, calibration record, and canonical tracking artifacts.

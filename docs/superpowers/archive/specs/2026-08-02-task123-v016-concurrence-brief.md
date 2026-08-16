@@ -168,7 +168,7 @@ rather than prose rebuilt from memory.
 
 ## 7. Where to look
 
-- Amendment + rationale: `docs/superpowers/specs/2026-08-02-task123-simplification-amendment.md`
+- Amendment + rationale: `docs/superpowers/archive/specs/2026-08-02-task123-simplification-amendment.md`
 - Spec D-123-A…F: `docs/superpowers/specs/2026-07-25-task123-semantic-graph-search-spec.md` §0
 - Byte tables: blueprint §7.0 / §7.0a
 - The fill: `kdb_search/search.py` step 7; the allowance: `kdb_search/budget.py`

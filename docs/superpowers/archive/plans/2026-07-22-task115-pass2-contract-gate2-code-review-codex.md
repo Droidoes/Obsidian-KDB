@@ -102,7 +102,7 @@ Scope discipline otherwise holds: no Phase-3 confidence removal leaked into this
 - `git diff --check HEAD` — clean.
 - Full default suite — one failure only: `ingestion/tests/test_pass1_enrich.py::test_enrich_one_smoke`; `DEEPSEEK_API_KEY` is present, so pytest attempted the live API call, which failed with `Connection error` in the network-restricted review environment. This test and failure are unrelated to the Gate-2 diff.
 - Complete deterministic suite: `.venv/bin/python -m pytest -q -m 'not bench and not live'` — **green** (exit 0; one separately env-gated compiler live smoke skipped).
-- Focused source/diff inspection covered all 56 tracked files plus `compiler/summary_slug.py` and `compiler/tests/test_summary_slug.py`; `docs/session-handoff-2026-07-22-evening.md` was excluded as instructed.
+- Focused source/diff inspection covered all 56 tracked files plus `compiler/summary_slug.py` and `compiler/tests/test_summary_slug.py`; `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-22-evening.md` was excluded as instructed.
 
 ## Bottom line
 

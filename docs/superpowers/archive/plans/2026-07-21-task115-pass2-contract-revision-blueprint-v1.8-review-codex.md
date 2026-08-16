@@ -66,7 +66,7 @@ currently recorded for #116.
 
 **Required amendment:** archive the complete v1.7 text under a stable #116-owned
 path, for example
-`docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`,
+`docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`,
 then point the v1.8 header and #116 ledger row directly to it. Preserve its status as
 a **candidate design seed**, not a ratified #116 architecture. If the complete text
 cannot be recovered from editor/session history, correct the “preserved” claim and

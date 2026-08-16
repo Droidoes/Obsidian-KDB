@@ -40,7 +40,7 @@ non-goals until the follow-up (see §Follow-up).
   before the follow-up closes.
 - **v1.9** — Codex R13 absorbed (3 blockers + 2 clarifications; verdict
   "carve correct, do not re-expand"): v1.7 design seed ARCHIVED at
-  `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`
+  `docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`
   (candidate, not ratified); spec v1.6 carve addendum splits D-115-11
   (#115 per-source exactness / #116 cross-source reservation); cohort
   guard moved BEFORE the baseline and keyed on the fully normalized
@@ -408,7 +408,7 @@ NEW/CHANGED/MOVED/DELETED + signal/noise/reactivation transitions; per-run
 replay material + journal evolution; live==rebuild invariants; recovery
 architecture chosen against real-vault evidence. **Design seed
 (CANDIDATE, not ratified):** the v1.7 blueprint archived at
-`docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`
+`docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`
 — its write-ahead record + five-state recovery table are ONE candidate;
 immutable commit bundles or a simpler model remain live alternatives to be
 evaluated against R12's evidence list (normalized derived-slug collision

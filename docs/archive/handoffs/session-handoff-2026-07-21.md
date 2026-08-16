@@ -49,4 +49,4 @@ A benchmark-operations session (Kimi Code), executing WS1 from the 2026-07-20 st
 - Board: `benchmark/scores/leaderboard.md` (8 rows, mixed-generation — do not trust cross-generation comparisons)
 - qwen3.6-us retirement evidence: `common/models_dropped.json` (tail entry)
 - Provider levers: `docs/reference/model-provider-api-calls.md` (gemini `"low"` override + alibaba `-us` note)
-- Prior handoff: `docs/session-handoff-2026-07-20.md` (WS stack + locked vault-ingest decisions)
+- Prior handoff: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-20.md` (WS stack + locked vault-ingest decisions)

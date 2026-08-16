@@ -23,7 +23,7 @@ Long design+build session. Reframed `kdb_graph` from "a compiler package" into *
 ## Housekeeping / open loops
 - [ ] **Commit gate — wrap-up doc edits only** (everything else committed + pushed, `origin` even at `527d224`):
   - `M docs/CODEBASE_OVERVIEW.md` — Milestone Changelog entry for 2026-06-10
-  - `?? docs/session-handoff-2026-06-10.md` — this file
+  - `?? docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-10.md` — this file
   - (daily note `~/Obsidian/Daily Notes/2026-06-10.md` + memories are outside the repo)
 - [ ] Strategic fork still parked: 2.0 Claim layer before/after 0.6→1.0 ingestion (lean: 1.0 first). Worldview-Reconciliation Gate gives 2.0 a named consumer when it's time.
 

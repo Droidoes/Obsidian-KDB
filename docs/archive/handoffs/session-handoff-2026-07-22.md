@@ -31,7 +31,7 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 
 **Blueprint v1.10** (`docs/superpowers/archive/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md`) — 10 Codex rounds (R5–R14). Key structural content:
 - **The carve (R12 + Joseph):** reservation-preflight / MOVED-lifecycle / durability subsystem carved to **#116** after R8–R11 accreted a write-ahead transaction subsystem inside what was supposed to be a contract task. Accepted temporary behavior: normalized derived-slug collisions keep wiki-LWW/graph-co-ownership (existing behavior, NOT a regression).
-- **#116 filed** (ledger): source-lifecycle convergence + durability, paired with #94 as a WS3 pre-production gate. v1.7 archived verbatim as its CANDIDATE (not ratified) design seed: `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md` (R13 F1 caught that the untracked blueprint had been overwritten — reconstructed from session history).
+- **#116 filed** (ledger): source-lifecycle convergence + durability, paired with #94 as a WS3 pre-production gate. v1.7 archived verbatim as its CANDIDATE (not ratified) design seed: `docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md` (R13 F1 caught that the untracked blueprint had been overwritten — reconstructed from session history).
 - D-115-11 formally split: #115 keeps per-source exactness; #116 owns cross-source collision/reservation.
 - Phases: 0 (prompt to repo + stamps + **normalized-`expected_summary_slug` cohort guard BEFORE baseline**) → baseline cohort (Joseph fires) → 1–2 contract commit → 3 confidence deprecation → 4 parity/system tests → 5 comparison cohort. Every gate = Joseph's explicit approval.
 - Notable hardening preserved from review: post-canon EXACT summary re-validation (alias-bypass), body-authority links (losing-body links die — accepted), graph-owned wikilink derivation w/ legacy `outgoing_links` fallback INSIDE the contract commit (else Gate-2 HEAD erases edges on recompile), repair stage deleted whole, dual-mode aggregate validation, `ParsedSummary` best-effort migration, stem-failure route pinned (`FailureStage` gains `"validate"`).
@@ -59,6 +59,6 @@ An evening session (Kimi Code) with two arcs: (1) #114 closed out — Codex pre-
 
 - Blueprint: `docs/superpowers/archive/plans/2026-07-21-task115-pass2-contract-revision-blueprint.md` (v1.10) + 10 Codex review files beside it.
 - Spec: `docs/superpowers/archive/specs/2026-07-21-task115-pass2-contract-audit-findings.md` (v1.6) + 4 spec review files.
-- #116 seed: `docs/superpowers/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.
+- #116 seed: `docs/superpowers/archive/specs/2026-07-21-task116-source-lifecycle-design-seed-v1.7.md`.
 - Ledger: `docs/TASKS.md` rows #115 (v1.10 descoped), #116 (proposed).
-- Prior handoff: `docs/session-handoff-2026-07-21-pm.md` (WS1 closure + #114 execution detail).
+- Prior handoff: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-21-pm.md` (WS1 closure + #114 execution detail).

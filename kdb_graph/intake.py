@@ -12,7 +12,7 @@ in-txn — the Task #91 end-of-run batch passes (standalone `wire_links` /
 targets pend durably in the PendingLink ledger (schema v2.5) and drain when
 the target arrives; pages losing their last SUPPORTS flip `deprecated` via a
 per-source diff. Blueprint:
-docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
+docs/superpowers/archive/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
 """
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def apply_compile_result(
     symmetric on re-support). The Task #91 deferral flags
     (wire_links/detect_deprecations) and the standalone finalize passes are
     deleted — see blueprint
-    docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
+    docs/superpowers/archive/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md.
 
     Args:
         cr: compile_result dict (already validated by Stage 4).

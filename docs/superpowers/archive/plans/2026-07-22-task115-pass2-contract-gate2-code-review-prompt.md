@@ -21,7 +21,7 @@ Old Pass-2 response contract carried 6 fields the compiler could derive or the g
 ## How to see the diff
 - Tracked changes: `git diff` (against index; working tree == index is NOT guaranteed — review the working tree: `git diff HEAD` is safest).
 - New files (review them too; `git diff` won't show them): `compiler/summary_slug.py`, `compiler/tests/test_summary_slug.py`.
-- **Excluded from review:** `docs/session-handoff-2026-07-22-evening.md` (session bookkeeping, not part of the gate).
+- **Excluded from review:** `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-22-evening.md` (session bookkeeping, not part of the gate).
 
 ## Pressure-test these (the load-bearing decisions)
 1. **Contract cutover coherence.** `compiler/schemas/compiled_source_response.schema.json` (pages required; six fields gone), the rewritten `compiler/prompts/KDB-Compiler-System-Prompt.md`, and `compiler/prompt_builder.py` (RESPONSE_CONTRACT, no-arg 4-field `exemplar_response()`, `PASS2_PROMPT_VERSION = "3.0.0"`) — do these three agree **exactly** on field names, required-ness, and shapes? Any field the prompt still asks for but the schema forbids (or vice versa)?

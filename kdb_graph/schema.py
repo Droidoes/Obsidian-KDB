@@ -371,7 +371,7 @@ def _migrate_2_4_to_2_5(conn) -> None:
         on the next per-source commit.
       - `_SchemaMeta.schema_version` updated to "2.5".
 
-    Anchor: docs/superpowers/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md
+    Anchor: docs/superpowers/archive/specs/2026-08-06-task136-per-source-wiring-blueprint-v0.1.md
     §3.1 (#136 schema delta).
     """
     # 1. Create the PendingLink node table (index 4 of NODE_TABLE_DDL).

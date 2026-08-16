@@ -18,7 +18,7 @@
 **Status:** RATIFIED (Joseph, 2026-06-10) — design review 5/5 GO-WITH-FIXES folded; Named Gate chosen
 **Author:** Joseph + Claude (brainstorm session 2026-06-10)
 **Supersedes/extends:** `docs/reference/kdb-storage-architecture.md` ("The Gate"),
-session-handoff-2026-06-09.md (MCP server direction)
+archive/handoffs/session-handoff-2026-06-09.md (MCP server direction)
 **Reviews:** `docs/superpowers/specs/reviews/2026-06-10-graph-access/` (codex, deepseek-v4-pro, gemini, grok, qwen)
 **Killer-app challenge:** `docs/superpowers/archive/specs/2026-06-10-mcp-killer-app-challenge.md` + `reviews/2026-06-10-mcp-killer-app/` (6 proposals: codex, deepseek-v4-pro, gemini, gemini-pro, grok, qwen)
 

@@ -63,4 +63,4 @@ The **Li Lu lecture trips BOTH Chinese providers' mandatory compliance layers** 
 - Plan: `docs/superpowers/archive/plans/2026-07-21-task114-recovery-oriented-parse-stage.md` (v1.5)
 - Board: `benchmark/scores/leaderboard.md` (5 rows, current-gen)
 - GLM evidence: `common/models_dropped.json` (tail 2 entries: glm-5-turbo, grok-4.20)
-- Prior handoffs: `docs/session-handoff-2026-07-21.md` (overnight WS1 firing), `docs/session-handoff-2026-07-20.md` (WS stack + locked decisions)
+- Prior handoffs: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-21.md` (overnight WS1 firing), `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-20.md` (WS stack + locked decisions)

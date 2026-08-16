@@ -51,4 +51,4 @@ Session arc: Phase-5 comparison cohort fired and analyzed → the first-ever Pas
 - Ledger: `docs/TASKS.md` (#115 Closed; #119 Open with full scope).
 - North Star: `docs/CODEBASE_OVERVIEW.md` Milestone Changelog 2026-07-23 (closure+waiver) atop 2026-07-22 (#117, DESIGN LOCKED).
 - #119 regression fixtures (future): `GraphRAG for Adaptive KB - Gemini3.1.md`, `what's React and Tailwind.md`.
-- Prior handoffs: `docs/session-handoff-2026-07-22.md` (+ `-evening`).
+- Prior handoffs: `docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-22.md` (+ `-evening`).

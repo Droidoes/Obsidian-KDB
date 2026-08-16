@@ -19,7 +19,7 @@ Respondents: please give independent reasoning. Our positions are included as se
 4. **Second priority (chicken/egg)**: the build loop already consumes the missing search (pass-2 context loading issues ~10 key lookups per compiled source), so search must be built iteratively **while** the graph itself is being built.
 
 Evidence record: `docs/superpowers/evaluations/2026-07-25-task122-metric-baseline-cold-warm.md` (T2 delivered ≈ 0.14–0.25 pages/source cold, 3.5 warm; `never_resolved` 0.56–0.74).
-Grounding notes (current machinery, prior art): `docs/superpowers/specs/2026-07-25-task123-vision-discussion-notes.md`.
+Grounding notes (current machinery, prior art): `docs/superpowers/archive/specs/2026-07-25-task123-vision-discussion-notes.md`.
 
 ## 2. System facts the answers must respect
 

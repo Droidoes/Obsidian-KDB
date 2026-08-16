@@ -17,9 +17,9 @@ self-assessment; the disk inspection *sharpened* it (two new material facts: the
 swamp and the OneDrive mount).
 
 One correction to the 2026-07-07 handoff: the "open commit gate" is mostly closed —
-`docs/session-handoff-2026-07-07.md` and the `CODEBASE_OVERVIEW.md` changelog entry are
+`docs/archive/handoffs/archive/handoffs/session-handoff-2026-07-07.md` and the `CODEBASE_OVERVIEW.md` changelog entry are
 already committed (`cd5c9a2`). Only 3 untracked files remain:
-`docs/session-handoff-2026-06-10.md`, `docs/session-handoff-2026-06-11.md`,
+`docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-10.md`, `docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-11.md`,
 `docs/reference/Karpathy-llm-wiki.md`.
 
 ---

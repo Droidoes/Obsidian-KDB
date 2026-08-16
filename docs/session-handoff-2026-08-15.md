@@ -1,6 +1,6 @@
 # Session handoff — 2026-08-15
 
-> Richest single catch-up artifact for the next session. Top-level so `session-catchup` finds it by mtime. Supersedes `session-handoff-2026-08-09.md` — everything still-open from that handoff is carried forward here.
+> Richest single catch-up artifact for the next session. Top-level so `session-catchup` finds it by mtime. Supersedes `archive/handoffs/session-handoff-2026-08-09.md` — everything still-open from that handoff is carried forward here.
 
 ## TL;DR
 
@@ -74,7 +74,7 @@ Joseph's request; graphDB is text-based. Folder holds 2,567 files (1,683 png / 8
 
 - ~~11 unpushed #143 commits~~ **RESOLVED 2026-08-15**: they were already on origin/main (2 more docs commits landed on top); today added `a2194b6` (promo pre-filter), `ffea7b8` + `d005ca0` (feeder promo-skip).
 - **Docs sweep**: 8 stale `pipelines.json` mentions in `docs/reference/{graphdb-tutorial.html,test-run-procedure.md,orchestration-workflow.html}`.
-- Untracked `docs/Screenshot 2026-08-09 213341.png` — keep/delete is Joseph's call.
+- ~~Untracked `docs/Screenshot 2026-08-09 213341.png`~~ **RESOLVED 2026-08-15**: deleted in the docs/ cleanup (Joseph's call), along with the April screenshots, the Attention PDF, and the M2-discussion file; 23 handoffs → `archive/handoffs/`, 84 superseded specs → `superpowers/archive/specs/` (living docs kept: #123 spec+blueprint, #143 blueprint, #125 decision set); refs rewritten repo-wide (38 files).
 - Polish residuals: mrdeepvalue `next=` URL recovery; Task-9 minors list in the ledger.
 - **#139** open threads: first-use-case pick (Joseph leans agentic query-time traversal), Kuzu/LadybugDB dependency watch (pinned 0.11.3 still viable), temporal queries.
 - **#140** pass-1.5 console stage (small, self-contained). **#141** VectorDB-vs-GraphDB evaluation. **#142** Kuzu FTS → GraphDB MCP.

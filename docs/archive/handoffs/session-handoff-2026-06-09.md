@@ -72,7 +72,7 @@ design task: name the concrete consumer question for the GraphDB.
 
 **Uncommitted (awaiting Joseph's go) — this session's doc work:**
 - `?? docs/reference/kdb-storage-architecture.md` — new (three-store mental model)
-- `?? docs/session-handoff-2026-06-09.md` — this file
+- `?? docs/archive/handoffs/archive/handoffs/session-handoff-2026-06-09.md` — this file
 - `M  docs/reference/graph-nodes-edges-logic.md` — added "Node Properties — Stored vs. Externalized" section + Design Rule bullet
 - `M  docs/reference/graphdb-tutorial.html` — added "What a node stores (and what it doesn't)" subsection
 
