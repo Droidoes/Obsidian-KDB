@@ -59,9 +59,20 @@ Joseph's request; graphDB is text-based. Folder holds 2,567 files (1,683 png / 8
 
 **Parked on Joseph (remaining):** (1) compile decision — `kdb-orchestrate --pipeline gmail-substack` over **2,659** articles (real LLM cost conversation now) vs leave raw for the equity-research repo; (2) closure — Milestone Changelog + TASKS.md #143 → Closed on his word.
 
-## 4. Carried forward from 2026-08-09 (still open, unchanged)
+## 4. #144 graph-viewer precomputed layout (2026-08-15)
 
-- **11 unpushed #143 commits** (`ec27db0..65952e1`); everything through `b14c0e5` is pushed. Push not yet approved.
+- **Problem (Joseph's report):** opening `KDB/graph-view.html` hung the desktop 10-15 min — the template ran a live `d3.forceSimulation` (~300 ticks, collide×2) over 8,084 nodes / 26,790 edges on the browser main thread, recomputed on every open, never persisted.
+- **Fix (Option A, Joseph's pick):** layout precomputed at build time — `tools/viewer/graph_layout.py`, a deterministic numpy/scipy port of the template's exact five d3 forces, baked into the HTML as per-node x/y (+ `layout` provenance block). Template is now static-mode: no `d3.forceSimulation` (pinned by test), drag moves nodes directly, filters/resize never re-layout. d3 many-body's Barnes-Hut is replaced by exact cKDTree local summation (same physics within distanceMax 280).
+- **Debugging find of the day:** the first real-graph build exploded (positions ±1.4e13). Root cause: d3's link force is SEQUENTIAL (Gauss-Seidel — semi-implicit, stable for stiff coherent springs); a vectorized (Jacobi) update is unconditionally unstable past per-node stiffness ~5, which a coherent degree-18 cluster crosses. Fixed with a sequential link loop; real-graph layout converges in 60 s (x −519..2438, mean = canvas center). Star/clique synthetics do NOT reproduce (force-canceling geometries) — the regression pin is the real-graph range check.
+- **Verification:** 9 layout tests + 2 template/builder pins green; full suite green. Rebuilt artifact awaiting Joseph's instant-open confirmation.
+- **Follow-ups (both caught by Joseph on visual inspection):**
+  1. **Missing edges** — retiring the sim also retired d3.forceLink's side effect of mutating edge endpoint ID strings into node refs; first static build rendered nodes only. Template now resolves endpoints at load (`nodeById` map, pinned by test). Joseph confirmed: instant open, edges back.
+  2. **PendingLink ledger rendering as nodes** — 722 placeholders, same purple as Source (unknown type → `--color-fallback` ≈ source purple). Digging in: all 434 distinct pending targets exist **nowhere** in the vault (0/434 .md basenames) — not uncompiled notes, but link targets the compile LLM **invented**, violating system-prompt §5 ("Do not link to slugs that do not exist anywhere"). No code gate enforces that rule: canonicalize remaps wikilinks but never validates targets; #136 intake pends unresolved by design. Ledger exposure was never a decision — `export()` sweeps all node tables via `show_tables()`. **Fix:** `SKIP_NODE_TABLES` gains `PendingLink` (bookkeeping ≠ knowledge; ledger stays in DB for drain-as-you-go, never renders) + fallback color purple→magenta. Rebuilt artifact: **7,362 nodes / 26,790 edges**, PendingLink gone.
+- **Open thread (Joseph aware, unfiled):** canonicalize hard gate — strip wikilinks whose target is outside {response slugs ∪ EXISTING CONTEXT ∪ graph slugs}, count `links_stripped`; one-off repair of the 722 ledger rows + affected page bodies; 434 invented slugs double as a "wanted pages" signal if wanted.
+
+## 5. Carried forward from 2026-08-09 (still open, unchanged)
+
+- ~~11 unpushed #143 commits~~ **RESOLVED 2026-08-15**: they were already on origin/main (2 more docs commits landed on top); today added `a2194b6` (promo pre-filter), `ffea7b8` + `d005ca0` (feeder promo-skip).
 - **Docs sweep**: 8 stale `pipelines.json` mentions in `docs/reference/{graphdb-tutorial.html,test-run-procedure.md,orchestration-workflow.html}`.
 - Untracked `docs/Screenshot 2026-08-09 213341.png` — keep/delete is Joseph's call.
 - Polish residuals: mrdeepvalue `next=` URL recovery; Task-9 minors list in the ledger.
@@ -70,7 +81,6 @@ Joseph's request; graphDB is text-based. Folder holds 2,567 files (1,683 png / 8
 - Candidate next work: second feeder (model-prompt archive).
 
 ## 5. Environment notes
-
 - Vault = `/mnt/c/Users/fangq/Documents/Obsidian Vault` (`~/Obsidian` symlinks to it). gws auth healthy (12 scopes) this session.
 - Suite verification quirk (still true): pytest 9.0.3 here prints no summary count — verify via exit code + grep FAILED/ERROR = 0.
 - Gmail label IDs: Substack_raw = `Label_3904419182772066476`, Substack_ai_processed = `Label_5911144970725566262`.

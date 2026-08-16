@@ -40,6 +40,35 @@ def test_render_html_missing_token_raises(tmp_path):
         pass
 
 
+def test_built_html_carries_baked_positions():
+    """#144: builder output embeds precomputed x/y + layout provenance."""
+    from tools.viewer.graph_layout import force_layout
+    data = force_layout(_DATA, seed=42)
+    html = viewer.render_html(data)
+    assert '"x":' in html and '"y":' in html      # baked coordinates
+    assert '"layout":{' in html                   # provenance block
+
+
+def test_template_is_static_mode():
+    """#144: the live main-thread force simulation is retired from the
+    template — no restart/alphaTarget calls may come back."""
+    t = viewer.TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "d3.forceSimulation(" not in t
+    assert "simulation.alphaTarget" not in t
+    assert "simulation.alpha(" not in t
+
+
+def test_template_resolves_edge_endpoints_at_load():
+    """#144 follow-up: d3.forceLink used to mutate edge source/target ID
+    strings into node object references as a side effect of simulation
+    creation; with the sim retired, the template must resolve endpoints
+    itself or every edge path computes NaN and renders nothing."""
+    t = viewer.TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert "nodeById" in t
+    assert "e.source = nodeById[e.source]" in t
+    assert "e.target = nodeById[e.target]" in t
+
+
 def test_export_omits_deprecated_entity_confidence(tmp_path):
     """Codex Gate-3 F1 (#115 D-115-12): the official viewer exporter must
     NOT return Entity.confidence in props — even when the dead Kuzu column
@@ -59,6 +88,34 @@ def test_export_omits_deprecated_entity_confidence(tmp_path):
     assert entity_nodes, "seeded Entity must be exported"
     for n in entity_nodes:
         assert "confidence" not in n["props"]
+
+
+def test_export_skips_pending_link_bookkeeping(tmp_path):
+    """#144 follow-up: PendingLink is the #136 durable ledger for unresolved
+    link targets — bookkeeping, not knowledge. The viewer exports content
+    tables only; ledger rows must never render as nodes (they used to ride
+    the generic show_tables() sweep and collide with Source purple via the
+    fallback color)."""
+    from kdb_graph.graphdb import GraphDB
+
+    graph_dir = tmp_path / "graph"
+    with GraphDB(graph_dir) as g:
+        g.conn.execute(
+            "CREATE (e:Entity {slug: 'alpha', title: 'Alpha', "
+            "page_type: 'concept', status: 'active', "
+            "created_at: 't', updated_at: 't', first_run_id: 'r', "
+            "last_run_id: 'r'})"
+        )
+        g.conn.execute(
+            "CREATE (p:PendingLink {link_id: 'alpha|ghost', "
+            "source_slug: 'alpha', target_slug: 'ghost', "
+            "first_run_id: 'r', last_run_id: 'r', "
+            "created_at: 't', updated_at: 't'})"
+        )
+    data = viewer.export(str(graph_dir))
+    types = {n["type"] for n in data["nodes"]}
+    assert "Entity:concept" in types          # content still exported
+    assert "PendingLink" not in types         # bookkeeping never renders
 
 
 def test_bakeoff_export_omits_deprecated_entity_confidence(tmp_path):

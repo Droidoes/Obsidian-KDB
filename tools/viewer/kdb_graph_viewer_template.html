@@ -26,7 +26,7 @@
       --color-entity: hsl(199, 89%, 60%);
       --color-domain: hsl(43, 96%, 56%);
       --color-claim: hsl(0, 93%, 68%);
-      --color-fallback: hsl(265, 80%, 70%);
+      --color-fallback: hsl(330, 70%, 65%);
 
       --color-source-trans: rgba(149, 117, 205, 0.15);
       --color-entity-trans: rgba(56, 189, 248, 0.15);
@@ -890,7 +890,8 @@
     // D3 Cache elements
     let svg, zoomContainer, nodesGroup, edgesGroup, labelsGroup, d3Zoom;
     let nodeSelection, edgeSelection, labelSelection, edgeLabelsSelection;
-    let simulation = null;
+    let simulation = null;  // #144: retired — layout is precomputed at build
+                            // time; no d3.forceSimulation is ever created
     let width = 800, height = 600;
 
     // Node captions only appear once zoomed in past this scale. Watch the
@@ -927,7 +928,18 @@
     RAW_GRAPH.nodes.forEach(n => { nodeDegreeMap[n.id] = 0; });
     RAW_GRAPH.edges.forEach(e => {
       if (nodeDegreeMap[e.source] !== undefined) nodeDegreeMap[e.source]++;
-      if (nodeDegreeMap[e.target] !== undefined) nodeDegreeMap[e.target]++;
+      if (nodeDegreeMap[e.target] !== undefined) nodeDegreeMap[e.target]++;    });
+
+    // #144: edge endpoint resolution used to happen as a side effect of
+    // d3.forceLink (retired with the live simulation). Resolve once at load:
+    // edges carry node OBJECT references so ticked() can read .x/.y. Edges
+    // referencing a missing node become undefined and are filtered out by
+    // updateData's visibility check.
+    const nodeById = {};
+    RAW_GRAPH.nodes.forEach(n => { nodeById[n.id] = n; });
+    RAW_GRAPH.edges.forEach(e => {
+      if (typeof e.source !== 'object') e.source = nodeById[e.source];
+      if (typeof e.target !== 'object') e.target = nodeById[e.target];
     });
 
     // DOM selectors
@@ -1043,8 +1055,7 @@
         width = container.clientWidth;
         height = container.clientHeight;
         svg.attr("viewBox", [0, 0, width, height]);
-        simulation.force("center", d3.forceCenter(width / 2, height / 2));
-        simulation.alpha(0.3).restart();
+        // #144: positions are precomputed — resize never re-runs a layout
       });
 
       // Filter and Load Data
@@ -1115,25 +1126,8 @@
         return edgeTypeVisibility[e.type] && visibleNodesMap[sourceId] && visibleNodesMap[targetId];
       });
 
-      // Maintain prior node locations between dataset changes
-      const prevNodesMap = {};
-      if (simulation) {
-        simulation.nodes().forEach(n => {
-          prevNodesMap[n.id] = n;
-        });
-      }
-
-      activeNodes.forEach(n => {
-        if (prevNodesMap[n.id]) {
-          n.x = prevNodesMap[n.id].x;
-          n.y = prevNodesMap[n.id].y;
-          n.vx = prevNodesMap[n.id].vx;
-          n.vy = prevNodesMap[n.id].vy;
-        } else if (isInitial) {
-          n.x = width / 2 + (Math.random() - 0.5) * 150;
-          n.y = height / 2 + (Math.random() - 0.5) * 150;
-        }
-      });
+      // #144: positions are baked into RAW_GRAPH nodes at build time and the
+      // node objects persist across filter changes — nothing to re-seed here.
 
       render();
       updateLayoutForces();
@@ -1238,30 +1232,11 @@
     // 6. D3 TICK AND FORCE MANAGEMENT
     // ==========================================
     function updateLayoutForces() {
-      if (simulation) simulation.stop();
- 
-      // Clear any fixed coordinates (lets nodes float naturally in active layout forces)
-      activeNodes.forEach(n => {
-        n.fx = null;
-        n.fy = null;
-      });
- 
-      // Elastic force-directed simulation (the only layout mode)
-      simulation = d3.forceSimulation(activeNodes)
-        .force("link", d3.forceLink(activeEdges).id(d => d.id).distance(d => {
-          if (d.type === 'LINKS_TO') return 110;
-          if (d.type === 'SUPPORTS') return 70;
-          if (d.type === 'BELONGS_TO') return 130;
-          return 80;
-        }).strength(0.6))
-        .force("charge", d3.forceManyBody().strength(-240).distanceMax(280)) // capped local-only repulsion
-        .force("x", d3.forceX(width / 2).strength(0.08)) // centering X gravity
-        .force("y", d3.forceY(height / 2).strength(0.08)) // centering Y gravity
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("collide", d3.forceCollide().radius(d => getNodeRadius(d) + 14).iterations(2))
-        .on("tick", ticked);
-
-      simulation.alpha(1).restart();
+      // #144: static precomputed layout — no d3.forceSimulation is ever
+      // created (the live sim used to spend 10-15 min of main-thread
+      // physics on every open). Positions are baked at build time; this
+      // function is now just the single paint after (re)render.
+      ticked();
     }
 
     function ticked() {
@@ -1299,7 +1274,8 @@
     // 7. DRAG HANDLERS
     // ==========================================
     function dragstarted(event, d) {
-      if (!event.active && simulation) simulation.alphaTarget(0.3).restart();
+      // #144: static layout — drag moves the node's position directly,
+      // no simulation to wake.
       d.fx = d.x;
       d.fy = d.y;
     }
@@ -1307,10 +1283,12 @@
     function dragged(event, d) {
       d.fx = event.x;
       d.fy = event.y;
+      d.x = event.x;
+      d.y = event.y;
+      ticked();
     }
 
     function dragended(event, d) {
-      if (!event.active && simulation) simulation.alphaTarget(0);
       d.fx = null;
       d.fy = null;
     }

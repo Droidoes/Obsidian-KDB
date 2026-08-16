@@ -2,7 +2,10 @@
 """kdb_graph_viewer — export a Kuzu GraphDB to a self-contained interactive HTML.
 
 Single-command builder: reads the Kuzu graph directly, emits a library-neutral
-nodes/edges/summary structure, and injects it into the D3 viewer template
+nodes/edges/summary structure, precomputes the force layout in Python
+(`graph_layout.force_layout` — #144: positions baked at build time so the
+browser renders static instead of running a 10-15 min live d3 simulation on
+every open), and injects it into the D3 viewer template
 (`kdb_graph_viewer_template.html` — derived from the #97 bake-off winner, node
 scale 2/3). Self-loops (a node linking to itself) are skipped. Read-only:
 double-click the output HTML in a browser to explore the graph — no server.
@@ -24,8 +27,13 @@ from pathlib import Path
 # Allow running directly: add the repo root (tools/viewer/ -> parents[2]) to path.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from kdb_graph.graphdb import GraphDB  # noqa: E402
+from tools.viewer.graph_layout import force_layout  # noqa: E402
 
-SKIP_NODE_TABLES = {"_SchemaMeta"}
+# Bookkeeping tables are not knowledge: the viewer renders content only.
+# _SchemaMeta = schema version row; PendingLink = #136 durable ledger for
+# unresolved link targets (lives in the DB for drain-as-you-go; a ledger
+# row is not a page and must not render as a node).
+SKIP_NODE_TABLES = {"_SchemaMeta", "PendingLink"}
 # Field preference order when choosing a node's on-screen display name.
 DISPLAY_FIELDS = ("title", "name", "slug", "source_id", "id", "text", "label")
 TEMPLATE_PATH = Path(__file__).resolve().parent / "kdb_graph_viewer_template.html"
@@ -128,10 +136,14 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     out = args.out or (str(Path(args.graph_path).with_suffix("")) + "-view.html")
     data = export(args.graph_path)
+    data = force_layout(data)   # #144: bake positions at build time —
+                                # the browser renders static, no live sim
     Path(out).write_text(render_html(data), encoding="utf-8")
     s = data["summary"]
     print(f"Wrote {out}")
-    print(f"  {len(data['nodes'])} nodes, {len(data['edges'])} edges")
+    print(f"  {len(data['nodes'])} nodes, {len(data['edges'])} edges"
+          f" (layout: {data['layout']['ticks']} ticks, seed"
+          f" {data['layout']['seed']})")
     print(f"  node_types: {s['node_types']}")
     print(f"  edge_types: {s['edge_types']}")
     return 0
