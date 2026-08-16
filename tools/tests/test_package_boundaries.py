@@ -75,13 +75,9 @@ def test_nothing_imports_kdb_fts():
 
 # --- #145 P0: kdb_fts write-boundary guard (blueprint D3) -------------------
 
-_WRITE_MUTATORS = {
-    ("pathlib", "write_text"), ("pathlib", "write_bytes"),
-    ("pathlib", "unlink"), ("pathlib", "rename"),
-    ("os", "remove"), ("os", "replace"),
-}
 _SQLITE_ALLOWLIST = {"ledger.py"}
 _MKDIR_ALLOWLIST = {"ledger.py"}
+_MUTATOR_ALLOWLIST = {"ledger.py"}
 
 
 def _fts_write_violations(pkg_dir: pathlib.Path) -> list[str]:
@@ -99,10 +95,20 @@ def _fts_write_violations(pkg_dir: pathlib.Path) -> list[str]:
                     and isinstance(n.func.value, ast.Name) and n.func.value.id == "sqlite3"
                     and path.name not in _SQLITE_ALLOWLIST):
                 violations.append(f"{path.name}:{n.lineno} sqlite3.connect outside ledger.py")
-            # R2: open(...) with a write-ish mode
-            if isinstance(n.func, ast.Name) and n.func.id == "open":
+            # R2: open(...) — bare, Path.open, io.open — with a write-ish mode
+            if (isinstance(n.func, ast.Name) and n.func.id == "open") or (
+                isinstance(n.func, ast.Attribute) and n.func.attr == "open"
+            ):
                 mode = None
-                if len(n.args) >= 2 and isinstance(n.args[1], ast.Constant):
+                if isinstance(n.func, ast.Attribute):
+                    # Path.open(mode, ...) vs io.open(file, mode, ...) — take the
+                    # first positional arg that is a pure mode string.
+                    for arg in n.args[:2]:
+                        if (isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+                                and arg.value and all(c in "rwa+xbt" for c in arg.value)):
+                            mode = arg.value
+                            break
+                elif len(n.args) >= 2 and isinstance(n.args[1], ast.Constant):
                     mode = n.args[1].value
                 for kw in n.keywords:
                     if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
@@ -112,7 +118,8 @@ def _fts_write_violations(pkg_dir: pathlib.Path) -> list[str]:
             # R3: mutating Path/os/shutil calls outside the allowlists
             if isinstance(n.func, ast.Attribute):
                 attr = n.func.attr
-                if attr in {"write_text", "write_bytes", "unlink", "rename"}:
+                if (attr in {"write_text", "write_bytes", "unlink", "rename"}
+                        and path.name not in _MUTATOR_ALLOWLIST):
                     violations.append(f"{path.name}:{n.lineno} Path.{attr} — writes go through ledger/atomic_io")
                 if attr == "mkdir" and path.name not in _MKDIR_ALLOWLIST:
                     violations.append(f"{path.name}:{n.lineno} mkdir outside {_MKDIR_ALLOWLIST}")
@@ -135,4 +142,6 @@ def test_fts_write_boundary_catches_violation(tmp_path):
     shutil.copy(ROOT / "tools" / "tests" / "fixtures" / "write_boundary_violation.py",
                 pkg / "bad.py")
     found = _fts_write_violations(pkg)
-    assert any("open(mode='w'" in v for v in found), found
+    assert sum("open(mode='w'" in v for v in found) == 2, found     # R2 bare + Path.open
+    assert any("sqlite3.connect outside ledger.py" in v for v in found), found  # R1
+    assert any("Path.unlink" in v for v in found), found            # R3
