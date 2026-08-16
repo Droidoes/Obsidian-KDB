@@ -24,7 +24,7 @@ import pytest
 
 from common.model_pool import ModelSpec
 from common.model_route import ModelRoute
-from kdb_search.artifact import (
+from kdb_graph_search.artifact import (
     ModelStamp,
     PromptRef,
     RenderedMessages,
@@ -32,9 +32,9 @@ from kdb_search.artifact import (
     StageRecord,
     build_audit_payload,
 )
-from kdb_search.budget import preflight, reserved_output_tokens
-from kdb_search.constants import BUDGET_HEADROOM, MAX_ATTEMPTS_PER_STAGE
-from kdb_search.contracts import (
+from kdb_graph_search.budget import preflight, reserved_output_tokens
+from kdb_graph_search.constants import BUDGET_HEADROOM, MAX_ATTEMPTS_PER_STAGE
+from kdb_graph_search.contracts import (
     ALLOWED_STATUS_EXECUTION,
     PRODUCIBLE_IN_P1,
     TERMINAL_CONTRACTS,
@@ -43,8 +43,8 @@ from kdb_search.contracts import (
     is_ratified_pair,
     verify_result_contract,
 )
-from kdb_search.result import BudgetRecord, GraphSearchResult, SearchTelemetry
-from kdb_search.types import (
+from kdb_graph_search.result import BudgetRecord, GraphSearchResult, SearchTelemetry
+from kdb_graph_search.types import (
     GraphSnapshotRef,
     Hit,
     QueryPayload,

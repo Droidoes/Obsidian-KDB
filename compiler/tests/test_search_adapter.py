@@ -1,7 +1,7 @@
 """#123 P3a.1 — the pass-1.5 search adapter, UNWIRED (blueprint §4.1, §5.1, §9).
 
 The graph side is a real temp Kuzu graph (no mocks); the model side is the
-shared FakeSelector (`kdb_search/tests/fakes.py`) patched into the adapter's
+shared FakeSelector (`kdb_graph_search/tests/fakes.py`) patched into the adapter's
 module-level `call_model` seam; vault and state roots are real tmp dirs, so the
 envelope sink and the body_reader binding are exercised end to end.
 
@@ -31,9 +31,9 @@ from common.paths import slug_to_abspath
 from common.types import SourceFrontmatter
 from kdb_graph import queries
 from kdb_graph.graphdb import GraphDB
-from kdb_search import artifact
-from kdb_search.tests import fakes
-from kdb_search.types import InvalidGraphSearchRequest, SpaceEntity
+from kdb_graph_search import artifact
+from kdb_graph_search.tests import fakes
+from kdb_graph_search.types import InvalidGraphSearchRequest, SpaceEntity
 
 from compiler import search_adapter
 
@@ -646,7 +646,7 @@ def test_post_search_raise_still_sinks_full_receipt(graph, vault, state_root, mo
     receipt = _parse_envelope(state_root).receipt
     assert isinstance(receipt, artifact.SearchAuditPayload)
 
-    summary = getattr(exc_info.value, "_kdb_search_summary", None)
+    summary = getattr(exc_info.value, "_kdb_graph_search_summary", None)
     assert summary is not None
     assert summary.status == "completed"
 
@@ -664,7 +664,7 @@ def test_summary_build_raise_sinks_full_receipt_without_summary_attr(
 
     raw = _read_raw_envelope(state_root)
     assert raw["receipt_kind"] == "full"
-    assert getattr(exc_info.value, "_kdb_search_summary", None) is None
+    assert getattr(exc_info.value, "_kdb_graph_search_summary", None) is None
 
 
 # ---------------------------------------------------------------------------
@@ -763,5 +763,5 @@ def test_b9_envelope_carries_measurement_and_written_flag(
     assert raw["receipt_kind"] == "full"
     m = parse_search_measurement(raw["measurement"])
     assert m.status == "completed" and m.attempts == 2
-    assert getattr(exc_info.value, "_kdb_search_attempted", None) is True
-    assert getattr(exc_info.value, "_kdb_search_envelope_written", None) is True
+    assert getattr(exc_info.value, "_kdb_graph_search_attempted", None) is True
+    assert getattr(exc_info.value, "_kdb_graph_search_envelope_written", None) is True

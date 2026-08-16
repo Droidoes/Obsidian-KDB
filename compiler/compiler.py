@@ -49,7 +49,7 @@ from compiler.context_record import (
     write_context_record_v2,
 )
 from compiler.search_adapter import run_pass15
-from kdb_search.types import SearchConfigError
+from kdb_graph_search.types import SearchConfigError
 from compiler.summary_slug import expected_summary_slug
 from common.llm_telemetry import build_resp_stats, write_resp_stats
 from compiler.resp_summary import build_parsed_summary
@@ -723,13 +723,13 @@ def compile_source(
             # the completed outcome when the BUILDER raised, from the
             # exception channel when the ADAPTER raised after step 6.
             search = (outcome.search_summary if outcome is not None
-                      else getattr(e, "_kdb_search_summary", None))
+                      else getattr(e, "_kdb_graph_search_summary", None))
             # §4.7: the counting channel follows the same dual source.
             search_attempted = (outcome.search_ran if outcome is not None
-                                else bool(getattr(e, "_kdb_search_attempted", False)))
+                                else bool(getattr(e, "_kdb_graph_search_attempted", False)))
             search_envelope_written = (
                 outcome.envelope_written if outcome is not None
-                else bool(getattr(e, "_kdb_search_envelope_written", False)))
+                else bool(getattr(e, "_kdb_graph_search_envelope_written", False)))
             write_context_record_v2(
                 build_context_record_v2(
                     run_id=ctx.run_id, status="context_failed",

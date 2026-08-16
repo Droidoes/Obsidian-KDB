@@ -25,11 +25,11 @@ import pytest
 from common.model_pool import ModelRoute, ModelSpec
 from common.paths import PageType
 
-from kdb_search import replay, search
-from kdb_search.artifact import SPACE_MANIFEST_REF, TITLE_ONLY_MARKER
-from kdb_search.constants import M
-from kdb_search.tests import fakes
-from kdb_search.types import GraphSearchRequest, QueryPayload
+from kdb_graph_search import replay, search
+from kdb_graph_search.artifact import SPACE_MANIFEST_REF, TITLE_ONLY_MARKER
+from kdb_graph_search.constants import M
+from kdb_graph_search.tests import fakes
+from kdb_graph_search.types import GraphSearchRequest, QueryPayload
 
 SPACE = fakes.make_space(5)
 
@@ -352,7 +352,7 @@ def test_a_fat_record_with_non_map_evidence_is_REFUSED_not_widened(monkeypatch) 
     corrupt = replace(audit, stages=tuple(stages))
     # Re-hash so the corruption is not merely caught by the integrity check —
     # otherwise this would test that check a third time rather than the pool rule.
-    from kdb_search.artifact import compute_artifact_integrity_hash
+    from kdb_graph_search.artifact import compute_artifact_integrity_hash
 
     corrupt = replace(
         corrupt,
@@ -485,7 +485,7 @@ def test_a_title_only_entity_stays_title_only_in_the_recall(monkeypatch) -> None
 def test_the_119_context_snapshot_bullet_is_NOT_this_packages(monkeypatch) -> None:
     """Blueprint §9 carries "#119 byte-pinning survives (caller-supplied
     `context_snapshot=` writes no record)". That is `build_context_snapshot` on
-    the COMPILER side (§3.2) — `kdb_search` has no `context_snapshot` parameter
+    the COMPILER side (§3.2) — `kdb_graph_search` has no `context_snapshot` parameter
     anywhere, and adding one to satisfy a misfiled bullet would invent a coupling
     R2 forbids. Asserted as an absence so the bullet's disposition is recorded in
     code rather than only in the plan.

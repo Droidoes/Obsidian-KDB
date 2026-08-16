@@ -24,10 +24,10 @@ import pathlib
 import pytest
 
 from common.call_model import ModelResponse
-from kdb_search import budget
-from kdb_search.constants import M
-from kdb_search.prompts import render_thin_messages
-from kdb_search.stage import _model_request
+from kdb_graph_search import budget
+from kdb_graph_search.constants import M
+from kdb_graph_search.prompts import render_thin_messages
+from kdb_graph_search.stage import _model_request
 from tools import task123_calibrate_estimator as cal
 
 
@@ -154,7 +154,7 @@ def test_the_input_hash_separates_the_two_halves():
     """A byte moved from the end of the system block to the start of the user
     block is a *different request*. Concatenating without a separator would give
     it the same digest — the one collision this hash exists to prevent."""
-    from kdb_search.artifact import RenderedMessages
+    from kdb_graph_search.artifact import RenderedMessages
 
     a = cal._hash_input(RenderedMessages(system="ab", user="c"))
     b = cal._hash_input(RenderedMessages(system="a", user="bc"))

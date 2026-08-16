@@ -15,7 +15,7 @@ both status-invariant sides enforced. `parse_context_record` is the
 version-dispatching reader (#123 P3a.3, §4.5): it pre-reads
 `schema_version` and hands off to the matching parser; unknown versions
 reject. `compiler`'s allowed imports are
-{common, kdb_graph, kdb_search}, so this module is importable by the
+{common, kdb_graph, kdb_graph_search}, so this module is importable by the
 orchestrator + KPI layers without inversion (P2).
 
 V2 (#123 P3a, §4.5) carries the V1 skeleton minus the retiring vocabulary
@@ -47,7 +47,7 @@ from common.types import (
     SearchSummary,
     TierRecord,
 )
-from kdb_search.constants import MAX_RESULTS
+from kdb_graph_search.constants import MAX_RESULTS
 
 log = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ and the core abstains (zero calls) on an empty one.
 """
 import pytest
 
-from kdb_search.tests import fakes
+from kdb_graph_search.tests import fakes
 
 
 @pytest.fixture(autouse=True)

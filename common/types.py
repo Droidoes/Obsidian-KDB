@@ -420,8 +420,8 @@ class SearchHitSummary:
 @dataclass(frozen=True)
 class SearchBudgetRecord:
     """Persistence-facing mirror of one stage's budget decision (§4.5) —
-    kdb_search.result.BudgetRecord's fields, redeclared here because common
-    is a LEAF package and cannot import kdb_search."""
+    kdb_graph_search.result.BudgetRecord's fields, redeclared here because common
+    is a LEAF package and cannot import kdb_graph_search."""
     stage: str
     budget_estimate_tokens: int
     selector_window: int

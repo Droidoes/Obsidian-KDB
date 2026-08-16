@@ -2,7 +2,7 @@ import ast, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 INTERNAL = {"common", "ingestion", "compiler", "kdb_graph", "orchestrator", "tools", "kdb_mcp",
-            "kdb_search",
+            "kdb_graph_search",
             # removed package roots — kept here so a future stale import of one
             # surfaces as an illegal edge rather than being silently ignored:
             "kdb_compiler", "graphdb_kdb", "kdb_benchmark"}
@@ -39,11 +39,11 @@ ALLOWED = {
     # #123 B1: the search core is consumer-neutral — it imports `common` only. The caller
     # materializes the space, so no kdb_graph edge; the P5b MCP edge waits for a named
     # materialization owner.
-    "kdb_search":   {"common"},
+    "kdb_graph_search":   {"common"},
     "ingestion":    {"common"},
-    "compiler":     {"common", "kdb_graph", "kdb_search"},  # #123 P3a: search_adapter
+    "compiler":     {"common", "kdb_graph", "kdb_graph_search"},  # #123 P3a: search_adapter
     "orchestrator": {"common", "kdb_graph", "ingestion", "compiler"},  # #133: cleanup edge removed
-    "tools":        {"common", "kdb_graph", "ingestion", "compiler", "kdb_search"},  # #123 P4 harness
+    "tools":        {"common", "kdb_graph", "ingestion", "compiler", "kdb_graph_search"},  # #123 P4 harness
     "kdb_mcp":      {"common", "kdb_graph"},
 }
 

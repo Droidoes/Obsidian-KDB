@@ -30,30 +30,30 @@ from pathlib import Path
 
 import pytest
 
-from kdb_search import prompts
-from kdb_search.artifact import RenderedMessages, sha256_digest
+from kdb_graph_search import prompts
+from kdb_graph_search.artifact import RenderedMessages, sha256_digest
 from common.model_pool import resolve_models_json
-from kdb_search.budget import fat_input_byte_allowance
-from kdb_search.constants import (
+from kdb_graph_search.budget import fat_input_byte_allowance
+from kdb_graph_search.constants import (
     M,
     MAX_RESULTS,
     QUERY_BLOCK_CEILING_BYTES,
     SYSTEM_TEMPLATE_BUDGET_BYTES,
     expression_labels,
 )
-from kdb_search.prompts import (
+from kdb_graph_search.prompts import (
     PromptTemplateError,
     load_template,
     render_fat_messages,
     render_thin_messages,
     template_overhead_bytes,
 )
-from kdb_search.response import validate_response, validate_thin_retention
-from kdb_search.types import SearchConfigError, SpaceEntity
+from kdb_graph_search.response import validate_response, validate_thin_retention
+from kdb_graph_search.types import SearchConfigError, SpaceEntity
 
 STAGES = ("thin", "fat")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PROMPT_DIR = _REPO_ROOT / "kdb_search" / "prompts"
+_PROMPT_DIR = _REPO_ROOT / "kdb_graph_search" / "prompts"
 
 E_SENTINEL = "<<<evidence-goes-here>>>"
 Q_SENTINEL = "<<<query-goes-here>>>"
@@ -95,7 +95,7 @@ def _schema_example(system: str) -> str:
 
 
 def test_the_prompts_MODULE_wins_over_the_prompts_DATA_directory():
-    """`kdb_search/prompts.py` and `kdb_search/prompts/` share a name, so the
+    """`kdb_graph_search/prompts.py` and `kdb_graph_search/prompts/` share a name, so the
     import system's precedence is load-bearing: a regular module beats a
     namespace-package directory, and adding `prompts/__init__.py` would shadow
     the module and break every import in this file at once."""
@@ -144,7 +144,7 @@ def test_the_two_stages_hash_differently():
 
 @pytest.mark.parametrize("stage", STAGES)
 def test_repo_path_is_the_literal_package_path(stage):
-    assert load_template(stage).ref.repo_path == f"kdb_search/prompts/{prompts._FILENAMES[stage]}"
+    assert load_template(stage).ref.repo_path == f"kdb_graph_search/prompts/{prompts._FILENAMES[stage]}"
 
 
 @pytest.mark.parametrize("stage", STAGES)
@@ -530,8 +530,8 @@ def test_package_data_declares_every_non_python_file_the_loader_opens():
     and must cover both templates. This is the half that catches a new prompt
     file added without a packaging update."""
     config = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    globs = config["tool"]["setuptools"]["package-data"]["kdb_search"]
-    package_dir = _REPO_ROOT / "kdb_search"
+    globs = config["tool"]["setuptools"]["package-data"]["kdb_graph_search"]
+    package_dir = _REPO_ROOT / "kdb_graph_search"
     declared = {p.relative_to(package_dir).as_posix() for g in globs for p in package_dir.glob(g)}
     assert {f"prompts/{name}" for name in prompts._FILENAMES.values()} <= declared
 
@@ -546,7 +546,7 @@ def test_templates_load_with_the_working_directory_OUTSIDE_the_repo(tmp_path):
     covered by the test above, and the resolution behaviour by this one.
     """
     script = (
-        "from kdb_search.prompts import load_template, template_overhead_bytes;"
+        "from kdb_graph_search.prompts import load_template, template_overhead_bytes;"
         "t = load_template('fat');"
         "print(t.ref.sha256);"
         "print(template_overhead_bytes('fat'))"
@@ -570,7 +570,7 @@ def test_git_commit_degrades_to_unknown_when_git_is_unavailable(tmp_path):
     must still be constructible — content fidelity rests on the sha256, and
     `git_commit` is provenance colour."""
     out = subprocess.run(
-        [sys.executable, "-c", "from kdb_search.prompts import load_template;"
+        [sys.executable, "-c", "from kdb_graph_search.prompts import load_template;"
          "print(load_template('thin').ref.git_commit)"],
         cwd=tmp_path,
         env={"PYTHONPATH": str(_REPO_ROOT), "PATH": "", "HOME": str(tmp_path)},

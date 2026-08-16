@@ -49,12 +49,12 @@ from datetime import datetime
 
 from common.call_model import ModelRequest, ModelResponse, call_model
 from common.model_pool import ModelSpec, resolve_models_json
-from kdb_search import budget
-from kdb_search.artifact import RenderedMessages
-from kdb_search.constants import ESTIMATOR_BYTES_PER_TOKEN, M
-from kdb_search.projection import render_query_block, render_thin_line
-from kdb_search.prompts import load_template, render_thin_messages
-from kdb_search.types import SpaceEntity
+from kdb_graph_search import budget
+from kdb_graph_search.artifact import RenderedMessages
+from kdb_graph_search.constants import ESTIMATOR_BYTES_PER_TOKEN, M
+from kdb_graph_search.projection import render_query_block, render_thin_line
+from kdb_graph_search.prompts import load_template, render_thin_messages
+from kdb_graph_search.types import SpaceEntity
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 FIXTURE_DIR = REPO_ROOT / "benchmark" / "truth" / "task123_search_snapshot_v1"

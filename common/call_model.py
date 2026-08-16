@@ -78,7 +78,7 @@ NormalizedStop = Literal["output_cap", "complete", "unknown"]
 #: (_call_anthropic), gemini the enum value's UPPERCASE name (_call_gemini,
 #: via `finish_reason.value`). A literal `== "length"` test — which is what the
 #: pre-#124 repo predicates did — missed gemini entirely. Design promoted from
-#: kdb_search.stage (P2.3, D9.4), which keeps its own copy for its artifacts;
+#: kdb_graph_search.stage (P2.3, D9.4), which keeps its own copy for its artifacts;
 #: adoption of this shared copy there is a recorded follow-up, not this diff.
 _CAP_STOPS: dict[str, frozenset[str]] = {
     "openai_compat": frozenset({"length"}),

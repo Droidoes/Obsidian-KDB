@@ -153,7 +153,7 @@ def load_template(stage: Stage) -> SelectorTemplate:
     except OSError as exc:
         raise PromptTemplateError(
             f"selector template {filename!r} is unreadable at {path} — it is "
-            "declared package-data (pyproject.toml `kdb_search`), so this is a "
+            "declared package-data (pyproject.toml `kdb_graph_search`), so this is a "
             f"packaging or install fault: {exc}"
         ) from exc
 
@@ -183,7 +183,7 @@ def load_template(stage: Stage) -> SelectorTemplate:
             sha256=sha256_digest(text),
             # A literal, never computed: `relative_to(repo_root)` raises under an
             # installed layout, which is the layout this has to survive.
-            repo_path=f"kdb_search/prompts/{filename}",
+            repo_path=f"kdb_graph_search/prompts/{filename}",
             git_commit=_git_commit(),
         ),
     )

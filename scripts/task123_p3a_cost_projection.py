@@ -9,7 +9,7 @@ corpus (vault + Kuzu graph) or taken from the repo's own constants/registry.
 Cost model (blueprint v0.3 §8 row, spec R4/D3/D-123-G):
   per compiled source, one search =
     THIN call: entire eligible identity space N as rendered thin lines
-      (`kdb_search.projection.render_thin_line` — slug + title + page_type)
+      (`kdb_graph_search.projection.render_thin_line` — slug + title + page_type)
     FAT call: stage-2 pool of whole bodies (filled to the 0.8 budget, capped by
       M = thins's retention ceiling) — skipped when thin retains zero (D3)
   terminal branches accounted separately:
@@ -52,7 +52,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# kdb_search is not yet in the installed package list (P3a lands it); run from
+# kdb_graph_search is not yet in the installed package list (P3a lands it); run from
 # the repo root with the repo on the path, like the test suite does.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -60,8 +60,8 @@ from common.model_pool import resolve_models_json
 from common.wiki_io import ContentNotFoundError, get_body
 from kdb_graph import queries
 from kdb_graph.graphdb import GraphDB
-from kdb_search.budget import fat_input_byte_allowance
-from kdb_search.constants import (
+from kdb_graph_search.budget import fat_input_byte_allowance
+from kdb_graph_search.constants import (
     ESTIMATOR_BYTES_PER_TOKEN,
     M,
     MAX_RESULTS,
@@ -71,13 +71,13 @@ from kdb_search.constants import (
     VISIBLE_OUTPUT_ALLOWANCE_FAT,
     VISIBLE_OUTPUT_ALLOWANCE_THIN,
 )
-from kdb_search.projection import (
+from kdb_graph_search.projection import (
     ProjectedEntity,
     render_fat_block,
     render_query_block,
     render_thin_line,
 )
-from kdb_search.types import SpaceEntity
+from kdb_graph_search.types import SpaceEntity
 
 SANDBOX_VAULT = Path.home() / "Obsidian" / "Vault-in-place-test-run"
 SANDBOX_GRAPH = SANDBOX_VAULT / "KDB" / "graph"

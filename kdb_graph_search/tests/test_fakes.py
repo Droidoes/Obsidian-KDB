@@ -23,9 +23,9 @@ import pytest
 from google.genai import errors as genai_errors
 
 from common.call_model import ModelRequest
-from kdb_search.constants import MAX_EXPRESSIONS
-from kdb_search.response import Violations, validate_response, validate_thin_retention
-from kdb_search.tests.fakes import (
+from kdb_graph_search.constants import MAX_EXPRESSIONS
+from kdb_graph_search.response import Violations, validate_response, validate_thin_retention
+from kdb_graph_search.tests.fakes import (
     ALL_CAP_STOP_SPELLINGS,
     LABELS,
     STOP_LENGTH_GEMINI,

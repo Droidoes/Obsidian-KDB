@@ -16,20 +16,20 @@ import re
 
 import pytest
 
-from kdb_search.constants import (
+from kdb_graph_search.constants import (
     MAX_EXPRESSIONS,
     MAX_RESULTS,
     MAX_SLUG_LEN,
     WIRE_LABEL_ALPHABET,
 )
-from kdb_search.projection import render_query_block
-from kdb_search.response import (
+from kdb_graph_search.projection import render_query_block
+from kdb_graph_search.response import (
     Violations,
     resolve_accounting,
     validate_response,
     validate_thin_retention,
 )
-from kdb_search.types import SpaceEntity
+from kdb_graph_search.types import SpaceEntity
 
 EXPRESSIONS = ("warren-buffett", "owner-earnings", "moats")
 

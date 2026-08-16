@@ -29,16 +29,16 @@ import pytest
 from common.call_model import ModelRequest, ModelResponse
 from common.model_pool import ModelRoute, ModelSpec
 
-from kdb_search import stage
-from kdb_search.artifact import SPACE_MANIFEST_REF
-from kdb_search.budget import BudgetVerdict, provider_max_tokens, visible_output_allowance
-from kdb_search.constants import M, MAX_ATTEMPTS_PER_STAGE
-from kdb_search.prompts import load_template
-from kdb_search.response import (
+from kdb_graph_search import stage
+from kdb_graph_search.artifact import SPACE_MANIFEST_REF
+from kdb_graph_search.budget import BudgetVerdict, provider_max_tokens, visible_output_allowance
+from kdb_graph_search.constants import M, MAX_ATTEMPTS_PER_STAGE
+from kdb_graph_search.prompts import load_template
+from kdb_graph_search.response import (
     validate_response,
     validate_thin_response,
 )
-from kdb_search.tests import fakes
+from kdb_graph_search.tests import fakes
 
 SPACE = fakes.make_space(6)
 EXPRESSIONS = ("alpha", "beta")
@@ -60,7 +60,7 @@ def _spec(**overrides) -> ModelSpec:
 
 
 def _messages(stage_name: str = "thin"):
-    from kdb_search import projection, prompts
+    from kdb_graph_search import projection, prompts
 
     evidence = "\n".join(projection.render_thin_line(e) for e in SPACE)
     if stage_name == "thin":

@@ -12,7 +12,7 @@ import re
 import pytest
 
 from common.wiki_io import ContentNotFoundError
-from kdb_search.projection import (
+from kdb_graph_search.projection import (
     ProjectedEntity,
     _LINE_BREAKS,
     _single_line,
@@ -21,7 +21,7 @@ from kdb_search.projection import (
     render_thin_line,
     stream_contribution_bytes,
 )
-from kdb_search.types import SpaceEntity
+from kdb_graph_search.types import SpaceEntity
 
 FIXTURE = pathlib.Path(__file__).resolve().parents[2] / "benchmark/truth/task123_search_snapshot_v1"
 
@@ -366,14 +366,14 @@ def test_fixture_excerpt_bytes_round_trip_into_the_grammar(slug, page_type):
 # the ceiling.
 # --------------------------------------------------------------------------
 
-from kdb_search.constants import (  # noqa: E402
+from kdb_graph_search.constants import (  # noqa: E402
     MAX_EXPRESSIONS,
     QUERY_BLOCK_CEILING_BYTES,
     QUERY_FIELD_ALLOCATIONS,
     WIRE_LABEL_ALPHABET,
     expression_labels,
 )
-from kdb_search.projection import render_query_block  # noqa: E402
+from kdb_graph_search.projection import render_query_block  # noqa: E402
 
 
 def test_query_block_grammar_is_exact():

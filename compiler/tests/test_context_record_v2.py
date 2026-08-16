@@ -39,7 +39,7 @@ from compiler.context_record import (
     project_key_outcomes_v2,
     write_context_record_v2,
 )
-from kdb_search.constants import MAX_RESULTS
+from kdb_graph_search.constants import MAX_RESULTS
 
 SOURCE_ID = "KDB/raw/s.md"
 

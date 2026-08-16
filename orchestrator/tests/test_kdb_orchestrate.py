@@ -1939,7 +1939,7 @@ def test_run_journals_rebuild_identical_graph_e2e(tmp_path, monkeypatch):
     # The package conftest scripts ONE selector reply; this test compiles 4
     # times (3 cold + 1 warm-edit), so the selector (non-empty graph) fires 3
     # times — script enough honest-empty replies for all of them.
-    from kdb_search.tests import fakes
+    from kdb_graph_search.tests import fakes
     monkeypatch.setattr(
         "compiler.search_adapter.call_model",
         fakes.FakeSelector(*[
@@ -2322,7 +2322,7 @@ def test_wipe_then_rerun_replay_matches_live_137(tmp_path, monkeypatch):
     monkeypatch.setattr("common.run_context.now_iso", fake_now_iso)
     # The selector fires once per compile after the very first (which sees an
     # empty graph): 2 per run × 2 runs = 4 honest-empty replies.
-    from kdb_search.tests import fakes
+    from kdb_graph_search.tests import fakes
     monkeypatch.setattr(
         "compiler.search_adapter.call_model",
         fakes.FakeSelector(*[

@@ -10,7 +10,7 @@ the §4.5 per-expression key outcomes (A6 — the projection inputs exist only
 adapter-side: keys, rendered expressions, the unresolved set, the summary).
 
 Wired into `compile_source` step 1 as of P3a.2b. Layering: this module
-imports {common, kdb_graph, kdb_search}; the kdb_search core stays I/O-free
+imports {common, kdb_graph, kdb_graph_search}; the kdb_graph_search core stays I/O-free
 and consumer-neutral.
 
 Failure channels (§4.1, B4): typed outcomes (abstain_empty_space,
@@ -21,7 +21,7 @@ provenance read (what entity_first_run_ids can raise). InvalidGraphSearchRequest
 SearchConfigError, ContractViolation, and any unexpected exception PROPAGATE —
 under B9's umbrella: an unexpected raise AFTER the audit exists still sinks the
 FULL receipt (raised_with_audit=True), and when the summary was already built
-it rides the exception as `_kdb_search_summary` for compile_source's B8.
+it rides the exception as `_kdb_graph_search_summary` for compile_source's B8.
 """
 from __future__ import annotations
 
@@ -50,8 +50,8 @@ from common.types import (
 from common.wiki_io import get_body
 from kdb_graph import queries
 from kdb_graph.schema import SCHEMA_VERSION as GRAPH_SCHEMA_VERSION
-from kdb_search import projection
-from kdb_search.artifact import (
+from kdb_graph_search import projection
+from kdb_graph_search.artifact import (
     SEARCH_ENVELOPE_SCHEMA_VERSION,
     CompactSearchReceipt,
     SearchAuditPayload,
@@ -62,10 +62,10 @@ from kdb_search.artifact import (
     search_envelope_to_dict,
     space_fingerprint,
 )
-from kdb_search.projection import RenderedQuery
-from kdb_search.result import BudgetRecord, GraphSearchResult
-from kdb_search.search import graph_search
-from kdb_search.types import (
+from kdb_graph_search.projection import RenderedQuery
+from kdb_graph_search.result import BudgetRecord, GraphSearchResult
+from kdb_graph_search.search import graph_search
+from kdb_graph_search.types import (
     GraphSearchRequest,
     GraphSnapshotRef,
     QueryPayload,
@@ -136,10 +136,10 @@ def _stage_splits(stages: tuple[StageRecord, ...]) -> tuple[SearchStageSplit, ..
 
 
 def _budget_record(record: BudgetRecord) -> SearchBudgetRecord:
-    # kdb_search's BudgetRecord names stages with the short Stage vocabulary
+    # kdb_graph_search's BudgetRecord names stages with the short Stage vocabulary
     # ("thin"/"fat"); the persistence mirror + V2 record parser pin the
     # StageName vocabulary ("thin_selection"/"fat_selection") — translate at
-    # the boundary (same mapping as kdb_search.stage._STAGE_NAMES).
+    # the boundary (same mapping as kdb_graph_search.stage._STAGE_NAMES).
     stage_name = {"thin": "thin_selection", "fat": "fat_selection"}[record.stage]
     return SearchBudgetRecord(
         stage=stage_name,
@@ -464,7 +464,7 @@ def run_pass15(
         if result.audit is not None:
             # §4.7 counting channel for compile_source: a search RAN (an audit
             # exists) — the envelope write was attempted at least once.
-            exc._kdb_search_attempted = True  # noqa: B9
+            exc._kdb_graph_search_attempted = True  # noqa: B9
         if result.audit is not None and not envelope_written:
             path = (
                 state_root / "runs" / run_id / "search"
@@ -490,11 +490,11 @@ def run_pass15(
                     "pass-1.5 raised-with-audit envelope write failed for %s: %s",
                     source_id, write_exc)
             else:
-                exc._kdb_search_envelope_written = True  # noqa: B9
+                exc._kdb_graph_search_envelope_written = True  # noqa: B9
         elif envelope_written:
-            exc._kdb_search_envelope_written = True  # noqa: B9
+            exc._kdb_graph_search_envelope_written = True  # noqa: B9
         if summary is not None:
-            exc._kdb_search_summary = summary  # noqa: B9 — compile_source's B8
+            exc._kdb_graph_search_summary = summary  # noqa: B9 — compile_source's B8
         raise
     return Pass15Outcome(
         search_ran=True,

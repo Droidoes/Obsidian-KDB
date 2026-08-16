@@ -16,7 +16,7 @@ from dataclasses import replace
 
 import pytest
 
-from kdb_search.artifact import (
+from kdb_graph_search.artifact import (
     ARTIFACT_SCHEMA_VERSION,
     SEARCH_ENVELOPE_SCHEMA_VERSION,
     SPACE_MANIFEST_REF,
@@ -33,8 +33,8 @@ from kdb_search.artifact import (
     compute_artifact_integrity_hash,
     compute_search_snapshot_hash,
 )
-from kdb_search.projection import render_query_block
-from kdb_search.types import GraphSnapshotRef, Hit, QueryPayload, SpaceEntity
+from kdb_graph_search.projection import render_query_block
+from kdb_graph_search.types import GraphSnapshotRef, Hit, QueryPayload, SpaceEntity
 
 GRAPH = GraphSnapshotRef(
     schema_version="2.4",
@@ -50,7 +50,7 @@ MANIFEST = (
 QUERY = QueryPayload(text="value investing", expressions=("warren-buffett", "moats"))
 HIT = Hit(slug="warren-buffett", title="Warren Buffett", page_type="concept",
           matched_expressions=("warren-buffett",))
-PROMPT = PromptRef(version="1", sha256="sha256:deadbeef", repo_path="kdb_search/prompts/fat.txt",
+PROMPT = PromptRef(version="1", sha256="sha256:deadbeef", repo_path="kdb_graph_search/prompts/fat.txt",
                    git_commit="abc1234")
 
 

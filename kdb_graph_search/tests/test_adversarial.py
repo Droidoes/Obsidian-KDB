@@ -33,9 +33,9 @@ import pytest
 from common.model_pool import ModelRoute, ModelSpec
 from common.paths import PageType
 
-from kdb_search import projection, prompts, search
-from kdb_search.tests import fakes
-from kdb_search.types import (
+from kdb_graph_search import projection, prompts, search
+from kdb_graph_search.tests import fakes
+from kdb_graph_search.types import (
     GraphSearchRequest,
     GraphSnapshotRef,
     QueryPayload,

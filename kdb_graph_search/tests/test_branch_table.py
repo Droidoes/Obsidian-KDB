@@ -42,11 +42,11 @@ from common.model_pool import ModelRoute, ModelSpec
 from common.paths import PageType
 from common.wiki_io import ContentNotFoundError
 
-from kdb_search import search
-from kdb_search.constants import M
-from kdb_search.contracts import TERMINAL_CONTRACTS
-from kdb_search.tests import fakes
-from kdb_search.types import GraphSearchRequest, QueryPayload
+from kdb_graph_search import search
+from kdb_graph_search.constants import M
+from kdb_graph_search.contracts import TERMINAL_CONTRACTS
+from kdb_graph_search.tests import fakes
+from kdb_graph_search.types import GraphSearchRequest, QueryPayload
 
 # --------------------------------------------------------------------------
 # the harness

@@ -36,14 +36,14 @@ from common.model_pool import ModelRoute, ModelSpec
 from common.paths import PageType
 from common.wiki_io import ContentNotFoundError
 
-from kdb_search.budget import provider_max_tokens
+from kdb_graph_search.budget import provider_max_tokens
 
-from kdb_search import search
-from kdb_search.budget import fat_input_byte_allowance
-from kdb_search.constants import M
-from kdb_search.contracts import TERMINAL_CONTRACTS, ContractViolation
-from kdb_search.tests import fakes
-from kdb_search.types import (
+from kdb_graph_search import search
+from kdb_graph_search.budget import fat_input_byte_allowance
+from kdb_graph_search.constants import M
+from kdb_graph_search.contracts import TERMINAL_CONTRACTS, ContractViolation
+from kdb_graph_search.tests import fakes
+from kdb_graph_search.types import (
     GraphSearchRequest,
     InvalidGraphSearchRequest,
     QueryPayload,
@@ -370,7 +370,7 @@ def test_each_zero_call_terminal_satisfies_its_RATIFIED_contract(terminal, make)
     """The result came back, so `assert_result_contract` already passed inside
     `graph_search`. This re-verifies against the matrix from outside, so the row
     being satisfied is not merely an artifact of the same helper that built it."""
-    from kdb_search.contracts import verify_result_contract
+    from kdb_graph_search.contracts import verify_result_contract
 
     result = make()
     contract = TERMINAL_CONTRACTS[terminal]
@@ -410,7 +410,7 @@ def test_the_guard_is_WIRED_at_each_return_site_not_merely_present(
     zero-call terminal forbids (`hits_empty=True`). If the guard were bypassed at
     the site under test, the malformed result would simply be returned.
     """
-    from kdb_search.types import Hit
+    from kdb_graph_search.types import Hit
 
     real = search._zero_call_result
 
@@ -432,7 +432,7 @@ def test_the_return_site_guard_is_load_bearing_not_decorative() -> None:
     """
     result = _run(_request(count=0))
     with pytest.raises(ContractViolation):
-        from kdb_search.contracts import assert_result_contract
+        from kdb_graph_search.contracts import assert_result_contract
 
         assert_result_contract(
             "completed",  # wrong row for an abstention

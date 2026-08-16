@@ -22,7 +22,7 @@ import pytest
 
 from common.model_pool import ModelSpec, load_pool, resolve_models_json
 from common.model_route import ModelRoute
-from kdb_search.budget import (
+from kdb_graph_search.budget import (
     context_budget,
     estimate_input_tokens,
     exact_max_visible_bytes,
@@ -37,7 +37,7 @@ from kdb_search.budget import (
     visible_output_allowance,
     worst_case_input_tokens,
 )
-from kdb_search.constants import (
+from kdb_graph_search.constants import (
     BUDGET_HEADROOM,
     ESTIMATOR_BYTES_PER_TOKEN,
     HIDDEN_OUTPUT_RESERVE,
@@ -53,7 +53,7 @@ from kdb_search.constants import (
     WIRE_LABEL_ALPHABET,
     expression_labels,
 )
-from kdb_search.types import InvalidGraphSearchRequest, QueryPayload, SearchConfigError
+from kdb_graph_search.types import InvalidGraphSearchRequest, QueryPayload, SearchConfigError
 
 D4_COHORT = ("gemini-3.6-flash", "gpt-5.4-mini", "deepseek-v4-flash")
 

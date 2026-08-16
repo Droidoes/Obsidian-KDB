@@ -882,7 +882,7 @@ def test_builder_defect_after_search_keeps_the_summary(tmp_path, monkeypatch):
 
 def test_post_search_defect_carries_the_summary_on_the_exception(tmp_path, monkeypatch):
     """B9's compile-side half: an exception escaping run_pass15 AFTER the
-    summary was built carries it (the adapter attaches `_kdb_search_summary`)
+    summary was built carries it (the adapter attaches `_kdb_graph_search_summary`)
     so context_failed.search stays non-null."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -890,7 +890,7 @@ def test_post_search_defect_carries_the_summary_on_the_exception(tmp_path, monke
 
     def raise_with_summary(*_args, **_kwargs):
         exc = RuntimeError("post-search defect")
-        exc._kdb_search_summary = _search_summary()  # noqa: SLF001 — the adapter's channel
+        exc._kdb_graph_search_summary = _search_summary()  # noqa: SLF001 — the adapter's channel
         raise exc
     monkeypatch.setattr("compiler.compiler.run_pass15", raise_with_summary)
 
@@ -1147,7 +1147,7 @@ def test_compile_source_search_counters_context_failure_from_exception_channel(
     tmp_path, monkeypatch,
 ):
     """Context failure INSIDE run_pass15 (no outcome): counters come from the
-    exception channel (`_kdb_search_attempted` / `_kdb_search_envelope_written`,
+    exception channel (`_kdb_graph_search_attempted` / `_kdb_graph_search_envelope_written`,
     attached by the adapter's B9 except-block)."""
     vault = _vault(tmp_path)
     state_root = vault / "KDB" / "state"
@@ -1155,8 +1155,8 @@ def test_compile_source_search_counters_context_failure_from_exception_channel(
 
     def raise_with_counters(*_args, **_kwargs):
         exc = RuntimeError("post-search defect")
-        exc._kdb_search_attempted = True  # noqa: SLF001 — the adapter's channel
-        exc._kdb_search_envelope_written = False  # noqa: SLF001
+        exc._kdb_graph_search_attempted = True  # noqa: SLF001 — the adapter's channel
+        exc._kdb_graph_search_envelope_written = False  # noqa: SLF001
         raise exc
     monkeypatch.setattr("compiler.compiler.run_pass15", raise_with_counters)
 

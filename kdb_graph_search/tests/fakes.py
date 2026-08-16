@@ -46,7 +46,7 @@ from google.genai import errors as genai_errors
 
 from common.call_model import ModelRequest, ModelResponse
 from common.paths import PAGE_TYPES
-from kdb_search.types import GraphSnapshotRef, ScopeKind, SearchSpaceRef, SpaceEntity
+from kdb_graph_search.types import GraphSnapshotRef, ScopeKind, SearchSpaceRef, SpaceEntity
 
 # ---------------------------------------------------------------------------
 # stop reasons — all three provider spellings, plus a non-cap and an unknown
@@ -308,7 +308,7 @@ def make_graph_ref(count: int) -> GraphSnapshotRef:
         active_entity_count=count,
         space_fingerprint=f"sha256:fake-{count}",
         source_kind="fixture",
-        source_detail="kdb_search/tests/fakes.py",
+        source_detail="kdb_graph_search/tests/fakes.py",
     )
 
 

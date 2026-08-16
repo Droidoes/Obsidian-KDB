@@ -57,9 +57,9 @@ from __future__ import annotations
 
 import pytest
 
-from kdb_search import prompts
-from kdb_search.budget import Stage
-from kdb_search.constants import M, MAX_RESULTS, SYSTEM_TEMPLATE_BUDGET_BYTES
+from kdb_graph_search import prompts
+from kdb_graph_search.budget import Stage
+from kdb_graph_search.constants import M, MAX_RESULTS, SYSTEM_TEMPLATE_BUDGET_BYTES
 
 # --------------------------------------------------------------------------
 # The pins. Update these ONLY together with a version bump (a file rename),
@@ -76,8 +76,8 @@ GOLDEN_DIGESTS: dict[Stage, str] = {
 GOLDEN_VERSIONS: dict[Stage, str] = {"thin": "2", "fat": "3"}
 
 GOLDEN_REPO_PATHS: dict[Stage, str] = {
-    "thin": "kdb_search/prompts/selector_thin_v2.txt",
-    "fat": "kdb_search/prompts/selector_fat_v3.txt",
+    "thin": "kdb_graph_search/prompts/selector_thin_v2.txt",
+    "fat": "kdb_graph_search/prompts/selector_fat_v3.txt",
 }
 
 #: Bytes of each half as loaded (system) and as declared (user template, slots

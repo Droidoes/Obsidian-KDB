@@ -19,14 +19,14 @@ import random
 
 import pytest
 
-from kdb_search.constants import (
+from kdb_graph_search.constants import (
     MAX_EXPRESSIONS,
     MAX_RESULTS,
     MAX_SLUG_LEN,
     WIRE_LABEL_ALPHABET,
 )
-from kdb_search.response import resolve_accounting, validate_response, validate_thin_retention
-from kdb_search.types import SpaceEntity
+from kdb_graph_search.response import resolve_accounting, validate_response, validate_thin_retention
+from kdb_graph_search.types import SpaceEntity
 
 SPACE = tuple(
     SpaceEntity(slug=f"member-{i}", title=f"Member {i}", page_type="concept") for i in range(40)
