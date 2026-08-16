@@ -31,9 +31,9 @@ _DEFAULT_ENTITY_STATUS = "active"
 
 
 # --- body wikilink extraction (#115 T2.4 — graph-owned edge derivation) ---
-# Mirrored from compiler.validate_source_response.body_wikilink_slugs:
+# Mirrored from kdb_graph_compiler.validate_source_response.body_wikilink_slugs:
 # kdb_graph imports NO sibling package (B.3), so the extractor is mirrored
-# here. Keep the regexes byte-identical to the compiler's.
+# here. Keep the regexes byte-identical to the kdb_graph_compiler's.
 
 import re as _re
 
@@ -51,7 +51,7 @@ def _strip_code(text: str) -> str:
 
 def body_wikilink_slugs(body: str) -> set[str]:
     """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]] tokens
-    in `body`, after stripping code spans. Mirror of the compiler's
+    in `body`, after stripping code spans. Mirror of the kdb_graph_compiler's
     body_wikilink_slugs — the two must not drift."""
     return set(_WIKILINK_RE.findall(_strip_code(body)))
 
@@ -853,7 +853,7 @@ def _upsert_alias_entities_and_edges(
     Idempotency: re-applying the same `canonical_meta` produces the same
     graph state — one ALIAS_OF per alias, with the most recent run's
     `run_id`/`created_at`. Older provenance lives in the per-run sidecar
-    `state/runs/<run_id>/compile_result.json` (archived by the orchestrator's
+    `state/runs/<run_id>/compile_result.json` (archived by the kdb_graph_orchestrator's
     journal writer, #132).
     """
     canonical_meta = cr.get("canonical_meta") or {}

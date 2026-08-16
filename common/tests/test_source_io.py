@@ -1,8 +1,8 @@
 """Unit tests for common.source_io.
 
-Covers the shared parse_source_file() helper consumed by the orchestrator
-and compiler (Task #90 D-90-10). Provides direct coverage previously implicit
-via compiler.source_text_for tests.
+Covers the shared parse_source_file() helper consumed by the kdb_graph_orchestrator
+and kdb_graph_compiler (Task #90 D-90-10). Provides direct coverage previously implicit
+via kdb_graph_compiler.source_text_for tests.
 """
 from __future__ import annotations
 

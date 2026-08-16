@@ -3,7 +3,7 @@
 #143: config moved from a single `<state_root>/pipelines.json` to one file
 per pipeline under `<state_root>/pipelines.d/<id>.json` — pipelines become
 plugins: a new feeder ships its own file, nothing else changes. The filename
-stem must equal the entry's `id`. The orchestrator reads this at startup to
+stem must equal the entry's `id`. The kdb_graph_orchestrator reads this at startup to
 present the pipeline-selection list and to scope the scan.
 """
 from __future__ import annotations
@@ -107,7 +107,7 @@ def load_pipelines(state_root: Path | str) -> list[Pipeline]:
 
 
 def list_pipelines(state_root: Path | str) -> list[str]:
-    """Pipeline ids in declaration order (the orchestrator's selection menu)."""
+    """Pipeline ids in declaration order (the kdb_graph_orchestrator's selection menu)."""
     return [p.id for p in load_pipelines(state_root)]
 
 

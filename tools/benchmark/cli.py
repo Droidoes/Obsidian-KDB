@@ -69,7 +69,7 @@ def _render_pass_board_md(
     measured raw_values ONLY (P-F4) — per_kpi_borda appears nowhere but the
     ranking table.
     """
-    from compiler.kpi.score import GRAPH_WEIGHTS
+    from kdb_graph_compiler.kpi.score import GRAPH_WEIGHTS
 
     scope = board["scope"]
     weights = board["effective_top_weights"]
@@ -199,7 +199,7 @@ def _render_leaderboard_md(
         return _render_pass_board_md(
             ranking, diagnostics_by_model, updated_at, board)
 
-    from compiler.kpi.score import GRAPH_WEIGHTS
+    from kdb_graph_compiler.kpi.score import GRAPH_WEIGHTS
 
     graph_set = set(GRAPH_WEIGHTS)
     proc_kpis = [k for k in (ranking[0]["per_kpi_borda"] if ranking else {})
@@ -290,7 +290,7 @@ def _render_score_table(ranking: list[dict], diagnostics_by_model: dict,
     graph_score / per_kpi_borda.  `note` overrides the trailing NOTE line
     (#117 pass boards); None keeps the canonical text.
     """
-    from compiler.kpi.score import GRAPH_WEIGHTS
+    from kdb_graph_compiler.kpi.score import GRAPH_WEIGHTS
 
     graph_kpis = list(GRAPH_WEIGHTS.keys())
     graph_set = set(graph_kpis)
@@ -441,7 +441,7 @@ def _scored_and_diag(meas: dict) -> tuple[dict, dict]:
     without re-emitting them. What's *scored* is the score command's own contract
     (KPI_LOWER_IS_BETTER); everything else is carried as a diagnostic for display.
     """
-    from compiler.kpi.score import KPI_LOWER_IS_BETTER
+    from kdb_graph_compiler.kpi.score import KPI_LOWER_IS_BETTER
 
     processing = meas.get("processing", {}) or {}
     graph = meas.get("graph", {}) or {}
@@ -520,7 +520,7 @@ def _score_command(args: argparse.Namespace) -> int:
     cross-run corpora are assumed to differ; comparability is the user's
     judgment. Reset = delete the leaderboard file.
     """
-    from compiler.kpi.score import score_models
+    from kdb_graph_compiler.kpi.score import score_models
 
     runs_root: Path = args.runs_root
     leaderboard_path: Path = args.leaderboard

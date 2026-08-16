@@ -1,7 +1,7 @@
 """#123 P2.0 — the shared fake selector `call` and its canned wire documents.
 
 `graph_search` takes `call` as a parameter (D1), so every P2 test drives the
-orchestrator through this module. Nothing here is production code; it is the
+kdb_graph_orchestrator through this module. Nothing here is production code; it is the
 *input* side of P2's oracles.
 
 **Order-scripted, not stage-keyed.** `FakeSelector` replies to invocations in the

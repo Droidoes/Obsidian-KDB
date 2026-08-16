@@ -8,17 +8,17 @@ Bridges run-journal artifacts to GraphDB-KDB mutations:
 
 Journal producers by `schema_version`: legacy `kdb-compile` (2.0/2.2, deleted
 in the 0.5.1 realignment) and `kdb-clean` cleanup journals (2.1) replay with
-monolith defaults; orchestrator-era journals (2.3, #132 — archived per run by
-`orchestrator/journal_writer.py`) replay two-phase live-order (commits phase,
+monolith defaults; kdb_graph_orchestrator-era journals (2.3, #132 — archived per run by
+`kdb_graph_orchestrator/journal_writer.py`) replay two-phase live-order (commits phase,
 then applied reconcile ops). #136: `finalize_progress` is parse-tolerated but
 its value is ignored — per-source commits wire + deprecate in-txn, so no
 end-of-run derive exists to gate (see `apply`).
 
-Critical: no imports from `compiler`, `ingestion`, or `orchestrator` anywhere
+Critical: no imports from `kdb_graph_compiler`, `ingestion`, or `kdb_graph_orchestrator` anywhere
 in this module. The adapter reads producer JSON by documented field names
 (D-B1 / D34 invariant; PR1 of extraction roadmap).
 
-Live sync: since Task #91 the orchestrator holds a shared `GraphDB` connection
+Live sync: since Task #91 the kdb_graph_orchestrator holds a shared `GraphDB` connection
 and calls `kdb_graph.intake` entry points directly (superseding D-S0's
 adapter-mediated Stage 9); this adapter remains the entry for rebuild/replay
 and for cleanup live-sync (`sync_cleanup_run`, #68).
@@ -50,7 +50,7 @@ class ObsidianRunsAdapter:
     # The adapter accepts 2.2 journals for replay; alias-Entity / ALIAS_OF
     # writes from canonical_meta land in #74.5 — until then a 2.2 journal
     # replays identically to a 2.0 journal (canonical_meta block ignored).
-    # +2.3 (#132): orchestrator-era journals — slim eligibility fields +
+    # +2.3 (#132): kdb_graph_orchestrator-era journals — slim eligibility fields +
     # `finalize_progress` (the replay-derive gate); sidecars archive the exact
     # intake inputs in two live-order phases (committed files first, then
     # moved_files/to_reconcile).
@@ -216,7 +216,7 @@ class ObsidianRunsAdapter:
         #132: a 2.3 payload carries the reserved in-memory key
         `_finalize_progress` (stuffed by load_payload; popped here before the
         payload reaches intake). Its PRESENCE still selects the
-        orchestrator-era two-phase live-order replay (commits first, applied
+        kdb_graph_orchestrator-era two-phase live-order replay (commits first, applied
         reconcile ops second — #132 §2 ordering), but its VALUE is ignored
         (#136): per-source commits wire LINKS_TO and mark deprecations in-txn
         now, so there is no end-of-run derive left to gate. Replaying an old

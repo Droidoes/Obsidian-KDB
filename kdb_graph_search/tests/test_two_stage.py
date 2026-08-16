@@ -177,7 +177,7 @@ def test_an_anthropic_route_is_rejected_because_it_cannot_honour_json_mode() -> 
     `common/call_model.py` implements `json_mode` for openai_compat (`:291`) and
     gemini (`:232`) and NOT for anthropic — so an anthropic selector would
     free-form its JSON *silently*. That is the Pass-2 failure
-    `compiler/tests/test_compile_source.py:139` pins, so it is made loud at
+    `kdb_graph_compiler/tests/test_compile_source.py:139` pins, so it is made loud at
     resolution rather than discovered in a malformed response.
     """
     spec = _spec(

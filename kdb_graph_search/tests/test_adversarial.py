@@ -360,7 +360,7 @@ def test_H03_a_query_side_delimiter_collision_is_counted_too() -> None:
 def test_D10_ordering_holds_on_the_REQUESTS_the_provider_receives() -> None:
     """P2.1f pins D10 on the rendered messages; this pins it one layer further
     out, on what `graph_search` actually sends. The two can differ — the
-    orchestrator assembles the request — and the ordering claim is about the
+    kdb_graph_orchestrator assembles the request — and the ordering claim is about the
     prompt the model sees.
 
     Also the reason ordering is a P10 concern at all: evidence first, query last,

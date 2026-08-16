@@ -238,7 +238,7 @@ def cypher(
 
 # ---------- context-snapshot read primitives (single Kuzu door) ----------
 #
-# Raw reads extracted verbatim from compiler.context_loader so the graph
+# Raw reads extracted verbatim from kdb_graph_compiler.context_loader so the graph
 # package owns all Kuzu I/O. Each function is one `conn.execute` + drain,
 # returning plain data. The composition/ranking logic (tiering, BFS frontier
 # control, set algebra, networkx PageRank) lives in the loader, not here.
@@ -350,7 +350,7 @@ def entity_first_run_ids(conn: kuzu.Connection, slugs: list[str]) -> dict[str, s
 
 # ---------- GRAPH-family KPI read primitives (#109) ----------
 #
-# Single-door reads feeding compiler.kpi.graph.compute_graph. Each is one
+# Single-door reads feeding kdb_graph_compiler.kpi.graph.compute_graph. Each is one
 # conn.execute + drain returning plain counts/slugs. The KPI module owns the
 # computation (ratios, union-find); these own the Kuzu I/O.
 #

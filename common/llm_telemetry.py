@@ -24,7 +24,7 @@ Hash sentinels distinguish missing data from empty data:
   prompt_hash   = 'sha256:none'  -> prompt could not be built
   response_hash = 'sha256:none'  -> no response captured (pre-response fail)
 
-Compiler-specific logic (build_parsed_summary) lives in compiler.resp_summary;
+Compiler-specific logic (build_parsed_summary) lives in kdb_graph_compiler.resp_summary;
 callers must compute the ParsedSummary and pass it via `parsed_summary`.
 """
 from __future__ import annotations
@@ -123,7 +123,7 @@ def build_resp_stats(
     without re-reading the corpus.
 
     `parsed_summary` is caller-supplied (computed via
-    compiler.resp_summary.build_parsed_summary when parse_ok=True).
+    kdb_graph_compiler.resp_summary.build_parsed_summary when parse_ok=True).
     `prompt` is duck-typed — any object with .system and .user str attrs.
     `failure` is duck-typed — any object with .stage, .exception_type,
     .message str attrs (or None).

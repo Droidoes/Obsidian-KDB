@@ -15,7 +15,7 @@ Verdict contract (blueprint Task 0.3 / R13 F3):
   any collision    ⇒ STOP and resolve before firing the baseline/comparison.
 
 This script is the spec-pinned STAND-IN for the Phase-1 production helper
-(`compiler.expected_summary_slug`) — Phase 1 adds an equivalence test
+(`kdb_graph_compiler.expected_summary_slug`) — Phase 1 adds an equivalence test
 pinning this derivation identical to the centralized helper's. Re-run on the
 SAME corpus before Phase 5 (comparison cohort); zero collisions required.
 
@@ -60,7 +60,7 @@ def expected_summary_slug(source_id: str) -> str:
 
 
 def _corpus_fingerprint(files: list[Path], root: Path) -> str:
-    """Same construction as orchestrator._corpus_fingerprint: sha256 of the
+    """Same construction as kdb_graph_orchestrator._corpus_fingerprint: sha256 of the
     sorted {source_id: content_hash} mapping, so the guard report's
     fingerprint is directly comparable to the cohort run header's."""
     mapping = {}

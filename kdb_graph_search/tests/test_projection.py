@@ -216,7 +216,7 @@ def test_delimiter_collision_is_counted_not_silently_allowed():
 # 2,500 B per-entity rendered ceiling enforced by binary search. Both are gone.
 # Measured against the data they protected, the byte ceiling had fired 0/163
 # fixture and 0/83 live, the word cap 2/163 and 0/83 — because pass-2 writes these
-# pages, so their length is governed by the compiler's prompt contract, not by
+# pages, so their length is governed by the kdb_graph_compiler's prompt contract, not by
 # chance. Sizing moved one level up to search's fill, which can decline to include
 # an entity rather than corrupt one.
 # --------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 The wiki/ content store (KDB/wiki/<subdir>/<slug>.md) holds compiled page prose;
 bodies are NOT in the graph (thin-node decision). This is the read accessor shared
 by the Phase-3 MCP server (get_body tool) and the graph viewer. Read-only — the
-compiler's page_writer owns writes.
+kdb_graph_compiler's page_writer owns writes.
 
 Composes two existing primitives:
   * paths.slug_to_abspath   -> resolves the path (validates slug + page_type)

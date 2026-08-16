@@ -68,7 +68,7 @@ class Pass1CallError(Exception):
         attempts: int = 0,
         # Task #110 §3.2: synthetic exception-type for the pre-flight ctx-overrun
         # guard. Mirrors Pass-2's "TokenOverrun" vocabulary (common/types.py).
-        # None for ordinary retry-exhaustion failures (orchestrator records its
+        # None for ordinary retry-exhaustion failures (kdb_graph_orchestrator records its
         # own "Pass1EnrichError" surface).
         exception_type: str | None = None,
         # Task #108: aggregation fields for sidecar telemetry on the quarantine path.
@@ -132,7 +132,7 @@ def call_pass1(
     # tokens BEFORE any API call; if input + reserved output would exceed the
     # model's ctx_window, skip-and-quarantine THIS source with NO API spend —
     # routed through the EXISTING Pass1CallError quarantine path so the
-    # orchestrator quarantines it identically (#96 quarantine-and-continue).
+    # kdb_graph_orchestrator quarantines it identically (#96 quarantine-and-continue).
     # ctx_window is None for the ad-hoc --provider escape hatch (no pool
     # metadata): the guard is skipped (best-effort, as before).
     if ctx_window is not None:

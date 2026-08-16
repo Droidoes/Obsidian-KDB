@@ -1,7 +1,7 @@
 """Shared source-file I/O for the KDB pipeline.
 
 Owns `parse_existing_frontmatter`, `SourceFrontmatter` (re-exported from
-types), and `parse_source_file()`. Used by the orchestrator and `compiler.py`
+types), and `parse_source_file()`. Used by the kdb_graph_orchestrator and `compiler.py`
 (compile-time `source_text_for` wrapper) for frontmatter read at enrich/compile
 time.
 
@@ -58,8 +58,8 @@ def parse_source_file(path: Path) -> tuple[SourceFrontmatter | None, str]:
           than raise — Pass-1's bug to fix, not ours.
 
     Used by:
-        - orchestrator / enrich stage (wraps in try/except for source-level degrade)
-        - compiler.source_text_for (thin wrapper; propagates for compile_one's
+        - kdb_graph_orchestrator / enrich stage (wraps in try/except for source-level degrade)
+        - kdb_graph_compiler.source_text_for (thin wrapper; propagates for compile_one's
           scaffold-and-fill error classification)
     """
     raw = path.read_text(encoding="utf-8")

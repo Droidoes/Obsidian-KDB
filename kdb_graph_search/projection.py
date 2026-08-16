@@ -81,7 +81,7 @@ def _single_line(value: str) -> str:
     (`common/source_io.py:39` → `kdb_graph/intake.py:325`) with no single-line
     check, and the 1,586-note vault ingestion is queued — so this is the ingested
     corpus, not a hypothetical. (The *KDB-authored* path was already closed:
-    `compiler.page_writer.emit_frontmatter` raises on a newline in any frontmatter
+    `kdb_graph_compiler.page_writer.emit_frontmatter` raises on a newline in any frontmatter
     string.)
 
     Collapsed to a space rather than escaped to `\\n`, on two grounds: a line

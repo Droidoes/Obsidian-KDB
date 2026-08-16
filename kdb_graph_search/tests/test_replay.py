@@ -2,7 +2,7 @@
 
 **Every payload here is produced by a real `graph_search` run**, captured the way
 `test_branch_table.py` captures it. Hand-building a `SearchAuditPayload` would
-make these tests agree with my idea of what the orchestrator archives rather than
+make these tests agree with my idea of what the kdb_graph_orchestrator archives rather than
 with what it archives — and the whole claim of replay is that the archive is
 sufficient.
 

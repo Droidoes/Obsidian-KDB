@@ -512,7 +512,7 @@ class SearchRunEnvelope:
 #
 # `search_envelope_to_dict` is the ONLY write-side shape; `parse_search_envelope`
 # is the strict reader — rejects, never coerces (house convention:
-# compiler/context_record.py's parse_context_record_v1), and additionally pins
+# kdb_graph_compiler/context_record.py's parse_context_record_v1), and additionally pins
 # the exact key sets so the two receipt kinds cannot silently trade fields.
 # Neither function does I/O — the caller owns the bytes.
 # ---------------------------------------------------------------------------

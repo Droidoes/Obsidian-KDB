@@ -1,0 +1,178 @@
+"""validate_source_response — canonical contract gate (#115; re-roled #119).
+
+The CANONICAL contract (#119): the only shape allowed to reach
+canonicalization, persistence, wiki, manifest, run journal, graph. Model
+output never touches this shape directly — the normalization bridge's
+output must satisfy it. Validation shape unchanged since #115; re-roled
+from per-call model output to canonical artifact.
+
+Two independent layers:
+    1. validate(payload)               — JSON-Schema, accumulating
+    2. semantic_check(payload, ...)    — post-schema, semantic rules
+
+CLI:
+    kdb-validate-response [path.json] [--canonical] [--source-id <id>]
+    default — proposal contract (kdb_graph_compiler.validate_proposal_response);
+    --canonical — canonical shape (+ --source-id semantic mode)
+    exit 0 — valid; exit 1 — invalid; exit 2 — runtime/config error
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from functools import cache
+from pathlib import Path
+from typing import Any
+
+from jsonschema import Draft202012Validator
+
+_SCHEMA_PATH = Path(__file__).parent / "schemas" / "compiled_source_response.schema.json"
+
+
+@cache
+def _validator() -> Draft202012Validator:
+    """Build the response-schema validator. The schema constrains only
+    LLM-emitted fields (pages + optional compilation_notes). Source-id-
+    space fields are runner-injected post-parse and validated at the
+    persistence layer (compile_result.schema.json), not here."""
+    with _SCHEMA_PATH.open("r", encoding="utf-8") as f:
+        schema = json.load(f)
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def validate(payload: Any) -> list[str]:
+    """JSON-Schema validation. Returns [] if valid.
+
+    Errors formatted as '[<json_path>] <message>' matching
+    validate_compile_result's convention.
+    """
+    return [
+        f"[{err.json_path}] {err.message}"
+        for err in _validator().iter_errors(payload)
+    ]
+
+
+def semantic_check(payload: dict, *, expected_summary_slug: str) -> list[str]:
+    """Run AFTER schema validation passes. Returns [] if valid.
+
+    CANONICAL-mode rule (#115 D-115, re-roled #119): exactly one page has
+    page_type == 'summary' AND its slug equals expected_summary_slug
+    (derived via kdb_graph_compiler.summary_slug.expected_summary_slug — NEVER
+    prompt-injected). Post-#119 the invariant checks PYTHON's stamp: the
+    normalization bridge assigns the summary identity; this gate verifies
+    the canonical artifact carries it.
+    """
+    errors: list[str] = []
+
+    pages = payload.get("pages") or []
+    summary_pages = [
+        p for p in pages
+        if isinstance(p, dict) and p.get("page_type") == "summary"
+    ]
+    if len(summary_pages) != 1:
+        errors.append(
+            f"[$.pages] expected exactly one page with page_type='summary', "
+            f"got {len(summary_pages)}"
+        )
+    elif summary_pages[0].get("slug") != expected_summary_slug:
+        errors.append(
+            f"[$.pages] summary page slug must equal "
+            f"{expected_summary_slug!r} (derived from the source stem), "
+            f"got {summary_pages[0].get('slug')!r}"
+        )
+
+    return errors
+
+
+_SLUG_RE = r"[a-z0-9]+(?:-[a-z0-9]+)*"
+_WIKILINK_RE = re.compile(
+    rf"(?<!\\)\[\[({_SLUG_RE})(?:#[^|\]]*)?(?:\|[^\]]*)?\]\]"
+)
+_FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def _strip_code(text: str) -> str:
+    """Remove fenced and inline code spans before scanning for wikilinks.
+    Avoids false positives from documentation that demonstrates [[slug]]
+    syntax inside code blocks."""
+    return _INLINE_CODE_RE.sub("", _FENCED_CODE_RE.sub("", text))
+
+
+def body_wikilink_slugs(body: str) -> set[str]:
+    """Slug set extracted from [[slug]] / [[slug|alias]] / [[slug#h]]
+    tokens in `body`, after stripping code spans. Strict kebab-case
+    match — out-of-pattern brackets (e.g. [[Foo Bar]]) are silently
+    ignored.
+
+    Public utility — also used by `tools.benchmark.scorer` for M5
+    (`body_emit_set_coverage`) computation across the one-way boundary.
+    """
+    return set(_WIKILINK_RE.findall(_strip_code(body)))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="kdb-validate-response",
+        description="Validate a single per-source compile response JSON. "
+                    "Default validates the PROPOSAL contract "
+                    "(proposal_response.schema.json); --canonical selects "
+                    "the canonical contract "
+                    "(compiled_source_response.schema.json + semantic rules).",
+    )
+    p.add_argument("path", nargs="?", help="Path to JSON file; reads stdin if omitted")
+    p.add_argument("--canonical", action="store_true", help="Validate against the canonical contract instead of the default proposal contract")
+    p.add_argument(
+        "--source-id",
+        help="If provided, derive the expected summary slug from this source id "
+             "and run semantic_check too (omitted → schema-only validation). "
+             "Requires --canonical",
+    )
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if args.source_id and not args.canonical:
+        print("ERROR: --source-id requires --canonical "
+              "(semantic mode lives on the canonical contract)", file=sys.stderr)
+        return 2
+
+    try:
+        raw = Path(args.path).read_text(encoding="utf-8") if args.path else sys.stdin.read()
+        payload = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
+
+    if args.canonical:
+        errors = validate(payload)
+        if not errors and args.source_id and isinstance(payload, dict):
+            from kdb_graph_compiler.summary_slug import expected_summary_slug
+            from common.paths import PathError
+            try:
+                expected = expected_summary_slug(args.source_id)
+            except PathError as e:
+                print(f"ERROR: cannot derive expected summary slug: {e}",
+                      file=sys.stderr)
+                return 2
+            errors.extend(semantic_check(payload, expected_summary_slug=expected))
+    else:
+        from kdb_graph_compiler.validate_proposal_response import validate as validate_proposal
+        errors = validate_proposal(payload)
+
+    if errors:
+        for msg in errors:
+            print(msg)
+        return 1
+    print("OK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

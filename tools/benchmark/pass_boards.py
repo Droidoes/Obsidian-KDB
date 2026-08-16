@@ -16,8 +16,8 @@ from common.measurement import (
     load_run_measurements_with_stats,
     load_search_measurements_with_stats,
 )
-from compiler.kpi.processing import compute_processing, compute_search_diagnostics
-from compiler.kpi.score import GRAPH_WEIGHTS, TOP_WEIGHTS, score_models
+from kdb_graph_compiler.kpi.processing import compute_processing, compute_search_diagnostics
+from kdb_graph_compiler.kpi.score import GRAPH_WEIGHTS, TOP_WEIGHTS, score_models
 
 GRAPH_KPIS = tuple(GRAPH_WEIGHTS)
 

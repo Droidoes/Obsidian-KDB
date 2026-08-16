@@ -1,7 +1,7 @@
 """kdb_scan — deterministic scan of KDB/raw/, emits state/last_scan.json.
 
 Pipeline position:
-    [kdb_scan] -> compiler -> validate -> page_writer -> manifest_writer
+    [kdb_scan] -> kdb_graph_compiler -> validate -> page_writer -> manifest_writer
 
 Contract:
     Input:  KDB/raw/** + KDB/state/manifest.json (prior state; may be empty)
@@ -220,7 +220,7 @@ def load_manifest_sources(manifest_abs: Path) -> dict[str, dict]:
 
     Task #91 (M1): `pipeline_id` is surfaced so `scan_scope`'s per-pipeline prior
     filter (`r.get("pipeline_id") == pipeline_id`) can match committed rows.
-    Legacy records lacking the field read back as None (the orchestrator stamps
+    Legacy records lacking the field read back as None (the kdb_graph_orchestrator stamps
     them at startup before scanning).
     """
     if not manifest_abs.exists():
@@ -411,7 +411,7 @@ def write_scan_result(result: ScanResult, out_path: Path) -> None:
     atomic_io.atomic_write_json(out_path, result.to_dict())
 
 
-# -------- orchestrator --------
+# -------- kdb_graph_orchestrator --------
 
 def scan(
     vault_root: Path,
@@ -465,7 +465,7 @@ def scan_scope(
     FILTERED to this pipeline's sources (by pipeline_id) — so the DELETED pass
     only flags this pipeline's absent sources and MOVED only matches within the
     pipeline (D-91-9). Stamps pipeline_id on every emitted entry. Does NOT write;
-    the orchestrator owns persistence.
+    the kdb_graph_orchestrator owns persistence.
     """
     settings = settings if settings is not None else _DEFAULT_SETTINGS
     root_abs = Path(root_abs).resolve()

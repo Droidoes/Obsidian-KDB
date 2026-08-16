@@ -2,13 +2,13 @@
 
 The adapter is the producer-specific bridge. The core's `rebuilder.rebuild()`
 calls into this interface for replay. (Live sync no longer routes here: since
-Task #91 the orchestrator calls `kdb_graph.intake` directly on a shared
+Task #91 the kdb_graph_orchestrator calls `kdb_graph.intake` directly on a shared
 connection — D-S0 superseded. The one remaining live-sync entry is
 Obsidian-specific `sync_cleanup_run`, #68.)
 
 Critical invariant (D-B1): adapters parse producer JSON artifacts by documented
 field names. Adapters MUST NOT import producer Python types (no imports from
-`compiler`, `ingestion`, or `orchestrator` inside `kdb_graph/`).
+`kdb_graph_compiler`, `ingestion`, or `kdb_graph_orchestrator` inside `kdb_graph/`).
 """
 from __future__ import annotations
 

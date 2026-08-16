@@ -15,7 +15,7 @@
   * **The normalizer as a unit.** The anthropic row is unreachable through
     `graph_search` (P2.2 rejects anthropic routes over `json_mode`), so the
     ratified per-route stop-reason table is driven directly. Testing it only
-    through the orchestrator would have left one third of a closed map uncovered
+    through the kdb_graph_orchestrator would have left one third of a closed map uncovered
     while looking covered.
   * **The negative cases are the real ones.** `unrelated_bad_request()` must
     propagate, `STOP_UNKNOWN` must never become a budget class, and an
@@ -225,7 +225,7 @@ def test_a_usable_first_attempt_produces_exactly_one_record() -> None:
 @pytest.mark.parametrize("stage_name", ["thin", "fat"])
 def test_json_mode_is_set_on_EVERY_selector_request(stage_name: str) -> None:
     """The ratified requirement, both stages. Mirrors
-    `compiler/tests/test_compile_source.py:139`'s regression pin: pass-2 shipped
+    `kdb_graph_compiler/tests/test_compile_source.py:139`'s regression pin: pass-2 shipped
     once without it, and a selector that free-forms its JSON fails as an
     `unparseable_response` — a *selector-quality* reading of our own omission."""
     document = (

@@ -29,12 +29,12 @@ dev = ["pytest>=7", "pytest-cov>=4"]
 kdb-enrich            = "ingestion.enrich.kdb_enrich:main"
 kdb-gmail-fetch       = "ingestion.feeder.gmail:main"
 kdb-scan              = "ingestion.kdb_scan:main"
-kdb-validate          = "compiler.validate_compile_result:main"
-kdb-validate-response = "compiler.validate_source_response:main"
+kdb-validate          = "kdb_graph_compiler.validate_compile_result:main"
+kdb-validate-response = "kdb_graph_compiler.validate_source_response:main"
 kdb-clean             = "tools.cleanup:main"
 kdb-replay            = "tools.replay:main"
 kdb-benchmark         = "tools.benchmark.cli:main"
-kdb-orchestrate       = "orchestrator.kdb_orchestrate:main"
+kdb-orchestrate       = "kdb_graph_orchestrator.kdb_orchestrate:main"
 kdb-mcp-server        = "kdb_mcp.server:main"
 graphdb-kdb           = "kdb_graph.cli:main"
 
@@ -43,17 +43,17 @@ requires      = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["kdb_graph*", "kdb_mcp*", "kdb_graph_search*", "common*", "ingestion*", "compiler*", "orchestrator*", "tools*"]
+include = ["kdb_graph*", "kdb_mcp*", "kdb_graph_search*", "common*", "ingestion*", "kdb_graph_compiler*", "kdb_graph_orchestrator*", "tools*"]
 exclude = ["knowledge_graph*", "docs*", "tests*", "benchmark*", "*.tests", "*.tests.*"]
 
 [tool.setuptools.package-data]
-compiler      = ["schemas/*.json", "prompts/*.md"]
+kdb_graph_compiler      = ["schemas/*.json", "prompts/*.md"]
 tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 kdb_graph_search    = ["prompts/*.txt"]
 
 [tool.pytest.ini_options]
-testpaths    = ["common/tests", "ingestion/tests", "compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "kdb_graph_search/tests", "orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
+testpaths    = ["common/tests", "ingestion/tests", "kdb_graph_compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "kdb_graph_search/tests", "kdb_graph_orchestrator/tests", "tools/tests", "tools/benchmark/tests"]
 python_files = ["test_*.py"]
 addopts      = "-ra -q -m 'not bench'"
 markers      = [

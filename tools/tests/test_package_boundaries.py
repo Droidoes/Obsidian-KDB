@@ -1,7 +1,7 @@
 import ast, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-INTERNAL = {"common", "ingestion", "compiler", "kdb_graph", "orchestrator", "tools", "kdb_mcp",
+INTERNAL = {"common", "ingestion", "kdb_graph_compiler", "kdb_graph", "kdb_graph_orchestrator", "tools", "kdb_mcp",
             "kdb_graph_search",
             # removed package roots — kept here so a future stale import of one
             # surfaces as an illegal edge rather than being silently ignored:
@@ -41,9 +41,9 @@ ALLOWED = {
     # materialization owner.
     "kdb_graph_search":   {"common"},
     "ingestion":    {"common"},
-    "compiler":     {"common", "kdb_graph", "kdb_graph_search"},  # #123 P3a: search_adapter
-    "orchestrator": {"common", "kdb_graph", "ingestion", "compiler"},  # #133: cleanup edge removed
-    "tools":        {"common", "kdb_graph", "ingestion", "compiler", "kdb_graph_search"},  # #123 P4 harness
+    "kdb_graph_compiler":     {"common", "kdb_graph", "kdb_graph_search"},  # #123 P3a: search_adapter
+    "kdb_graph_orchestrator": {"common", "kdb_graph", "ingestion", "kdb_graph_compiler"},  # #133: cleanup edge removed
+    "tools":        {"common", "kdb_graph", "ingestion", "kdb_graph_compiler", "kdb_graph_search"},  # #123 P4 harness
     "kdb_mcp":      {"common", "kdb_graph"},
 }
 
@@ -57,7 +57,7 @@ def test_package_dependency_contract(pkg, allowed):
 
 def test_nothing_depends_on_tools():
     # 'nothing depends on tools' holds without exception since #133 (the
-    # orchestrator->tools.cleanup edge — finalize calling cleanup inline — was
+    # kdb_graph_orchestrator->tools.cleanup edge — finalize calling cleanup inline — was
     # retired in #130 and its allowance removed in #133).
-    for pkg in ("common", "ingestion", "compiler", "kdb_graph", "orchestrator"):
+    for pkg in ("common", "ingestion", "kdb_graph_compiler", "kdb_graph", "kdb_graph_orchestrator"):
         assert "tools" not in _top_level_imports(pkg), f"{pkg} must not depend on tools"

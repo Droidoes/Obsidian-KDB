@@ -30,8 +30,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from compiler import validate_source_response
-from compiler.response_recovery import recover_json_response
+from kdb_graph_compiler import validate_source_response
+from kdb_graph_compiler.response_recovery import recover_json_response
 
 
 @dataclass
@@ -152,7 +152,7 @@ def _replay_case_v3(fixture: ReplayFixture) -> ReplayResult:
     # #115 T2.2: the expected summary slug is derived from the source id,
     # never taken from the payload. Codex Gate-2 F5: an underivable stem
     # fails CLOSED (semantic_ok=False) instead of aborting the replay run.
-    from compiler.summary_slug import expected_summary_slug
+    from kdb_graph_compiler.summary_slug import expected_summary_slug
     from common.paths import PathError
     try:
         expected_slug = expected_summary_slug(fixture.source_id)
@@ -185,7 +185,7 @@ def _flag_result(fixture: ReplayFixture, *, extract_ok: bool, parse_ok: bool,
 
 def _replay_case_v4(fixture: ReplayFixture) -> ReplayResult:
     from common.paths import PathError
-    from compiler import proposal_bridge, validate_proposal_response
+    from kdb_graph_compiler import proposal_bridge, validate_proposal_response
     result = recover_json_response(fixture.stored_response_text)
     if not result.recovered:
         return _flag_result(fixture, extract_ok=result.extract_ok,

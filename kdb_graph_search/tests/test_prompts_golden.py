@@ -1,7 +1,7 @@
 """#123 P2.1f — golden byte pins for the two selector prompts.
 
 **The rule this file enforces** (the repo's D-115-13 convention, established for
-pass-2 at `compiler/tests/test_prompt_builder.py:101`): changing prompt bytes
+pass-2 at `kdb_graph_compiler/tests/test_prompt_builder.py:101`): changing prompt bytes
 requires bumping the prompt version **and** updating the pin here **in the same
 commit**. An unversioned content change fails, so prose cannot drift away from
 the version that names it or the review that approved it.
@@ -10,7 +10,7 @@ Under #123 the version lives in the *filename* (`prompts._version_of` — the fi
 name is the single source of the version), so "bump the version" means renaming
 the file `_v1` → `_v2`. That is deliberately a visible act.
 
-**Why the digest is not the only pin.** The compiler's pin covers one string.
+**Why the digest is not the only pin.** The kdb_graph_compiler's pin covers one string.
 Here there are two stages × four quantities, and they can drift apart:
 
   * `sha256` / `version` / `repo_path` are properties of the **template file**.

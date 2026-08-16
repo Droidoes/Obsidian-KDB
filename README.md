@@ -6,8 +6,8 @@ Karpathy-style LLM-compiled knowledge base for Obsidian vaults. Raw source docum
 
 - `common/` — shared leaf package: types, `call_model` (+ retry/telemetry), model pool, paths, atomic I/O
 - `ingestion/` — Pass-1 enrichment (LLM classifies sources: domain, source type, key entities) + `kdb_scan`
-- `compiler/` — Pass-2 compile: context loader, validate, repair, canonicalize, page writer
-- `orchestrator/` — `kdb-orchestrate` conductor: the end-to-end loop, manifest writer, events, KPIs
+- `kdb_graph_compiler/` — Pass-2 compile: context loader, validate, repair, canonicalize, page writer
+- `kdb_graph_orchestrator/` — `kdb-orchestrate` conductor: the end-to-end loop, manifest writer, events, KPIs
 - `kdb_graph/` — KuzuDB-backed knowledge graph: schema, intake, queries, verifier, rebuilder, snapshot, CLI
 - `kdb_mcp/` — read-only FastMCP stdio server (7 tools over the live graph)
 - `tools/` — operational tools: cleanup, replay, benchmark engine (`tools/benchmark/`), diagnostics, viewer

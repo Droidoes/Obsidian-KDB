@@ -27,7 +27,7 @@ def _signal_parsed(model: str = "m") -> dict:
 
 def test_enrich_returns_body_and_post_embed_hash(tmp_path, monkeypatch):
     # Task #91: enrich_one carries body + post-embed whole-file hash/mtime so the
-    # orchestrator reuses them in-memory (no re-read) and stores a stable hash.
+    # kdb_graph_orchestrator reuses them in-memory (no re-read) and stores a stable hash.
     src = tmp_path / "s.md"
     src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
     runs = tmp_path / "ingest_runs"
@@ -105,7 +105,7 @@ def test_enrich_sidecar_cost_usd_from_aggregated_tokens(tmp_path, monkeypatch):
 
 def test_enrich_success_carries_aggregated_tokens(tmp_path, monkeypatch):
     # #111 display-only: the success EnrichResult exposes aggregated in/out tokens
-    # (the same totals written into the sidecar) so the orchestrator can render
+    # (the same totals written into the sidecar) so the kdb_graph_orchestrator can render
     # per-source token counts on the pass-1 ✓ console line.
     src = tmp_path / "s.md"
     src.write_text("# Heading\n\nA note about value investing.\n", encoding="utf-8")
@@ -131,7 +131,7 @@ def test_enrich_success_carries_aggregated_tokens(tmp_path, monkeypatch):
 
 def test_enrich_failed_keeps_zero_token_defaults(tmp_path, monkeypatch):
     # #111: only the success path populates tokens; the failed path keeps the
-    # 0 defaults (the orchestrator fail-fasts on enrich failure anyway).
+    # 0 defaults (the kdb_graph_orchestrator fail-fasts on enrich failure anyway).
     src = tmp_path / "bad.md"
     src.write_text("# Bad\n\nA note.\n", encoding="utf-8")
     runs = tmp_path / "ingest_runs"
@@ -152,7 +152,7 @@ def test_enrich_failed_keeps_zero_token_defaults(tmp_path, monkeypatch):
 
 
 def test_enrich_pipeline_force_noise_param_overrides(tmp_path, monkeypatch):
-    # Task #91: the orchestrator threads the pipeline's force_noise globs; a
+    # Task #91: the kdb_graph_orchestrator threads the pipeline's force_noise globs; a
     # signal envelope under Daily Notes/* must be deterministically routed noise.
     src = tmp_path / "daily.md"
     src.write_text("# Standup\n\nNotes for today.\n", encoding="utf-8")

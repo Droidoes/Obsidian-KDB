@@ -1,6 +1,6 @@
 """Pin the kdb_graph public API surface (Phase 1).
 
-Consumers (MCP server, compiler, tools) import from this surface; it must carry
+Consumers (MCP server, kdb_graph_compiler, tools) import from this surface; it must carry
 the read-only contract added in #112.
 """
 from __future__ import annotations

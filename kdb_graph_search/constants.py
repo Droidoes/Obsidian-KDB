@@ -103,7 +103,7 @@ def wire_vocabulary(count: int) -> tuple[str, ...]:
 #: and `EXCERPT_POLICY_VERSION` all lived here. Measured against the data they
 #: protected: the byte ceiling had fired 0/163 fixture and 0/83 live, the word cap
 #: 2/163 and 0/83. The reason is structural, not luck — pass-2 writes these pages,
-#: so their length is governed by the compiler's own prompt contract (live max 129
+#: so their length is governed by the kdb_graph_compiler's own prompt contract (live max 129
 #: words / 976 B). Fat now receives whole bodies, and the fill bounds the request.
 #:
 #: The query ceiling below is deliberately NOT removed with them: pass-1 metadata

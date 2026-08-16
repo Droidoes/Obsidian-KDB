@@ -272,7 +272,7 @@ def _load_run_measurements(
 ) -> tuple["RunMeasurementHeader", list["PassCallMeasurement"], dict]:
     """Shared loader core.
 
-    Layout (verified from orchestrator + compiler source):
+    Layout (verified from kdb_graph_orchestrator + kdb_graph_compiler source):
       <run_dir>/measurement_header.json        — RunMeasurementHeader JSON
       <run_dir>/pass1/*.json                   — Pass-1 sidecars
       <run_dir>/pass2/*.json                   — Pass-2 RespStatsRecord JSONs

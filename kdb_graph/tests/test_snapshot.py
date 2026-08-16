@@ -4,7 +4,7 @@ Test scope (per Codex review + Phase 2 design lock):
 1. JSONL parseability — every line in every file parses as JSON
 2. Manifest count + sha256 — recorded values match what's on disk
 3. Stable ordering — two snapshots of an unchanged graph are byte-identical
-4. D34 grep invariant — kdb_graph production code has no compiler/ingestion/orchestrator imports
+4. D34 grep invariant — kdb_graph production code has no kdb_graph_compiler/ingestion/kdb_graph_orchestrator imports
 5. Atomic-failure cleanup — failed mid-snapshot leaves no `<out>/`
 6. latest.json pointer — points at the most recent snapshot dir
 """
@@ -183,7 +183,7 @@ def test_two_snapshots_of_unchanged_graph_are_byte_identical(graph_dir, tmp_path
 
 def test_kdb_graph_has_no_producer_imports():
     """D34: kdb_graph production code must not import from the producer
-    packages (compiler / ingestion / orchestrator).  Imports from `common`
+    packages (kdb_graph_compiler / ingestion / kdb_graph_orchestrator).  Imports from `common`
     are allowed.
 
     Uses AST parsing, not text grep, so legitimate mentions in docstrings
@@ -193,7 +193,7 @@ def test_kdb_graph_has_no_producer_imports():
     """
     import ast
 
-    _PRODUCER_PREFIXES = ("compiler", "ingestion", "orchestrator")
+    _PRODUCER_PREFIXES = ("kdb_graph_compiler", "ingestion", "kdb_graph_orchestrator")
 
     pkg_root = Path(__file__).resolve().parent.parent  # kdb_graph/
     tests_dir = pkg_root / "tests"

@@ -1,7 +1,7 @@
 """types — typed dataclasses for pipeline payloads.
 
 Single source of truth for cross-module shapes. Mirrors the JSON schemas
-in compiler/schemas/ and docs/manifest.schema.md.
+in kdb_graph_compiler/schemas/ and docs/manifest.schema.md.
 
 Serialization convention: every dataclass with a to_dict() produces a dict
 shaped for direct JSON serialization. Plain asdict() is used where the
@@ -246,7 +246,7 @@ class CompileMeta:
 @dataclass
 class CompiledSource:
     """LLM output for one source (#115: no summary_slug / slug lists —
-    Python derives the summary identity via compiler.summary_slug)."""
+    Python derives the summary identity via kdb_graph_compiler.summary_slug)."""
     source_id: str
     pages: list[PageIntent]
     compile_meta: Optional[CompileMeta] = None
@@ -266,14 +266,14 @@ class CompiledSource:
 
 @dataclass
 class CompileSourceResult:
-    """Per-source Pass-2 PRODUCE result from compiler.compile_source().
-    Produce-don't-write: holds the compiled `cr` only — the orchestrator
+    """Per-source Pass-2 PRODUCE result from kdb_graph_compiler.compile_source().
+    Produce-don't-write: holds the compiled `cr` only — the kdb_graph_orchestrator
     owns stage-8 apply-pages, provenance, manifest commit, and graph-sync.
     error non-None ==> pre-commit failure (D-91-13 case a); cr is None and
     `failure_stage` in {context, compile, validate, canonicalize} routes the
-    orchestrator's case-aware summary without string-parsing.
+    kdb_graph_orchestrator's case-aware summary without string-parsing.
     #123 P3a.4 (§4.7): `search_attempted` / `search_envelope_written` are the
-    pass-1.5 counting channel — the orchestrator accumulates them into the
+    pass-1.5 counting channel — the kdb_graph_orchestrator accumulates them into the
     run header's searches_attempted / searches_written for the emit_kpis
     reconciliation (attempted − written == envelope write failures)."""
     cr: Optional[dict]
@@ -356,7 +356,7 @@ class ContextSnapshot:
 # ---------- Task #122 event-time context capture (shared vocabulary) ----------
 # #123 P3a.2b: KeyDisposition / ConfiguredT2Mode / EffectiveT2Strategy /
 # KeyOutcome retired with the legacy T2 family (blueprint §7) — the per-key
-# outcome vocabulary now lives in compiler.context_record.KeyOutcomeV2.
+# outcome vocabulary now lives in kdb_graph_compiler.context_record.KeyOutcomeV2.
 
 
 @dataclass(frozen=True)
@@ -377,8 +377,8 @@ class ContextTelemetry:           # builder-owned — NO run_id, NO schema metad
     #123 P3a.2b: configured_t2_mode / effective_t2_strategy / max_hops are
     retired with the legacy T2 family (blueprint §7); `search` carries the
     pass-1.5 SearchSummary (defined below — annotations resolve lazily).
-    `key_outcomes` elements are compiler.context_record.KeyOutcomeV2 — common
-    is a LEAF package and cannot import the compiler, so the field is a bare
+    `key_outcomes` elements are kdb_graph_compiler.context_record.KeyOutcomeV2 — common
+    is a LEAF package and cannot import the kdb_graph_compiler, so the field is a bare
     list by annotation, by contract. #131: `page_cap` governs t2+t3 delivery
     only — t1 is must-see, cap-exempt."""
     source_id: str
@@ -485,12 +485,12 @@ class SearchSummary:
 @dataclass
 class CompileJob:
     """One unit of compile work: a source_id + resolved path + its
-    pre-built context snapshot. The orchestrator (in-memory path) also
+    pre-built context snapshot. The kdb_graph_orchestrator (in-memory path) also
     supplies source_text + frontmatter so compile reads nothing from disk."""
     source_id: str                 # "KDB/raw/..."
     abs_path: str                  # absolute filesystem path (legacy path only)
     context_snapshot: ContextSnapshot
-    source_text: str | None = None              # in-memory body (orchestrator path)
+    source_text: str | None = None              # in-memory body (kdb_graph_orchestrator path)
     frontmatter: "SourceFrontmatter | None" = None
 
 

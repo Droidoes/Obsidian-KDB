@@ -292,7 +292,7 @@ def _model_request(
 
     `json_mode=True` is **not optional and not a default** — it is the ratified
     requirement on every selector request, both stages, and the regression it
-    guards is already in the repo: `compiler/tests/test_compile_source.py:139`
+    guards is already in the repo: `kdb_graph_compiler/tests/test_compile_source.py:139`
     pins a pass-2 failure where free-form JSON reached a validator. `max_tokens`
     is the provider TOTAL (visible + hidden reserve, D9 quantity 3), never the
     visible allowance — sending the visible figure would cap the completion below
@@ -413,7 +413,7 @@ def stage_call(
 
     `validate` is injected rather than selected from `stage`: the thin and fat
     validators need the search space, the request's expressions and the caps,
-    which are the orchestrator's to hold — passing them all through here would
+    which are the kdb_graph_orchestrator's to hold — passing them all through here would
     make this function take the whole request in order to look up two of its
     fields. What this module owns is the attempt/record/classification contract,
     which is identical for both stages.

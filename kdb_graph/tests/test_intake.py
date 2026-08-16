@@ -997,8 +997,8 @@ class TestBodyWikilinkEdgeDerivation:
 
 def test_mirrored_extractor_matches_compiler():
     """Drift guard: kdb_graph.body_wikilink_slugs must stay byte-equivalent
-    to the compiler's extractor (mirrored, B.3)."""
-    from compiler.validate_source_response import body_wikilink_slugs as comp
+    to the kdb_graph_compiler's extractor (mirrored, B.3)."""
+    from kdb_graph_compiler.validate_source_response import body_wikilink_slugs as comp
     from kdb_graph.intake import body_wikilink_slugs as graph
     bodies = [
         "See [[foo]] and [[bar-baz|Alias]] and [[qux#Heading]].",

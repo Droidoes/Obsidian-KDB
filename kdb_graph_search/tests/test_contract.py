@@ -159,7 +159,7 @@ def test_every_terminal_conforms_at_both_attempt_bounds(name):
 
 def test_the_matrix_covers_every_status():
     """No status may be unreachable: a status with no terminal is a status the
-    orchestrator can never legally return."""
+    kdb_graph_orchestrator can never legally return."""
     assert {c.status for c in TERMINAL_CONTRACTS.values()} == {
         "completed",
         "abstain_empty_space",

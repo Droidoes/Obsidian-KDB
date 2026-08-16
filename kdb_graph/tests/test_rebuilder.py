@@ -889,7 +889,7 @@ def test_rebuilder_mixed_shape_journal_pair(graph_dir, tmp_path):
     # on VALID records, not just edge derivation. Validated as fixture-backed
     # payloads (compile_meta omitted per the aggregate schema's fixture
     # allowance — the synthetic factory's run_state/hash stub is intake-only).
-    from compiler import validate_compile_result as vcr
+    from kdb_graph_compiler import validate_compile_result as vcr
 
     def _fixture_backed(cr: dict) -> dict:
         import copy
@@ -1055,7 +1055,7 @@ def test_d115_14_identical_sidecars_through_validate_and_rebuild(graph_dir, tmp_
                              started_at="2026-07-22T01:00:00")
 
     # 1. kdb-validate boundary — on the exact on-disk sidecar bytes.
-    from compiler import validate_compile_result as vcr
+    from kdb_graph_compiler import validate_compile_result as vcr
     for run_id in ("r-old", "r-new"):
         sidecar = json.loads(
             (journals / run_id / "compile_result.json").read_text(encoding="utf-8"))
@@ -1090,7 +1090,7 @@ def test_system_wiki_body_equals_live_and_rebuilt_links(graph_dir, tmp_path):
     graph LINKS_TO == rebuilt graph LINKS_TO."""
     from common.run_context import SCHEMA_VERSION, RunContext
     from common import wiki_io
-    from compiler import page_writer
+    from kdb_graph_compiler import page_writer
 
     vault = tmp_path / "vault"
     (vault / "KDB" / "state").mkdir(parents=True)
@@ -1220,9 +1220,9 @@ def _write_run_23(
     dry_run: bool = False,
     schema_version: str = "2.3",
 ) -> None:
-    """Write one orchestrator-era (2.3) run tree: journal + both sidecars.
+    """Write one kdb_graph_orchestrator-era (2.3) run tree: journal + both sidecars.
 
-    Mirrors the journal shape the orchestrator archives per #132: slim
+    Mirrors the journal shape the kdb_graph_orchestrator archives per #132: slim
     eligibility fields + `finalize_progress` (the derive gate). The sidecar
     scan keeps the two live phases separate: `files` = committed post-embed
     entries, `moved_files`/`to_reconcile` = applied reconcile ops.

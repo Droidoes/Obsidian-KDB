@@ -227,7 +227,7 @@ def test_classify_results_are_sorted() -> None:
     assert [f.path for f in files] == ["KDB/raw/a.md", "KDB/raw/z.md"]
 
 
-# ---------- scan() orchestrator + atomic write ----------
+# ---------- scan() kdb_graph_orchestrator + atomic write ----------
 
 def test_scan_writes_last_scan_json_atomically(tmp_path: Path) -> None:
     vault, raw, state = _make_vault(tmp_path)
@@ -457,7 +457,7 @@ def test_scan_entry_pipeline_id_field():
 
 
 def test_seed_source_record_carries_pipeline_id():
-    from orchestrator.manifest_writer import _seed_source_record
+    from kdb_graph_orchestrator.manifest_writer import _seed_source_record
     from common.run_context import RunContext
     ctx = RunContext.new(dry_run=True, vault_root=Path("/tmp/x"))
     rec = _seed_source_record(

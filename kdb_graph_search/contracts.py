@@ -6,11 +6,11 @@ ratified field contract: `status`, `execution`, `evidence_status`,
 unresolved, whether concordance is null, how many logical attempts each stage may
 have made, and which watched telemetry classes must be present.
 
-**Who calls this.** P2's orchestrator, at its single return site: it names the
+**Who calls this.** P2's kdb_graph_orchestrator, at its single return site: it names the
 terminal it took and `assert_result_contract` refuses to let a non-conforming
 `GraphSearchResult` leave the function. That is the point of the table — not
 documentation, but a fail-closed check that an unratified `(status, execution)`
-pair or a half-filled terminal cannot escape. P1 has no orchestrator, so P1's
+pair or a half-filled terminal cannot escape. P1 has no kdb_graph_orchestrator, so P1's
 tests drive the rows whose producer already exists (`PRODUCIBLE_IN_P1`) through
 real code and pin the rest as shape.
 

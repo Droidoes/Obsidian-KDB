@@ -5,7 +5,7 @@ through every stage. This is the ONLY place in the pipeline where "now"
 is read, run_id is generated, and compiler_version is stamped.
 
 Enforces D8: the LLM never sees timestamps, versions, or run IDs. Python
-owns all of them; the KDB compiler system prompt forbids the LLM from
+owns all of them; the KDB kdb_graph_compiler system prompt forbids the LLM from
 emitting these fields.
 """
 from __future__ import annotations

@@ -1,5 +1,5 @@
 # ingestion/enrich/enrich.py
-"""Pass-1 enrichment orchestrator. One source → enriched + audit + journal entry."""
+"""Pass-1 enrichment kdb_graph_orchestrator. One source → enriched + audit + journal entry."""
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +25,7 @@ class EnrichResult:
     parsed_envelope: dict | None
     sidecar_path: Path | None
     error: str | None
-    # Task #91 egress: the orchestrator reuses these in-memory instead of
+    # Task #91 egress: the kdb_graph_orchestrator reuses these in-memory instead of
     # re-reading/re-hashing the file. `body` is the frontmatter-stripped body
     # (what Pass-2 compiles). `post_embed_hash`/`post_embed_mtime` are the
     # WHOLE-FILE hash + mtime AFTER frontmatter was embedded — what the manifest
@@ -38,7 +38,7 @@ class EnrichResult:
     raw_response_available: bool = False
     # #111 display-only: aggregated Pass-1 tokens (same totals written into the
     # sidecar raw_response). Populated only on the enriched success path; failed/
-    # skipped paths keep the 0 defaults. The orchestrator renders these on the
+    # skipped paths keep the 0 defaults. The kdb_graph_orchestrator renders these on the
     # pass-1 ✓ console line. NOT a measurement — telemetry stays in the sidecar.
     total_input_tokens: int = 0
     total_output_tokens: int = 0
@@ -60,7 +60,7 @@ def enrich_one(
     temperature: float | None = 0.0,
     route: ModelRoute | None = None,
 ) -> EnrichResult:
-    # Task #91: the orchestrator threads the PIPELINE's force_signal/force_noise
+    # Task #91: the kdb_graph_orchestrator threads the PIPELINE's force_signal/force_noise
     # globs (from pipelines.d/<id>.json) so per-pipeline routing (e.g. Daily
     # Notes/* → noise) takes effect; falling back to the global scope-config.yaml
     # when a caller (legacy / standalone enrich) supplies neither.
@@ -98,7 +98,7 @@ def enrich_one(
             runs_root, run_id, source_id, source_path, content_hash, e, model, provider,
         )
         # Pre-embed failure: body is known but no embed happened, so post-embed
-        # fields stay None (the orchestrator fail-fasts on enrich failure anyway).
+        # fields stay None (the kdb_graph_orchestrator fail-fasts on enrich failure anyway).
         return EnrichResult(source_id, "enrich_failed", None, sidecar, str(e),
                             body=body,
                             artifacts={"pass1_sidecar": str(sidecar),
@@ -142,7 +142,7 @@ def enrich_one(
                             raw_response_available=bool(call_result.raw_response_text))
 
     embed_frontmatter(source_path, envelope)
-    # Whole-file hash + mtime AFTER embed — the orchestrator stamps these into
+    # Whole-file hash + mtime AFTER embed — the kdb_graph_orchestrator stamps these into
     # the manifest so the embed doesn't look like an edit on the next scan.
     post_embed_hash = _whole_file_hash(source_path)
     post_embed_mtime = source_path.stat().st_mtime

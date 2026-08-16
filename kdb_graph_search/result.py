@@ -5,7 +5,7 @@ Separate from `types.py` for one reason: telemetry carries the per-class
 Putting the result here keeps that dependency one-way.
 
 `SearchTelemetry` is **controller-produced, never the LLM** (§6.3). Every field is
-either counted by P1 code or supplied by P2's orchestrator; nothing here is read
+either counted by P1 code or supplied by P2's kdb_graph_orchestrator; nothing here is read
 off the wire.
 """
 
