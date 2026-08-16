@@ -16,3 +16,10 @@ import pytest
 def _isolate_graph_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("KDB_GRAPH_PATH", str(tmp_path / "graph_isolated"))
     yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_fts_dir(tmp_path, monkeypatch):
+    """Redirect KDB_FTS_PATH to a per-test tmp dir — mirrors _isolate_graph_dir."""
+    monkeypatch.setenv("KDB_FTS_PATH", str(tmp_path / "fts_isolated"))
+    yield
