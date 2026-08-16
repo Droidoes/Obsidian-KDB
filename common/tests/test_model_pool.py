@@ -41,7 +41,7 @@ def test_resolve_active_entry_returns_modelspec():
     assert spec.ctx_window == 1000000
     # Generated from the `thinking: disabled` field via the per-provider table.
     assert spec.extra_body == {"thinking": {"type": "disabled"}}
-    assert spec.price_in == 0.14 and spec.price_out == 0.28
+    assert spec.price_in == 0.44 and spec.price_out == 1.32
 
 def test_resolve_unknown_id_errors_with_id_list():
     with pytest.raises(PoolError) as e:

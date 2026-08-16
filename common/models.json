@@ -39,8 +39,9 @@
     "api_key_env": "DEEPSEEK_API_KEY",
     "ctx_window": 1000000,
     "max_output_tokens": 65536,
-    "price_in": 0.14,
-    "price_out": 0.28,
+    "price_in": 0.44,
+    "price_out": 1.32,
+    "price_note": "2026-08-16 DeepSeek-V4 repricing: values are peak-hours cache-miss rates (conservative). Off-peak: in 0.22 (miss) / 0.007 (hit), out 0.66. Peak 01:00-04:00 & 06:00-10:00 UTC.",
     "thinking": "disabled",
     "tokens_lte_bytes": true
   },
@@ -53,8 +54,9 @@
     "api_key_env": "DEEPSEEK_API_KEY",
     "ctx_window": 1000000,
     "max_output_tokens": 384000,
-    "price_in": 0.435,
-    "price_out": 0.87,
+    "price_in": 1.32,
+    "price_out": 3.96,
+    "price_note": "2026-08-16 DeepSeek-V4 repricing: values are peak-hours cache-miss rates (conservative). Off-peak: in 0.66 (miss) / 0.022 (hit), out 1.98. Peak 01:00-04:00 & 06:00-10:00 UTC.",
     "thinking": "disabled",
     "tokens_lte_bytes": true
   },
