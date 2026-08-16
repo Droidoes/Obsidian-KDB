@@ -71,3 +71,68 @@ def test_nothing_imports_kdb_fts():
             continue
         offenders = _top_level_imports(pkg) & {"kdb_fts"}
         assert not offenders, f"{pkg} must not import kdb_fts (reads exports instead)"
+
+
+# --- #145 P0: kdb_fts write-boundary guard (blueprint D3) -------------------
+
+_WRITE_MUTATORS = {
+    ("pathlib", "write_text"), ("pathlib", "write_bytes"),
+    ("pathlib", "unlink"), ("pathlib", "rename"),
+    ("os", "remove"), ("os", "replace"),
+}
+_SQLITE_ALLOWLIST = {"ledger.py"}
+_MKDIR_ALLOWLIST = {"ledger.py"}
+
+
+def _fts_write_violations(pkg_dir: pathlib.Path) -> list[str]:
+    """AST scan of one tree for write-boundary violations. Returns messages."""
+    violations: list[str] = []
+    for path in pkg_dir.rglob("*.py"):
+        if "tests" in path.parts or "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text())
+        for n in ast.walk(tree):
+            if not isinstance(n, ast.Call):
+                continue
+            # R1: sqlite3.connect outside the allowlist
+            if (isinstance(n.func, ast.Attribute) and n.func.attr == "connect"
+                    and isinstance(n.func.value, ast.Name) and n.func.value.id == "sqlite3"
+                    and path.name not in _SQLITE_ALLOWLIST):
+                violations.append(f"{path.name}:{n.lineno} sqlite3.connect outside ledger.py")
+            # R2: open(...) with a write-ish mode
+            if isinstance(n.func, ast.Name) and n.func.id == "open":
+                mode = None
+                if len(n.args) >= 2 and isinstance(n.args[1], ast.Constant):
+                    mode = n.args[1].value
+                for kw in n.keywords:
+                    if kw.arg == "mode" and isinstance(kw.value, ast.Constant):
+                        mode = kw.value.value
+                if isinstance(mode, str) and any(m in mode for m in "wax+"):
+                    violations.append(f"{path.name}:{n.lineno} open(mode={mode!r}) — use common.atomic_io")
+            # R3: mutating Path/os/shutil calls outside the allowlists
+            if isinstance(n.func, ast.Attribute):
+                attr = n.func.attr
+                if attr in {"write_text", "write_bytes", "unlink", "rename"}:
+                    violations.append(f"{path.name}:{n.lineno} Path.{attr} — writes go through ledger/atomic_io")
+                if attr == "mkdir" and path.name not in _MKDIR_ALLOWLIST:
+                    violations.append(f"{path.name}:{n.lineno} mkdir outside {_MKDIR_ALLOWLIST}")
+                if (attr in {"remove", "replace"}
+                        and isinstance(n.func.value, ast.Name) and n.func.value.id == "os"):
+                    violations.append(f"{path.name}:{n.lineno} os.{attr}")
+                if isinstance(n.func.value, ast.Name) and n.func.value.id == "shutil":
+                    violations.append(f"{path.name}:{n.lineno} shutil.{attr}")
+    return violations
+
+
+def test_fts_write_boundary():
+    assert _fts_write_violations(ROOT / "kdb_fts") == []
+
+
+def test_fts_write_boundary_catches_violation(tmp_path):
+    import shutil
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    shutil.copy(ROOT / "tools" / "tests" / "fixtures" / "write_boundary_violation.py",
+                pkg / "bad.py")
+    found = _fts_write_violations(pkg)
+    assert any("open(mode='w'" in v for v in found), found
