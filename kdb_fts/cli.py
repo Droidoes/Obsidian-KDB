@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from kdb_fts import author_map, gate, intake, ledger, state
+from kdb_fts import author_map, feedback, gate, intake, ledger, state
 
 
 def _default_raw_root() -> Path:
@@ -97,6 +97,18 @@ def _cmd_gate(args) -> int:
     return 0
 
 
+def _cmd_feedback(args) -> int:
+    root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
+    ledger.connect(root)  # guarantees feedback/ exists
+    event = feedback.append_event(
+        root, action=args.action, target_type=args.target_type,
+        target_id=args.target_id, reason_text=args.reason,
+        reason_tags=args.tags.split(",") if args.tags else None,
+    )
+    print(f"event appended: {event['action']} {event['target_type']}:{event['target_id']} @ {event['ts']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kdb-fts")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -122,6 +134,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--state", default=None)
     p.set_defaults(fn=_cmd_gate)
+
+    p = sub.add_parser("feedback", help="append one immutable event (scripting path)")
+    p.add_argument("target_type", choices=sorted(feedback.TARGET_TYPES))
+    p.add_argument("target_id")
+    p.add_argument("action", choices=sorted(feedback.ACTIONS))
+    p.add_argument("--reason", default=None)
+    p.add_argument("--tags", default=None, help="comma-separated")
+    p.add_argument("--state", default=None)
+    p.set_defaults(fn=_cmd_feedback)
 
     args = parser.parse_args(argv)
     return args.fn(args)
