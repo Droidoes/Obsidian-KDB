@@ -72,6 +72,10 @@ def test_migrate_failure_rolls_back_and_keeps_version(tmp_path, monkeypatch):
     with pytest.raises(sqlite3.OperationalError):
         schema.migrate(conn)
     assert schema.current_version(conn) == 2  # unchanged
+    # The explicit transaction rolls back the first CREATE TABLE too.
+    assert conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='boom'"
+    ).fetchall() == []
     # DB still usable: a well-known table answers a query.
     assert conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 0
 

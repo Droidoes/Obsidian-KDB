@@ -92,19 +92,21 @@ def current_version(conn: sqlite3.Connection) -> int:
 def migrate(conn: sqlite3.Connection) -> None:
     """Apply all pending migrations in order. Idempotent.
 
-    Each migration's DDL runs inside an explicit transaction (a failing
-    migration rolls back and never advances schema_version). executescript
-    commits any already-open transaction first, so the BEGIN must live
-    inside the script text.
+    Each migration's DDL + its schema_version stamp run inside ONE explicit
+    transaction (a failing migration rolls back and never advances
+    schema_version; a crash cannot leave tables created but the version
+    unstamped). executescript commits any already-open transaction first,
+    so the BEGIN must live inside the script text. Migration 1 creates the
+    meta table earlier in its own script, so the stamp INSERT is valid in
+    every migration.
     """
     for version in range(current_version(conn) + 1, SCHEMA_VERSION + 1):
+        stamp = (
+            "INSERT OR REPLACE INTO meta(key, value) "
+            f"VALUES ('schema_version', '{version}');"
+        )
         try:
-            conn.executescript(f"BEGIN;\n{MIGRATIONS[version]}\nCOMMIT;")
+            conn.executescript(f"BEGIN;\n{MIGRATIONS[version]}\n{stamp}\nCOMMIT;")
         except sqlite3.Error:
             conn.rollback()
             raise
-        conn.execute(
-            "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
-            (str(version),),
-        )
-        conn.commit()
