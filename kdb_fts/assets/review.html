@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kdb-fts review</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  #meta { color: #666; font-size: .9rem; margin: .25rem 0 1rem; }
+  #body { white-space: pre-wrap; background: #fafafa; border: 1px solid #ddd; padding: 1rem; max-height: 55vh; overflow-y: auto; }
+  #bar { margin: 1rem 0; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  button { font-size: 1rem; padding: .5rem 1rem; cursor: pointer; }
+  button.strong { background: #d7f0d7; } button.noise { background: #f0d7d7; }
+  #reason { width: 100%; min-height: 3rem; margin-top: .5rem; display: none; }
+  #progress { color: #666; }
+  #saved { color: #2a7; margin-left: .5rem; }
+  kbd { background: #eee; border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<h2 id="title">loading…</h2>
+<div id="meta"></div>
+<div id="bar">
+  <button data-action="strong" class="strong">strong <kbd>1</kbd></button>
+  <button data-action="interesting">interesting <kbd>2</kbd></button>
+  <button data-action="weak">weak <kbd>3</kbd></button>
+  <button data-action="noise" class="noise">noise <kbd>4</kbd></button>
+  <span id="progress"></span><span id="saved"></span>
+</div>
+<textarea id="reason" placeholder="why? (extremes teach the rubric — optional but valuable)"></textarea>
+<div id="body"></div>
+<script>
+let batch = null, idx = 0, pendingAction = null;
+const labeled = new Set();
+
+async function init() {
+  batch = await (await fetch('/batch')).json();
+  document.title = 'kdb-fts review — ' + batch.batch_id;
+  show(0);
+}
+
+function show(i) {
+  idx = i;
+  const it = batch.items[i];
+  document.getElementById('title').textContent = it.title || '(untitled)';
+  document.getElementById('meta').textContent =
+    (it.author || '?') + ' · ' + (it.published_date || '?') +
+    ' · topic guess: ' + it.topic + ' · signal ' + it.signal.toFixed(2);
+  document.getElementById('body').textContent = it.body;
+  document.getElementById('reason').style.display = 'none';
+  document.getElementById('reason').value = '';
+  document.getElementById('saved').textContent = labeled.has(it.article_id) ? '✓ labeled' : '';
+  updateProgress();
+}
+
+function updateProgress() {
+  document.getElementById('progress').textContent =
+    (idx + 1) + ' / ' + batch.items.length + '  ·  labeled ' + labeled.size;
+}
+
+function next() { if (idx + 1 < batch.items.length) show(idx + 1); }
+
+async function label(action) {
+  const it = batch.items[idx];
+  // extremes (strong/noise) invite a reason first (D13); Enter/again submits.
+  const box = document.getElementById('reason');
+  if ((action === 'strong' || action === 'noise') &&
+      box.style.display === 'none' && pendingAction !== action) {
+    pendingAction = action;
+    box.style.display = 'block';
+    box.focus();
+    return;
+  }
+  const resp = await fetch('/event', {method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({article_id: it.article_id, action: action,
+                          reason_text: box.value || null})});
+  if (resp.ok) {
+    labeled.add(it.article_id);
+    pendingAction = null;
+    next();
+  } else {
+    document.getElementById('saved').textContent = 'SAVE FAILED — ' + resp.status;
+  }
+}
+
+document.querySelectorAll('button[data-action]').forEach(b =>
+  b.addEventListener('click', () => label(b.dataset.action)));
+document.getElementById('reason').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pendingAction) label(pendingAction);
+});
+document.addEventListener('keydown', e => {
+  const keys = {'1': 'strong', '2': 'interesting', '3': 'weak', '4': 'noise'};
+  if (e.target.tagName !== 'TEXTAREA' && keys[e.key]) label(keys[e.key]);
+});
+init();
+</script>
+</body>
+</html>

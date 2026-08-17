@@ -54,3 +54,80 @@ def test_freeze_rejects_unknown_kind(tmp_path):
     conn = ledger.connect(tmp_path)
     with pytest.raises(ValueError):
         review.freeze_batch(conn, tmp_path, batch_id="b1", kind="research")
+
+
+import http.client
+import threading
+
+from kdb_fts import feedback
+
+
+def _serve(tmp_path, batch_id):
+    server = review.make_server(tmp_path, batch_id)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    return server
+
+
+def _req(server, method, path, payload=None):
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    body = json.dumps(payload) if payload is not None else None
+    headers = {"Content-Type": "application/json"} if body else {}
+    conn.request(method, path, body=body, headers=headers)
+    resp = conn.getresponse()
+    data = resp.read()
+    conn.close()
+    return resp.status, data
+
+
+def test_server_roundtrip_event_writeback(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=3)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        status, html = _req(server, "GET", "/")
+        assert status == 200 and b'id="title"' in html
+        status, batch = _req(server, "GET", "/batch")
+        assert status == 200
+        item = json.loads(batch)["items"][0]
+        status, out = _req(server, "POST", "/event",
+                           {"article_id": item["article_id"], "action": "strong",
+                            "reason_text": "compelling"})
+        assert status == 200 and json.loads(out)["ok"] is True
+    finally:
+        server.shutdown()
+    events = feedback.load_events(tmp_path, batch_id="b1")
+    assert len(events) == 1
+    e = events[0]
+    # exposure context stamped server-side from the frozen batch (D13)
+    assert e["target_id"] == item["article_id"]
+    assert e["position_shown"] == item["position"]
+    assert e["score_shown"] == item["signal"]
+    assert e["ranker_version"] is None
+    assert e["reason_text"] == "compelling"
+    assert e["exploration"] is False
+
+
+def test_server_rejects_unknown_article_and_action(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=2)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        status, _ = _req(server, "POST", "/event",
+                         {"article_id": "ghost", "action": "strong"})
+        assert status == 400
+        batch = json.loads(_req(server, "GET", "/batch")[1])
+        status, _ = _req(server, "POST", "/event",
+                         {"article_id": batch["items"][0]["article_id"],
+                          "action": "bogus"})
+        assert status == 400
+        assert _req(server, "GET", "/nope")[0] == 404
+    finally:
+        server.shutdown()
+    assert feedback.load_events(tmp_path) == []  # nothing written

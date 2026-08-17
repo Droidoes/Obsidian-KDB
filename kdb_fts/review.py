@@ -88,3 +88,84 @@ def freeze_batch(conn: sqlite3.Connection, root: Path, *, batch_id: str,
         "items": items,
     })
     return path
+
+
+# --- server half (Task 7): stdlib http.server + one static page (D22) ------
+
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from kdb_fts import feedback
+
+_PAGE_PATH = Path(__file__).parent / "assets" / "review.html"
+
+
+def make_server(root: Path, batch_id: str,
+                port: int = 0) -> ThreadingHTTPServer:
+    """Build (not start) the review server for one frozen batch."""
+    root = Path(root)
+    batch_path = root / "review" / f"{batch_id}.json"
+    frozen_text = batch_path.read_text(encoding="utf-8")  # missing → FileNotFoundError, good
+    frozen = json.loads(frozen_text)
+    by_id = {item["article_id"]: item for item in frozen["items"]}
+    page_bytes = _PAGE_PATH.read_bytes()
+    batch_bytes = frozen_text.encode("utf-8")
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code: int, body: bytes, content_type: str) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:
+            if self.path in ("/", "/review.html"):
+                self._send(200, page_bytes, "text/html; charset=utf-8")
+            elif self.path == "/batch":
+                self._send(200, batch_bytes, "application/json")
+            else:
+                self._send(404, b"not found", "text/plain")
+
+        def do_POST(self) -> None:
+            if self.path != "/event":
+                self._send(404, b"not found", "text/plain")
+                return
+            try:
+                length = int(self.headers["Content-Length"])
+                data = json.loads(self.rfile.read(length))
+                item = by_id[data["article_id"]]  # KeyError → 400 below
+                action = data["action"]
+                reason = data.get("reason_text") or None
+                if action not in feedback.ACTIONS:
+                    raise ValueError(f"bad action {action!r}")
+            except (KeyError, ValueError, json.JSONDecodeError, TypeError):
+                self._send(400, b"bad event", "text/plain")
+                return
+            feedback.append_event(
+                root, action=action, target_type="article",
+                target_id=item["article_id"], reason_text=reason,
+                ranker_version=frozen.get("ranker_version"),
+                score_shown=item.get("signal"),
+                position_shown=item["position"],
+                batch_id=batch_id, exploration=bool(item.get("exploration", False)))
+            self._send(200, b'{"ok": true}', "application/json")
+
+        def log_message(self, *args) -> None:  # quiet
+            pass
+
+    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+
+
+def serve(root: Path, batch_id: str) -> None:
+    """Start the app for a frozen batch until Ctrl-C."""
+    server = make_server(root, batch_id)
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    print(f"review batch {batch_id!r} at {url}  (Ctrl-C to stop)")
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

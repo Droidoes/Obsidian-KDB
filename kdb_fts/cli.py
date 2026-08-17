@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from kdb_fts import author_map, feedback, gate, intake, ledger, state
+from kdb_fts import author_map, feedback, gate, intake, ledger, review, state
 
 
 def _default_raw_root() -> Path:
@@ -109,6 +109,18 @@ def _cmd_feedback(args) -> int:
     return 0
 
 
+def _cmd_review(args) -> int:
+    root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
+    conn = ledger.connect(root)
+    batch_path = root / "review" / f"{args.batch}.json"
+    if not batch_path.exists():
+        review.freeze_batch(conn, root, batch_id=args.batch, kind=args.kind, n=args.n)
+        print(f"froze batch {args.batch} ({args.kind}, n={args.n})")
+    conn.close()
+    review.serve(root, args.batch)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kdb-fts")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -143,6 +155,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--tags", default=None, help="comma-separated")
     p.add_argument("--state", default=None)
     p.set_defaults(fn=_cmd_feedback)
+
+    p = sub.add_parser("review", help="freeze a batch (if new) and serve the labeling app (D22)")
+    p.add_argument("--batch", default="calibration-p1")
+    p.add_argument("--kind", default="calibration",
+                   choices=["calibration"])
+    p.add_argument("--n", type=int, default=150)
+    p.add_argument("--state", default=None)
+    p.set_defaults(fn=_cmd_review)
 
     args = parser.parse_args(argv)
     return args.fn(args)
