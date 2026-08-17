@@ -30,9 +30,15 @@ class ArticleRecord:
 
 
 def connect(root: Path | None = None) -> sqlite3.Connection:
-    """Open (creating if needed) the ledger under the state root; migrate."""
+    """Open (creating if needed) the ledger under the state root; migrate.
+
+    Also guarantees the §5 state layout subdirs exist — ledger.py is the
+    write-guard's mkdir allowlist, so all directory creation lives here.
+    """
     root = (root or state.state_root())
     root.mkdir(parents=True, exist_ok=True)
+    for sub in ("runs", "feedback", "review", "exports"):
+        (root / sub).mkdir(exist_ok=True)
     conn = sqlite3.connect(root / _DB_NAME)
     conn.execute("PRAGMA foreign_keys = ON")
     schema.migrate(conn)

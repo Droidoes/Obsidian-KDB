@@ -1,14 +1,16 @@
 """schema — SQLite DDL + numbered migrations for the kdb_fts ledger.
 
 Phase 0 (migration 1): articles / paragraphs / authors / author_aliases /
-articles_fts. Gate, extraction, feedback, and ranker tables arrive as later
-migrations in their own phases (D14: re-extraction never rewrites identity).
+articles_fts. Phase 1 (migration 2): gate_verdicts (§7.2; additive cols
+exploration/rationale/tokens beyond §6's list — plan deviation 1).
+Extraction, feedback-mirror, and ranker tables arrive as later migrations
+in their own phases (D14: re-extraction never rewrites identity).
 """
 from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -55,6 +57,24 @@ MIGRATIONS: dict[int, str] = {
         body
     );
     """,
+    2: """
+    CREATE TABLE gate_verdicts (
+        article_id      TEXT NOT NULL REFERENCES articles(article_id) ON DELETE CASCADE,
+        run_id          TEXT NOT NULL,
+        topic           TEXT NOT NULL,       -- 6 closed labels; unknown fails closed to 'other'
+        signal          REAL NOT NULL,       -- 0..1
+        extract_ideas   INTEGER NOT NULL,    -- bool
+        extract_lessons INTEGER NOT NULL,    -- bool
+        exploration     INTEGER NOT NULL DEFAULT 0,  -- §7.2: 5%-of-ineligible sample for Phase 2
+        confidence      REAL,                -- nullable, model-reported 0..1
+        rationale       TEXT,                -- §7.2 one-liner
+        model           TEXT NOT NULL,
+        prompt_version  TEXT NOT NULL,
+        input_tokens    INTEGER NOT NULL DEFAULT 0,
+        output_tokens   INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (article_id, run_id)
+    );
+    """,
 }
 
 
@@ -70,9 +90,19 @@ def current_version(conn: sqlite3.Connection) -> int:
 
 
 def migrate(conn: sqlite3.Connection) -> None:
-    """Apply all pending migrations in order. Idempotent."""
+    """Apply all pending migrations in order. Idempotent.
+
+    Each migration's DDL runs inside an explicit transaction (a failing
+    migration rolls back and never advances schema_version). executescript
+    commits any already-open transaction first, so the BEGIN must live
+    inside the script text.
+    """
     for version in range(current_version(conn) + 1, SCHEMA_VERSION + 1):
-        conn.executescript(MIGRATIONS[version])
+        try:
+            conn.executescript(f"BEGIN;\n{MIGRATIONS[version]}\nCOMMIT;")
+        except sqlite3.Error:
+            conn.rollback()
+            raise
         conn.execute(
             "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
             (str(version),),
