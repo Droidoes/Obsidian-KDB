@@ -97,11 +97,18 @@ def delete_absent(conn: sqlite3.Connection, present_ids: set[str]) -> int:
 
 
 def rebuild_fts(conn: sqlite3.Connection) -> None:
-    """Full FTS5 repopulation (cheap at 4.2M words; keeps index logic trivial)."""
+    """Full FTS5 repopulation (cheap at 4.2M words; keeps index logic trivial).
+
+    The author column is the CANONICAL name when the alias is mapped
+    (falling back to raw_author) — searching a curated name must work.
+    """
     conn.execute("DELETE FROM articles_fts")
     conn.execute(
         """INSERT INTO articles_fts(article_id, title, author, body)
-           SELECT a.article_id, COALESCE(a.title, ''), COALESCE(a.raw_author, ''),
+           SELECT a.article_id, COALESCE(a.title, ''),
+                  COALESCE((SELECT au.canonical_name FROM authors au
+                            WHERE au.author_id = a.author_id),
+                           a.raw_author, ''),
                   COALESCE((SELECT GROUP_CONCAT(p.body, char(10)||char(10))
                             FROM paragraphs p WHERE p.article_id = a.article_id), '')
            FROM articles a"""

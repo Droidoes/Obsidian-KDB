@@ -61,3 +61,22 @@ def test_search_malformed_query_raises_valueerror(tmp_path):
     ledger.rebuild_fts(conn)
     with pytest.raises(ValueError):
         ledger.search(conn, '"unterminated')
+
+
+def test_fts_indexes_canonical_author_name(tmp_path):
+    """Final-review Phase-1 note: FTS author column is the canonical name
+    (falling back to raw when unmapped), not always the raw string."""
+    from kdb_fts import author_map, intake
+
+    (tmp_path / "author_map.yaml").write_text(
+        'John Q. Puberman: {canonical: "John Puberman"}\n', encoding="utf-8"
+    )
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "a.md").write_text(
+        "---\ntitle: Zebra Thesis\nauthor: John Q. Puberman\n---\n\n"
+        + "word " * 60, encoding="utf-8")
+    conn = ledger.connect(tmp_path)
+    intake.run_intake(conn, raw, "run-1", state_root=tmp_path)
+    hits = ledger.search(conn, "Puberman")
+    assert hits and hits[0]["author"] == "John Puberman"
