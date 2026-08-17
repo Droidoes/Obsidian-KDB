@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from kdb_fts import author_map, feedback, gate, intake, ledger, review, state
+from kdb_fts import author_map, calibrate, feedback, gate, intake, ledger, review, state
 
 
 def _default_raw_root() -> Path:
@@ -121,6 +121,22 @@ def _cmd_review(args) -> int:
     return 0
 
 
+def _cmd_calibration(args) -> int:
+    root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
+    conn = ledger.connect(root)
+    rep = calibrate.report(conn, root, args.batch)
+    print(f"batch {rep['batch_id']}: {rep['labeled']} articles labeled")
+    c = rep["confusion"]
+    print(f"confusion (gate-relevant = investment ∪ finance-econ): "
+          f"tp={c['tp']} fp={c['fp']} fn={c['fn']} tn={c['tn']}")
+    if rep["precision"] is not None:
+        print(f"precision={rep['precision']:.3f} recall={rep['recall']:.3f} f1={rep['f1']:.3f}")
+    print("by topic (Joseph-positive / negative):")
+    for topic, b in sorted(rep["by_topic"].items()):
+        print(f"  {topic}: {b['pos']}/{b['neg']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kdb-fts")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -163,6 +179,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--n", type=int, default=150)
     p.add_argument("--state", default=None)
     p.set_defaults(fn=_cmd_review)
+
+    p = sub.add_parser("calibration", help="gate precision/recall vs labels for a batch")
+    p.add_argument("--batch", default="calibration-p1")
+    p.add_argument("--state", default=None)
+    p.set_defaults(fn=_cmd_calibration)
 
     args = parser.parse_args(argv)
     return args.fn(args)
