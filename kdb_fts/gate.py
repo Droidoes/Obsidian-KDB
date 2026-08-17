@@ -92,3 +92,129 @@ def parse_verdict(text: str) -> GateVerdict:
         rationale=str(rationale)[:280] if rationale is not None else "",
         raw_topic=raw_topic,
     )
+
+
+# --- runner half (Task 4): DB + call_model + journal ------------------------
+
+import math
+from datetime import datetime
+
+from common.atomic_io import atomic_write_text
+from common.call_model import ModelRequest, ModelResponse, call_model
+from common.model_pool import resolve_models_json
+
+from kdb_fts import ledger
+
+_GATE_MAX_OUTPUT_TOKENS = 1024
+_EXPLORATION_FRACTION = 0.05  # §7.2: of the ineligible set
+_EXPLORATION_MIN = 10
+
+
+def _exploration_sample(ineligible: list[dict]) -> list[str]:
+    """5% (min 10, capped at population) of ineligible articles, stratified
+    by author. Deterministic: groups sorted by (-size, author), ids sorted,
+    round-robin."""
+    k = min(len(ineligible),
+            max(_EXPLORATION_MIN, math.ceil(_EXPLORATION_FRACTION * len(ineligible))))
+    by_author: dict[str, list[str]] = {}
+    for row in ineligible:
+        by_author.setdefault(row["author"] or "(unknown)", []).append(row["article_id"])
+    groups = [sorted(ids) for _, ids in
+              sorted(by_author.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
+    picked: list[str] = []
+    idx = 0
+    while len(picked) < k and any(groups):
+        group = groups[idx % len(groups)]
+        if group:
+            picked.append(group.pop(0))
+        idx += 1
+    return picked
+
+
+def _call_once(spec, prompt: str, call_fn) -> ModelResponse:
+    return call_fn(ModelRequest(
+        provider=spec.provider, model=spec.model, prompt=prompt,
+        json_mode=True, max_tokens=_GATE_MAX_OUTPUT_TOKENS,
+        temperature=spec.temperature, extra_body=spec.extra_body,
+        use_completion_tokens=spec.use_completion_tokens, route=spec.route,
+    ))
+
+
+def run_gate(conn, *, state_root: Path, run_id: str,
+             model_id: str = "deepseek-v4-flash", max_n: int | None = None,
+             dry_run: bool = False, call_fn=call_model) -> dict:
+    """Gate every ungated ok article; one verdict row per call; resumable.
+
+    dry_run: LLM calls happen, NOTHING is committed (D20) — no verdict
+    rows, no exploration marks, no journal.
+    """
+    spec = resolve_models_json(model_id)
+    todo = ledger.ungated_articles(conn, spec.model, GATE_PROMPT_VERSION)
+    skipped = conn.execute(
+        "SELECT COUNT(*) FROM gate_verdicts WHERE model = ? AND prompt_version = ?",
+        (spec.model, GATE_PROMPT_VERSION),
+    ).fetchone()[0]
+    if max_n is not None:
+        todo = todo[:max_n]
+
+    stats = {"gated": 0, "failed": 0, "skipped": skipped, "by_topic": {},
+             "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
+             "exploration_marked": 0}
+    journal: list[dict] = []
+    ineligible: list[dict] = []
+    gated_ids: list[str] = []
+
+    for row in todo:
+        prompt = build_prompt(title=row["title"], author=row["author"],
+                              published_date=row["published_date"],
+                              body=row["body"])
+        verdict = None
+        resp = None
+        for _attempt in range(2):  # initial + one retry
+            resp = _call_once(spec, prompt, call_fn)
+            stats["input_tokens"] += resp.input_tokens
+            stats["output_tokens"] += resp.output_tokens
+            try:
+                verdict = parse_verdict(resp.text)
+                break
+            except GateParseError:
+                continue
+        if verdict is None:
+            stats["failed"] += 1
+            journal.append({"article_id": row["article_id"], "status": "failed"})
+            continue
+        stats["gated"] += 1
+        stats["by_topic"][verdict.topic] = stats["by_topic"].get(verdict.topic, 0) + 1
+        journal.append({"article_id": row["article_id"], "status": "gated",
+                        "topic": verdict.topic, "signal": verdict.signal,
+                        "raw_topic": verdict.raw_topic})
+        gated_ids.append(row["article_id"])
+        if not (verdict.extract_ideas or verdict.extract_lessons):
+            ineligible.append(row)
+        if not dry_run:
+            ledger.insert_gate_verdict(
+                conn, article_id=row["article_id"], run_id=run_id,
+                topic=verdict.topic, signal=verdict.signal,
+                extract_ideas=verdict.extract_ideas,
+                extract_lessons=verdict.extract_lessons, exploration=False,
+                confidence=verdict.confidence, rationale=verdict.rationale,
+                model=spec.model, prompt_version=GATE_PROMPT_VERSION,
+                input_tokens=resp.input_tokens, output_tokens=resp.output_tokens)
+
+    marks = _exploration_sample(ineligible) if ineligible else []
+    stats["exploration_marked"] = len(marks)
+    stats["cost_usd"] = (spec.price_in / 1e6 * stats["input_tokens"]
+                         + spec.price_out / 1e6 * stats["output_tokens"])
+    if not dry_run:
+        if marks:
+            ledger.mark_exploration(conn, run_id, marks)
+        journal.append({"summary": True, **stats,
+                        "model": spec.model,
+                        "prompt_version": GATE_PROMPT_VERSION,
+                        "finished": datetime.now().astimezone().isoformat(timespec="seconds")})
+        run_dir = ledger.run_dir_for(Path(state_root), run_id)
+        atomic_write_text(
+            run_dir / "journal.jsonl",
+            "".join(json.dumps(line, sort_keys=True) + "\n" for line in journal),
+        )
+    return stats

@@ -132,3 +132,89 @@ def search(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[dict]:
         {"article_id": r[0], "title": r[1], "author": r[2], "snippet": r[3]}
         for r in rows
     ]
+
+
+def ungated_articles(conn: sqlite3.Connection, model: str,
+                     prompt_version: str) -> list[dict]:
+    """ok-cleanliness articles lacking a verdict at (model, prompt_version).
+
+    author = canonical name when mapped, else raw string. Deterministic
+    order (article_id ASC) so --max N slicing is stable across runs.
+    """
+    rows = conn.execute(
+        """SELECT a.article_id, a.title,
+                  COALESCE(au.canonical_name, a.raw_author) AS author,
+                  a.published_date,
+                  (SELECT GROUP_CONCAT(p.body, char(10)||char(10))
+                   FROM paragraphs p WHERE p.article_id = a.article_id) AS body
+           FROM articles a
+           LEFT JOIN authors au ON au.author_id = a.author_id
+           WHERE a.cleanliness = 'ok'
+             AND NOT EXISTS (
+                 SELECT 1 FROM gate_verdicts gv
+                 WHERE gv.article_id = a.article_id
+                   AND gv.model = ? AND gv.prompt_version = ?)
+           ORDER BY a.article_id""",
+        (model, prompt_version),
+    ).fetchall()
+    return [
+        {"article_id": r[0], "title": r[1], "author": r[2],
+         "published_date": r[3], "body": r[4] or ""}
+        for r in rows
+    ]
+
+
+def insert_gate_verdict(
+    conn: sqlite3.Connection, *, article_id: str, run_id: str, topic: str,
+    signal: float, extract_ideas: bool, extract_lessons: bool,
+    exploration: bool, confidence: float | None, rationale: str,
+    model: str, prompt_version: str, input_tokens: int, output_tokens: int,
+) -> None:
+    """One verdict row per (article, run); commits immediately (resume-safe)."""
+    conn.execute(
+        """INSERT OR REPLACE INTO gate_verdicts
+           (article_id, run_id, topic, signal, extract_ideas, extract_lessons,
+            exploration, confidence, rationale, model, prompt_version,
+            input_tokens, output_tokens)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (article_id, run_id, topic, signal, int(extract_ideas),
+         int(extract_lessons), int(exploration), confidence, rationale,
+         model, prompt_version, input_tokens, output_tokens),
+    )
+    conn.commit()
+
+
+def latest_verdicts(conn: sqlite3.Connection) -> list[dict]:
+    """The routing view: each article's verdict from its latest run."""
+    rows = conn.execute(
+        """SELECT gv.article_id, gv.run_id, gv.topic, gv.signal,
+                  gv.extract_ideas, gv.extract_lessons, gv.exploration,
+                  gv.confidence, gv.rationale, gv.model, gv.prompt_version,
+                  gv.input_tokens, gv.output_tokens
+           FROM gate_verdicts gv
+           JOIN (SELECT article_id, MAX(run_id) AS mr FROM gate_verdicts
+                 GROUP BY article_id) t
+             ON t.article_id = gv.article_id AND t.mr = gv.run_id
+           ORDER BY gv.article_id"""
+    ).fetchall()
+    cols = ("article_id", "run_id", "topic", "signal", "extract_ideas",
+            "extract_lessons", "exploration", "confidence", "rationale",
+            "model", "prompt_version", "input_tokens", "output_tokens")
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def mark_exploration(conn: sqlite3.Connection, run_id: str,
+                     article_ids: list[str]) -> None:
+    conn.executemany(
+        "UPDATE gate_verdicts SET exploration = 1 WHERE article_id = ? AND run_id = ?",
+        [(a, run_id) for a in article_ids],
+    )
+    conn.commit()
+
+
+def run_dir_for(root: Path, run_id: str) -> Path:
+    """Create (idempotently) and return runs/<run_id> — mkdir lives only here
+    (write-guard R3)."""
+    path = Path(root) / "runs" / run_id
+    path.mkdir(exist_ok=True)
+    return path

@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from kdb_fts import author_map, intake, ledger, state
+from kdb_fts import author_map, gate, intake, ledger, state
 
 
 def _default_raw_root() -> Path:
@@ -59,6 +59,41 @@ def _cmd_status(args) -> int:
     n_authors = conn.execute("SELECT COUNT(*) FROM authors").fetchone()[0]
     unm = author_map.unmapped(conn)
     print(f"authors: {n_authors} canonical, {len(unm)} unmapped raw strings")
+    rows = conn.execute(
+        """SELECT model, prompt_version, COUNT(*), SUM(input_tokens), SUM(output_tokens)
+           FROM gate_verdicts GROUP BY 1, 2 ORDER BY 1"""
+    ).fetchall()
+    if rows:
+        from common.model_pool import resolve_models_json
+        print("gate verdicts:")
+        total_cost = 0.0
+        for model, pv, n, tin, tout in rows:
+            spec = resolve_models_json(model)
+            cost = spec.price_in / 1e6 * (tin or 0) + spec.price_out / 1e6 * (tout or 0)
+            total_cost += cost
+            print(f"  {model} {pv}: {n} verdicts, {tin or 0}+{tout or 0} tok, ${cost:.4f}")
+        print(f"  cost to date: ${total_cost:.4f}")
+        for topic, n in conn.execute(
+            "SELECT topic, COUNT(*) FROM gate_verdicts GROUP BY 1 ORDER BY 2 DESC"
+        ):
+            print(f"  topic {topic}: {n}")
+    return 0
+
+
+def _cmd_gate(args) -> int:
+    root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
+    conn = ledger.connect(root)
+    run_id = datetime.now().astimezone().isoformat(timespec="seconds")
+    stats = gate.run_gate(
+        conn, state_root=root, run_id=run_id, model_id=args.model,
+        max_n=args.max, dry_run=args.dry_run, call_fn=gate.call_model,
+    )
+    tag = "DRY-RUN " if args.dry_run else ""
+    print(f"{tag}gated={stats['gated']} failed={stats['failed']} skipped={stats['skipped']}")
+    print(f"topics: {stats['by_topic']}")
+    print(f"exploration_marked={stats['exploration_marked']}")
+    print(f"tokens in={stats['input_tokens']} out={stats['output_tokens']} "
+          f"cost=${stats['cost_usd']:.4f}")
     return 0
 
 
@@ -80,6 +115,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("status", help="counts by cleanliness/kind, authors, db path")
     p.add_argument("--state", default=None)
     p.set_defaults(fn=_cmd_status)
+
+    p = sub.add_parser("gate", help="one LLM verdict per ok article (§7.2); resumable")
+    p.add_argument("--max", type=int, default=None, dest="max")
+    p.add_argument("--model", default="deepseek-v4-flash")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--state", default=None)
+    p.set_defaults(fn=_cmd_gate)
 
     args = parser.parse_args(argv)
     return args.fn(args)
