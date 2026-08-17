@@ -41,6 +41,22 @@ def test_freeze_batch_stratified_and_frozen(tmp_path):
     assert ids1 == ids2
 
 
+def test_freeze_batch_carries_exploration_flag(tmp_path):
+    """The frozen JSON is the D13 exposure record — the §7.2 exploration
+    mark must survive the freezer (server stamps events from it)."""
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=12)
+    _gate_all(conn, tmp_path)
+    ledger.mark_exploration(conn, "r1", ["gid0"])
+    path = review.freeze_batch(conn, tmp_path, batch_id="calibration-p1", n=9)
+    items = {it["article_id"]: it
+             for it in json.loads(path.read_text())["items"]}
+    assert "gid0" in items  # sorts first in its topic stratum
+    assert items["gid0"]["exploration"] is True
+    assert all(it["exploration"] is False
+               for aid, it in items.items() if aid != "gid0")
+
+
 def test_freeze_refuses_overwrite(tmp_path):
     conn = ledger.connect(tmp_path)
     _seed_articles(conn, tmp_path, n=4)
@@ -128,6 +144,27 @@ def test_server_rejects_unknown_article_and_action(tmp_path):
                           "action": "bogus"})
         assert status == 400
         assert _req(server, "GET", "/nope")[0] == 404
+    finally:
+        server.shutdown()
+    assert feedback.load_events(tmp_path) == []  # nothing written
+
+
+def test_server_rejects_negative_content_length(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=2)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        raw = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+        raw.putrequest("POST", "/event")
+        raw.putheader("Content-Length", "-5")
+        raw.endheaders(b"")
+        resp = raw.getresponse()
+        assert resp.status == 400
+        resp.read()
+        raw.close()
     finally:
         server.shutdown()
     assert feedback.load_events(tmp_path) == []  # nothing written

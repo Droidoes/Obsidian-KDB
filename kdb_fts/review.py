@@ -77,9 +77,10 @@ def freeze_batch(conn: sqlite3.Connection, root: Path, *, batch_id: str,
             "WHERE article_id = ?", (a[0],)).fetchone()[0] or ""
         rows.append({"article_id": a[0], "title": a[1], "author": a[2],
                      "published_date": a[3], "topic": v["topic"],
-                     "signal": v["signal"], "body": body})
+                     "signal": v["signal"], "body": body,
+                     "exploration": bool(v["exploration"])})
     sample = _stratified_sample(rows, min(n, len(rows)))
-    items = [{**r, "position": i, "exploration": False}
+    items = [{**r, "position": i, "exploration": r["exploration"]}
              for i, r in enumerate(sample)]
     atomic_write_json(path, {
         "batch_id": batch_id, "kind": kind,
@@ -92,6 +93,7 @@ def freeze_batch(conn: sqlite3.Connection, root: Path, *, batch_id: str,
 
 # --- server half (Task 7): stdlib http.server + one static page (D22) ------
 
+import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -110,6 +112,7 @@ def make_server(root: Path, batch_id: str,
     by_id = {item["article_id"]: item for item in frozen["items"]}
     page_bytes = _PAGE_PATH.read_bytes()
     batch_bytes = frozen_text.encode("utf-8")
+    lock = threading.Lock()  # serializes event appends across handler threads
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes, content_type: str) -> None:
@@ -133,6 +136,8 @@ def make_server(root: Path, batch_id: str,
                 return
             try:
                 length = int(self.headers["Content-Length"])
+                if length < 0:
+                    raise ValueError(f"negative Content-Length {length}")
                 data = json.loads(self.rfile.read(length))
                 item = by_id[data["article_id"]]  # KeyError → 400 below
                 action = data["action"]
@@ -142,13 +147,14 @@ def make_server(root: Path, batch_id: str,
             except (KeyError, ValueError, json.JSONDecodeError, TypeError):
                 self._send(400, b"bad event", "text/plain")
                 return
-            feedback.append_event(
-                root, action=action, target_type="article",
-                target_id=item["article_id"], reason_text=reason,
-                ranker_version=frozen.get("ranker_version"),
-                score_shown=item.get("signal"),
-                position_shown=item["position"],
-                batch_id=batch_id, exploration=bool(item.get("exploration", False)))
+            with lock:
+                feedback.append_event(
+                    root, action=action, target_type="article",
+                    target_id=item["article_id"], reason_text=reason,
+                    ranker_version=frozen.get("ranker_version"),
+                    score_shown=item.get("signal"),
+                    position_shown=item["position"],
+                    batch_id=batch_id, exploration=bool(item.get("exploration", False)))
             self._send(200, b'{"ok": true}', "application/json")
 
         def log_message(self, *args) -> None:  # quiet

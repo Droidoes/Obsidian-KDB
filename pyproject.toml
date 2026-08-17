@@ -52,6 +52,7 @@ kdb_graph_compiler      = ["schemas/*.json", "prompts/*.md"]
 tools         = ["diagnostics/*.json", "viewer/*.html"]
 ingestion     = ["config/*.json", "config/*.yaml", "enrich/*.j2"]
 kdb_graph_search    = ["prompts/*.txt"]
+kdb_fts       = ["prompts/*.md", "assets/*.html"]
 
 [tool.pytest.ini_options]
 testpaths    = ["common/tests", "ingestion/tests", "kdb_graph_compiler/tests", "kdb_graph/tests", "kdb_mcp/tests", "kdb_graph_search/tests", "kdb_graph_orchestrator/tests", "tools/tests", "tools/benchmark/tests", "kdb_fts/tests"]

@@ -64,11 +64,16 @@ def _cmd_status(args) -> int:
            FROM gate_verdicts GROUP BY 1, 2 ORDER BY 1"""
     ).fetchall()
     if rows:
-        from common.model_pool import resolve_models_json
+        from common.model_pool import UnknownModelError, resolve_models_json
         print("gate verdicts:")
         total_cost = 0.0
         for model, pv, n, tin, tout in rows:
-            spec = resolve_models_json(model)
+            try:
+                spec = resolve_models_json(model)
+            except UnknownModelError:
+                print(f"  {model} {pv}: {n} verdicts, {tin or 0}+{tout or 0} tok, "
+                      f"cost=n/a (model not in active pool)")
+                continue
             cost = spec.price_in / 1e6 * (tin or 0) + spec.price_out / 1e6 * (tout or 0)
             total_cost += cost
             print(f"  {model} {pv}: {n} verdicts, {tin or 0}+{tout or 0} tok, ${cost:.4f}")
@@ -129,8 +134,15 @@ def _cmd_calibration(args) -> int:
     c = rep["confusion"]
     print(f"confusion (gate-relevant = investment ∪ finance-econ): "
           f"tp={c['tp']} fp={c['fp']} fn={c['fn']} tn={c['tn']}")
+    parts = []
     if rep["precision"] is not None:
-        print(f"precision={rep['precision']:.3f} recall={rep['recall']:.3f} f1={rep['f1']:.3f}")
+        parts.append(f"precision={rep['precision']:.3f}")
+    if rep["recall"] is not None:
+        parts.append(f"recall={rep['recall']:.3f}")
+    if rep["f1"] is not None:
+        parts.append(f"f1={rep['f1']:.3f}")
+    if parts:
+        print(" ".join(parts))
     print("by topic (Joseph-positive / negative):")
     for topic, b in sorted(rep["by_topic"].items()):
         print(f"  {topic}: {b['pos']}/{b['neg']}")

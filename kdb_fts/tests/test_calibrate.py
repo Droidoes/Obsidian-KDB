@@ -49,3 +49,23 @@ def test_cli_calibration(tmp_path, capsys):
     rc = cli.main(["calibration", "--batch", "calibration-p1", "--state", str(tmp_path)])
     assert rc == 0
     assert "precision" in capsys.readouterr().out
+
+
+def test_cli_calibration_precision_zero_recall_none(tmp_path, capsys):
+    """Regression: tp=0,fn=0,fp>0 → precision=0.0 but recall=None; the CLI
+    must not crash formatting a None metric."""
+    from kdb_fts import cli
+
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=1)
+    ledger.insert_gate_verdict(
+        conn, article_id="gid0", run_id="r1", topic="investment",
+        signal=0.9, extract_ideas=True, extract_lessons=False,
+        exploration=False, confidence=0.5, rationale="t", model="m",
+        prompt_version="gate_v1", input_tokens=1, output_tokens=1)
+    conn.close()
+    feedback.append_event(tmp_path, action="noise", target_type="article",
+                          target_id="gid0", batch_id="b1")  # gate+ label- → fp
+    rc = cli.main(["calibration", "--batch", "b1", "--state", str(tmp_path)])
+    assert rc == 0
+    assert "precision=0.000" in capsys.readouterr().out
