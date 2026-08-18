@@ -31,6 +31,8 @@
 5. `rebuild_fts` now indexes the **canonical** author name (falling back to raw) instead of always `raw_author` — the Phase 0 final-review Phase-1 note.
 6. Author GC (orphaned canonical authors after a yaml repoint): **no GC in Phase 1** — orphans are cosmetic and visible via `kdb-fts status`. This is the §6 "author GC is a Phase-1 decision" decision: defer to post-v1.
 7. Cost reality check (2026-08-16 repricing, commit `7b5fc64`): blueprint §11's "<$0.5" gate estimate was computed at the old flash price (0.14/0.28). At the new peak cache-miss rates (0.44/1.32) the full-corpus gate is ≈ **$2–3**. Still trivial; noted so the live gate's reported cost isn't a surprise.
+8. Freezer stratification is **topic-only** (surfaced by the final whole-branch review; §9's letter says "stratified by author, date, length, topic guess"). Within each topic stratum, even-spacing over `(author, published_date, article_id)` spreads author and date; **length is genuinely unstratified** — the calibration matrix may carry a length bias. Ratified implicitly by plan approval; Joseph to confirm on review.
+9. §7.5's "20% of batch slots reserved for exploration" is absent from freezer v0 — deliberate for `calibration-p1` (calibration wants unbiased stock, and the §7.2 gate-pass exploration sample is already marked in `gate_verdicts`); the quota arrives with queue-kind batches in Phase 4.
 
 ---
 
