@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kdb_fts Workflow — Visual Reference</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #5b6472;
+    --line: #d9dee7;
+    --accent: #3b5bdb;
+    --accent-soft: #e8edfb;
+    --teal: #0b7285;
+    --teal-soft: #e3f4f6;
+    --amber: #b26a00;
+    --amber-soft: #fdf0dc;
+    --red: #c92a2a;
+    --red-soft: #fbe3e3;
+    --green: #2b8a3e;
+    --green-soft: #e3f3e7;
+    --violet: #7048e8;
+    --violet-soft: #efebfd;
+    --code-bg: #f0f2f6;
+    --gray-soft: #eef1f5;
+    --radius: 10px;
+  }
+  [data-theme="dark"] {
+    --bg: #15171e;
+    --panel: #1d2029;
+    --ink: #e3e7ee;
+    --muted: #98a1b1;
+    --line: #333949;
+    --accent: #91a7ff;
+    --accent-soft: #25305b;
+    --teal: #66d9e8;
+    --teal-soft: #173a40;
+    --amber: #ffc078;
+    --amber-soft: #3f3117;
+    --red: #ff8787;
+    --red-soft: #452323;
+    --green: #8ce99a;
+    --green-soft: #1d3524;
+    --violet: #b197fc;
+    --violet-soft: #2c2650;
+    --code-bg: #282d3a;
+    --gray-soft: #262b36;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+  }
+  /* ---------- sidebar ---------- */
+  nav {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 264px; overflow-y: auto;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 22px 18px 40px;
+  }
+  nav h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: .2px; }
+  nav .sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  nav ol { list-style: none; margin: 0; padding: 0; counter-reset: item; }
+  nav li { margin: 2px 0; }
+  nav a {
+    display: block; padding: 6px 10px; border-radius: 7px;
+    color: var(--ink); text-decoration: none; font-size: 13.5px;
+  }
+  nav a:hover { background: var(--accent-soft); color: var(--accent); }
+  nav a .n { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 7px; font-size: 12px; }
+  nav .grp { margin: 16px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  /* ---------- content ---------- */
+  main { margin-left: 264px; padding: 40px 48px 90px; max-width: 1060px; }
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+  h2 { font-size: 24px; margin: 0 0 6px; }
+  h2 .n { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 10px; }
+  h3 { font-size: 16.5px; margin: 28px 0 8px; }
+  p.lede { color: var(--muted); font-size: 15px; margin: 0 0 22px; max-width: 70ch; }
+  p, li { font-size: 14.5px; }
+  code {
+    background: var(--code-bg); border-radius: 5px; padding: 1px 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12.5px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px; margin: 16px 0;
+  }
+  .diagram { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin: 18px 0; overflow-x: auto; }
+  .diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .cap { font-size: 12.5px; color: var(--muted); text-align: center; margin-top: 10px; }
+  .cap-left { text-align: left; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+  .callout { border-radius: var(--radius); padding: 14px 18px; margin: 16px 0; font-size: 14px; border: 1px solid; }
+  .callout .t { font-weight: 650; display: block; margin-bottom: 4px; }
+  .co-blue { background: var(--accent-soft); border-color: #c3d0f5; }
+  .co-amber { background: var(--amber-soft); border-color: #f0d9b5; }
+  .co-red { background: var(--red-soft); border-color: #f3c2c2; }
+  .co-green { background: var(--green-soft); border-color: #c6e6cf; }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 10px; font-size: 11.5px; font-weight: 600; }
+  .pill-blue { background: var(--accent-soft); color: var(--accent); }
+  .pill-teal { background: var(--teal-soft); color: var(--teal); }
+  .pill-violet { background: var(--violet-soft); color: var(--violet); }
+  .pill-amber { background: var(--amber-soft); color: var(--amber); }
+  .pill-red { background: var(--red-soft); color: var(--red); }
+  .pill-green { background: var(--green-soft); color: var(--green); }
+  .pill-gray { background: var(--gray-soft); color: var(--muted); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  ul.tight li { margin: 5px 0; }
+  .ref { font-size: 12.5px; color: var(--muted); }
+  .ref code { font-size: 11.5px; }
+  /* ---------- collapsible prompt sample ---------- */
+  details.prompt-sample { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin: 16px 0; }
+  details.prompt-sample summary { cursor: pointer; padding: 12px 18px; font-size: 13.5px; font-weight: 600; color: var(--accent); user-select: none; }
+  details.prompt-sample pre {
+    margin: 0; padding: 16px 18px; border-top: 1px solid var(--line);
+    background: var(--code-bg); border-radius: 0 0 var(--radius) var(--radius);
+    overflow-x: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+  }
+  /* ---------- SVG diagram primitives ---------- */
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--ink); }
+  .s-title { font-size: 13px; font-weight: 650; }
+  .s-body { font-size: 11px; fill: var(--muted); }
+  .s-small { font-size: 10px; fill: var(--muted); }
+  .s-code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; fill: var(--amber); }
+  .box-blue { fill: var(--accent-soft); stroke: #8ba3ea; }
+  .box-teal { fill: var(--teal-soft); stroke: #5fb7c4; }
+  .box-violet { fill: var(--violet-soft); stroke: #b3a1f2; }
+  .box-amber { fill: var(--amber-soft); stroke: #e5bd7f; }
+  .box-red { fill: var(--red-soft); stroke: #e79a9a; }
+  .box-green { fill: var(--green-soft); stroke: #93d0a3; }
+  .box-gray { fill: var(--gray-soft); stroke: #c3cad4; }
+  .arr { stroke: #97a1b1; stroke-width: 1.6; fill: none; marker-end: url(#arrowhead); }
+  .arr-dash { stroke: #97a1b1; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#arrowhead); }
+  .arr-red { stroke: var(--red); stroke-width: 1.4; fill: none; stroke-dasharray: 4 4; marker-end: url(#arrowhead-red); }
+  .lbl { font-size: 10.5px; fill: var(--muted); }
+  .lbl-red { font-size: 10.5px; fill: var(--red); }
+  .lbl-green { font-size: 10.5px; fill: var(--green); }
+  /* ---------- theme toggle ---------- */
+  body, nav, .card, .diagram, .callout, .theme-toggle { transition: background-color .18s ease, border-color .18s ease, color .18s ease; }
+  .theme-toggle {
+    margin-top: 20px; width: 100%;
+    background: var(--code-bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; font-size: 12.5px; cursor: pointer;
+    font-family: inherit;
+  }
+  .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#97a1b1"></path>
+    </marker>
+    <marker id="arrowhead-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#c92a2a"></path>
+    </marker>
+  </defs>
+</svg>
+
+<nav>
+  <h1>kdb_fts Workflow</h1>
+  <div class="sub">Visual reference · Task #145<br>Obsidian-KDB · 2026-08-19</div>
+  <div class="grp">The map</div>
+  <ol>
+    <li><a href="#big-picture"><span class="n">1</span>The big picture</a></li>
+    <li><a href="#status"><span class="n">2</span>Build status &amp; CLI surface</a></li>
+    <li><a href="#feeder"><span class="n">3</span>Gmail feeder</a></li>
+    <li><a href="#corpus"><span class="n">4</span>The raw corpus</a></li>
+  </ol>
+  <div class="grp">Built — Phase 0</div>
+  <ol>
+    <li><a href="#phase0"><span class="n">5</span>Intake &amp; the ledger</a></li>
+  </ol>
+  <div class="grp">Built — Phase 1</div>
+  <ol>
+    <li><a href="#gate"><span class="n">6</span>The gate</a></li>
+    <li><a href="#freezer"><span class="n">7</span>The freezer</a></li>
+    <li><a href="#review-app"><span class="n">8</span>The review web app</a></li>
+    <li><a href="#feedback"><span class="n">9</span>Feedback events</a></li>
+    <li><a href="#calibration"><span class="n">10</span>Calibration</a></li>
+  </ol>
+  <div class="grp">Planned — blueprint only</div>
+  <ol>
+    <li><a href="#phase2"><span class="n">11</span>Phase 2 — Extraction</a></li>
+    <li><a href="#phase3"><span class="n">12</span>Phase 3 — Ranker</a></li>
+    <li><a href="#phase4"><span class="n">13</span>Phase 4 — Queue kinds</a></li>
+  </ol>
+  <div class="grp">Reference</div>
+  <ol>
+    <li><a href="#state-map"><span class="n">14</span>State map &amp; boundaries</a></li>
+    <li><a href="#decisions"><span class="n">15</span>Decisions D1–D22</a></li>
+    <li><a href="#glossary"><span class="n">16</span>Glossary</a></li>
+  </ol>
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">Dark mode</button>
+</nav>
+
+<main>
+
+<div class="callout co-green"><span class="t">Status as of 2026-08-19</span>
+  <span class="pill pill-green">BUILT</span> <strong>Phase 0</strong> — deterministic intake, SQLite ledger, FTS5 (shipped 2026-08-16).
+  <span class="pill pill-green">BUILT</span> <strong>Phase 1 code complete</strong> — gate, freezer, review web app, feedback log, calibration report.
+  <span class="pill pill-blue">LIVE</span> Full-corpus gate run over the 2,511 <code>ok</code> articles <strong>in progress today</strong>; the 150-article
+  <code>calibration-p1</code> labeling round and the threshold decision come next.<br>
+  <span class="pill pill-gray">PLANNED</span> <strong>Phases 2–4</strong> (extraction, ranker, queue kinds) and Phase 5 (steady state) exist as
+  <strong>blueprint design only</strong> — no code. Where this page describes them, it describes the ratified blueprint, not built behavior.
+</div>
+
+<!-- ============================================================ -->
+<section id="big-picture">
+  <h2><span class="n">1</span>The big picture</h2>
+  <p class="lede"><code>kdb_fts</code> (Task #145) is a parallel extraction/ranking system over the gmail-substack
+  raw corpus: ~2,659 newsletter articles Joseph cannot read by hand. It is a deliberate architectural
+  <em>competitor</em> to the GraphDB pipeline — same raw sources, different extraction philosophy, head-to-head
+  comparison planned. The founding decision (D1): <strong>extract once into structured, source-grounded records;
+  rank deterministically many times.</strong> FTS5 is a read surface, never the core. The corpus is information,
+  not knowledge — majority politics/geopolitics by volume (~55%), investment-named ~17% — so a cheap gate keeps
+  the idea/lesson ledger unpolluted (D5), and Joseph's own judgments, captured as immutable events (D13/D18),
+  calibrate everything to <em>his</em> usefulness.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 452" width="980" height="452">
+
+      <!-- Row 1: ingestion -> gate -->
+      <text x="20" y="22" class="s-title">Ingestion → corpus → intake → gate</text>
+
+      <rect x="20" y="38" width="140" height="64" rx="9" class="box-teal"></rect>
+      <text x="90" y="60" text-anchor="middle" class="s-title">Gmail</text>
+      <text x="90" y="76" text-anchor="middle" class="s-body">Substack_raw label</text>
+      <text x="90" y="92" text-anchor="middle" class="s-small">source of truth</text>
+
+      <path class="arr" d="M160 70 H186"></path>
+      <rect x="190" y="38" width="180" height="64" rx="9" class="box-green"></rect>
+      <text x="280" y="60" text-anchor="middle" class="s-title">kdb-gmail-fetch</text>
+      <text x="280" y="76" text-anchor="middle" class="s-body">convert · promo-filter · dedup</text>
+      <text x="280" y="92" text-anchor="middle" class="lbl-green">BUILT (#143)</text>
+
+      <path class="arr" d="M370 70 H396"></path>
+      <rect x="400" y="38" width="170" height="64" rx="9" class="box-green"></rect>
+      <text x="485" y="60" text-anchor="middle" class="s-title">Raw corpus</text>
+      <text x="485" y="76" text-anchor="middle" class="s-body">2,659 md · _promo/ out</text>
+      <text x="485" y="92" text-anchor="middle" class="lbl-green">BUILT</text>
+
+      <path class="arr" d="M570 70 H596"></path>
+      <rect x="600" y="38" width="170" height="64" rx="9" class="box-green"></rect>
+      <text x="685" y="60" text-anchor="middle" class="s-title">Phase 0 · Intake</text>
+      <text x="685" y="76" text-anchor="middle" class="s-body">ledger.sqlite + FTS5</text>
+      <text x="685" y="92" text-anchor="middle" class="lbl-green">BUILT · no LLM</text>
+
+      <path class="arr" d="M770 70 H796"></path>
+      <rect x="800" y="38" width="160" height="64" rx="9" class="box-blue"></rect>
+      <text x="880" y="60" text-anchor="middle" class="s-title">Phase 1 · Gate</text>
+      <text x="880" y="76" text-anchor="middle" class="s-body">1 LLM verdict / ok article</text>
+      <text x="880" y="92" text-anchor="middle" class="s-body" fill="#3b5bdb">LIVE RUN in progress</text>
+
+      <!-- promo exit -->
+      <path class="arr-dash" d="M280 102 V 128"></path>
+      <rect x="190" y="132" width="180" height="36" rx="8" class="box-gray"></rect>
+      <text x="280" y="147" text-anchor="middle" class="s-body">promo / truncated → _promo/</text>
+      <text x="280" y="161" text-anchor="middle" class="s-small">1,530 files (36.5%) · never intaken</text>
+
+      <!-- Row 2: review loop -->
+      <text x="20" y="196" class="s-title">Review loop (the calibration cycle)</text>
+
+      <rect x="20" y="212" width="190" height="64" rx="9" class="box-green"></rect>
+      <text x="115" y="234" text-anchor="middle" class="s-title">Freezer</text>
+      <text x="115" y="250" text-anchor="middle" class="s-body">review/&lt;batch_id&gt;.json</text>
+      <text x="115" y="266" text-anchor="middle" class="lbl-green">BUILT · immutable</text>
+
+      <path class="arr" d="M210 244 H236"></path>
+      <rect x="240" y="212" width="190" height="64" rx="9" class="box-green"></rect>
+      <text x="335" y="234" text-anchor="middle" class="s-title">Review web app</text>
+      <text x="335" y="250" text-anchor="middle" class="s-body">stdlib server · one static page</text>
+      <text x="335" y="266" text-anchor="middle" class="lbl-green">BUILT (D22)</text>
+
+      <path class="arr" d="M430 244 H456"></path>
+      <rect x="460" y="212" width="190" height="64" rx="9" class="box-green"></rect>
+      <text x="555" y="234" text-anchor="middle" class="s-title">Feedback events</text>
+      <text x="555" y="250" text-anchor="middle" class="s-body">feedback/events.jsonl</text>
+      <text x="555" y="266" text-anchor="middle" class="lbl-green">BUILT · irreplaceable (D18)</text>
+
+      <path class="arr" d="M650 244 H676"></path>
+      <rect x="680" y="212" width="220" height="64" rx="9" class="box-green"></rect>
+      <text x="790" y="234" text-anchor="middle" class="s-title">Calibration</text>
+      <text x="790" y="250" text-anchor="middle" class="s-body">precision / recall vs Joseph's labels</text>
+      <text x="790" y="266" text-anchor="middle" class="lbl-green">BUILT · threshold pending</text>
+
+      <!-- gate -> freezer -->
+      <path class="arr-dash" d="M880 102 V 176 H 115 V 208"></path>
+      <text x="490" y="170" class="lbl">gate verdicts seed the calibration stock</text>
+
+      <!-- Row 3: planned -->
+      <text x="20" y="316" class="s-title">Extraction → ranking</text>
+
+      <rect x="20" y="332" width="200" height="64" rx="9" class="box-gray"></rect>
+      <text x="120" y="354" text-anchor="middle" class="s-title">Phase 2 · Extraction</text>
+      <text x="120" y="370" text-anchor="middle" class="s-body">ideas + lessons + evidence spans</text>
+      <text x="120" y="386" text-anchor="middle" class="s-small">PLANNED</text>
+
+      <path class="arr" d="M220 364 H246"></path>
+      <rect x="250" y="332" width="180" height="64" rx="9" class="box-gray"></rect>
+      <text x="340" y="354" text-anchor="middle" class="s-title">Phase 3 · Ranker</text>
+      <text x="340" y="370" text-anchor="middle" class="s-body">versioned weights · no LLM</text>
+      <text x="340" y="386" text-anchor="middle" class="s-small">PLANNED</text>
+
+      <path class="arr" d="M430 364 H456"></path>
+      <rect x="460" y="332" width="210" height="64" rx="9" class="box-gray"></rect>
+      <text x="565" y="354" text-anchor="middle" class="s-title">Phase 4 · Queue kinds</text>
+      <text x="565" y="370" text-anchor="middle" class="s-body">research · lessons · reading · outcomes</text>
+      <text x="565" y="386" text-anchor="middle" class="s-small">PLANNED</text>
+
+      <!-- gate -> extraction (around the right edge) -->
+      <path class="arr-dash" d="M960 70 H 968 V 364 H 224"></path>
+      <text x="700" y="358" class="lbl">eligible articles + 5% exploration sample</text>
+
+      <!-- queue kinds -> review app -->
+      <path class="arr-dash" d="M565 332 V 300 H 335 V 280"></path>
+      <text x="368" y="294" class="lbl">queues render in the same app</text>
+
+      <!-- legend -->
+      <rect x="20" y="420" width="14" height="14" rx="3" class="box-green"></rect>
+      <text x="42" y="431" class="s-body">BUILT — code landed, suite green</text>
+      <rect x="290" y="420" width="14" height="14" rx="3" class="box-blue"></rect>
+      <text x="312" y="431" class="s-body">LIVE — running on the real corpus now</text>
+      <rect x="600" y="420" width="14" height="14" rx="3" class="box-gray"></rect>
+      <text x="622" y="431" class="s-body">PLANNED — blueprint §9 design, no code yet</text>
+    </svg>
+    <div class="cap">End to end: Gmail → feeder → raw corpus → deterministic intake (ledger + FTS5) → LLM gate →
+    the review loop (freezer → web app → feedback events → calibration) → planned extraction, ranking, and queue kinds.
+    Phase 5 (steady state: incremental intake/gate/extract on new feeder files, <code>export</code>, calibration
+    proposals after ~200 events) is the ongoing tail of the same loop.</div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The corpus, in numbers (verified against the live ledger 2026-08-19)</h3>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>md files in the intake tree (<code>_promo</code> excluded)</td><td><strong>2,659</strong></td></tr>
+        <tr><td>…of which gate-eligible (<code>cleanliness = ok</code>)</td><td><strong>2,511</strong></td></tr>
+        <tr><td>…digest stubs / media / short / bleed</td><td>34 / 89 / 25 / 0</td></tr>
+        <tr><td>Rankable cross-check (ok + short + media + bleed)</td><td>2,625</td></tr>
+        <tr><td>Paragraphs in the ledger</td><td><strong>131,961</strong></td></tr>
+        <tr><td>Canonical authors (from 117 raw author strings)</td><td><strong>117</strong></td></tr>
+        <tr><td>Body words across the tree (2026-08-16 audit)</td><td>4,207,609</td></tr>
+        <tr><td>Weekly inflow</td><td>~tens of articles</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Why this shape</h3>
+      <ul class="tight">
+        <li><strong>Cheap gate, deep extraction</strong> (D5) — one ~cheap LLM verdict per article; deep extraction only for eligible buckets. The politics majority never pollutes the idea/lesson ledger.</li>
+        <li><strong>Extract once, score many</strong> (D14) — ranker weights are versioned JSON; re-weighting never re-extracts.</li>
+        <li><strong>Joseph's labels are ground truth for personal usefulness only</strong> (D8) — faithfulness, correctness, and track record are separate axes, never one "quality" score.</li>
+        <li><strong>Feedback is the irreplaceable asset</strong> (D18) — everything else is rebuildable or replayable; <code>feedback/events.jsonl</code> is neither.</li>
+        <li><strong>Hard write boundary</strong> (D3) — kdb_fts reads the raw tree; every write is confined to <code>&lt;vault&gt;/KDB/fts/</code>, enforced by a guard test, not convention.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="ref">Blueprint: <code>docs/superpowers/specs/2026-08-16-task145-kdb-fts-blueprint-v0.1.md</code> ·
+  package: <code>kdb_fts/</code> · sibling doc: <code>docs/reference/orchestration-workflow.html</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="status">
+  <h2><span class="n">2</span>Build status &amp; CLI surface</h2>
+  <p class="lede">Phases are sequential, each with a failing-tests-first gate; live-LLM gates are Joseph-fired,
+  never CI (blueprint §9). This table is the answer to "how far along are we?"</p>
+
+  <div class="card">
+    <table>
+      <tr><th>Phase</th><th>Scope</th><th>Status 2026-08-19</th><th>Exit gate (blueprint §9)</th></tr>
+      <tr>
+        <td><strong>0 — Intake + FTS</strong></td>
+        <td>Package skeleton, boundary guards, SQLite schema, deterministic intake, FTS5</td>
+        <td><span class="pill pill-green">BUILT</span> shipped 2026-08-16</td>
+        <td>Real-tree intake idempotent; reproduces the 2026-08-16 audit; zero writes outside <code>KDB/fts/</code> — passed</td>
+      </tr>
+      <tr>
+        <td><strong>1 — Gate + labeling app</strong></td>
+        <td>Gate prompt + salvage + <code>gate_verdicts</code>; freezer, stdlib review app, feedback log, calibration report</td>
+        <td><span class="pill pill-green">CODE COMPLETE</span> <span class="pill pill-blue">LIVE GATE RUNNING</span></td>
+        <td>Joseph hand-labels 150 stratified files in the app (batch <code>calibration-p1</code>); precision/recall on <code>investment ∪ finance-econ</code>; <strong>Joseph sets the accept threshold</strong> after seeing the confusion matrix — pending</td>
+      </tr>
+      <tr>
+        <td><strong>2 — Extraction schema</strong></td>
+        <td>Extract prompt + JSON schema + span validator + per-record salvage</td>
+        <td><span class="pill pill-gray">PLANNED</span></td>
+        <td>100-file eligible-set audit: span-validity 100% on landed records; zero-idea rate on a political holdout reported</td>
+      </tr>
+      <tr>
+        <td><strong>3 — Ranker + queues</strong></td>
+        <td>Features, decay (per-topic + horizon), D21 status overrides, hand-tuned v1 weights, queue CLI, three baselines</td>
+        <td><span class="pill pill-gray">PLANNED</span></td>
+        <td>Hand-tuned research queue not worse than all three baselines (recency-only, author-only, BM25-title) on nDCG@10 over the labeled set</td>
+      </tr>
+      <tr>
+        <td><strong>4 — Feedback + 500-file extract + full review app</strong></td>
+        <td>Event-log hardening, exploration quota, promote, outcome due-list; idea/lesson labels + outcome queue in the app</td>
+        <td><span class="pill pill-gray">PLANNED</span></td>
+        <td>Remaining eligible backlog extracted; span-validity ≥95% on a 50-file re-audit; top-10 research queue neither majority-one-author nor majority-politics; one real weekly triage in the app</td>
+      </tr>
+      <tr>
+        <td><strong>5 — Steady state</strong></td>
+        <td>Incremental intake/gate/extract on new feeder files; <code>export</code>; calibration proposal command (post-~200 events)</td>
+        <td><span class="pill pill-gray">PLANNED</span></td>
+        <td>—</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">CLI surface — built (<code>kdb_fts/cli.py</code>)</h3>
+      <table>
+        <tr><th>Command</th><th>What it does</th></tr>
+        <tr><td><code>kdb-fts intake [--raw-root R] [--state S]</code></td><td>Walk the raw tree → ledger upsert + prune + FTS rebuild (no LLM)</td></tr>
+        <tr><td><code>kdb-fts search &lt;query&gt; [--n 20]</code></td><td>FTS5 MATCH over title/author/body, bm25 order, snippets</td></tr>
+        <tr><td><code>kdb-fts status</code></td><td>Counts by cleanliness/content_kind, canonical + unmapped authors, gate cost to date</td></tr>
+        <tr><td><code>kdb-fts gate [--max N] [--model M] [--dry-run]</code></td><td>One LLM verdict per ungated <code>ok</code> article; resumable</td></tr>
+        <tr><td><code>kdb-fts feedback &lt;target_type&gt; &lt;target_id&gt; &lt;action&gt; [--reason] [--tags]</code></td><td>Append one immutable event (scripting path)</td></tr>
+        <tr><td><code>kdb-fts review [--batch calibration-p1] [--kind calibration] [--n 150]</code></td><td>Freeze the batch (if new) and serve the labeling app</td></tr>
+        <tr><td><code>kdb-fts calibration [--batch calibration-p1]</code></td><td>Gate precision/recall/F1 + by-topic split vs Joseph's labels</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">CLI surface — planned (blueprint §8)</h3>
+      <table>
+        <tr><th>Command</th><th>What it will do</th></tr>
+        <tr><td><code>kdb-fts extract [--max N] [--dry-run]</code></td><td>Extraction on gate-admitted articles (Phase 2)</td></tr>
+        <tr><td><code>kdb-fts cluster</code></td><td>Rebuild idea/framework clusters (Phase 2/3)</td></tr>
+        <tr><td><code>kdb-fts rank [--ranker V]</code></td><td>Recompute scores + snapshots (Phase 3)</td></tr>
+        <tr><td><code>kdb-fts queue [--kind …] [--n 20]</code></td><td>Print/export a queue without serving (fallback surface)</td></tr>
+        <tr><td><code>kdb-fts promote &lt;article_id&gt;</code></td><td>Force extraction past the gate (gate is reversible, §7.2)</td></tr>
+        <tr><td><code>kdb-fts authors</code> / <code>kdb-fts export</code></td><td>Author board · versioned JSONL/CSV snapshot (the only coupling to the future comparison harness)</td></tr>
+      </table>
+      <p class="ref" style="margin-bottom:0">The blueprint's <code>review --kind</code> list
+      (<code>research|lessons|reading|outcomes|calibration</code>) is the Phase-4 queue-kinds surface; v0 serves
+      <code>calibration</code> only (<code>review.py _KINDS</code>).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="feeder">
+  <h2><span class="n">3</span>Gmail feeder — how emails become markdown</h2>
+  <p class="lede">The front end of the whole system (Task #143). <code>kdb-gmail-fetch</code> pulls messages
+  from the Gmail <code>Substack_raw</code> label, converts them to markdown sources under
+  <code>&lt;vault&gt;/KDB/raw/joseph-ft-public-gmail/</code>, and label-moves them to
+  <code>Substack_ai_processed</code>. Fully deterministic — <strong>no LLM anywhere in the feeder</strong>.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">The per-message flow (<code>ingestion/feeder/gmail.py</code>)</h3>
+    <table>
+      <tr><th>Step</th><th>What happens</th><th>Module</th></tr>
+      <tr><td>list</td><td>Enumerate message ids under <code>Substack_raw</code> via the <code>gws gmail</code> CLI seam</td><td><code>gmail_client.py</code></td></tr>
+      <tr><td>journal-skip</td><td>Skip ids already in the feeder journal</td><td><code>journal.py</code></td></tr>
+      <tr><td>get + extract</td><td>Fetch <code>format=full</code>, HTML→markdown, canonical Substack URL, best-effort <code>content_kind</code> (article | video | podcast)</td><td><code>gmail_extract.py</code></td></tr>
+      <tr><td>promo-filter</td><td>12-marker deterministic battery (paywall links, unlock offers, bracketed "Continue reading" truncation jumps, transactional mail). Match → journaled <code>promo</code> and label-moved <strong>without writing an md source</strong></td><td><code>promo_filter.py</code></td></tr>
+      <tr><td>dedup</td><td>Canonical-URL dedup against the journal (<code>seen_urls</code>)</td><td><code>journal.py</code></td></tr>
+      <tr><td>write</td><td>Atomic write of the md source; filename <code>slugify(title).md</code>, collision → <code>-&lt;message_id[:8]&gt;</code> suffix</td><td><code>gmail.py</code></td></tr>
+      <tr><td>label move + journal append</td><td>Message moves <code>Substack_raw</code> → <code>Substack_ai_processed</code>; one JSONL line appended to <code>&lt;vault&gt;/KDB/state/feeders/gmail.jsonl</code></td><td><code>gmail.py</code> / <code>journal.py</code></td></tr>
+    </table>
+    <p style="margin-bottom:0">Per-message failures are isolated: the message stays in the raw label and lands in the
+    run summary; the batch continues.</p>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The frontmatter contract (what intake later reads)</h3>
+      <p>Every converted source starts with YAML frontmatter:</p>
+      <ul class="tight">
+        <li><code>title</code>, <code>author</code>, <code>published_date</code>, <code>source_url</code></li>
+        <li><code>gmail_message_id</code> — this becomes the article's <strong>stable identity</strong> downstream (D17)</li>
+        <li><code>content_kind</code> — article | video | podcast (drives the media skip-by-rule, D16)</li>
+        <li><code>feeder: gmail-substack</code>, <code>ingested_at</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">The promo prefilter (already applied to the backlog)</h3>
+      <p>The one-off <code>scripts/gmail_promo_prefilter.py</code> (2026-08-15) tuned the marker battery over the
+      4,189-file converted corpus — three report-only iterations, Joseph-eyeball-gated — then
+      <code>--apply</code> moved <strong>1,530 promo/truncated files (36.5%)</strong> into
+      <code>_promo/</code> (move log: <code>_promo/_movelog.jsonl</code>). The stabilized battery was then ported
+      verbatim into <code>promo_filter.py</code>, so future promo mail never becomes a source at all.</p>
+      <p style="margin-bottom:0">Tuning finding encoded in the markers: "Upgrade to paid" alone is <em>not</em> a
+      marker — it's a footer CTA on full free articles and would over-match ~65% of the corpus.</p>
+    </div>
+  </div>
+
+  <div class="callout co-blue"><span class="t">Why the feeder matters to kdb_fts</span>
+  kdb_fts treats <code>KDB/raw/joseph-ft-public-gmail/</code> as an <strong>immutable input</strong> — the feeder is
+  the sole writer (D3). Everything kdb_fts knows about an article starts from these frontmatter fields plus the
+  body bytes; nothing is ever written back.</div>
+  <p class="ref"><code>ingestion/feeder/gmail.py</code> (flow, <code>DEFAULT_LABEL = "Substack_raw"</code>) ·
+  <code>ingestion/feeder/promo_filter.py</code> · <code>scripts/gmail_promo_prefilter.py</code> (HISTORICAL one-off)</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="corpus">
+  <h2><span class="n">4</span>The raw corpus — what the system runs over</h2>
+  <p class="lede">One directory of markdown: <code>&lt;vault&gt;/KDB/raw/joseph-ft-public-gmail/</code>.
+  The 2026-08-16 audit (the problem statement behind #145) is the ground truth for every count below.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">From mailbox to working corpus</h3>
+    <table>
+      <tr><th>Stage</th><th>Count</th><th>Note</th></tr>
+      <tr><td>Gmail messages converted</td><td>4,156</td><td>+ 33 pre-existing files = <strong>4,189</strong> md total</td></tr>
+      <tr><td>Promo/truncated moved to <code>_promo/</code></td><td>1,530 (36.5%)</td><td>paywalled teasers, subscribe-to-read-more, transactional</td></tr>
+      <tr><td><strong>Residual intake tree</strong></td><td><strong>2,659</strong></td><td>2,570 article / 77 video / 12 podcast; 4,207,609 body words</td></tr>
+      <tr><td>"Weekly Stack" digest stubs</td><td>34</td><td>recommendation digests, not articles — unrankable by construction</td></tr>
+      <tr><td>Short bodies (&lt; 50 words)</td><td>25</td><td>skip-by-rule (D16)</td></tr>
+      <tr><td><strong>Rankable corpus</strong></td><td><strong>2,625</strong></td><td>= 2,659 − 34 digest stubs</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Composition — why a gate exists at all</h3>
+    <ul class="tight">
+      <li>Majority <strong>politics/geopolitics by volume (~55%)</strong>; investment-named ~17% (2026-08-16 audit, blueprint §1).</li>
+      <li>The corpus is <strong>information, not knowledge</strong>: mostly unrelated to itself, so the GraphDB pipeline's
+      ontology-compiling philosophy is a poor fit — #145 is the parallel extraction-ledger competitor (D1).</li>
+      <li>Joseph's four needs (blueprint §1): a ranked <strong>research queue</strong> of investment ideas, ranked
+      <strong>authors</strong>, compounding <strong>lessons</strong>, and a <strong>reading queue</strong> over
+      everything — all calibrated to his judgment, developed iteratively from his manual evaluations.</li>
+    </ul>
+  </div>
+
+  <div class="callout co-amber"><span class="t">Source conflict on record: "2,659" vs "2,625"</span>
+  Early panel documents used both numbers. Resolution (problem statement + blueprint Phase-0 gate):
+  <strong>2,659 is the intake-tree count; 2,625 is the rankable corpus</strong> (2,659 − 34 digest stubs). As-built
+  intake cross-checks this exactly: <code>ok + short + media + bleed = 2,511 + 25 + 89 + 0 = 2,625</code>. A third
+  number, <strong>2,511</strong>, is the gate-eligible set (<code>cleanliness = ok</code>) — skip-by-rule classes are
+  never sent to the LLM (D16).</div>
+  <p class="ref"><code>docs/superpowers/specs/2026-08-16-gmail-info-search-rank-problem-statement.md</code> · blueprint §1, §9 Phase-0 gate</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="phase0">
+  <h2><span class="n">5</span>Phase 0 — Intake &amp; the ledger <span class="pill pill-green">BUILT</span></h2>
+  <p class="lede">Deterministic walk of the raw tree into a SQLite ledger plus a full-text search surface —
+  <strong>no LLM calls, no cost</strong>. Idempotent: re-running on an unchanged tree is a no-op.
+  This is where the corpus becomes addressable state.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Key components</h3>
+      <table>
+        <tr><th>Module</th><th>Role</th></tr>
+        <tr><td><code>kdb_fts/intake.py</code></td><td><code>scan_tree</code> (pure: walk, classify, no writes) + <code>run_intake</code> (upsert, prune absent, FTS rebuild)</td></tr>
+        <tr><td><code>kdb_fts/ledger.py</code></td><td>Typed DB access — <strong>the only module that opens <code>ledger.sqlite</code></strong> (write-boundary guard)</td></tr>
+        <tr><td><code>kdb_fts/schema.py</code></td><td>DDL + numbered migrations (txn-wrapped; <code>SCHEMA_VERSION = 2</code> after Phase 1)</td></tr>
+        <tr><td><code>kdb_fts/state.py</code></td><td>State-root resolution: <code>$KDB_FTS_PATH</code> else <code>&lt;vault&gt;/KDB/fts</code> (D4)</td></tr>
+        <tr><td><code>kdb_fts/author_map.py</code></td><td>Raw author string → canonical author/publication via Joseph-editable <code>author_map.yaml</code></td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Identity &amp; classification rules</h3>
+      <ul class="tight">
+        <li><strong>Stable identity</strong> (D17): <code>article_id</code> = <code>gmail_message_id</code> from frontmatter, else <code>"sha256:" + sha256(file text)</code> — never the file path. A move keeps the id; path is a mutable attribute.</li>
+        <li><strong>Cleanliness</strong> — exactly one label per file, precedence
+        <code>digest-stub &gt; media &gt; bleed &gt; short &gt; ok</code>: digest stub = <code>and N more</code> title pattern;
+        media = <code>content_kind ∈ {video, podcast}</code>; bleed = unparseable frontmatter (repaired <em>view</em> — original bytes untouched); short = body &lt; 50 words.</li>
+        <li><strong>Paragraph IDs</strong>: blank-line split; paragraph <em>i</em> becomes <code>p0001…</code>, stable within one content hash. Paragraphs are replaced only when the hash changes.</li>
+        <li><strong>FTS5</strong>: full repopulation from <code>articles</code> + <code>paragraphs</code> on every intake (cheap at 4.2M words); the author column indexes the <strong>canonical</strong> name, falling back to raw (Phase-1 fix).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">The ledger schema (migration 1, <code>schema.py</code>)</h3>
+    <table>
+      <tr><th>Table</th><th>Contents</th></tr>
+      <tr><td><code>articles</code></td><td><code>article_id</code> (PK), <code>path</code> (mutable), <code>content_sha256</code>, <code>title</code>, <code>raw_author</code>, <code>author_id</code>, <code>published_date</code>, <code>source_url</code>, <code>content_kind</code>, <code>word_count</code>, <code>cleanliness</code>, <code>first_seen_run</code>, <code>last_seen_run</code></td></tr>
+      <tr><td><code>paragraphs</code></td><td><code>(article_id, paragraph_id)</code> PK, <code>body</code> — cascade-deleted with the article</td></tr>
+      <tr><td><code>authors</code></td><td><code>author_id</code>, <code>canonical_name</code> (unique), <code>publication</code>, <code>explicit_rating</code> (nullable; wins when set, D9a), <code>derived_score</code></td></tr>
+      <tr><td><code>author_aliases</code></td><td><code>raw_string</code> → <code>author_id</code>; upserted from the <em>current</em> <code>author_map.yaml</code> on every intake — Joseph's edits take effect on the next run</td></tr>
+      <tr><td><code>articles_fts</code></td><td>FTS5 virtual table over <code>article_id / title / author / body</code></td></tr>
+      <tr><td><code>meta</code></td><td>key/value — holds <code>schema_version</code></td></tr>
+    </table>
+    <p style="margin-bottom:0"><code>gate_verdicts</code> arrives with migration 2 in Phase 1 (§6 of this page);
+    extraction, feedback-mirror, and ranker tables land as later migrations in their own phases (D14: re-extraction
+    never rewrites identity).</p>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Real-tree results (Phase-0 exit gate, 2026-08-16)</h3>
+      <ul class="tight">
+        <li><code>seen=2659</code>, <code>deleted=0</code> on re-run (idempotent)</li>
+        <li>cleanliness: <code>ok: 2511</code> · <code>media: 89</code> (77 video + 12 podcast) · <code>digest-stub: 34</code> · <code>short: 25</code> · <code>bleed: 0</code></li>
+        <li><code>raw_author_strings=117</code> → 117 canonical authors (verified live 2026-08-19: 131,961 paragraphs)</li>
+        <li><code>kdb-fts search "Barrick"</code> → real hits with snippets</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Recorded deviation: bleed 3 → 0</h3>
+      <p>The 2026-08-16 audit (and blueprint D16) listed <strong>3 frontmatter-bleed files</strong>; the live tree
+      reproduced <strong>0</strong> under every detection signature (Phase-0 plan Task-8 amendment, Joseph
+      2026-08-16). The bleed classifier stays armed and fixture-tested — if a broken file ever lands, the number
+      updates then. Unmapped author strings never block intake: they default to their normalized form and are
+      listed by <code>kdb-fts status</code> for Joseph to curate in <code>author_map.yaml</code>.</p>
+    </div>
+  </div>
+  <p class="ref"><code>kdb_fts/intake.py</code> · <code>kdb_fts/ledger.py</code> · <code>kdb_fts/schema.py</code> ·
+  plan: <code>docs/superpowers/plans/2026-08-16-task145-kdb-fts-phase0-intake.md</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="gate">
+  <h2><span class="n">6</span>Phase 1 — The gate <span class="pill pill-green">BUILT</span> <span class="pill pill-blue">LIVE RUN IN PROGRESS</span></h2>
+  <p class="lede">One cheap <code>deepseek-v4-flash</code> JSON-mode call per <code>ok</code>-cleanliness article
+  (blueprint §7.2, D5). The gate decides <em>what an article is</em> and <em>whether it deserves deep
+  extraction</em> — so the expensive Phase-2 pass never touches the politics majority. The gate is
+  <strong>reversible and logged</strong>: <code>kdb-fts promote</code> (planned) can force any article past it.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 268" width="980" height="268">
+      <rect x="20" y="30" width="150" height="56" rx="9" class="box-teal"></rect>
+      <text x="95" y="52" text-anchor="middle" class="s-title">ok article</text>
+      <text x="95" y="69" text-anchor="middle" class="s-body">title · author · date · body</text>
+
+      <path class="arr" d="M170 58 H196"></path>
+      <rect x="200" y="30" width="170" height="56" rx="9" class="box-amber"></rect>
+      <text x="285" y="52" text-anchor="middle" class="s-title">build_prompt</text>
+      <text x="285" y="69" text-anchor="middle" class="s-body">truncate to 4,000 words</text>
+
+      <path class="arr" d="M370 58 H396"></path>
+      <rect x="400" y="30" width="150" height="56" rx="9" class="box-violet"></rect>
+      <text x="475" y="52" text-anchor="middle" class="s-title">deepseek-v4-flash</text>
+      <text x="475" y="69" text-anchor="middle" class="s-body">JSON mode · ≤1024 tok out</text>
+
+      <path class="arr" d="M550 58 H576"></path>
+      <rect x="580" y="30" width="170" height="56" rx="9" class="box-amber"></rect>
+      <text x="665" y="52" text-anchor="middle" class="s-title">parse_verdict</text>
+      <text x="665" y="69" text-anchor="middle" class="s-body">salvage · fail-closed</text>
+
+      <path class="arr" d="M750 58 H776"></path>
+      <rect x="780" y="30" width="180" height="56" rx="9" class="box-green"></rect>
+      <text x="870" y="52" text-anchor="middle" class="s-title">gate_verdicts row</text>
+      <text x="870" y="69" text-anchor="middle" class="s-body">committed per article</text>
+
+      <!-- fail-closed branch -->
+      <path class="arr-red" d="M665 86 V 122"></path>
+      <rect x="540" y="126" width="250" height="52" rx="8" class="box-red"></rect>
+      <text x="665" y="146" text-anchor="middle" class="s-body">unknown topic → <tspan class="s-code">other</tspan> + extract neither</text>
+      <text x="665" y="162" text-anchor="middle" class="s-body">invalid JSON → 1 retry, then journal <tspan class="s-code">failed</tspan></text>
+      <text x="665" y="174" text-anchor="middle" class="s-small">a failed article gets NO verdict row (retried next run)</text>
+
+      <!-- exploration branch -->
+      <path class="arr-dash" d="M870 86 V 122"></path>
+      <rect x="800" y="126" width="160" height="52" rx="8" class="box-gray"></rect>
+      <text x="880" y="144" text-anchor="middle" class="s-body">ineligible verdicts →</text>
+      <text x="880" y="160" text-anchor="middle" class="s-body">5% (min 10) marked</text>
+      <text x="880" y="173" text-anchor="middle" class="s-small">exploration=1 · stratified by author</text>
+
+      <!-- journal -->
+      <rect x="20" y="200" width="940" height="48" rx="9" class="box-gray"></rect>
+      <text x="40" y="221" class="s-code">run end → runs/&lt;run_id&gt;/journal.jsonl — one atomic write (per-article lines + summary)</text>
+      <text x="40" y="238" class="s-small">durability during the run comes from per-article committed verdict rows; the journal is the completion artifact (Phase-1 plan deviation 3)</text>
+    </svg>
+    <div class="cap">The gate pipeline (<code>kdb_fts/gate.py</code>): pure prompt/parse half + the
+    <code>run_gate</code> runner (DB + <code>call_model</code> + journal). Resumable: an article with a verdict at
+    the same <code>(model, prompt_version)</code> is skipped — re-gating means bumping <code>gate_v1</code>.</div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The verdict (what the model returns)</h3>
+      <ul class="tight">
+        <li><code>topic</code> — one of <strong>6 closed labels</strong> (<code>gate.TOPICS</code>): <code>investment · finance-econ · geopolitics · china-econ · ai-tech · other</code>. Unknown labels <strong>fail closed</strong> to <code>other</code> + both extract flags false; the raw label is kept for the journal.</li>
+        <li><code>signal</code> 0..1 — information density for an investor (specificity, argument quality, conviction backed by reasoning).</li>
+        <li><code>extract_ideas</code> / <code>extract_lessons</code> — eligibility booleans. <strong>Both false is a normal answer</strong> — the prompt says most articles deserve neither.</li>
+        <li><code>confidence</code> (nullable, clamped 0..1) + one-line <code>rationale</code> (≤280 chars).</li>
+      </ul>
+      <p style="margin-bottom:0">Input: title + author + published_date + body truncated at
+      <code>MAX_BODY_WORDS = 4000</code> (~p95 body length is 4,245 words). Prompt template:
+      <code>kdb_fts/prompts/gate_v1.md</code> (version == filename stem).</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">The exploration sample (the gate's honesty mechanism)</h3>
+      <p>Each gate pass marks a fixed <strong>5% exploration sample (minimum 10, capped at population)</strong> of
+      <em>ineligible</em> articles, stratified by author — deterministic: groups sorted by (−size, author), ids
+      sorted, round-robin (<code>gate._exploration_sample</code>). Those rows get <code>exploration = 1</code> in
+      <code>gate_verdicts</code> and are extracted anyway in Phase 2, so the gate's <strong>false-negative rate is
+      measured, not hoped</strong> (blueprint §7.2).</p>
+      <p style="margin-bottom:0">Skip-by-rule classes (<code>media</code>, <code>short</code>, <code>digest-stub</code>,
+      <code>bleed</code>) are never sent to the LLM (D16) — only the 2,511 <code>ok</code> articles are gated.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0"><code>gate_verdicts</code> (migration 2)</h3>
+    <p style="margin-top:0">One row per <code>(article_id, run_id)</code>: <code>topic</code>, <code>signal</code>,
+    <code>extract_ideas</code>, <code>extract_lessons</code>, <code>confidence</code>, <code>model</code>,
+    <code>prompt_version</code> — plus three additive columns beyond blueprint §6's list
+    (<strong>Phase-1 plan deviation 1</strong>): <code>exploration</code> (home for the 5% sample),
+    <code>input_tokens</code> / <code>output_tokens</code> (so <code>status</code> reports cost-to-date without
+    parsing journals), and <code>rationale</code>. Latest verdict routes; history is kept
+    (<code>ledger.latest_verdicts</code> = each article's verdict from its latest run).</p>
+  </div>
+
+  <div class="callout co-amber"><span class="t">Cost reality check (Phase-1 plan deviation 7)</span>
+  Blueprint §11 estimated the full-corpus gate at <strong>&lt; $0.5</strong> — computed at the old flash price
+  (0.14/0.28). At the 2026-08-16 peak cache-miss rates (0.44/1.32) the real figure is ≈ <strong>$2–3</strong>
+  (commit <code>7b5fc64</code>). Still trivial; noted so the live gate's reported cost isn't a surprise.
+  <code>--dry-run</code> performs the LLM calls but commits nothing — no verdict rows, no exploration marks,
+  no journal (D20).</div>
+  <p class="ref"><code>kdb_fts/gate.py</code> · <code>kdb_fts/prompts/gate_v1.md</code> ·
+  <code>kdb_fts/ledger.py::ungated_articles / insert_gate_verdict / mark_exploration</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="freezer">
+  <h2><span class="n">7</span>The freezer — <code>review/&lt;batch_id&gt;.json</code> <span class="pill pill-green">BUILT</span></h2>
+  <p class="lede">The freezer (<code>review.py::freeze_batch</code>) picks a deterministic stratified sample of
+  gated articles and freezes it to <strong><code>&lt;vault&gt;/KDB/fts/review/&lt;batch_id&gt;.json</code></strong>.
+  The frozen payload is exactly what the web app renders — and it <em>is</em> the exposure record (D13/D22):
+  every feedback event from that batch is stamped with the position and score the frozen JSON says Joseph saw.
+  <strong>A frozen batch is never overwritten</strong> — <code>freeze_batch</code> raises
+  <code>FileExistsError</code> on an existing path.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">How the sample is drawn (<code>review._stratified_sample</code>)</h3>
+    <ul class="tight">
+      <li><strong>Stock</strong>: every article with a gate verdict (ungated articles are not calibration stock), joined to its latest verdict's <code>topic</code>, <code>signal</code>, and <code>exploration</code> flag, plus the full body from <code>paragraphs</code>.</li>
+      <li><strong>Topic-proportional allocation</strong> across the 6 topic strata, minimum 2 per stratum where stock allows.</li>
+      <li><strong>Even-spacing within each topic</strong>, ordered by <code>(author, published_date, article_id)</code> — spreads authors and dates deterministically; then a deterministic trim/backfill to exactly <code>n</code> (default <strong>150</strong> for <code>calibration-p1</code>).</li>
+      <li><strong>Payload</strong>: <code>batch_id</code>, <code>kind</code>, <code>created</code>, <code>ranker_version</code> (<code>null</code> in v0 — no ranker yet), and <code>items[]</code> with <code>position</code>, title, canonical author, published_date, topic guess, signal, body, exploration flag.</li>
+    </ul>
+  </div>
+
+  <div class="callout co-amber"><span class="t">Recorded blueprint deviations 8 &amp; 9 (as-built wins)</span>
+  <strong>Deviation 8</strong>: stratification is <strong>topic-only</strong>. Blueprint §9's letter says "stratified by
+  author, date, length, topic guess" — within each topic stratum, even-spacing over <code>(author, published_date,
+  article_id)</code> spreads author and date, but <strong>length is genuinely unstratified</strong>: the calibration
+  matrix may carry a length bias. <strong>Deviation 9</strong>: blueprint §7.5's "20% of batch slots reserved for
+  exploration" is absent from freezer v0 — deliberate for <code>calibration-p1</code> (calibration wants unbiased
+  stock, and the gate-pass exploration sample is already marked in <code>gate_verdicts</code>); the quota arrives
+  with queue-kind batches in Phase 4. Review v0 serves <code>kind = calibration</code> only
+  (<code>review.py _KINDS</code>).</div>
+
+  <div class="callout co-blue"><span class="t">Where it sits in the workflow</span>
+  Freezing happens lazily: <code>kdb-fts review --batch calibration-p1</code> freezes the batch if the JSON doesn't
+  exist yet ("froze batch calibration-p1 (calibration, n=150)"), then serves it. Re-running the same command
+  re-serves the same frozen batch — the sample can never drift between labeling sessions.</div>
+  <p class="ref"><code>kdb_fts/review.py::freeze_batch</code> · blueprint D13/D22, §7.5 · Phase-1 plan Task 5</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="review-app">
+  <h2><span class="n">8</span>The review web app <span class="pill pill-green">BUILT</span></h2>
+  <p class="lede">The v1 review surface (D22): a stdlib-only local server (<code>http.server.ThreadingHTTPServer</code>
+  on <code>127.0.0.1</code>, ephemeral port) serving <strong>one static page</strong> —
+  <code>kdb_fts/assets/review.html</code> (98 lines, no JS framework, no build step, no new dependency).
+  Joseph labels in the browser; every click writes back as an immutable feedback event. The app writes
+  <em>nothing else</em>.</p>
+
+  <div class="diagram">
+    <svg viewBox="0 0 980 210" width="980" height="210">
+      <rect x="20" y="30" width="170" height="56" rx="9" class="box-teal"></rect>
+      <text x="105" y="52" text-anchor="middle" class="s-title">latest_verdicts</text>
+      <text x="105" y="69" text-anchor="middle" class="s-body">routing view, ledger</text>
+
+      <path class="arr" d="M190 58 H216"></path>
+      <rect x="220" y="30" width="200" height="56" rx="9" class="box-amber"></rect>
+      <text x="320" y="52" text-anchor="middle" class="s-title">_stratified_sample</text>
+      <text x="320" y="69" text-anchor="middle" class="s-body">topic-proportional · min 2</text>
+
+      <path class="arr" d="M420 58 H446"></path>
+      <rect x="450" y="30" width="200" height="56" rx="9" class="box-green"></rect>
+      <text x="550" y="52" text-anchor="middle" class="s-title">review/calibration-p1.json</text>
+      <text x="550" y="69" text-anchor="middle" class="s-body">frozen · never overwritten</text>
+
+      <path class="arr" d="M650 58 H676"></path>
+      <rect x="680" y="30" width="150" height="56" rx="9" class="box-blue"></rect>
+      <text x="755" y="52" text-anchor="middle" class="s-title">serve()</text>
+      <text x="755" y="69" text-anchor="middle" class="s-body">127.0.0.1 · stdlib</text>
+
+      <rect x="680" y="140" width="150" height="48" rx="9" class="box-violet"></rect>
+      <text x="755" y="160" text-anchor="middle" class="s-title">assets/review.html</text>
+      <text x="755" y="176" text-anchor="middle" class="s-body">bucket buttons · keys 1–4</text>
+
+      <path class="arr" d="M755 140 V 90"></path>
+      <text x="762" y="118" class="lbl">POST /event</text>
+
+      <rect x="380" y="140" width="240" height="48" rx="9" class="box-green"></rect>
+      <text x="500" y="160" text-anchor="middle" class="s-title">feedback/events.jsonl</text>
+      <text x="500" y="176" text-anchor="middle" class="s-body">immutable append · exposure stamped</text>
+
+      <path class="arr-dash" d="M700 96 V 164 H 624"></path>
+      <text x="540" y="128" class="lbl">server-side: ranker_version · score_shown · position_shown · batch_id · exploration — all from the frozen batch</text>
+
+      <text x="20" y="176" class="s-body">GET / or /review.html → the static page</text>
+      <text x="20" y="193" class="s-body">GET /batch → the frozen JSON (read once at server build; unknown ids / bad actions → 400)</text>
+    </svg>
+    <div class="cap">Freeze → serve → click → event. Exposure context is stamped <strong>server-side from the frozen
+    batch</strong> on every write-back — the client cannot invent the score or position it was shown.</div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">What Joseph sees and does</h3>
+    <ul class="tight">
+      <li>Per article: title, canonical author, published date, the gate's <strong>topic guess + signal</strong>, and the full body in a scrollable pane.</li>
+      <li>One-click buckets: <strong>strong / interesting / weak / noise</strong> (keyboard 1–4) — the D13 fast bucket sort, ≙ 3/2/1/0 usefulness.</li>
+      <li>A free-text <strong>reason box surfaces at the extremes</strong> (strong/noise) — "the extremes teach the rubric the most" (D13).</li>
+      <li>Event appends are serialized by a threading lock across handler threads; <code>webbrowser.open</code> launches the page; Ctrl-C stops the server.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>kdb_fts/review.py::make_server / serve</code> · <code>kdb_fts/assets/review.html</code> · Phase-1 plan Task 7</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="feedback">
+  <h2><span class="n">9</span>Feedback events — <code>feedback/events.jsonl</code> <span class="pill pill-green">BUILT</span></h2>
+  <p class="lede">Joseph's judgments are the system's <strong>irreplaceable asset</strong> (D18): rebuildable state
+  (SQLite, scores) and replayable state (run journals) can be reconstructed — his labels cannot. One append-only
+  JSONL file at <strong><code>&lt;vault&gt;/KDB/fts/feedback/events.jsonl</code></strong>; there is deliberately
+  <strong>no update or delete path</strong> (<code>feedback.py</code>). Excluded from any wipe/rollback; backed up
+  with the vault.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The event (<code>feedback.append_event</code>)</h3>
+      <ul class="tight">
+        <li><code>action</code> — closed vocabulary: <code>strong · interesting · weak · noise</code> (article buckets ≙ 3/2/1/0), <code>accept · reject</code> (ideas, D21), <code>helpful · not-helpful</code> (lessons, D21), <code>save · skip · wrong-extraction · promote-to-extract</code>.</li>
+        <li><code>target_type</code> — <code>article | idea | lesson | author</code>; <code>target_id</code>.</li>
+        <li><code>reason_text</code> / <code>reason_tags</code> — optional; expected at the extremes (D13).</li>
+        <li><strong>Exposure context</strong> (D13): <code>ranker_version</code>, <code>score_shown</code>, <code>position_shown</code>, <code>batch_id</code>, <code>exploration</code> — stamped from the frozen batch by the review server.</li>
+        <li><code>ts</code> — local ISO timestamp.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Mechanics &amp; the scripting path</h3>
+      <ul class="tight">
+        <li>Append = read + <strong>atomic rewrite</strong> via <code>common.atomic_io</code> (crash-safe, write-guard-clean; fine at Phase-1 scale — thousands of events, low MB).</li>
+        <li>CLI: <code>kdb-fts feedback &lt;target_type&gt; &lt;target_id&gt; &lt;action&gt; [--reason txt] [--tags a,b]</code> — for scripting; the web app is the primary surface (D22), markdown export a fallback.</li>
+        <li><strong>Deviation 2 (as-built)</strong>: events land in JSONL <em>only</em> in Phase 1. Blueprint §6's <code>feedback_events</code> SQLite mirror table arrives with the ranker that consumes it (Phase 3) — YAGNI until then.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout co-red"><span class="t">Why "immutable" is load-bearing</span>
+  Calibration, the future ranker, and any "why was this ranked #3 last Tuesday?" audit all assume the event log is
+  ground truth with its original exposure context. A mutable log would silently invalidate every learned weight.
+  Rollback of a run = delete its <code>runs/&lt;id&gt;</code> subtree and replay-forward; <strong>feedback events are
+  never rolled back</strong> (blueprint §5).</div>
+  <p class="ref"><code>kdb_fts/feedback.py</code> · blueprint D13/D18, §6 <code>feedback_events</code> · Phase-1 plan Task 6</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="calibration">
+  <h2><span class="n">10</span>Calibration — does the gate agree with Joseph? <span class="pill pill-green">BUILT</span></h2>
+  <p class="lede">The Phase-1 exit gate (blueprint §9): Joseph hand-labels <strong>150 stratified articles in the
+  app</strong> as batch <code>calibration-p1</code>, then <code>kdb-fts calibration</code> (<code>calibrate.py</code>)
+  computes the confusion matrix of gate verdicts against his labels. <strong>Joseph sets the accept threshold after
+  seeing the matrix</strong> — no invented number lives in the code.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">How the matrix is built (<code>calibrate.report</code>)</h3>
+    <table>
+      <tr><th>Axis</th><th>Definition</th></tr>
+      <tr><td>Label-positive (Joseph)</td><td>Latest bucket label ∈ <code>{strong, interesting}</code> for the article, from <code>feedback/events.jsonl</code> filtered to the batch (file order = ts order; latest wins)</td></tr>
+      <tr><td>Gate-positive</td><td>Latest verdict <code>topic</code> ∈ <code>{investment, finance-econ}</code> (<code>calibrate.RELEVANT_TOPICS</code>)</td></tr>
+      <tr><td>Output</td><td><code>tp / fp / fn / tn</code> + precision / recall / F1 (null-safe) + a per-topic positive/negative split</td></tr>
+    </table>
+    <p style="margin-bottom:0">Run it with <code>kdb-fts calibration --batch calibration-p1</code>. Labeled articles
+    without a verdict are skipped (can't happen for frozen stock — the freezer only samples gated articles).</p>
+  </div>
+
+  <div class="callout co-blue"><span class="t">The fallback is priced in</span>
+  If the gate underperforms against Joseph's labels, the recorded fallback (blueprint §9 Phase 1) is
+  <strong>extract-all</strong>: a ~$1–3 switch, because D5 (gate-then-extract) is a <em>policy</em>, not a structural
+  commitment. The threshold Joseph sets is recorded in <code>docs/TASKS.md</code>; consuming it is the Phase-3
+  ranker's job.</div>
+  <p class="ref"><code>kdb_fts/calibrate.py</code> · blueprint §9 Phase-1 gate · Phase-1 plan Task 8</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="phase2">
+  <h2><span class="n">11</span>Phase 2 — Extraction <span class="pill pill-gray">PLANNED</span></h2>
+  <p class="lede">Blueprint design only (§7.3, §9 Phase 2) — no code yet. One structured LLM call per
+  <strong>gate-eligible</strong> article (plus the 5% exploration sample), producing zero-to-N
+  <code>idea_mentions</code> and zero-to-N <code>lesson_cards</code>, each backed by validated evidence spans.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">The contract</h3>
+      <ul class="tight">
+        <li><strong>Faithfulness is a hard gate</strong> (D10): every substantive field carries an evidence span; a deterministic checker (<code>spans.py</code>) proves the <code>exact_quote</code> is a substring of the source paragraph. <strong>Insert is refused</strong> otherwise — the <em>record</em> fails, not the article; other valid records from the same article still land (per-record salvage).</li>
+        <li><strong>Zero is success</strong> (D11): the prompt must say emitting zero mentions/lessons is correct; forcing a filled schema is a defect. A political essay must yield 0 ideas.</li>
+        <li><code>ticker</code> only when the exact string appears in the source.</li>
+        <li>The extractor may <em>downgrade</em> an article to <code>neither</code> (logged); it may never silently upgrade a skip-by-rule file.</li>
+        <li>JSON-schema-gated response, <code>schema_version</code> stamped; raw + salvaged model output per article lands in <code>runs/&lt;run_id&gt;/extractions/&lt;id&gt;.json</code> (replayable).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Tables it will add (blueprint §6)</h3>
+      <ul class="tight">
+        <li><code>extraction_runs</code> — run_id × article_id, schema version, model, tokens/cost/latency, <code>status</code> (<code>ok/empty/failed/skipped/exploration</code>). Re-extraction = a new run keyed by schema version + model + content hash (D14).</li>
+        <li><code>idea_mentions</code> — what <em>one</em> article claims: company, ticker (nullable), stance (<code>long/short/pass/watch/unclear</code>), thesis, valuation_premise, catalyst, risks, horizon, expires_on, extraction_uncertainty.</li>
+        <li><code>lesson_cards</code> — principle, context, reusable_application, failure_mode, lesson_type (<code>framework/mental-model/mistake-postmortem/process/risk/behavioral</code>).</li>
+        <li><code>evidence_spans</code> — record_type + record_id + field, paragraph_id, exact_quote (substring-proven).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Canonicalize (mentions → ideas, cards → frameworks)</h3>
+    <p style="margin:0">Deterministic first pass (<code>cluster.py</code>): same normalized company + same stance +
+    thesis token-overlap; manual merge/split via CLI. <strong>Never merge by ticker alone</strong> (D12): bull and
+    bear theses on one company are different <code>ideas</code>, and opposite stances never auto-merge.
+    Corroboration raises <em>salience</em>, never <em>merit</em>. <strong>Phase-2 gate:</strong> 100-file
+    eligible-set audit — span-validity 100% on landed records; zero-idea rate on a political holdout reported.</p>
+  </div>
+  <p class="ref">Blueprint §6/§7.3/§9 Phase 2 · planned modules <code>kdb_fts/extract.py</code>, <code>spans.py</code>, <code>cluster.py</code>, <code>prompts/extract.j2</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="phase3">
+  <h2><span class="n">12</span>Phase 3 — Ranker <span class="pill pill-gray">PLANNED</span></h2>
+  <p class="lede">Blueprint design only (§6 Scores, §7.4, §9 Phase 3). A <strong>deterministic function of features
+  + a versioned ranker JSON</strong> — no LLM in the scoring path. Changing weights produces a new
+  <code>ranker_version</code> and a new <code>score_snapshots</code> set, and never re-extracts (D14). The ranking
+  objective is the expected value of Joseph's next research hour (D7); the system never predicts investment
+  performance.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">Four scores — never one "quality" (D8)</h3>
+    <table>
+      <tr><th>Score</th><th>Decays?</th><th>Primary inputs</th></tr>
+      <tr><td><code>idea_research_priority</code></td><td>Toward the extracted horizon, <strong>while <code>pending</code></strong></td><td>thesis specificity, evidence quality, valuation discipline, falsifiability, risk treatment, horizon clarity, freshness-vs-horizon, corroboration (salience only), novelty, extraction-uncertainty penalty, capped author utility</td></tr>
+      <tr><td><code>lesson_learning_value</code></td><td>Never (90-day re-surface)</td><td>principle generality, evidence, framework cluster size, Joseph's helpful/not-so-much ratings</td></tr>
+      <tr><td><code>article_reading_priority</code></td><td><strong>Per-topic half-life</strong> (D6), unlabeled only</td><td>gate signal, topic bucket, author utility, novelty</td></tr>
+      <tr><td><code>author_personal_utility</code></td><td>Recency-weighted rollup</td><td>explicit rating (wins when set) else derived from article signals + acceptance rate</td></tr>
+    </table>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Decay &amp; the D21 status overrides</h3>
+      <ul class="tight">
+        <li>v1 per-topic half-lives (hand-set, Joseph-tunable, live in the ranker JSON): <code>geopolitics</code> 21d · <code>china-econ</code> 45d · <code>ai-tech</code> 45d · <code>finance-econ</code> 90d · <code>investment</code> 90d · <code>other</code> 30d. Ideas with an extracted <code>horizon</code> use the horizon, not the topic default.</li>
+        <li>Decay governs the <strong>unlabeled majority only</strong>. Joseph's labels override it (D21): an <code>accepted</code> idea leaves the research queue for the outcome track (default 90-day due date when no horizon was extracted); a <code>rejected</code> idea's score floors at zero; <code>helpful</code> boosts a lesson's framework, <code>not-so-much</code> suppresses re-surface. The magnitudes are ranker-JSON tunables — Joseph never types numbers.</li>
+        <li>Expired ideas (<code>expires_on</code> &lt; today) leave the research queue and appear on the outcome due-list.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Authors (D9) &amp; the Phase-3 gate</h3>
+      <ul class="tight">
+        <li>Author quality = three variables: personal utility (learnable now), analytical traits (from extraction features), track record (<strong>empty until outcome data exists</strong> — no hallucinated prior). Author weight in idea ranking is capped at 0.15 of the weighted sum in v1.</li>
+        <li>The <code>feedback_events</code> SQLite mirror lands here (Phase-1 plan deviation 2) — the ranker is its first consumer.</li>
+        <li><code>rankers</code> / <code>score_snapshots</code> tables make any past queue replayable: "why was this ranked #3 last Tuesday?" is answerable.</li>
+        <li><strong>Gate:</strong> on the labeled set, the hand-tuned research queue must be <strong>not worse than all three baselines</strong> (recency-only, author-only, BM25-title) on nDCG@10; ties go to the simpler baseline.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="ref">Blueprint §6 Scores, §7.4, §9 Phase 3 · planned modules <code>kdb_fts/rank.py</code>, <code>decay.py</code></p>
+</section>
+
+<!-- ============================================================ -->
+<section id="phase4">
+  <h2><span class="n">13</span>Phase 4 — Queue kinds &amp; the full review app <span class="pill pill-gray">PLANNED</span></h2>
+  <p class="lede">Blueprint design only (§7.5/§7.6, §9 Phases 4–5). The review app grows from one calibration kind
+  into the standing triage surface, and the remaining eligible backlog gets extracted.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">The queue kinds (<code>kdb-fts review --kind …</code>)</h3>
+    <table>
+      <tr><th>Kind</th><th>What Joseph reviews</th></tr>
+      <tr><td><code>research</code></td><td>Ranked ideas; <code>accept</code> / <code>reject</code> per idea (pending is the default, D21)</td></tr>
+      <tr><td><code>lessons</code></td><td>Lesson library; <code>helpful</code> / <code>not-so-much</code>; no decay, 90-day re-surface</td></tr>
+      <tr><td><code>reading</code></td><td>All articles; per-topic decay on unlabeled items; bucket sort</td></tr>
+      <tr><td><code>outcomes</code></td><td>The due-list — one-click "what happened?": <code>hit / miss / expired / still-running</code>. The only channel by which author <strong>track record</strong> (D9c) ever becomes non-empty</td></tr>
+      <tr><td><code>calibration</code></td><td>Already built (this page §7–§10)</td></tr>
+    </table>
+    <p style="margin-bottom:0">Every queue-kind batch reserves <strong>20% of slots for
+    exploration/uncertain/random items</strong>, recorded on the event (D13 — deferred from freezer v0 by
+    deviation 9; arrives here).</p>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3 style="margin-top:0">Phase-4 gate</h3>
+      <ul class="tight">
+        <li>Extract the remaining eligible backlog (the "500-file extract").</li>
+        <li><strong>Span-validity ≥95%</strong> on a 50-file re-audit.</li>
+        <li>Top-10 research queue is neither majority-one-author nor majority-politics.</li>
+        <li>Joseph completes one real weekly triage <strong>in the app</strong>.</li>
+        <li>Event-log hardening, <code>promote</code>, outcome due-list.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Phase 5 — steady state (the tail)</h3>
+      <ul class="tight">
+        <li>Incremental intake/gate/extract on new feeder files (~tens/week inflow).</li>
+        <li><code>kdb-fts export</code> — versioned JSONL/CSV snapshots under <code>exports/&lt;date&gt;/</code>; the <strong>only coupling</strong> to the future GraphDB-comparison harness (which reads exports, not the package).</li>
+        <li>Calibration proposal command after <strong>~200 events</strong>: a regularized pointwise model over the feature vector <em>proposes</em> a new ranker version — <strong>Joseph accepts or rejects; never auto-swapped</strong>. Validation is time-based (train on older ratings, validate on newer), never random shuffle. Learning-to-rank (LambdaMART etc.) stays out of v1.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="ref">Blueprint §7.5/§7.6, §9 Phases 4–5, §11 cost &amp; attention budget</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="state-map">
+  <h2><span class="n">14</span>State map &amp; boundaries</h2>
+  <p class="lede">Everything kdb_fts owns lives in one self-contained subtree: <strong><code>&lt;vault&gt;/KDB/fts/</code></strong>
+  (D4; override with <code>$KDB_FTS_PATH</code>). Clean to <code>rm</code> if the experiment dies — except the
+  feedback log, which is irreplaceable and backed up with the vault.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0"><code>&lt;vault&gt;/KDB/fts/</code> — what's where (blueprint §5, D18 taxonomy)</h3>
+    <table>
+      <tr><th>Path</th><th>Contents</th><th>Taxonomy (D18)</th></tr>
+      <tr><td><code>ledger.sqlite</code></td><td>System of record: <code>articles · paragraphs · authors · author_aliases · articles_fts · gate_verdicts</code> (+ extraction/ranker tables in later phases)</td><td>Rebuildable from sources + journals + feedback</td></tr>
+      <tr><td><code>runs/&lt;run_id&gt;/journal.jsonl</code></td><td>Per-article gate outcomes + run summary; one atomic write at run end (deviation 3)</td><td>Replayable</td></tr>
+      <tr><td><code>runs/&lt;run_id&gt;/extractions/&lt;id&gt;.json</code></td><td>Raw + salvaged model output per article (Phase 2)</td><td>Replayable</td></tr>
+      <tr><td><code>feedback/events.jsonl</code></td><td><strong>Joseph's judgments — the irreplaceable asset</strong></td><td>Irreplaceable; excluded from rollback/wipe</td></tr>
+      <tr><td><code>review/&lt;batch_id&gt;.json</code></td><td>Frozen queue payload exactly as rendered (the D13 exposure record)</td><td>Rebuildable</td></tr>
+      <tr><td><code>exports/&lt;date&gt;/</code></td><td>Versioned JSONL/CSV snapshots for the future harness (Phase 5)</td><td>Regenerable</td></tr>
+      <tr><td><code>author_map.yaml</code></td><td>Raw author string → canonical author/publication; Joseph-editable</td><td>Config (git-backup-worthy)</td></tr>
+    </table>
+    <p style="margin-bottom:0">The ledger is declared rebuildable from (raw sources + extraction journals + feedback
+    events); a <code>kdb-fts rebuild</code> command is the proof but is post-v1. Rollback of a run = delete its
+    <code>runs/&lt;id&gt;</code> subtree and replay-forward; feedback events are never rolled back.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">The mechanical boundaries (both guard tests in <code>tools/tests/test_package_boundaries.py</code>)</h3>
+    <ul class="tight">
+      <li><strong>Import contract</strong> (D2): <code>ALLOWED["kdb_fts"] = {"common"}</code> — kdb_fts imports nothing internal but <code>common</code> (<code>call_model</code> + retry + telemetry + <code>model_pool</code> + <code>atomic_io</code>), and <strong>nothing internal imports kdb_fts</strong> in v1 (the comparison harness, when built, reads <em>exports</em>).</li>
+      <li><strong>Write-boundary guard</strong> (D3): <code>sqlite3.connect</code>, <code>mkdir</code>, and <code>Path</code> mutators are allowed <strong>only in <code>ledger.py</code></strong>; every other file write in <code>kdb_fts</code> goes through <code>common.atomic_io</code>. kdb_fts never writes the wiki, manifest, graph, pipeline configs, feeder state, or the raw sources — the rule drifts silently if left to convention, so it's a test.</li>
+      <li><strong>Test isolation</strong>: an autouse fixture in the root <code>conftest.py</code> redirects <code>KDB_FTS_PATH</code> to a per-test tmp dir — tests never touch the production ledger.</li>
+    </ul>
+  </div>
+  <p class="ref"><code>kdb_fts/state.py</code> · <code>kdb_fts/ledger.py</code> · <code>tools/tests/test_package_boundaries.py</code> · blueprint §4/§5</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="decisions">
+  <h2><span class="n">15</span>Decisions D1–D22</h2>
+  <p class="lede">The blueprint's binding decisions (§2) — changing one is a new architecture turn. Where each
+  lives in the workflow, so "which decision governs this?" is answerable from this page.</p>
+
+  <div class="card">
+    <table>
+      <tr><th>ID</th><th>Decision (compressed)</th><th>Where it lives</th></tr>
+      <tr><td>D1</td><td>Extraction-ledger family: extract once into source-grounded records; rank deterministically many times; FTS5 is a read surface</td><td>Whole system</td></tr>
+      <tr><td>D2</td><td>Monorepo: <code>kdb_fts/</code> imports <code>common</code> only</td><td>§14 boundaries</td></tr>
+      <tr><td>D3</td><td>Hard write boundary: reads the raw tree; writes confined to the state root, guard-tested</td><td>§3, §14</td></tr>
+      <tr><td>D4</td><td>State root <code>&lt;vault&gt;/KDB/fts/</code> — one self-contained subtree</td><td>§14 state map</td></tr>
+      <tr><td>D5</td><td>Coverage = gate-then-extract; policy, not structure (extract-all fallback ~$1–3)</td><td>§6 gate, §10 calibration</td></tr>
+      <tr><td>D6</td><td>Per-topic decay; lessons never decay; unlabeled items only</td><td>§12 ranker</td></tr>
+      <tr><td>D7</td><td>Ranking objective = expected value of Joseph's next research hour; never predicts performance</td><td>§12 ranker</td></tr>
+      <tr><td>D8</td><td>Joseph's labels = personal usefulness only; faithfulness/correctness/track-record are separate axes</td><td>§9 feedback, §12</td></tr>
+      <tr><td>D9</td><td>Author quality = utility + traits + track record (empty until outcomes); author weight capped 0.15</td><td>§5 authors table, §12</td></tr>
+      <tr><td>D10</td><td>Faithfulness hard gate: evidence span must be a proven substring; failure kills the record, not the article</td><td>§11 extraction</td></tr>
+      <tr><td>D11</td><td>Zero ideas / zero lessons is a successful extraction</td><td>§11 extraction</td></tr>
+      <tr><td>D12</td><td>Never merge by ticker alone; corroboration raises salience, never merit</td><td>§11 canonicalize</td></tr>
+      <tr><td>D13</td><td>Feedback = immutable events with exposure context; D-hybrid buckets + extreme reasons; exploration quota</td><td>§7 freezer, §9 feedback</td></tr>
+      <tr><td>D14</td><td>Extract once, score many; weight change = new ranker version, zero re-extraction</td><td>§12 ranker</td></tr>
+      <tr><td>D15</td><td>No embeddings in v1 — FTS5 + structured fields until an evaluation proves them insufficient</td><td>§5 FTS</td></tr>
+      <tr><td>D16</td><td>Skip-by-rule, no LLM: media (89), short (25), digest stubs (34), bleed (as-built 0)</td><td>§5 intake</td></tr>
+      <tr><td>D17</td><td>Stable identity: <code>gmail_message_id</code> else content sha256; never the path</td><td>§5 intake</td></tr>
+      <tr><td>D18</td><td>State taxonomy: rebuildable / replayable / irreplaceable (feedback — never rolled back)</td><td>§9 feedback, §14</td></tr>
+      <tr><td>D19</td><td>Default model <code>deepseek-v4-flash</code> via <code>common.model_pool</code>; overridable per run</td><td>§6 gate</td></tr>
+      <tr><td>D20</td><td>Dry-run / audit / reversible: every write journaled; <code>--dry-run</code> commits nothing</td><td>§6 gate</td></tr>
+      <tr><td>D21</td><td>Status labels override decay; human vocabulary, numeric translation in the ranker JSON</td><td>§12 ranker, §13 outcomes</td></tr>
+      <tr><td>D22</td><td>Review surface = local web app: frozen batch JSON + stdlib server + one static page; clicks write back as events</td><td>§7–§9</td></tr>
+    </table>
+  </div>
+  <p class="ref">Blueprint §2 (binding decisions table) · as-built deviations: Phase-1 plan header 1–9</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="glossary">
+  <h2><span class="n">16</span>Glossary</h2>
+  <div class="card">
+    <table>
+      <tr><th>Term</th><th>Meaning</th></tr>
+      <tr><td><strong>gate</strong></td><td>The cheap LLM pass (one call per <code>ok</code> article) that assigns a topic, a signal score, and extraction eligibility — deciding what deserves deep extraction (§6; D5).</td></tr>
+      <tr><td><strong>verdict</strong></td><td>One gate result: <code>topic · signal · extract_ideas · extract_lessons · confidence · rationale</code>, stored as a <code>gate_verdicts</code> row keyed by <code>(article_id, run_id)</code>. Latest verdict routes; history kept.</td></tr>
+      <tr><td><strong>freezer</strong></td><td><code>review.py::freeze_batch</code> — draws a deterministic stratified sample and writes it immutably to <code>review/&lt;batch_id&gt;.json</code>. "Frozen" = the sample, order, scores, and positions can never drift between sessions (§7).</td></tr>
+      <tr><td><strong>batch</strong></td><td>A named, frozen set of articles for review (e.g. <code>calibration-p1</code>, 150 items). The frozen JSON doubles as the exposure record for every event written against it.</td></tr>
+      <tr><td><strong>exploration sample</strong></td><td>The 5% (min 10) of gate-ineligible articles marked <code>exploration=1</code> and extracted anyway in Phase 2 — measures the gate's false-negative rate (§6; §7.2). Distinct from the Phase-4 20%-of-batch-slots exploration quota (D13, deviation 9).</td></tr>
+      <tr><td><strong>calibration</strong></td><td>Comparing gate verdicts against Joseph's labels on a frozen batch: <code>kdb-fts calibration</code> prints the confusion matrix + precision/recall/F1; Joseph sets the accept threshold (§10).</td></tr>
+      <tr><td><strong>cleanliness</strong></td><td>Intake's per-file classification: <code>ok · short · media · digest-stub · bleed</code> (precedence in that reverse order). Only <code>ok</code> articles are gated; the rest are skip-by-rule (§5; D16).</td></tr>
+      <tr><td><strong>canonical author</strong></td><td>The deduplicated author entity in the <code>authors</code> table; <code>author_aliases</code> + Joseph's <code>author_map.yaml</code> map the 117 raw strings onto canonical names (§5; D9).</td></tr>
+      <tr><td><strong>ledger</strong></td><td><code>ledger.sqlite</code> — the SQLite system of record under <code>&lt;vault&gt;/KDB/fts/</code>; <code>ledger.py</code> is the only module allowed to open it (§5, §14).</td></tr>
+      <tr><td><strong>exposure record</strong></td><td>The ranker version, score shown, and position shown at the moment Joseph judged an item — carried by the frozen batch JSON and stamped server-side onto every feedback event (§7–§9; D13).</td></tr>
+      <tr><td><strong>skip-by-rule</strong></td><td>Classes excluded from all LLM spend by deterministic rule, never by model judgment: media, short, digest-stub, bleed (D16).</td></tr>
+      <tr><td><strong>ranker version</strong></td><td>A named, versioned JSON object of weights + feature list + half-lives + status-label overrides; changing it re-scores without re-extracting (§12; D14/D21).</td></tr>
+    </table>
+  </div>
+</section>
+
+<footer style="color:var(--muted); font-size:12.5px; border-top:1px solid var(--line); padding-top:18px;">
+  Orientation reference for kdb_fts (Task #145) · Sources: blueprint
+  <code>docs/superpowers/specs/2026-08-16-task145-kdb-fts-blueprint-v0.1.md</code>, Phase-0/Phase-1 plans under
+  <code>docs/superpowers/plans/</code>, the <code>kdb_fts/</code> and <code>ingestion/feeder/</code> code as of
+  2026-08-19, and the live ledger at <code>~/Obsidian/KDB/fts/ledger.sqlite</code>. Sibling doc:
+  <code>docs/reference/orchestration-workflow.html</code>. Where blueprint and as-built differ, the as-built (with
+  its recorded deviation number) is what this page describes.
+</footer>
+
+</main>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('theme-toggle');
+  function syncLabel() {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    btn.textContent = dark ? 'Light mode' : 'Dark mode';
+    btn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+  }
+  var saved = null;
+  try { saved = localStorage.getItem('kdb-fts-theme'); } catch (e) { /* file:// or privacy mode */ }
+  if (saved === 'dark' || saved === 'light') {
+    root.setAttribute('data-theme', saved);
+  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    root.setAttribute('data-theme', 'dark');
+  }
+  syncLabel();
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('kdb-fts-theme', next); } catch (e) { /* ignore */ }
+    syncLabel();
+  });
+})();
+</script>
+</body>
+</html>
