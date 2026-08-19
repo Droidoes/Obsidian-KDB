@@ -10,6 +10,8 @@
   #bar { margin: 1rem 0; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
   button { font-size: 1rem; padding: .5rem 1rem; cursor: pointer; }
   button.strong { background: #d7f0d7; } button.noise { background: #f0d7d7; }
+  button.selected { outline: 3px solid #222; outline-offset: 1px; filter: brightness(.88); }
+  button:disabled { opacity: .4; cursor: default; }
   #reason { width: 100%; min-height: 3rem; margin-top: .5rem; display: none; }
   #progress { color: #666; }
   #saved { color: #2a7; margin-left: .5rem; }
@@ -20,20 +22,23 @@
 <h2 id="title">loading…</h2>
 <div id="meta"></div>
 <div id="bar">
+  <button id="prev" title="previous article">&#8592; Prev</button>
   <button data-action="strong" class="strong">strong <kbd>1</kbd></button>
   <button data-action="interesting">interesting <kbd>2</kbd></button>
   <button data-action="weak">weak <kbd>3</kbd></button>
   <button data-action="noise" class="noise">noise <kbd>4</kbd></button>
+  <button id="next" title="next article">Next &#8594;</button>
   <span id="progress"></span><span id="saved"></span>
 </div>
 <textarea id="reason" placeholder="why? (extremes teach the rubric — optional but valuable)"></textarea>
 <div id="body"></div>
 <script>
 let batch = null, idx = 0, pendingAction = null;
-const labeled = new Set();
+const selections = {};  // article_id → action (server labels + this session)
 
 async function init() {
   batch = await (await fetch('/batch')).json();
+  Object.assign(selections, await (await fetch('/labels')).json());
   document.title = 'kdb-fts review — ' + batch.batch_id;
   show(0);
 }
@@ -48,15 +53,22 @@ function show(i) {
   document.getElementById('body').textContent = it.body;
   document.getElementById('reason').style.display = 'none';
   document.getElementById('reason').value = '';
-  document.getElementById('saved').textContent = labeled.has(it.article_id) ? '✓ labeled' : '';
+  const sel = selections[it.article_id];
+  document.querySelectorAll('button[data-action]').forEach(b =>
+    b.classList.toggle('selected', b.dataset.action === sel));
+  document.getElementById('saved').textContent = sel ? '✓ ' + sel : '';
+  document.getElementById('prev').disabled = (i === 0);
+  document.getElementById('next').disabled = (i === batch.items.length - 1);
   updateProgress();
 }
 
 function updateProgress() {
   document.getElementById('progress').textContent =
-    (idx + 1) + ' / ' + batch.items.length + '  ·  labeled ' + labeled.size;
+    (idx + 1) + ' / ' + batch.items.length +
+    '  ·  labeled ' + Object.keys(selections).length;
 }
 
+function prev() { if (idx > 0) show(idx - 1); }
 function next() { if (idx + 1 < batch.items.length) show(idx + 1); }
 
 async function label(action) {
@@ -75,7 +87,7 @@ async function label(action) {
     body: JSON.stringify({article_id: it.article_id, action: action,
                           reason_text: box.value || null})});
   if (resp.ok) {
-    labeled.add(it.article_id);
+    selections[it.article_id] = action;
     pendingAction = null;
     next();
   } else {
@@ -85,12 +97,17 @@ async function label(action) {
 
 document.querySelectorAll('button[data-action]').forEach(b =>
   b.addEventListener('click', () => label(b.dataset.action)));
+document.getElementById('prev').addEventListener('click', prev);
+document.getElementById('next').addEventListener('click', next);
 document.getElementById('reason').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pendingAction) label(pendingAction);
 });
 document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA') return;
   const keys = {'1': 'strong', '2': 'interesting', '3': 'weak', '4': 'noise'};
-  if (e.target.tagName !== 'TEXTAREA' && keys[e.key]) label(keys[e.key]);
+  if (keys[e.key]) label(keys[e.key]);
+  else if (e.key === 'ArrowLeft') prev();
+  else if (e.key === 'ArrowRight') next();
 });
 init();
 </script>

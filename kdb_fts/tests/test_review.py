@@ -149,6 +149,88 @@ def test_server_rejects_unknown_article_and_action(tmp_path):
     assert feedback.load_events(tmp_path) == []  # nothing written
 
 
+def test_labels_empty_when_no_events(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=2)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        status, body = _req(server, "GET", "/labels")
+        assert status == 200
+        assert json.loads(body) == {}
+    finally:
+        server.shutdown()
+
+
+def test_labels_reflect_posted_events(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=3)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        batch = json.loads(_req(server, "GET", "/batch")[1])
+        posts = [(batch["items"][0]["article_id"], "strong"),
+                 (batch["items"][1]["article_id"], "noise")]
+        for article_id, action in posts:
+            status, _ = _req(server, "POST", "/event",
+                             {"article_id": article_id, "action": action})
+            assert status == 200
+        status, body = _req(server, "GET", "/labels")
+        assert status == 200
+        assert json.loads(body) == {aid: act for aid, act in posts}
+    finally:
+        server.shutdown()
+
+
+def test_labels_latest_wins_on_relabel(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=2)
+    conn.close()
+    server = _serve(tmp_path, "b1")
+    try:
+        batch = json.loads(_req(server, "GET", "/batch")[1])
+        aid = batch["items"][0]["article_id"]
+        for action in ("strong", "weak"):
+            status, _ = _req(server, "POST", "/event",
+                             {"article_id": aid, "action": action})
+            assert status == 200
+        status, body = _req(server, "GET", "/labels")
+        assert status == 200
+        assert json.loads(body) == {aid: "weak"}  # second label wins
+    finally:
+        server.shutdown()
+
+
+def test_labels_excludes_other_batches_and_non_bucket_actions(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=4)
+    _gate_all(conn, tmp_path)
+    review.freeze_batch(conn, tmp_path, batch_id="b1", n=2)
+    conn.close()
+    batch = json.loads((tmp_path / "review" / "b1.json").read_text())
+    aid = batch["items"][0]["article_id"]
+    feedback.append_event(tmp_path, action="strong", target_type="article",
+                          target_id=aid, batch_id="other-batch")
+    feedback.append_event(tmp_path, action="save", target_type="article",
+                          target_id=aid, batch_id="b1")
+    feedback.append_event(tmp_path, action="interesting", target_type="article",
+                          target_id=aid, batch_id="b1")
+    server = _serve(tmp_path, "b1")
+    try:
+        status, body = _req(server, "GET", "/labels")
+        assert status == 200
+        # other batch filtered; "save" is not a bucket action; latest wins
+        assert json.loads(body) == {aid: "interesting"}
+    finally:
+        server.shutdown()
+
+
 def test_server_rejects_negative_content_length(tmp_path):
     conn = ledger.connect(tmp_path)
     _seed_articles(conn, tmp_path, n=4)

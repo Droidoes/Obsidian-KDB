@@ -101,6 +101,10 @@ from kdb_fts import feedback
 
 _PAGE_PATH = Path(__file__).parent / "assets" / "review.html"
 
+# Article-label buckets — same semantics as calibrate._BUCKET_ACTIONS:
+# latest event per target_id wins (file order = ts order).
+_BUCKET_ACTIONS = frozenset({"strong", "interesting", "weak", "noise"})
+
 
 def make_server(root: Path, batch_id: str,
                 port: int = 0) -> ThreadingHTTPServer:
@@ -127,6 +131,15 @@ def make_server(root: Path, batch_id: str,
                 self._send(200, page_bytes, "text/html; charset=utf-8")
             elif self.path == "/batch":
                 self._send(200, batch_bytes, "application/json")
+            elif self.path == "/labels":
+                # fresh read per request — labels persist across reloads/restarts
+                latest: dict[str, str] = {}
+                for e in feedback.load_events(root, batch_id=batch_id):
+                    if (e["target_type"] == "article"
+                            and e["action"] in _BUCKET_ACTIONS):
+                        latest[e["target_id"]] = e["action"]
+                body = json.dumps(latest, sort_keys=True).encode("utf-8")
+                self._send(200, body, "application/json")
             else:
                 self._send(404, b"not found", "text/plain")
 
