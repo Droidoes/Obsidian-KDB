@@ -436,3 +436,40 @@ review-app polish (filters, author board view) as usage dictates.
 3. **Per-topic half-life table** (§6) — sanity-check the six numbers; they are
    ranker-JSON tunables, not code. Note they only govern the *unlabeled*
    majority — labeled items follow D21 overrides.
+
+## 14. Amendments (post-ratification)
+
+**2026-08-19 — Phase 1 live-gate results + accept threshold ratified (Joseph).**
+
+- **Gate run (production, `deepseek-v4-flash`, `gate_v1`):** 2,511/2,511 gated,
+  0 failed; topics {geopolitics 1,230 · other 695 · investment 323 ·
+  finance-econ 130 · ai-tech 87 · china-econ 46}; 98 exploration marks.
+- **Observed cost: $6.42** (14.07M input / 175.7k output tokens) — supersedes
+  §11's "<$0.5" and the Phase-1 plan deviation-7 estimate (~$2–3); the
+  underestimate is input volume (~5,600 tokens/article at the 4,000-word cap),
+  priced at the 2026-08-16 peak cache-miss rates.
+- **Calibration (`calibration-p1`, 150/150 labeled by Joseph in the review
+  app):** as-built topic-only rule (investment ∪ finance-econ) measured
+  precision 0.370 / recall 0.625 (tp=10 fp=17 fn=6 tn=117). **Accept rule
+  ratified: topic ∈ {investment, finance-econ} ∪ (signal ≥ 0.75)** — sweep-measured
+  precision 0.414 / recall 0.750 on the full batch; 0.550 / 0.917 on the
+  post-cleanup surviving subset. Encoded in `kdb_fts/calibrate.py`
+  (`SIGNAL_ACCEPT_THRESHOLD`); Phase 2 extraction consumes this rule.
+- **CLEAN-UP-RUN #1 (#151):** post-calibration, Joseph unsubscribed the
+  15-entry junk-author list; their 1,694 sources moved to
+  `KDB/raw/joseph-ft-public-gmail/_blacklist/` (movelog; move-not-delete per
+  the `_promo/` precedent), `_blacklist/` added to pipeline excludes and
+  `kdb_fts/intake.py` `_EXCLUDE_DIRS`. Corpus 2,659 → 965.
+- **CLEAN-UP-RUN #2 (#152):** two new deterministic batteries, both measured
+  against Joseph's 150 labels — (a) `link_dense_teaser` (url_chars >
+  text_chars AND words < 800; 40/71 noise, 0 false positives) and (b) six
+  title-pattern markers (title-scoped: live-video / new-thread / welcome /
+  promo-offer / portfolio-update / new-follower; one accepted casualty: a
+  single interesting-labeled "New thread from Matt Warder" notification vs
+  150 junk thread-notification emails). Ran over the corpus: 342 files →
+  `_promo/` (movelog). Corpus 965 → **623** (607 ok). Both batteries ported
+  to `ingestion/feeder/promo_filter.py` — future junk is filtered at fetch
+  time and never becomes an md source.
+- Corpus arc: 4,189 raw → 2,659 (promo pre-filter, 2026-08-15) → 965
+  (#151) → 623 (#152). Post-cleanup gated-topic mix: investment 314 (34%),
+  other 291, geopolitics 117, finance-econ 84, ai-tech 75, china-econ 41.

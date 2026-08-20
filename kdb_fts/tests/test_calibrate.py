@@ -37,6 +37,26 @@ def test_report_empty_batch(tmp_path):
     assert rep["labeled"] == 0 and rep["precision"] is None
 
 
+def test_signal_clause_rescues_non_relevant_topic(tmp_path):
+    """Ratified hybrid rule (2026-08-19): topic outside investment/finance-econ
+    with signal >= 0.75 counts gate-positive; just below stays negative."""
+    conn = ledger.connect(tmp_path)
+    _seed_articles(conn, tmp_path, n=2)
+    ids = [r[0] for r in conn.execute(
+        "SELECT article_id FROM articles ORDER BY article_id")]
+    for aid, sig in ((ids[0], 0.8), (ids[1], 0.74)):
+        ledger.insert_gate_verdict(
+            conn, article_id=aid, run_id="r1", topic="geopolitics",
+            signal=sig, extract_ideas=False, extract_lessons=False,
+            exploration=False, confidence=0.5, rationale="t", model="m",
+            prompt_version="gate_v1", input_tokens=1, output_tokens=1)
+    for aid in ids:
+        feedback.append_event(tmp_path, action="strong", target_type="article",
+                              target_id=aid, batch_id="b1")
+    rep = calibrate.report(conn, tmp_path, "b1")
+    assert rep["confusion"] == {"tp": 1, "fp": 0, "fn": 1, "tn": 0}
+
+
 def test_cli_calibration(tmp_path, capsys):
     from kdb_fts import cli
 

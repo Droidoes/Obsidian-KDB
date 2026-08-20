@@ -1,9 +1,11 @@
-"""#143 — promo-filter unit tests + fetch() promo-path integration.
+"""#143 + #152 — promo-filter unit tests + fetch() promo-path integration.
 
 The battery is ported from scripts/gmail_promo_prefilter.py (tuned 2026-08-15
 over the 4,189-file corpus): paywalled teasers, truncated-free excerpts, and
 transactional mails are promo; footer CTAs ("Upgrade to paid") and bare
-per-item "[Read more]" roundup links are NOT.
+per-item "[Read more]" roundup links are NOT. #152 adds battery A
+(link_dense_teaser, body-scoped) and battery B (six title-only patterns),
+pinned by measurement against 150 human labels (zero false positives).
 """
 import base64
 
@@ -51,6 +53,58 @@ def test_promo_markers_hit(body, marker):
 ])
 def test_benign_bodies_not_flagged(body):
     assert promo_markers(body) == []
+
+
+# ---------- unit: #152 battery A (link-dense teaser) + battery B (title) ----
+
+# body where link-footer URLs outweigh the prose, words < 800
+_LINK_DENSE_BODY = (
+    "New video episode is out — watch it here.\n\n"
+    + "\n".join(
+        f"https://x.substack.com/redirect/{'a' * 40}{i}" for i in range(12))
+)
+
+
+@pytest.mark.parametrize("body,title,marker", [
+    # battery A — link_dense_teaser (body-scoped)
+    (_LINK_DENSE_BODY, None, "link_dense_teaser"),
+    # battery B — title patterns (title-scoped, case-insensitive)
+    ("", "Live Video with Byrne Hobart", "title_live_video"),
+    ("", "New thread from Matt Warder", "title_new_thread"),
+    ("", "Welcome to the club", "title_welcome"),
+    ("", "Special Offer: 50% off ends tonight", "title_promo_offer"),
+    ("", "📈 Live portfolio update: week 32", "title_portfolio_update"),
+    ("", "New follower on Substack", "title_new_follower"),
+])
+def test_new_battery_markers_hit(body, title, marker):
+    assert marker in promo_markers(body, title=title)
+
+
+def test_link_dense_teaser_long_article_with_links_not_flagged():
+    # ~1,200-word article body with 2-3 links — prose outweighs URLs
+    para = "The essay develops its argument carefully across sections. "
+    body = (para * 75 + " [source](https://example.com/a) " + para * 75
+            + " see also https://example.com/b and https://example.com/c")
+    assert "link_dense_teaser" not in promo_markers(body)
+
+
+def test_link_dense_teaser_word_gate():
+    # link-dense (url_chars > text_chars) but >= 800 words — no marker
+    prose = " ".join(["word"] * 900)
+    urls = "\n".join(
+        f"https://x.substack.com/redirect/{'b' * 60}{i}" for i in range(100))
+    assert "link_dense_teaser" not in promo_markers(prose + "\n" + urls)
+
+
+def test_title_markers_do_not_fire_on_body_text():
+    # promo phrase in the BODY with a clean title — title-scoping pin
+    body = "Special Offer: 50% off ends tonight — welcome to the final hours!"
+    assert promo_markers(body, title="A quiet essay on liquidity") == []
+
+
+def test_title_none_no_title_markers_fire():
+    assert promo_markers("Welcome! Special offer, 50% off.",
+                         title=None) == []
 
 
 # ---------- integration: fetch() promo path ----------

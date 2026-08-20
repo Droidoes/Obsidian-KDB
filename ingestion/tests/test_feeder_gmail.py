@@ -13,7 +13,11 @@ def _b64(text: str) -> str:
 
 
 def _payload(mid: str, url: str, *, subject: str | None = None) -> dict:
-    html = f'<p>Body for {mid} <a href="{url}">web</a></p>'
+    # prose must outweigh the link (#152 link_dense_teaser: url_chars >
+    # text_chars AND words < 800 — a one-line body around a URL is a teaser)
+    prose = ("lorem ipsum dolor sit amet consectetur adipiscing elit "
+             "sed do eiusmod tempor incididunt ut labore et dolore magna ")
+    html = f'<p>Body for {mid}. {prose * 2}<a href="{url}">web</a></p>'
     return {"id": mid, "payload": {
         "headers": [
             {"name": "Subject", "value": subject or f"Post {mid}"},

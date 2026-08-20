@@ -12,6 +12,15 @@ Tuning findings encoded here:
   "[Continue reading( for free)](https://substack.com/redirect/…)" and
   "… [Read more](https://substack.com/redirect/…)" (ellipsis cue required —
   bare "[Read more]" is the AI-news-roundup per-item format, not truncation).
+
+#152 additions (measured against 150 human labels):
+- Battery A `link_dense_teaser` (body-scoped): url_chars > text_chars AND
+  words < 800 — catches video-announcement/promo-teaser emails whose link
+  footers outweigh the prose; measured 40/71 noise caught, 0 false positives.
+- Battery B (six `title_*` markers) is title-scoped, so body prose mentioning
+  "special offer" never matches. Known accepted casualty: one
+  interesting-labeled "New thread from Matt Warder" notification vs 150 junk
+  thread-notification emails.
 """
 from __future__ import annotations
 
@@ -40,8 +49,35 @@ PROMO_MARKERS: list[tuple[str, re.Pattern]] = [
     ("welcome_substack", _rx(r"Welcome to Substack")),
 ]
 
+# #152 battery B — title-scoped, case-insensitive; order is cosmetic
+TITLE_PROMO_MARKERS: list[tuple[str, re.Pattern]] = [
+    ("title_live_video", _rx(r"^(live video with|🗓️.*going live|watch (it )?live)")),
+    ("title_new_thread", _rx(r"^💬?\s*new thread from")),
+    ("title_welcome", _rx(r"^(welcome[ ! to]|you'?re on the list)")),
+    ("title_promo_offer", _rx(
+        r"(special offer|% off|ends tonight|closes at midnight"
+        r"|best (time|week) to (join|subscribe)|final hours)")),
+    ("title_portfolio_update", _rx(r"^📈\s*live portfolio update")),
+    ("title_new_follower", _rx(r"^new follower on substack")),
+]
 
-def promo_markers(body_markdown: str) -> list[str]:
+# #152 battery A — link footers outweigh the prose (video/promo teasers)
+_URL_RX = re.compile(r"https?://[^\s)\]]+")
+
+
+def _link_dense_teaser(body_markdown: str) -> bool:
+    url_chars = sum(len(m.group()) for m in _URL_RX.finditer(body_markdown))
+    text_chars = len(body_markdown) - url_chars
+    return url_chars > text_chars and len(body_markdown.split()) < 800
+
+
+def promo_markers(body_markdown: str, title: str | None = None) -> list[str]:
     """Return the names of all promo markers matching the converted body
-    (empty list = treat as a real source)."""
-    return [name for name, rx in PROMO_MARKERS if rx.search(body_markdown)]
+    (and title, when given) — empty list = treat as a real source.
+    Battery B markers are title-scoped: title=None → they never fire."""
+    hits = [name for name, rx in PROMO_MARKERS if rx.search(body_markdown)]
+    if _link_dense_teaser(body_markdown):
+        hits.append("link_dense_teaser")
+    if title:
+        hits += [name for name, rx in TITLE_PROMO_MARKERS if rx.search(title)]
+    return hits

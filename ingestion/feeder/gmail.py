@@ -86,7 +86,7 @@ def fetch(*, client: GmailClient, raw_dir: Path, journal_path: Path,
         try:
             parts = extract(client.get_message(mid))
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            markers = promo_markers(parts.body_markdown)
+            markers = promo_markers(parts.body_markdown, title=parts.title)
             # promo wins over dedup (more informative outcome) and never
             # populates seen_urls — a teaser must not block a later clean
             # email carrying the same canonical URL.

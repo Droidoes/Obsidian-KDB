@@ -1,8 +1,11 @@
 """calibrate — gate precision/recall against Joseph's labels (§9 Phase-1 gate).
 
 Label-relevant = latest bucket in {strong, interesting}; gate-relevant =
-latest verdict topic in {investment, finance-econ}. Joseph sets the accept
-threshold AFTER seeing this matrix — no invented number lives here.
+latest verdict topic in {investment, finance-econ} OR signal >= 0.75 (the
+hybrid accept rule ratified by Joseph 2026-08-19 from the calibration-p1
+sweep: precision 0.414 / recall 0.750 vs the topic-only rule's 0.370/0.625).
+Joseph sets the accept threshold AFTER seeing this matrix — no invented
+number lives here.
 """
 from __future__ import annotations
 
@@ -12,8 +15,14 @@ from pathlib import Path
 from kdb_fts import feedback, ledger
 
 RELEVANT_TOPICS = frozenset({"investment", "finance-econ"})
+SIGNAL_ACCEPT_THRESHOLD = 0.75  # ratified 2026-08-19 (calibration-p1 sweep)
 POSITIVE_ACTIONS = frozenset({"strong", "interesting"})
 _BUCKET_ACTIONS = frozenset({"strong", "interesting", "weak", "noise"})
+
+
+def _gate_positive(verdict: dict) -> bool:
+    return (verdict["topic"] in RELEVANT_TOPICS
+            or verdict["signal"] >= SIGNAL_ACCEPT_THRESHOLD)
 
 
 def report(conn: sqlite3.Connection, root: Path, batch_id: str) -> dict:
@@ -28,7 +37,7 @@ def report(conn: sqlite3.Connection, root: Path, batch_id: str) -> dict:
         v = verdicts.get(article_id)
         if v is None:
             continue
-        gate_pos = v["topic"] in RELEVANT_TOPICS
+        gate_pos = _gate_positive(v)
         label_pos = action in POSITIVE_ACTIONS
         key = ("tp" if gate_pos else "fn") if label_pos else ("fp" if gate_pos else "tn")
         confusion[key] += 1

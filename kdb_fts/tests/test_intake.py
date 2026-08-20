@@ -15,6 +15,7 @@ def _by_id(recs):
 def test_scan_classifies_each_fixture():
     recs = _by_id(intake.scan_tree(FIXTURE))
     assert "g-fixture-005" not in recs  # _promo/ excluded from the walk entirely
+    assert "g-fixture-006" not in recs  # _blacklist/ excluded too (#151 quarantine)
     assert recs["g-fixture-001"].cleanliness == "ok"
     assert recs["g-fixture-002"].cleanliness == "digest-stub"
     assert recs["g-fixture-003"].cleanliness == "media"

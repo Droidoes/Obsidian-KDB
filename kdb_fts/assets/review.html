@@ -28,9 +28,10 @@
   <button data-action="weak">weak <kbd>3</kbd></button>
   <button data-action="noise" class="noise">noise <kbd>4</kbd></button>
   <button id="next" title="next article">Next &#8594;</button>
-  <span id="progress"></span><span id="saved"></span>
+  <button id="next-unlabeled" title="jump to the next article without a label (wraps around)">Next unlabeled <kbd>u</kbd></button>
+  <span id="progress"></span><span id="unlabeled"></span><span id="saved"></span>
 </div>
-<textarea id="reason" placeholder="why? (extremes teach the rubric — optional but valuable)"></textarea>
+<textarea id="reason" placeholder="why? (optional — Enter saves the label, Shift+Enter for newline, Esc cancels)"></textarea>
 <div id="body"></div>
 <script>
 let batch = null, idx = 0, pendingAction = null;
@@ -63,13 +64,28 @@ function show(i) {
 }
 
 function updateProgress() {
+  const total = batch.items.length;
+  const done = Object.keys(selections).length;
   document.getElementById('progress').textContent =
-    (idx + 1) + ' / ' + batch.items.length +
-    '  ·  labeled ' + Object.keys(selections).length;
+    (idx + 1) + ' / ' + total + '  ·  labeled ' + done;
+  const unl = document.getElementById('unlabeled');
+  const remaining = total - done;
+  unl.textContent = remaining ? '  ·  ' + remaining + ' UNLABELED (press u)' : '  ·  batch complete ✓';
+  unl.style.color = remaining ? '#c33' : '#2a7';
+  unl.style.fontWeight = remaining ? 'bold' : 'normal';
 }
 
 function prev() { if (idx > 0) show(idx - 1); }
 function next() { if (idx + 1 < batch.items.length) show(idx + 1); }
+
+function nextUnlabeled() {
+  // wrap-around scan for the nearest article with no recorded selection
+  const n = batch.items.length;
+  for (let k = 1; k <= n; k++) {
+    const j = (idx + k) % n;
+    if (!selections[batch.items[j].article_id]) { show(j); return; }
+  }
+}
 
 async function label(action) {
   const it = batch.items[idx];
@@ -99,8 +115,20 @@ document.querySelectorAll('button[data-action]').forEach(b =>
   b.addEventListener('click', () => label(b.dataset.action)));
 document.getElementById('prev').addEventListener('click', prev);
 document.getElementById('next').addEventListener('click', next);
+document.getElementById('next-unlabeled').addEventListener('click', nextUnlabeled);
 document.getElementById('reason').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && pendingAction) label(pendingAction);
+  const keys = {'1': 'strong', '2': 'interesting', '3': 'weak', '4': 'noise'};
+  if (pendingAction && keys[e.key] === pendingAction) {
+    e.preventDefault();  // pressing the same action key again submits (documented flow)
+    label(pendingAction);
+  } else if (e.key === 'Enter' && !e.shiftKey && pendingAction) {
+    e.preventDefault();  // plain Enter submits; Shift+Enter = newline
+    label(pendingAction);
+  } else if (e.key === 'Escape') {
+    pendingAction = null;
+    e.target.style.display = 'none';
+    e.target.value = '';
+  }
 });
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'TEXTAREA') return;
@@ -108,6 +136,7 @@ document.addEventListener('keydown', e => {
   if (keys[e.key]) label(keys[e.key]);
   else if (e.key === 'ArrowLeft') prev();
   else if (e.key === 'ArrowRight') next();
+  else if (e.key === 'u') nextUnlabeled();
 });
 init();
 </script>

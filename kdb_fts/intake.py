@@ -17,7 +17,7 @@ from kdb_fts import author_map, ledger
 DIGEST_TITLE_RE = re.compile(r"\band\s+\d+\s+more\b", re.IGNORECASE)
 SHORT_WORD_FLOOR = 50
 MEDIA_KINDS = frozenset({"video", "podcast"})
-_EXCLUDE_DIRS = frozenset({"_promo"})
+_EXCLUDE_DIRS = frozenset({"_promo", "_blacklist"})  # quarantine dirs (#151)
 _BLEED_FENCE_SCAN_LIMIT = 200  # lines to scan for the closing fence
 
 

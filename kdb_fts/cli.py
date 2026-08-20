@@ -132,7 +132,8 @@ def _cmd_calibration(args) -> int:
     rep = calibrate.report(conn, root, args.batch)
     print(f"batch {rep['batch_id']}: {rep['labeled']} articles labeled")
     c = rep["confusion"]
-    print(f"confusion (gate-relevant = investment ∪ finance-econ): "
+    print(f"confusion (gate-relevant = investment ∪ finance-econ ∪ signal≥"
+          f"{calibrate.SIGNAL_ACCEPT_THRESHOLD}): "
           f"tp={c['tp']} fp={c['fp']} fn={c['fn']} tn={c['tn']}")
     parts = []
     if rep["precision"] is not None:

@@ -17,6 +17,7 @@ ingestion/feeder (kdb-gmail-fetch) so future promo emails are journaled as
 Buckets:
   STRONG        — definite paywall/promo signals -> promo
   TRANSACTIONAL — account/notification mails -> promo (reported separately)
+  COMPUTED #152 — link_dense_teaser (body) + 6 title patterns -> promo
   WATCH         — reported for tuning, NOT classified (footer CTAs etc.)
 """
 from __future__ import annotations
@@ -65,6 +66,47 @@ TRANSACTIONAL: list[tuple[str, re.Pattern]] = [
     ("welcome_substack", _rx(r"Welcome to Substack")),
 ]
 
+# #152 battery B — title-scoped (frontmatter `title:` line), case-insensitive
+TITLE_MARKERS: list[tuple[str, re.Pattern]] = [
+    ("title_live_video", _rx(r"^(live video with|🗓️.*going live|watch (it )?live)")),
+    ("title_new_thread", _rx(r"^💬?\s*new thread from")),
+    ("title_welcome", _rx(r"^(welcome[ ! to]|you'?re on the list)")),
+    ("title_promo_offer", _rx(
+        r"(special offer|% off|ends tonight|closes at midnight"
+        r"|best (time|week) to (join|subscribe)|final hours)")),
+    ("title_portfolio_update", _rx(r"^📈\s*live portfolio update")),
+    ("title_new_follower", _rx(r"^new follower on substack")),
+]
+
+# #152 battery A — link footers outweigh the prose (video/promo teasers);
+# measured against 150 human labels: 40/71 noise caught, 0 false positives
+_URL_RX = re.compile(r"https?://[^\s)\]]+")
+COMPUTED_NAMES = ["link_dense_teaser"] + [n for n, _ in TITLE_MARKERS]
+
+_FM_RX = re.compile(r"\A---\n.*?\n---\n?", re.DOTALL)
+_FM_TITLE_RX = re.compile(r"^title:\s*(.+)$", re.MULTILINE)
+
+
+def split_frontmatter(text: str) -> tuple[str | None, str]:
+    """Return (title, body) — leading --- block excluded from the body."""
+    m = _FM_RX.match(text)
+    if not m:
+        return None, text
+    t = _FM_TITLE_RX.search(m.group(0))
+    title = t.group(1).strip().strip('"').strip("'") if t else None
+    return title, text[m.end():]
+
+
+def computed_markers(body: str, title: str | None) -> list[str]:
+    """#152 batteries: link_dense_teaser (body) + title patterns (title)."""
+    hits: list[str] = []
+    url_chars = sum(len(m.group()) for m in _URL_RX.finditer(body))
+    if url_chars > len(body) - url_chars and len(body.split()) < 800:
+        hits.append("link_dense_teaser")
+    if title:
+        hits += [name for name, rx in TITLE_MARKERS if rx.search(title)]
+    return hits
+
 WATCH: list[tuple[str, re.Pattern]] = [
     ("upgrade_to_paid_anywhere", _rx(r"Upgrade to paid")),
     ("pledge", _rx(r"pledge")),
@@ -74,12 +116,18 @@ WATCH: list[tuple[str, re.Pattern]] = [
 ]
 
 
-def classify(text: str) -> tuple[list[str], list[str], list[str]]:
-    """Return (strong_hits, transactional_hits, watch_hits) by marker name."""
+def classify(text: str) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Return (strong_hits, transactional_hits, watch_hits, computed_hits).
+
+    Computed hits (#152 batteries A+B) are classified as promo alongside
+    STRONG/TRANSACTIONAL; battery A runs on the body only (frontmatter
+    excluded), battery B on the frontmatter title only."""
     strong = [name for name, rx in STRONG if rx.search(text)]
     txn = [name for name, rx in TRANSACTIONAL if rx.search(text)]
     watch = [name for name, rx in WATCH if rx.search(text)]
-    return strong, txn, watch
+    title, body = split_frontmatter(text)
+    computed = computed_markers(body, title)
+    return strong, txn, watch, computed
 
 
 def main() -> int:
@@ -108,10 +156,10 @@ def main() -> int:
         except OSError as e:
             print(f"WARN unreadable: {p.name}: {e}", file=sys.stderr)
             continue
-        strong, txn, watch = classify(text)
-        for name in strong + txn + watch:
+        strong, txn, watch, computed = classify(text)
+        for name in strong + txn + watch + computed:
             marker_counts[name] = marker_counts.get(name, 0) + 1
-        hits = strong + txn
+        hits = strong + txn + computed
         if hits:
             promo.append((p, hits))
         else:
@@ -133,6 +181,9 @@ def main() -> int:
         print(f"  [{label}]")
         for name, _ in group:
             print(f"    {marker_counts.get(name, 0):>6}  {name}")
+    print("  [COMPUTED #152 (classified as promo)]")
+    for name in COMPUTED_NAMES:
+        print(f"    {marker_counts.get(name, 0):>6}  {name}")
 
     # watchlist cross-tab: 'Upgrade to paid' files with NO strong/txn marker
     upgrade_only = [p.name for p, w in article_watch.items()
