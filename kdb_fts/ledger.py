@@ -384,3 +384,11 @@ def latest_extractions(conn: sqlite3.Connection) -> list[dict]:
     cols = ("article_id", "run_id", "schema_version", "model", "prompt_version",
             "status", "n_mentions", "n_cards", "input_tokens", "output_tokens")
     return [dict(zip(cols, r)) for r in rows]
+
+
+def extractions_dir_for(root: Path, run_id: str) -> Path:
+    """Create (idempotently) and return runs/<run_id>/extractions — mkdir lives
+    only here (write-guard R3)."""
+    path = Path(root) / "runs" / run_id / "extractions"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

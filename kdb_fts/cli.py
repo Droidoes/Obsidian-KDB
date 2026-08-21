@@ -9,7 +9,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from kdb_fts import author_map, calibrate, feedback, gate, intake, ledger, review, state
+from kdb_fts import author_map, calibrate, extract, feedback, gate, intake, ledger, review, state
 
 
 def _default_raw_root() -> Path:
@@ -102,6 +102,21 @@ def _cmd_gate(args) -> int:
     return 0
 
 
+def _cmd_extract(args) -> int:
+    root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
+    conn = ledger.connect(root)
+    run_id = datetime.now().astimezone().isoformat(timespec="seconds")
+    stats = extract.run_extract(
+        conn, state_root=root, run_id=run_id, model_id=args.model,
+        max_n=args.max, dry_run=args.dry_run, call_fn=extract.call_model,
+    )
+    tag = "DRY-RUN " if args.dry_run else ""
+    print(f"{tag}extracted={stats['extracted']} empty={stats['empty']} failed={stats['failed']} skipped={stats['skipped']}")
+    print(f"mentions={stats['mentions']} cards={stats['cards']} dropped_records={stats['dropped_records']}")
+    print(f"tokens in={stats['input_tokens']} out={stats['output_tokens']} cost=${stats['cost_usd']:.4f}")
+    return 0
+
+
 def _cmd_feedback(args) -> int:
     root = Path(args.state).expanduser().resolve() if args.state else state.state_root()
     ledger.connect(root)  # guarantees feedback/ exists
@@ -175,6 +190,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--state", default=None)
     p.set_defaults(fn=_cmd_gate)
+
+    p = sub.add_parser("extract", help="extraction on triggered articles (§7.3); resumable")
+    p.add_argument("--max", type=int, default=None, dest="max")
+    p.add_argument("--model", default="deepseek-v4-flash")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--state", default=None)
+    p.set_defaults(fn=_cmd_extract)
 
     p = sub.add_parser("feedback", help="append one immutable event (scripting path)")
     p.add_argument("target_type", choices=sorted(feedback.TARGET_TYPES))
