@@ -74,5 +74,59 @@
     "price_in": 0.03,
     "price_out": 0.13,
     "tokens_lte_bytes": true
+  },
+  {
+    "id": "gpt-5.6-luna",
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "api_call_type": "openai_compat",
+    "endpoint": null,
+    "api_key_env": "OPENAI_API_KEY",
+    "ctx_window": 1050000,
+    "max_output_tokens": 128000,
+    "use_completion_tokens": true,
+    "extra_body": {
+      "reasoning_effort": "low"
+    },
+    "temperature": null,
+    "price_in": 0.2,
+    "price_out": 1.2,
+    "tokens_lte_bytes": true
+  },
+  {
+    "id": "qwen3.8-max",
+    "provider": "alibaba-sgp",
+    "model": "qwen3.8-max",
+    "api_call_type": "openai_compat",
+    "endpoint": "https://ws-0636j2jefsa9tgw3.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    "api_key_env": "QWEN_SGP_API_KEY",
+    "ctx_window": 1000000,
+    "max_output_tokens": 65536,
+    "thinking": "enabled",
+    "extra_body": {
+      "reasoning_effort": "low"
+    },
+    "temperature": null,
+    "price_in": 2.0,
+    "price_out": 6.0,
+    "tokens_lte_bytes": true
+  },
+  {
+    "id": "glm-5.3",
+    "provider": "zai",
+    "model": "glm-5.3",
+    "api_call_type": "openai_compat",
+    "endpoint": "https://api.z.ai/api/paas/v4",
+    "api_key_env": "ZAI_API_KEY",
+    "ctx_window": 1000000,
+    "max_output_tokens": 128000,
+    "thinking": "enabled",
+    "extra_body": {
+      "reasoning_effort": "low"
+    },
+    "temperature": null,
+    "price_in": 1.4,
+    "price_out": 4.4,
+    "tokens_lte_bytes": true
   }
 ]

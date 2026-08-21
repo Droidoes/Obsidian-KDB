@@ -362,3 +362,21 @@ def test_gate1_fires_at_load_not_at_selection(pool_json):
     pool_json([_valid_entry(), _valid_entry(id="bad-7", api_key_env=None)])
     with pytest.raises(PoolError, match="bad-7"):
         mp.resolve_models_json("ok-1")
+
+
+# ---------- Task #145 P2: extraction seat candidates (D-P2-6) ----------
+
+def test_new_extraction_models_resolve_and_reasoning():
+    luna = resolve_models_json("gpt-5.6-luna")
+    assert luna.provider == "openai"
+    assert luna.extra_body == {"reasoning_effort": "low"}
+
+    qwen = resolve_models_json("qwen3.8-max")
+    assert qwen.provider == "alibaba-sgp"
+    assert qwen.extra_body == {"reasoning_effort": "low"}
+    assert "enable_thinking" not in qwen.extra_body  # thinking stays ENABLED (not disabled)
+
+    glm = resolve_models_json("glm-5.3")
+    assert glm.provider == "zai"
+    assert glm.extra_body == {"reasoning_effort": "low"}
+    assert glm.extra_body.get("thinking") != {"type": "disabled"}
