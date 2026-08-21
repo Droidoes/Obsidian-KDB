@@ -80,3 +80,68 @@ def test_fts_indexes_canonical_author_name(tmp_path):
     intake.run_intake(conn, raw, "run-1", state_root=tmp_path)
     hits = ledger.search(conn, "Puberman")
     assert hits and hits[0]["author"] == "John Puberman"
+
+
+def _seed_gated(conn, tmp_path, articles):
+    """articles: list of (gid, topic, signal, exploration, extract_ideas, extract_lessons)."""
+    from kdb_fts import intake
+    raw = tmp_path / "raw"
+    raw.mkdir(exist_ok=True)
+    for (gid, topic, sig, exp, ei, el) in articles:
+        (raw / f"{gid}.md").write_text(
+            f"---\ntitle: {gid}\nauthor: A\ngmail_message_id: {gid}\n---\n\n" + "body " * 60,
+            encoding="utf-8")
+    intake.run_intake(conn, raw, "seed", state_root=tmp_path)
+    for (gid, topic, sig, exp, ei, el) in articles:
+        ledger.insert_gate_verdict(conn, article_id=gid, run_id="r1", topic=topic,
+                                   signal=sig, extract_ideas=ei, extract_lessons=el,
+                                   exploration=exp, confidence=None, rationale="",
+                                   model="m", prompt_version="gate_v1",
+                                   input_tokens=0, output_tokens=0)
+
+
+def test_triggered_articles_union_exploration(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_gated(conn, tmp_path, [
+        ("inv", "investment", 0.5, 0, True, False),   # accepted (topic clause)
+        ("fe",  "finance-econ", 0.5, 0, False, True),  # accepted (topic clause)
+        ("sig", "other", 0.9, 0, False, False),        # accepted (signal clause)
+        ("geo", "geopolitics", 0.1, 0, False, False),  # ineligible, no exploration
+        ("exp", "geopolitics", 0.1, 1, False, False),  # ineligible + exploration
+    ])
+    got = {r["article_id"] for r in ledger.triggered_articles(conn)}
+    assert got == {"inv", "fe", "sig", "exp"}   # geo excluded
+
+
+def test_article_paragraphs_ordered(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_gated(conn, tmp_path, [("inv", "investment", 0.5, 0, True, False)])
+    paras = ledger.article_paragraphs(conn, "inv")
+    assert [p[0] for p in paras] == ["p0001"]
+
+
+def test_insert_span_refuses_non_substring(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_gated(conn, tmp_path, [("inv", "investment", 0.5, 0, True, False)])
+    with pytest.raises(ledger.SpanProofError):
+        ledger.insert_span(conn, article_id="inv", record_type="idea", record_id=1,
+                           field="thesis", paragraph_id="p0001", exact_quote="NOT IN SOURCE")
+
+
+def test_commit_extraction_article_atomic_rolls_back(tmp_path):
+    conn = ledger.connect(tmp_path)
+    _seed_gated(conn, tmp_path, [("inv", "investment", 0.5, 0, True, False)])
+    with pytest.raises(ledger.SpanProofError):
+        ledger.commit_extraction_article(
+            conn, article_id="inv", run_id="r1", schema_version="extract_v1", model="m",
+            prompt_version="extract_v1",
+            statuses=[{"status": "ok", "chunk_index": 0, "n_chunks": 1, "n_mentions": 1,
+                       "n_cards": 0, "expect_ideas": True, "expect_lessons": False,
+                       "input_tokens": 0, "output_tokens": 0}],
+            mentions=[{"company": "X", "stance": "long", "thesis": "buy",
+                       "spans": [{"field": "thesis", "paragraph_id": "p0001",
+                                  "exact_quote": "bogus"}]}],
+            cards=[])
+    # rollback: the failed txn left no extraction_runs row and no mention row
+    assert conn.execute("SELECT COUNT(*) FROM extraction_runs").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM idea_mentions").fetchone()[0] == 0

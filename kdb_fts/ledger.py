@@ -5,6 +5,7 @@ Every sqlite3.connect in kdb_fts lives here (write-boundary guard R1).
 from __future__ import annotations
 
 import sqlite3
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -218,3 +219,168 @@ def run_dir_for(root: Path, run_id: str) -> Path:
     path = Path(root) / "runs" / run_id
     path.mkdir(exist_ok=True)
     return path
+
+
+# --- extraction (Phase 2) ----------------------------------------------------
+
+def triggered_articles(conn: sqlite3.Connection) -> list[dict]:
+    """Extraction trigger set (D-P2-1): latest verdict where
+    (topic ∈ {investment, finance-econ} OR signal >= 0.75) OR exploration = 1.
+    Deterministic order (article_id ASC)."""
+    rows = conn.execute(
+        """SELECT a.article_id, a.title,
+                  COALESCE(au.canonical_name, a.raw_author) AS author,
+                  a.published_date,
+                  gv.extract_ideas, gv.extract_lessons
+           FROM gate_verdicts gv
+           JOIN (SELECT article_id, MAX(run_id) AS mr FROM gate_verdicts GROUP BY article_id) t
+             ON t.article_id = gv.article_id AND t.mr = gv.run_id
+           JOIN articles a ON a.article_id = gv.article_id
+           LEFT JOIN authors au ON au.author_id = a.author_id
+           WHERE gv.topic IN ('investment', 'finance-econ')
+              OR gv.signal >= 0.75 OR gv.exploration = 1
+           ORDER BY a.article_id"""
+    ).fetchall()
+    return [
+        {"article_id": r[0], "title": r[1], "author": r[2], "published_date": r[3],
+         "expect_ideas": bool(r[4]), "expect_lessons": bool(r[5])}
+        for r in rows
+    ]
+
+
+def article_paragraphs(conn: sqlite3.Connection, article_id: str) -> list[tuple[str, str]]:
+    """[(paragraph_id, body), …] in paragraph order — the extraction input AND
+    the span-validation source of truth (article-global, not per-chunk)."""
+    rows = conn.execute(
+        "SELECT paragraph_id, body FROM paragraphs WHERE article_id = ? ORDER BY paragraph_id",
+        (article_id,),
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def _dedupe_key(*parts: str) -> str:
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def insert_mention(
+    conn: sqlite3.Connection, *, article_id: str, run_id: str, schema_version: str,
+    company: str, stance: str, thesis: str, ticker: str | None = None,
+    valuation_premise: str | None = None, catalyst: str | None = None,
+    risks: str | None = None, horizon: str | None = None,
+    expires_on: str | None = None, extraction_uncertainty: float | None = None,
+) -> int | None:
+    """One idea_mentions row; None when the (article, run, dedupe_key) already
+    exists (INSERT OR IGNORE — byte-identical chunk dedupe, D-P2-4)."""
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO idea_mentions
+           (article_id, run_id, schema_version, company, stance, thesis, ticker,
+            valuation_premise, catalyst, risks, horizon, expires_on,
+            extraction_uncertainty, dedupe_key)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (article_id, run_id, schema_version, company, stance, thesis, ticker,
+         valuation_premise, catalyst, risks, horizon, expires_on,
+         extraction_uncertainty, _dedupe_key(company, stance, thesis)),
+    )
+    return cur.lastrowid if cur.rowcount else None
+
+
+def insert_card(
+    conn: sqlite3.Connection, *, article_id: str, run_id: str, schema_version: str,
+    principle: str, context: str | None = None, reusable_application: str | None = None,
+    failure_mode: str | None = None, lesson_type: str | None = None,
+) -> int | None:
+    """One lesson_cards row; None on byte-identical dedupe."""
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO lesson_cards
+           (article_id, run_id, schema_version, principle, context, reusable_application,
+            failure_mode, lesson_type, dedupe_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (article_id, run_id, schema_version, principle, context, reusable_application,
+         failure_mode, lesson_type, _dedupe_key(principle, context or "")),
+    )
+    return cur.lastrowid if cur.rowcount else None
+
+
+class SpanProofError(ValueError):
+    """A span whose exact_quote is not a substring of its source paragraph."""
+
+
+def insert_span(conn: sqlite3.Connection, *, article_id: str, record_type: str,
+                record_id: int, field: str, paragraph_id: str, exact_quote: str) -> None:
+    """Insert one evidence span — RE-VERIFYING the D10 proof at the last write
+    boundary (fail-closed, structural — not comment-grade)."""
+    row = conn.execute(
+        "SELECT body FROM paragraphs WHERE article_id = ? AND paragraph_id = ?",
+        (article_id, paragraph_id),
+    ).fetchone()
+    if row is None or exact_quote not in row[0]:
+        raise SpanProofError(f"{record_type}:{field} — quote not a substring of {paragraph_id}")
+    conn.execute(
+        "INSERT INTO evidence_spans (article_id, record_type, record_id, field, paragraph_id, exact_quote)"
+        " VALUES (?,?,?,?,?,?)",
+        (article_id, record_type, record_id, field, paragraph_id, exact_quote),
+    )
+
+
+def commit_extraction_article(
+    conn: sqlite3.Connection, *, article_id: str, run_id: str, schema_version: str,
+    model: str, prompt_version: str, statuses: list[dict], mentions: list[dict],
+    cards: list[dict],
+) -> None:
+    """ONE atomic commit for an article's WHOLE extraction (all chunks).
+
+    Mentions/cards carry their own spans under a 'spans' key:
+        {"company", "stance", "thesis", …, "spans": [{"field", "paragraph_id", "exact_quote"}, …]}
+    sqlite3's implicit transaction makes all inserts join one txn; a single
+    failing span rolls the article back to nothing (resume re-runs it).
+    """
+    try:
+        for st in statuses:
+            conn.execute(
+                """INSERT INTO extraction_runs
+                   (article_id, run_id, schema_version, model, prompt_version, status,
+                    expect_ideas, expect_lessons, chunk_index, n_chunks, n_mentions,
+                    n_cards, input_tokens, output_tokens)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (article_id, run_id, schema_version, model, prompt_version, st["status"],
+                 int(st["expect_ideas"]), int(st["expect_lessons"]), st["chunk_index"],
+                 st["n_chunks"], st["n_mentions"], st["n_cards"],
+                 st["input_tokens"], st["output_tokens"]),
+            )
+        for m in mentions:
+            fields = {k: v for k, v in m.items() if k != "spans"}
+            mid = insert_mention(conn, article_id=article_id, run_id=run_id,
+                                 schema_version=schema_version, **fields)
+            if mid is not None:
+                for sp in m.get("spans", []):
+                    insert_span(conn, article_id=article_id, record_type="idea",
+                                record_id=mid, field=sp["field"],
+                                paragraph_id=sp["paragraph_id"], exact_quote=sp["exact_quote"])
+        for c in cards:
+            fields = {k: v for k, v in c.items() if k != "spans"}
+            cid = insert_card(conn, article_id=article_id, run_id=run_id,
+                              schema_version=schema_version, **fields)
+            if cid is not None:
+                for sp in c.get("spans", []):
+                    insert_span(conn, article_id=article_id, record_type="lesson",
+                                record_id=cid, field=sp["field"],
+                                paragraph_id=sp["paragraph_id"], exact_quote=sp["exact_quote"])
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def latest_extractions(conn: sqlite3.Connection) -> list[dict]:
+    """Routing view for the audit: per (article, latest run) → status + counts."""
+    rows = conn.execute(
+        """SELECT er.article_id, er.run_id, er.schema_version, er.model, er.prompt_version,
+                  er.status, er.n_mentions, er.n_cards, er.input_tokens, er.output_tokens
+           FROM extraction_runs er
+           JOIN (SELECT article_id, MAX(run_id) AS mr FROM extraction_runs GROUP BY article_id) t
+             ON t.article_id = er.article_id AND t.mr = er.run_id
+           ORDER BY er.article_id, er.chunk_index"""
+    ).fetchall()
+    cols = ("article_id", "run_id", "schema_version", "model", "prompt_version",
+            "status", "n_mentions", "n_cards", "input_tokens", "output_tokens")
+    return [dict(zip(cols, r)) for r in rows]
