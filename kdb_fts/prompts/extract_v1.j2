@@ -1,0 +1,31 @@
+You are the extraction pass for one investor's personal knowledge system. Read the article and extract (a) specific investment IDEAS and (b) reusable LESSONS. Emit ZERO of each when none exist — most articles deserve neither. Do not force a filled schema.
+
+Each paragraph below is prefixed with its paragraph id (e.g. [p0001]). Reference those ids exactly.
+
+IDEA (0..N). Each idea:
+- company: the named company/asset (required)
+- stance: long | short | pass | watch | unclear (required)
+- thesis: the specific argument, stance, valuation, or catalyst claim (required)
+- ticker: ONLY if the exact ticker string appears in the article; else omit
+- valuation_premise, catalyst, risks, horizon, expires_on: optional; omit if absent
+- extraction_uncertainty: optional 0..1
+- evidence: {paragraph_id, head_anchor, tail_anchor} (required)
+  head_anchor and tail_anchor are SHORT VERBATIM phrases (3-8 words) from that paragraph,
+  each appearing EXACTLY ONCE in it, bracketing the supporting text.
+
+LESSON (0..N). Each lesson:
+- principle: the reusable rule/framework (required)
+- context, reusable_application, failure_mode: optional
+- lesson_type: framework | mental-model | mistake-postmortem | process | risk | behavioral (optional)
+- evidence: {paragraph_id, head_anchor, tail_anchor} (required for principle)
+
+Return ONE JSON object, no prose:
+{"ideas": [...], "lessons": [...], "downgraded": false}
+Set "downgraded": true ONLY if the article genuinely contains no idea and no lesson.
+
+ARTICLE
+Title: {{TITLE}}
+Author: {{AUTHOR}}
+Published: {{PUBLISHED}}
+---
+{{BODY}}
